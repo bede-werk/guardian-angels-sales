@@ -153,5 +153,19 @@ tbody tr:hover { background: #fafbfe; cursor: pointer; }
 .outcome-btn { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; text-align: center; font-size: 13px; }
 .outcome-btn.active { border-color: var(--brand); background: #eef4ff; color: var(--brand); font-weight: 600; }
 
+/* Partner picker (needs-mapping) */
+.picker { position: relative; flex: 2; }
+.picker-menu { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow); z-index: 20; margin-top: 4px; max-height: 260px; overflow: auto; }
+.picker-item { display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: none;
+  border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; }
+.picker-item:last-child { border-bottom: none; }
+.picker-item:hover { background: #eef4ff; }
+
+/* Tab count badge */
+.tab .count { display: inline-block; margin-left: 6px; background: var(--brand); color: #fff; border-radius: 999px;
+  font-size: 11px; font-weight: 700; padding: 1px 7px; }
+.tab:not(.active) .count { background: #d3ddec; color: var(--text); }
+
 .error-banner { background: #fdecec; color: var(--danger); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
 .loading { padding: 40px; text-align: center; color: var(--muted); }

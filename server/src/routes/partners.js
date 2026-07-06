@@ -1,8 +1,36 @@
 const express = require('express');
 const knex = require('../db/knex');
-const { priorityLabel } = require('../services/priority');
+const { priorityLabel, priorityScore, regionForPartner } = require('../services/priority');
 
 const router = express.Router();
+
+// POST /api/partners — create a partner (e.g. from an unmatched note in review).
+router.post('/', async (req, res, next) => {
+  try {
+    const { name, category, tier, is_priority, address, city, state, zip } = req.body;
+    if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
+    const t = Number(tier) || 3;
+    const pri = !!is_priority;
+    const payload = {
+      name: String(name).trim(),
+      category: category || null,
+      tier: t,
+      is_priority: pri,
+      priority_score: priorityScore(t, pri),
+      address: address || null,
+      city: city || null,
+      state: state || 'NE',
+      zip: zip || null,
+      region: regionForPartner({ city, zip }),
+    };
+    const [row] = await knex('partners').insert(payload).returning('id');
+    const id = row && row.id ? row.id : row;
+    const partner = await knex('partners').where({ id }).first();
+    res.status(201).json(partner);
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Attach a human-friendly priority label to a partner row.
 function decorate(p) {

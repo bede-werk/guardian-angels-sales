@@ -9,6 +9,7 @@ const visits = require('./routes/visits');
 const schedule = require('./routes/schedule');
 const dashboard = require('./routes/dashboard');
 const users = require('./routes/users');
+const notesReview = require('./routes/notesReview');
 
 const app = express();
 app.use(cors());
@@ -21,6 +22,7 @@ app.use('/api/visits', visits);
 app.use('/api/schedule', schedule);
 app.use('/api/dashboard', dashboard);
 app.use('/api/users', users);
+app.use('/api/notes-review', notesReview);
 
 // In production, serve the built React app so a single service can host both.
 if (process.env.NODE_ENV === 'production') {

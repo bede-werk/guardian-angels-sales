@@ -14,6 +14,9 @@ A full-stack app for planning and logging referral-partner sales visits around L
 - **Partner directory** — search & filter by category, tier, city, zip; shows last (completed) visit and latest contact.
 - **Dashboard** — today's route, visits completed this week, and high-priority partners never visited.
 - **Multi-user ready** — visits are assigned to a team member; the schema supports adding more reps later.
+- **Historical notes import** — loads 2 years of referrer notes (`ReferrerNotes.xlsx`) into
+  partner history. Notes whose referrer can't be auto-matched land in a **Needs Mapping**
+  screen where you assign each to a partner (or create one).
 
 ### Priority scoring
 
@@ -64,7 +67,8 @@ Then open **http://localhost:5173**.
 | --- | --- |
 | `npm run migrate` | Create/upgrade the database schema |
 | `npm run import` | Import partners from the Excel file (idempotent upsert) |
-| `npm run seed` | `migrate` + `import` |
+| `npm run import:notes` | Import historical referrer notes (idempotent) |
+| `npm run seed` | `migrate` + `import` + `import:notes` |
 | `npm run reset` | Drop everything and re-seed from Excel |
 | `npm run dev` | Start API with `--watch` auto-reload |
 | `npm run start` | Start API (production style) |

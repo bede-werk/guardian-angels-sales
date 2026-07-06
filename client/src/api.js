@@ -52,6 +52,15 @@ export const api = {
   // Dashboard
   dashboard: (userId, date) =>
     request(`/dashboard?${userId ? `userId=${userId}&` : ''}${date ? `date=${date}` : ''}`),
+
+  // Notes review ("needs mapping")
+  notesReview: () => request('/notes-review?status=pending'),
+  notesReviewCount: () => request('/notes-review/count'),
+  assignNote: (id, body) => request(`/notes-review/${id}/assign`, { method: 'POST', body }),
+  createPartnerFromNote: (id, body) =>
+    request(`/notes-review/${id}/create-partner`, { method: 'POST', body }),
+  dismissNote: (id, body) => request(`/notes-review/${id}/dismiss`, { method: 'POST', body }),
+  createPartner: (body) => request('/partners', { method: 'POST', body }),
 };
 
 export const OUTCOME_LABELS = {
