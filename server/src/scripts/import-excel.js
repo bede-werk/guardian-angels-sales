@@ -36,8 +36,8 @@ function clean(v) {
   return s === '' ? null : s;
 }
 
-async function run() {
-  const file = process.argv[2] || DEFAULT_FILE;
+async function importPartners(file) {
+  if (!file) file = DEFAULT_FILE;
   console.log(`Reading: ${file}`);
 
   const wb = XLSX.readFile(file);
@@ -119,12 +119,18 @@ async function run() {
 
   const total = await knex('partners').count({ c: '*' }).first();
   console.log(`Import complete. Inserted ${inserted}, updated ${updated}. Total partners: ${total.c}.`);
+  return { inserted, updated, total: Number(total.c) };
 }
 
-run()
-  .then(() => knex.destroy())
-  .catch(async (err) => {
-    console.error('Import failed:', err);
-    await knex.destroy();
-    process.exit(1);
-  });
+module.exports = { importPartners };
+
+// Run directly from the CLI (`npm run import`).
+if (require.main === module) {
+  importPartners(process.argv[2])
+    .then(() => knex.destroy())
+    .catch(async (err) => {
+      console.error('Import failed:', err);
+      await knex.destroy();
+      process.exit(1);
+    });
+}

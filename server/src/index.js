@@ -3,6 +3,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const knex = require('./db/knex');
+const { importPartners } = require('./scripts/import-excel');
+const { importNotes } = require('./scripts/import-notes');
 
 const partners = require('./routes/partners');
 const visits = require('./routes/visits');
@@ -43,8 +46,41 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`GA Sales API listening on http://localhost:${PORT}`);
+const isProd = process.env.NODE_ENV === 'production';
+
+// On first boot with an empty database, load the bundled spreadsheets.
+// Runs in the background after the server is already listening, so the app
+// comes up immediately and Railway's health check passes.
+async function seedIfEmpty() {
+  try {
+    const { c } = await knex('partners').count({ c: '*' }).first();
+    if (Number(c) === 0) {
+      console.log('Empty database detected — seeding from bundled spreadsheets…');
+      await importPartners();
+      await importNotes();
+      console.log('Seeding complete.');
+    }
+  } catch (err) {
+    console.error('Auto-seed failed (server still running):', err.message);
+  }
+}
+
+async function start() {
+  // In production the database is only reachable at runtime (not during the build),
+  // so migrations run here rather than in a build/pre-deploy step.
+  if (isProd) {
+    console.log('Running database migrations…');
+    await knex.migrate.latest();
+  }
+  app.listen(PORT, () => {
+    console.log(`GA Sales API listening on http://localhost:${PORT}`);
+    if (isProd) seedIfEmpty();
+  });
+}
+
+start().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
 
 module.exports = app;

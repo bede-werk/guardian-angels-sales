@@ -85,8 +85,8 @@ async function setupUsers(trx) {
   return { nameToId, aliasToId };
 }
 
-async function run() {
-  const file = process.argv[2] || DEFAULT_FILE;
+async function importNotes(file) {
+  if (!file) file = DEFAULT_FILE;
   console.log(`Reading: ${file}`);
   const wb = XLSX.readFile(file);
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: false });
@@ -167,12 +167,18 @@ async function run() {
   console.log(`Rows without referrer:  ${stats.noReferrer}`);
   console.log(`Referrers matched:      ${stats.matchedRefs.size}`);
   console.log(`Referrers unmatched:    ${stats.unmatchedRefs.size}`);
+  return { imported: stats.imported, review: stats.review };
 }
 
-run()
-  .then(() => knex.destroy())
-  .catch(async (err) => {
-    console.error('Notes import failed:', err);
-    await knex.destroy();
-    process.exit(1);
-  });
+module.exports = { importNotes };
+
+// Run directly from the CLI (`npm run import:notes`).
+if (require.main === module) {
+  importNotes(process.argv[2])
+    .then(() => knex.destroy())
+    .catch(async (err) => {
+      console.error('Notes import failed:', err);
+      await knex.destroy();
+      process.exit(1);
+    });
+}
