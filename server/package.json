@@ -1,0 +1,32 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "migrate": "knex migrate:latest",
+    "rollback": "knex migrate:rollback",
+    "import": "node src/scripts/import-excel.js",
+    "seed": "npm run migrate && npm run import",
+    "reset": "knex migrate:rollback --all && npm run seed",
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "cors": "^2.8.6",
+    "dayjs": "^1.11.21",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "knex": "^3.3.0",
+    "pg": "^8.22.0",
+    "xlsx": "^0.18.5"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}

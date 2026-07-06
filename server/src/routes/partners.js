@@ -1,0 +1,111 @@
+const express = require('express');
+const knex = require('../db/knex');
+const { priorityLabel } = require('../services/priority');
+
+const router = express.Router();
+
+// Attach a human-friendly priority label to a partner row.
+function decorate(p) {
+  return { ...p, is_priority: !!p.is_priority, priority_label: priorityLabel(p.tier, !!p.is_priority) };
+}
+
+// GET /api/partners — searchable / filterable list with last-visit + contact info.
+// Query params: search, category, tier, city, zip, neverVisited=1
+router.get('/', async (req, res, next) => {
+  try {
+    const { search, category, tier, city, zip, neverVisited } = req.query;
+
+    // Subquery: last *completed* visit per partner. A visit that's only planned
+    // (on today's route but not yet done) must not count as a real visit.
+    const lastVisit = knex('visits')
+      .where('status', 'completed')
+      .select('partner_id')
+      .max('scheduled_date as last_visit_date')
+      .count('* as visit_count')
+      .groupBy('partner_id')
+      .as('lv');
+
+    const query = knex('partners as p')
+      .leftJoin(lastVisit, 'lv.partner_id', 'p.id')
+      .select(
+        'p.*',
+        'lv.last_visit_date',
+        knex.raw('COALESCE(lv.visit_count, 0) as visit_count')
+      );
+
+    if (search) {
+      const like = `%${search.toLowerCase()}%`;
+      query.where((qb) => {
+        qb.whereRaw('LOWER(p.name) LIKE ?', [like])
+          .orWhereRaw('LOWER(COALESCE(p.address, \'\')) LIKE ?', [like])
+          .orWhereRaw('LOWER(COALESCE(p.category, \'\')) LIKE ?', [like]);
+      });
+    }
+    if (category) query.where('p.category', category);
+    if (tier) query.where('p.tier', Number(tier));
+    if (city) query.where('p.city', city);
+    if (zip) query.where('p.zip', zip);
+    if (neverVisited === '1' || neverVisited === 'true') query.whereNull('lv.last_visit_date');
+
+    query.orderBy('p.priority_score', 'desc').orderBy('p.name', 'asc');
+
+    // Pull the latest contact details from that partner's most recent visit.
+    const partners = await query;
+    const ids = partners.map((p) => p.id);
+    const contacts = ids.length
+      ? await knex('visits')
+          .whereIn('partner_id', ids)
+          .whereNotNull('contact_name')
+          .orderBy('scheduled_date', 'desc')
+          .orderBy('id', 'desc')
+          .select('partner_id', 'contact_name', 'contact_title', 'contact_email', 'contact_phone')
+      : [];
+    const contactByPartner = {};
+    for (const c of contacts) if (!contactByPartner[c.partner_id]) contactByPartner[c.partner_id] = c;
+
+    res.json(
+      partners.map((p) => ({
+        ...decorate(p),
+        visit_count: Number(p.visit_count) || 0,
+        contact: contactByPartner[p.id] || null,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/partners/meta/filters — distinct values for filter dropdowns.
+router.get('/meta/filters', async (req, res, next) => {
+  try {
+    const [categories, cities, zips] = await Promise.all([
+      knex('partners').distinct('category').whereNotNull('category').orderBy('category').pluck('category'),
+      knex('partners').distinct('city').whereNotNull('city').orderBy('city').pluck('city'),
+      knex('partners').distinct('zip').whereNotNull('zip').orderBy('zip').pluck('zip'),
+    ]);
+    res.json({ categories, cities, zips, tiers: [1, 2, 3] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/partners/:id — a partner with its full visit history.
+router.get('/:id', async (req, res, next) => {
+  try {
+    const partner = await knex('partners').where({ id: req.params.id }).first();
+    if (!partner) return res.status(404).json({ error: 'Partner not found' });
+
+    const visits = await knex('visits as v')
+      .leftJoin('users as u', 'u.id', 'v.user_id')
+      .where('v.partner_id', partner.id)
+      .orderBy('v.scheduled_date', 'desc')
+      .orderBy('v.id', 'desc')
+      .select('v.*', 'u.name as user_name');
+
+    res.json({ ...decorate(partner), visits });
+  } catch (err) {
+    next(err);
+  }
+});
+
+module.exports = router;
