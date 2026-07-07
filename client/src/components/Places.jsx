@@ -4,16 +4,18 @@ import { TierChip, CategoryChip } from './ui/Chip';
 import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
-import PartnerDetail from './PartnerDetail';
+import PlaceDetail from './PlaceDetail';
 
-// Searchable / filterable partner directory with last-visit + contact info.
-export default function Partners() {
-  const [filters, setFilters] = useState({ categories: [], cities: [], zips: [], tiers: [] });
-  const [q, setQ] = useState({ search: '', category: '', tier: '', city: '', zip: '', neverVisited: '' });
-  const [rows, setRows] = useState([]);
+// Searchable / filterable place directory with last-visit + contact info.
+// Clicking any row opens that place's full detail (PlaceDetail.jsx).
+export default function Places() {
+  const [filters, setFilters] = useState({ categories: [], cities: [], zips: [], tiers: [] }); // dropdown options, loaded once
+  const [q, setQ] = useState({ search: '', category: '', tier: '', city: '', zip: '', neverVisited: '' }); // current filter values
+  const [rows, setRows] = useState([]); // the filtered place list from the API
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(null); // place id whose detail modal is open, if any
 
+  // Load the filter dropdown options (distinct categories/cities/zips) once on mount.
   useEffect(() => {
     api.filters().then(setFilters).catch(() => {});
   }, []);
@@ -21,22 +23,26 @@ export default function Partners() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setRows(await api.partners(q));
+      setRows(await api.places(q));
     } finally {
       setLoading(false);
     }
   }, [q]);
 
-  // Debounce so typing in search doesn't hammer the API.
+  // Debounce so typing in search doesn't hammer the API on every keystroke —
+  // waits 200ms after the last change to `q` before actually fetching.
   useEffect(() => {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
   }, [load]);
 
+  // Shorthand for wiring an <input>/<select> straight into the `q` filter state.
   const set = (k) => (e) => setQ((s) => ({ ...s, [k]: e.target.value }));
 
   return (
     <div className="grid" style={{ gap: 16 }}>
+      {/* Filter bar: search box + category/tier/city/zip dropdowns + a
+          "Never visited" toggle button. */}
       <div className="card">
         <div className="card-body">
           <div className="row">
@@ -85,9 +91,10 @@ export default function Partners() {
         </div>
       </div>
 
+      {/* Results table. Each row is clickable and opens PlaceDetail. */}
       <div className="card">
         <div className="card-head">
-          <h2>{loading ? 'Loading…' : `${rows.length} partners`}</h2>
+          <h2>{loading ? 'Loading…' : `${rows.length} places`}</h2>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
           <table>
@@ -110,6 +117,9 @@ export default function Partners() {
                   <td className="muted tiny">{p.city} {p.zip}<br />{p.region}</td>
                   <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
                   <td className="tiny">
+                    {/* p.contact is this place's primary contact, included by
+                        the API's list endpoint so this column doesn't need a
+                        separate request per row. */}
                     {p.contact ? (
                       <div className="stack">
                         <span>{p.contact.name}</span>
@@ -122,7 +132,7 @@ export default function Partners() {
                 </tr>
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={6}><EmptyState message="No partners match those filters." /></td></tr>
+                <tr><td colSpan={6}><EmptyState message="No places match those filters." /></td></tr>
               )}
             </tbody>
           </table>
@@ -130,7 +140,7 @@ export default function Partners() {
       </div>
 
       {selected && (
-        <PartnerDetail partnerId={selected} onClose={() => setSelected(null)} onChanged={load} />
+        <PlaceDetail placeId={selected} onClose={() => setSelected(null)} onChanged={load} />
       )}
     </div>
   );

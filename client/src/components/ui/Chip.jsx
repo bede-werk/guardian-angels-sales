@@ -1,6 +1,10 @@
+// Small colored "pill" labels used throughout the app: tier/priority, visit
+// status, visit outcome, and category. This file replaced the old Badges.jsx
+// during the brand redesign — same idea, restyled with the brand tokens.
 import React from 'react';
 import { OUTCOME_LABELS } from '../../api';
 
+// "Tier 1", "Tier 2", "Tier 3" + an optional "★ Priority" pill next to it.
 export function TierChip({ tier, isPriority }) {
   return (
     <span className="tag-list">
@@ -10,10 +14,14 @@ export function TierChip({ tier, isPriority }) {
   );
 }
 
+// A visit's status: planned | completed | skipped. The CSS class is built
+// from the status string directly (see .badge.status-* rules in styles.css).
 export function StatusChip({ status }) {
   return <span className={`badge status-${status}`}>{status}</span>;
 }
 
+// A visit's outcome (interested / not_ready / follow_up / no_answer /
+// left_materials). Renders nothing if no outcome has been logged yet.
 export function OutcomeChip({ outcome }) {
   if (!outcome) return null;
   return <span className={`badge o-${outcome}`}>{OUTCOME_LABELS[outcome] || outcome}</span>;
@@ -22,6 +30,8 @@ export function OutcomeChip({ outcome }) {
 // Generated category palette: 9 blue tints + 9 teal tints, assigned to categories in
 // alphabetical order, alternating hue. Mauve is deliberately excluded so it stays
 // reserved for attention/urgent states. Unknown categories fall back to grey.
+// To add a new category's color, just add a new entry here (or it'll use the
+// grey fallback below until you do).
 const CATEGORY_COLORS = {
   'Assisted Living & Senior Living': { bg: 'var(--blue-tint-1)', fg: 'var(--blue-dark)' },
   'Case Managers': { bg: 'var(--teal-tint-1)', fg: 'var(--teal-dark)' },
@@ -44,6 +54,9 @@ const CATEGORY_COLORS = {
 };
 const FALLBACK_CATEGORY_COLOR = { bg: 'var(--grey-tint-1)', fg: 'var(--grey-dark)' };
 
+// A place's Source Category (Hospitals, Hospice, Physicians, etc.) as a
+// colored pill. Colors come from CATEGORY_COLORS above, applied as inline
+// styles (rather than a CSS class per category) since the palette is data, not markup.
 export function CategoryChip({ category }) {
   if (!category) return null;
   const { bg, fg } = CATEGORY_COLORS[category] || FALLBACK_CATEGORY_COLOR;

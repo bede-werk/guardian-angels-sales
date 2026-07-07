@@ -7,6 +7,8 @@ import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
 import ContactModal from './ContactModal';
 
+// One card in the "People here" grid: a person's name/title/role/temperature,
+// plus quick call/email links and an Edit button (opens ContactModal).
 function ContactCard({ contact, onEdit }) {
   return (
     <div className={`contact-card ${contact.departed ? 'departed' : ''}`}>
@@ -29,19 +31,24 @@ function ContactCard({ contact, onEdit }) {
   );
 }
 
-// Slide-in modal: partner details + people here + full visit history + "log a visit" action.
-export default function PartnerDetail({ partnerId, onClose, onChanged }) {
-  const [data, setData] = useState(null);
-  const [logging, setLogging] = useState(false);
-  const [editingContact, setEditingContact] = useState(undefined); // undefined = closed, null = creating, object = editing
+// Slide-in modal: place details + people here + full visit history + "log a
+// visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
+// (clicking any place-linked row/card).
+export default function PlaceDetail({ placeId, onClose, onChanged }) {
+  const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + contacts)
+  const [logging, setLogging] = useState(false); // whether the Log Visit modal is open
+  // Controls the (Add/Edit) contact modal: undefined = closed, null = creating
+  // a brand-new contact, an object = editing that existing contact.
+  const [editingContact, setEditingContact] = useState(undefined);
 
   async function load() {
-    setData(await api.partner(partnerId));
+    setData(await api.place(placeId));
   }
   useEffect(() => {
     load();
-  }, [partnerId]);
+  }, [placeId]);
 
+  // Show a lightweight loading modal while the initial fetch is in flight.
   if (!data) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
@@ -54,6 +61,8 @@ export default function PartnerDetail({ partnerId, onClose, onChanged }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
+      {/* stopPropagation so clicking inside the modal doesn't bubble up to the
+          backdrop's onClick (which would close the modal). */}
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div>
@@ -72,9 +81,12 @@ export default function PartnerDetail({ partnerId, onClose, onChanged }) {
           </div>
           <div className="tag-list">
             <Button variant="secondary" size="small" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
+            {/* Call button only shows if this place has a phone number on file
+                (not populated from the original Excel import — added manually). */}
             {data.phone && <a className="btn secondary small" href={`tel:${data.phone}`}>Call</a>}
           </div>
 
+          {/* People here: every contact (person) recorded at this place. */}
           <div className="card">
             <div className="card-head">
               <h2>People here ({data.contacts.length})</h2>
@@ -93,6 +105,8 @@ export default function PartnerDetail({ partnerId, onClose, onChanged }) {
             </div>
           </div>
 
+          {/* Referral attribution isn't wired up yet — placeholder for now
+              (see the referrals table in the data-model migration). */}
           <div className="card">
             <div className="card-head"><h2>Referrals</h2></div>
             <div className="card-body">
@@ -100,6 +114,7 @@ export default function PartnerDetail({ partnerId, onClose, onChanged }) {
             </div>
           </div>
 
+          {/* Every visit ever logged on this place, most recent first. */}
           <div className="card">
             <div className="card-head"><h2>Visit history ({data.visits.length})</h2></div>
             <div className="card-body">
@@ -116,6 +131,9 @@ export default function PartnerDetail({ partnerId, onClose, onChanged }) {
                         {v.user_name && <span className="tiny muted">· {v.user_name}</span>}
                       </div>
                       {v.notes && <div className="tiny">{v.notes}</div>}
+                      {/* This is the free-text "who I talked to on this specific
+                          visit" snapshot stored on the visit itself — separate
+                          from the durable contacts list above. */}
                       {(v.contact_name || v.contact_email || v.contact_phone) && (
                         <div className="tiny muted">
                           {[v.contact_name, v.contact_title].filter(Boolean).join(', ')}
@@ -136,18 +154,20 @@ export default function PartnerDetail({ partnerId, onClose, onChanged }) {
         </div>
       </div>
 
+      {/* Ad-hoc visit logging — not tied to today's generated route, just this place. */}
       {logging && (
         <VisitLogModal
-          partnerId={data.id}
-          partnerName={data.name}
+          placeId={data.id}
+          placeName={data.name}
           onClose={() => setLogging(false)}
           onSaved={() => { load(); onChanged?.(); }}
         />
       )}
 
+      {/* Add/Edit contact modal — only rendered when editingContact isn't undefined. */}
       {editingContact !== undefined && (
         <ContactModal
-          partnerId={data.id}
+          placeId={data.id}
           contact={editingContact}
           onClose={() => setEditingContact(undefined)}
           onSaved={() => { load(); onChanged?.(); }}

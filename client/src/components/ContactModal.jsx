@@ -5,8 +5,10 @@ import Button from './ui/Button';
 const TEMPS = ['hot', 'warm', 'cold', 'dormant'];
 const TEMP_LABELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', dormant: 'Dormant' };
 
-// Create or edit a person at a place. `contact` present = editing; absent = creating.
-export default function ContactModal({ partnerId, contact, onClose, onSaved }) {
+// Create or edit a person at a place. `contact` present = editing (form is
+// pre-filled from it); absent = creating a brand-new one from a blank form.
+// Opened from PlaceDetail.jsx's "Add contact" button or a contact card's "Edit".
+export default function ContactModal({ placeId, contact, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: contact?.name || '',
     title: contact?.title || '',
@@ -23,16 +25,17 @@ export default function ContactModal({ partnerId, contact, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const toggle = (k) => () => setForm((f) => ({ ...f, [k]: !f[k] }));
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value })); // wires a text input/select to `form`
+  const toggle = (k) => () => setForm((f) => ({ ...f, [k]: !f[k] })); // wires a checkbox to `form`
 
+  // PATCH if editing an existing contact, POST if creating a new one.
   async function save() {
     setSaving(true);
     setError(null);
     try {
       const saved = contact
         ? await api.contacts.update(contact.id, form)
-        : await api.contacts.create(partnerId, form);
+        : await api.contacts.create(placeId, form);
       onSaved?.(saved);
       onClose();
     } catch (e) {
@@ -110,6 +113,9 @@ export default function ContactModal({ partnerId, contact, onClose, onSaved }) {
               <label className="field">Birthday</label>
               <input value={form.birthday} onChange={set('birthday')} placeholder="e.g. March 14" />
             </div>
+            {/* is_primary: only one contact per place can be primary — the
+                server automatically un-checks it on any other contact at this
+                same place when this one is saved as primary. */}
             <div className="tag-list" style={{ alignItems: 'center', paddingTop: 20 }}>
               <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input type="checkbox" style={{ width: 'auto' }} checked={form.is_primary} onChange={toggle('is_primary')} />

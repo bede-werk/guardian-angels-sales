@@ -1,35 +1,38 @@
 // Daily schedule generator.
 //
-// Goal: fill ~4 hours of a rep's day with the most valuable partners to visit,
+// Goal: fill ~4 hours of a rep's day with the most valuable places to visit,
 // clustered geographically (same side of town / zip) so travel stays low, and
 // ordered by priority within the cluster.
 //
 // Strategy:
-//   1. Find partners that still need a first visit (no completed visit) and are not
+//   1. Find places that still need a first visit (no completed visit) and are not
 //      already on this rep's plan for the day.
 //   2. Seed the route with the single highest-priority candidate.
-//   3. Prefer partners in the seed's region, then the seed's city, then nearest zip,
+//   3. Prefer places in the seed's region, then the seed's city, then nearest zip,
 //      keeping priority as the primary sort — this yields a tight, high-value route.
 //   4. Take as many as fit in the time budget.
 const knex = require('../db/knex');
-const { regionForPartner } = require('./priority');
+const { regionForPlace } = require('./priority');
 
 const DEFAULT_VISIT_MINUTES = 30; // time spent per visit
 const DEFAULT_TRAVEL_MINUTES = 15; // assumed travel between clustered stops
 const DEFAULT_HOURS = 4;
 
-// How many visits fit in the time budget.
+// How many visits fit in the time budget, e.g. 4 hours at 45 min/stop (30 visit +
+// 15 travel) = 5 stops. Always at least 1, even if the math rounds down to 0.
 function capacityFor({ hours = DEFAULT_HOURS, visitMinutes = DEFAULT_VISIT_MINUTES, travelMinutes = DEFAULT_TRAVEL_MINUTES }) {
   const perStop = visitMinutes + travelMinutes;
   return Math.max(1, Math.floor((hours * 60) / perStop));
 }
 
+// Parses the first 5 digits of a zip into a number for "nearest zip" comparisons
+// below. Returns null for missing/unparseable zips so callers can skip that check.
 function zipNum(zip) {
   const n = parseInt(String(zip || '').slice(0, 5), 10);
   return Number.isFinite(n) ? n : null;
 }
 
-// Rank candidates relative to a seed partner so the route stays clustered.
+// Rank candidates relative to a seed place so the route stays clustered.
 // Lower "distance" ranks first; ties broken by priority then zip proximity.
 function clusterSort(candidates, seed) {
   const seedZip = zipNum(seed.zip);
@@ -49,24 +52,26 @@ function clusterSort(candidates, seed) {
   });
 }
 
-// Partners that still need a first visit and aren't already planned for `date`.
-async function candidatePartners(date, userId) {
-  // Partner ids with a completed visit ever, or already on the plan for this date/user.
+// Places that still need a first visit and aren't already planned for `date`.
+// (Exported for reuse/testing; generateSchedule below has its own inline version
+// of this same query since it needs to run inside a transaction.)
+async function candidatePlaces(date, userId) {
+  // Place ids with a completed visit ever, or already on the plan for this date/user.
   // (Single-column subqueries — Knex wraps these in parentheses for the IN clause.)
-  const completed = knex('visits').where({ status: 'completed' }).select('partner_id');
+  const completed = knex('visits').where({ status: 'completed' }).select('place_id');
   const plannedToday = knex('visits')
     .where({ scheduled_date: date })
     .modify((qb) => userId && qb.andWhere({ user_id: userId }))
-    .select('partner_id');
+    .select('place_id');
 
-  return knex('partners')
+  return knex('places')
     .whereNotIn('id', completed)
     .whereNotIn('id', plannedToday)
     .orderBy('priority_score', 'desc')
     .orderBy('name', 'asc');
 }
 
-// Build (and persist) a day's route. Returns the created visit rows joined to partners.
+// Build (and persist) a day's route. Returns the created visit rows joined to places.
 async function generateSchedule({ date, userId, hours, visitMinutes, travelMinutes, regenerate = false } = {}) {
   if (!date) throw new Error('date is required (YYYY-MM-DD)');
 
@@ -90,23 +95,26 @@ async function generateSchedule({ date, userId, hours, visitMinutes, travelMinut
       return loadRoute(trx, date, userId);
     }
 
-    // Candidates = partners never completed AND not already on *any* rep's route for
-    // this date (so two team members can't be sent to the same partner on the same day).
-    const completed = trx('visits').where({ status: 'completed' }).select('partner_id');
-    const plannedThisDate = trx('visits').where({ scheduled_date: date }).select('partner_id');
-    const candidates = await trx('partners')
+    // Candidates = places never completed AND not already on *any* rep's route for
+    // this date (so two team members can't be sent to the same place on the same day).
+    const completed = trx('visits').where({ status: 'completed' }).select('place_id');
+    const plannedThisDate = trx('visits').where({ scheduled_date: date }).select('place_id');
+    const candidates = await trx('places')
       .whereNotIn('id', completed)
       .whereNotIn('id', plannedThisDate)
       .orderBy('priority_score', 'desc')
       .orderBy('name', 'asc');
 
-    if (candidates.length === 0) return [];
+    if (candidates.length === 0) return []; // nothing left to visit — empty route
 
+    // The single highest-priority place anchors the route; everything else is
+    // ranked by closeness to it (see clusterSort) so the day stays geographically tight.
     const seed = candidates[0];
     const ordered = clusterSort(candidates, seed).slice(0, capacity);
 
+    // Insert one 'planned' visit per chosen stop, in route order (sort_order).
     const rows = ordered.map((p, i) => ({
-      partner_id: p.id,
+      place_id: p.id,
       user_id: userId || null,
       scheduled_date: date,
       status: 'planned',
@@ -118,13 +126,13 @@ async function generateSchedule({ date, userId, hours, visitMinutes, travelMinut
   });
 }
 
-// Load a day's route with partner details, in route order. Each stop is enriched
-// with the partner's primary contact, a preview of their last completed visit's
+// Load a day's route with place details, in route order. Each stop is enriched
+// with the place's primary contact, a preview of their last completed visit's
 // notes, and whether they've never had a completed visit — the Today/Route screen
 // uses these to show "who to ask for" and to flag never-visited/overdue stops.
 async function loadRoute(db, date, userId) {
   const route = await db('visits as v')
-    .join('partners as p', 'p.id', 'v.partner_id')
+    .join('places as p', 'p.id', 'v.place_id')
     .where('v.scheduled_date', date)
     .modify((qb) => userId && qb.andWhere('v.user_id', userId))
     .orderBy('v.sort_order', 'asc')
@@ -141,7 +149,7 @@ async function loadRoute(db, date, userId) {
       'v.next_visit_date',
       'v.scheduled_date',
       'v.user_id',
-      'p.id as partner_id',
+      'p.id as place_id',
       'p.name',
       'p.category',
       'p.tier',
@@ -155,46 +163,50 @@ async function loadRoute(db, date, userId) {
     );
 
   if (route.length === 0) return route;
-  const partnerIds = route.map((r) => r.partner_id);
+  const placeIds = route.map((r) => r.place_id);
 
   const [primaryContacts, completedVisits] = await Promise.all([
     db('contacts')
-      .whereIn('partner_id', partnerIds)
+      .whereIn('place_id', placeIds)
       .where('departed', false)
       .orderBy('is_primary', 'desc')
       .orderBy('id', 'asc')
-      .select('partner_id', 'name', 'relationship_temp'),
+      .select('place_id', 'name', 'relationship_temp'),
 
     db('visits')
-      .whereIn('partner_id', partnerIds)
+      .whereIn('place_id', placeIds)
       .where('status', 'completed')
-      .orderBy('partner_id')
+      .orderBy('place_id')
       .orderBy('scheduled_date', 'desc')
       .orderBy('id', 'desc')
-      .select('partner_id', 'notes', 'scheduled_date'),
+      .select('place_id', 'notes', 'scheduled_date'),
   ]);
 
-  const contactByPartner = {};
-  for (const c of primaryContacts) if (!contactByPartner[c.partner_id]) contactByPartner[c.partner_id] = c;
-  const lastVisitByPartner = {};
+  // Reduce each list down to "one row per place" in JS (simpler and more portable
+  // across SQLite/Postgres than a correlated subquery). Because both queries are
+  // pre-sorted, the FIRST row seen per place_id is the one we want to keep:
+  // the primary contact (is_primary desc) and the most recent completed visit.
+  const contactByPlace = {};
+  for (const c of primaryContacts) if (!contactByPlace[c.place_id]) contactByPlace[c.place_id] = c;
+  const lastVisitByPlace = {};
   const everVisited = new Set();
   for (const v of completedVisits) {
-    everVisited.add(v.partner_id);
-    if (!lastVisitByPartner[v.partner_id]) lastVisitByPartner[v.partner_id] = v;
+    everVisited.add(v.place_id);
+    if (!lastVisitByPlace[v.place_id]) lastVisitByPlace[v.place_id] = v;
   }
 
   return route.map((r) => ({
     ...r,
-    primary_contact: contactByPartner[r.partner_id] || null,
-    last_visit_notes: lastVisitByPartner[r.partner_id]?.notes || null,
-    never_visited: !everVisited.has(r.partner_id),
+    primary_contact: contactByPlace[r.place_id] || null,
+    last_visit_notes: lastVisitByPlace[r.place_id]?.notes || null,
+    never_visited: !everVisited.has(r.place_id),
   }));
 }
 
 module.exports = {
   generateSchedule,
   loadRoute,
-  candidatePartners,
+  candidatePlaces,
   capacityFor,
   clusterSort,
 };

@@ -3,23 +3,28 @@ import { api } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 
-// Searchable partner picker: type, pick a result, calls onPick(partner).
-function PartnerPicker({ onPick }) {
-  const [q, setQ] = useState('');
-  const [results, setResults] = useState([]);
-  const [open, setOpen] = useState(false);
-  const boxRef = useRef(null);
+// Searchable place picker used inside a referrer's card: type a few
+// characters, pick a matching place from the dropdown, calls onPick(place).
+// This is a lightweight custom autocomplete (no library) — `open` controls
+// whether the results dropdown is visible.
+function PlacePicker({ onPick }) {
+  const [q, setQ] = useState(''); // what's typed in the search box
+  const [results, setResults] = useState([]); // matching places from the API
+  const [open, setOpen] = useState(false); // whether the results dropdown is showing
+  const boxRef = useRef(null); // used to detect clicks outside this component
 
+  // Debounced search: wait 200ms after typing stops before hitting the API.
   useEffect(() => {
     if (!q.trim()) { setResults([]); return; }
     const t = setTimeout(async () => {
-      const rows = await api.partners({ search: q });
-      setResults(rows.slice(0, 8));
+      const rows = await api.places({ search: q });
+      setResults(rows.slice(0, 8)); // cap the dropdown to 8 results
       setOpen(true);
     }, 200);
     return () => clearTimeout(t);
   }, [q]);
 
+  // Close the dropdown if the user clicks anywhere outside this component.
   useEffect(() => {
     const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', onDoc);
@@ -29,7 +34,7 @@ function PartnerPicker({ onPick }) {
   return (
     <div className="picker" ref={boxRef}>
       <input
-        placeholder="Assign to existing partner…"
+        placeholder="Assign to existing place…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onFocus={() => results.length && setOpen(true)}
@@ -48,8 +53,10 @@ function PartnerPicker({ onPick }) {
   );
 }
 
-// Modal to create a new partner from a referrer, then assign its notes to it.
-function CreatePartnerModal({ referrer, categories, onClose, onCreate }) {
+// Modal to create a new place from a referrer, then assign its notes to it.
+// Used when the referrer turns out to be a real place that just isn't in the
+// place list yet (rather than an existing place, or a person to dismiss).
+function CreatePlaceModal({ referrer, categories, onClose, onCreate }) {
   const [form, setForm] = useState({ name: referrer, category: '', tier: '3', city: 'Lincoln', zip: '' });
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -68,7 +75,7 @@ function CreatePartnerModal({ referrer, categories, onClose, onCreate }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>New partner from “{referrer}”</h2>
+          <h2>New place from "{referrer}"</h2>
           <button className="close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
@@ -103,7 +110,7 @@ function CreatePartnerModal({ referrer, categories, onClose, onCreate }) {
               <input value={form.zip} onChange={set('zip')} />
             </div>
           </div>
-          <div className="tiny muted">All of this referrer's notes will be attached to the new partner.</div>
+          <div className="tiny muted">All of this referrer's notes will be attached to the new place.</div>
         </div>
         <div className="modal-foot">
           <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
@@ -116,13 +123,17 @@ function CreatePartnerModal({ referrer, categories, onClose, onCreate }) {
   );
 }
 
-// "Needs Mapping" screen: referrers whose notes couldn't be auto-matched to a partner.
+// "Needs Mapping" screen: referrers from the historical notes import whose
+// text couldn't be automatically matched to a place (see
+// server/src/scripts/import-notes.js). One card per referrer, with three
+// possible actions: assign to an existing place, create a new place from
+// it, or dismiss it. Any action applies to ALL of that referrer's pending notes at once.
 export default function NeedsMapping({ onChanged }) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(null); // GET /api/notes-review response, grouped by referrer
   const [error, setError] = useState(null);
-  const [creating, setCreating] = useState(null); // referrer being turned into a partner
-  const [categories, setCategories] = useState([]);
-  const [busy, setBusy] = useState(null);
+  const [creating, setCreating] = useState(null); // the referrer group currently in the "new place" modal, or null
+  const [categories, setCategories] = useState([]); // for the new-place modal's category dropdown
+  const [busy, setBusy] = useState(null); // which referrer currently has a request in flight (disables its buttons)
 
   const load = useCallback(async () => {
     setError(null);
@@ -138,15 +149,17 @@ export default function NeedsMapping({ onChanged }) {
     api.filters().then((f) => setCategories(f.categories)).catch(() => {});
   }, [load]);
 
+  // Reload this screen's data AND tell App.jsx to refresh the tab badge count.
   async function refresh() {
     await load();
     onChanged?.();
   }
 
-  async function assign(group, partner) {
+  // Assign every pending note from this referrer to an existing place.
+  async function assign(group, place) {
     setBusy(group.referrer);
     try {
-      await api.assignNote(group.notes[0].id, { partnerId: partner.id, applyToReferrer: true });
+      await api.assignNote(group.notes[0].id, { placeId: place.id, applyToReferrer: true });
       await refresh();
     } catch (e) {
       setError(e.message);
@@ -155,6 +168,7 @@ export default function NeedsMapping({ onChanged }) {
     }
   }
 
+  // Set aside every pending note from this referrer without importing them.
   async function dismiss(group) {
     setBusy(group.referrer);
     try {
@@ -167,8 +181,9 @@ export default function NeedsMapping({ onChanged }) {
     }
   }
 
-  async function createPartner(group, form) {
-    await api.createPartnerFromNote(group.notes[0].id, {
+  // Create a brand-new place from this referrer, then assign all its notes to it.
+  async function createPlace(group, form) {
+    await api.createPlaceFromNote(group.notes[0].id, {
       ...form,
       tier: Number(form.tier),
       applyToReferrer: true,
@@ -185,8 +200,8 @@ export default function NeedsMapping({ onChanged }) {
         <div className="card-body">
           <div className="tiny">
             <strong>{data.count}</strong> imported notes across <strong>{data.referrer_count}</strong> referrers
-            couldn't be matched to a partner automatically. Assign each to an existing partner, create a new
-            partner from it, or set it aside. Actions apply to <em>all</em> of a referrer's notes.
+            couldn't be matched to a place automatically. Assign each to an existing place, create a new
+            place from it, or set it aside. Actions apply to <em>all</em> of a referrer's notes.
           </div>
         </div>
       </div>
@@ -196,6 +211,8 @@ export default function NeedsMapping({ onChanged }) {
           <EmptyState message="Nothing left to map — every note has found its home." />
         </div>
       ) : (
+        // One card per referrer, listing every one of their unmatched notes
+        // plus the three resolve actions.
         data.groups.map((group) => (
           <div className="card" key={group.referrer}>
             <div className="card-head">
@@ -212,10 +229,10 @@ export default function NeedsMapping({ onChanged }) {
                 ))}
               </ul>
               <div className="row" style={{ alignItems: 'center' }}>
-                <PartnerPicker onPick={(p) => assign(group, p)} />
+                <PlacePicker onPick={(p) => assign(group, p)} />
                 <div style={{ flex: 'unset', display: 'flex', gap: 8 }}>
                   <Button variant="secondary" disabled={busy === group.referrer} onClick={() => setCreating(group)}>
-                    New partner
+                    New place
                   </Button>
                   <Button variant="ghost" disabled={busy === group.referrer} onClick={() => dismiss(group)}>
                     Set aside
@@ -228,11 +245,11 @@ export default function NeedsMapping({ onChanged }) {
       )}
 
       {creating && (
-        <CreatePartnerModal
+        <CreatePlaceModal
           referrer={creating.referrer}
           categories={categories}
           onClose={() => setCreating(null)}
-          onCreate={(form) => createPartner(creating, form)}
+          onCreate={(form) => createPlace(creating, form)}
         />
       )}
     </div>

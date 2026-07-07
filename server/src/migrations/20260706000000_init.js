@@ -35,6 +35,8 @@ exports.up = async function up(knex) {
   // A visit is one planned/completed/skipped call on a partner by a user on a date.
   await knex.schema.createTable('visits', (t) => {
     t.increments('id').primary();
+    // Delete a partner -> delete their visits too (CASCADE). Delete a user ->
+    // keep their visits, just detach them (SET NULL) so history isn't lost.
     t.integer('partner_id').notNullable().references('id').inTable('partners').onDelete('CASCADE');
     t.integer('user_id').references('id').inTable('users').onDelete('SET NULL');
 
@@ -62,6 +64,8 @@ exports.up = async function up(knex) {
   });
 };
 
+// Reverses `up`: drops the tables in the opposite order they were created, so
+// foreign keys (visits -> partners/users) are gone before their targets are.
 exports.down = async function down(knex) {
   await knex.schema.dropTableIfExists('visits');
   await knex.schema.dropTableIfExists('partners');

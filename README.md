@@ -1,22 +1,22 @@
 # Guardian Angels Homecare — Sales Visit Scheduler
 
-A full-stack app for planning and logging referral-partner sales visits around Lincoln, NE.
+A full-stack app for planning and logging referral-place sales visits around Lincoln, NE.
 
 - **Backend:** Node.js + Express + Knex, SQLite locally (swap to PostgreSQL for the cloud with no query changes)
 - **Frontend:** React + Vite
-- **Data:** imported from `Guardian Angels Sales List.xlsx` (sheet `📋 Visit Tracker`, ~261 partners)
+- **Data:** imported from `Guardian Angels Sales List.xlsx` (sheet `📋 Visit Tracker`, ~261 places)
 
 ## Features
 
-- **Import** the Excel partner list into the database (idempotent — safe to re-run).
+- **Import** the Excel place list into the database (idempotent — safe to re-run).
 - **Daily schedule generator** — auto-picks ~4 hours of visits (30 min each + travel), clustered by side-of-town / zip and ordered by priority. Manually reorder, skip, or remove stops.
 - **Visit logging** — notes, key contact (name / title / email / phone), outcome (interested / not ready / follow up / no answer), and next visit date.
-- **Partner directory** — search & filter by category, tier, city, zip; shows last (completed) visit and latest contact.
-- **Dashboard** — today's route, visits completed this week, and high-priority partners never visited.
+- **Place directory** — search & filter by category, tier, city, zip; shows last (completed) visit and latest contact.
+- **Dashboard** — today's route, visits completed this week, and high-priority places never visited.
 - **Multi-user ready** — visits are assigned to a team member; the schema supports adding more reps later.
 - **Historical notes import** — loads 2 years of referrer notes (`ReferrerNotes.xlsx`) into
-  partner history. Notes whose referrer can't be auto-matched land in a **Needs Mapping**
-  screen where you assign each to a partner (or create one).
+  place history. Notes whose referrer can't be auto-matched land in a **Needs Mapping**
+  screen where you assign each to a place (or create one).
 
 ### Priority scoring
 
@@ -66,7 +66,7 @@ Then open **http://localhost:5173**.
 | Command | What it does |
 | --- | --- |
 | `npm run migrate` | Create/upgrade the database schema |
-| `npm run import` | Import partners from the Excel file (idempotent upsert) |
+| `npm run import` | Import places from the Excel file (idempotent upsert) |
 | `npm run import:notes` | Import historical referrer notes (idempotent) |
 | `npm run seed` | `migrate` + `import` + `import:notes` |
 | `npm run reset` | Drop everything and re-seed from Excel |
@@ -83,9 +83,9 @@ Import a different workbook: `node src/scripts/import-excel.js "/path/to/file.xl
 | --- | --- | --- |
 | GET | `/api/health` | Health check |
 | GET | `/api/users` · POST `/api/users` | Team members |
-| GET | `/api/partners` | List/search/filter (`search, category, tier, city, zip, neverVisited`) |
-| GET | `/api/partners/:id` | Partner + full visit history |
-| GET | `/api/partners/meta/filters` | Distinct categories/cities/zips/tiers for dropdowns |
+| GET | `/api/places` | List/search/filter (`search, category, tier, city, zip, neverVisited`) |
+| GET | `/api/places/:id` | Place + full visit history |
+| GET | `/api/places/meta/filters` | Distinct categories/cities/zips/tiers for dropdowns |
 | GET | `/api/schedule?date=&userId=` | A day's route |
 | POST | `/api/schedule/generate` | Build a clustered, priority-ordered route |
 | PATCH | `/api/schedule/reorder` | Persist a manual reorder (`orderedVisitIds`) |
@@ -138,6 +138,6 @@ git push heroku main         # runs heroku-postbuild, then the Procfile release 
 ## Data model
 
 - **users** — team members (`id, name, email`).
-- **partners** — imported referral partners (`tier, is_priority, priority_score, address, city, zip, region, …`).
-- **visits** — one planned/completed/skipped call by a user on a partner for a date,
+- **places** — imported referral places (`tier, is_priority, priority_score, address, city, zip, region, …`).
+- **visits** — one planned/completed/skipped call by a user on a place for a date,
   with `sort_order` (route order), outcome, notes, contact fields, and `next_visit_date`.

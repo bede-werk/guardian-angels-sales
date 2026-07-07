@@ -13,20 +13,23 @@
 // It may later be adjusted by linked contacts' relationship_temp + referral history
 // (see the `contacts`/`referrals` tables), but that feedback loop isn't wired in yet.
 
+// Computes a place's numeric priority score from its tier (1/2/3) and
+// whether it's starred. Stored on places.priority_score so routes can sort
+// by it cheaply instead of recomputing on every request.
 function priorityScore(tier, isPriority) {
-  const tierWeight = { 1: 75, 2: 50, 3: 25 }[tier] || 0;
+  const tierWeight = { 1: 75, 2: 50, 3: 25 }[tier] || 0; // unknown tier -> 0
   const bonus = isPriority ? 25 : 0;
   return tierWeight + bonus;
 }
 
-// Human-readable label for a partner's importance.
+// Human-readable label for a place's importance.
 function priorityLabel(tier, isPriority) {
   if (tier === 1 && isPriority) return 'Priority · Tier 1';
   return `Tier ${tier}`;
 }
 
 // Rough "side of town" bucket for Lincoln, used to cluster a day's route.
-// Falls back to the city name for out-of-town partners (Beatrice, Waverly, etc.).
+// Falls back to the city name for out-of-town places (Beatrice, Waverly, etc.).
 const LINCOLN_ZIP_REGION = {
   '68501': 'Central Lincoln',
   '68502': 'South Lincoln',
@@ -52,11 +55,13 @@ const LINCOLN_ZIP_REGION = {
   '68531': 'North Lincoln',
 };
 
-function regionForPartner({ city, zip }) {
+// Buckets a place into a "side of town" (or their city, if not in Lincoln)
+// so the scheduler can cluster a day's route into a tight geographic area.
+function regionForPlace({ city, zip }) {
   const z = (zip || '').toString().trim().slice(0, 5);
   if (LINCOLN_ZIP_REGION[z]) return LINCOLN_ZIP_REGION[z];
   if (city && String(city).trim()) return String(city).trim();
   return 'Unknown';
 }
 
-module.exports = { priorityScore, priorityLabel, regionForPartner };
+module.exports = { priorityScore, priorityLabel, regionForPlace };

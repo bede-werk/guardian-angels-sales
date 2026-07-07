@@ -11,6 +11,8 @@
 // from services/priority.js) so this migration's behavior is frozen regardless of
 // future edits to that file.
 
+// Deliberately a copy of services/priority.js's formula, not an import of it —
+// see the file header comment above for why.
 function priorityScore(tier, isPriority) {
   const tierWeight = { 1: 75, 2: 50, 3: 25 }[tier] || 0;
   const bonus = isPriority ? 25 : 0;
