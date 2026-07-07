@@ -13,6 +13,8 @@ const schedule = require('./routes/schedule');
 const dashboard = require('./routes/dashboard');
 const users = require('./routes/users');
 const notesReview = require('./routes/notesReview');
+const auth = require('./routes/auth');
+const requireAuth = require('./middleware/requireAuth');
 
 const app = express();
 app.use(cors());
@@ -20,12 +22,14 @@ app.use(express.json());
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'ga-sales-api' }));
 
-app.use('/api/partners', partners);
-app.use('/api/visits', visits);
-app.use('/api/schedule', schedule);
-app.use('/api/dashboard', dashboard);
-app.use('/api/users', users);
-app.use('/api/notes-review', notesReview);
+app.use('/api/auth', auth);
+
+app.use('/api/partners', requireAuth, partners);
+app.use('/api/visits', requireAuth, visits);
+app.use('/api/schedule', requireAuth, schedule);
+app.use('/api/dashboard', requireAuth, dashboard);
+app.use('/api/users', requireAuth, users);
+app.use('/api/notes-review', requireAuth, notesReview);
 
 // In production, serve the built React app so a single service can host both.
 if (process.env.NODE_ENV === 'production') {

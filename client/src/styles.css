@@ -169,3 +169,14 @@ tbody tr:hover { background: #fafbfe; cursor: pointer; }
 
 .error-banner { background: #fdecec; color: var(--danger); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
+
+/* Auth landing page */
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+.auth-card { width: 100%; max-width: 380px; }
+.auth-card .card-body { display: flex; flex-direction: column; gap: 4px; padding: 28px 26px; }
+.auth-brand { margin-bottom: 18px; }
+.auth-brand h1 { font-size: 17px; margin: 0; }
+
+/* Signed-in-as chip in the header */
+.user-menu { display: flex; flex-direction: column; }
+.user-menu .tag-list { font-size: 13px; font-weight: 600; }

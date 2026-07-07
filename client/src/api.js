@@ -1,10 +1,19 @@
 // Thin fetch wrapper around the backend API. All calls go through the Vite proxy
 // (/api -> localhost:4000 in dev; same-origin in production).
 const BASE = '/api';
+const TOKEN_KEY = 'ga_auth_token';
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY);
+export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
+export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
 
 async function request(path, options = {}) {
+  const token = getToken();
   const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -15,6 +24,10 @@ async function request(path, options = {}) {
       msg = j.error || msg;
     } catch (_) {
       /* ignore */
+    }
+    if (res.status === 401) {
+      clearToken();
+      window.dispatchEvent(new Event('ga:unauthorized'));
     }
     throw new Error(msg);
   }
@@ -61,6 +74,19 @@ export const api = {
     request(`/notes-review/${id}/create-partner`, { method: 'POST', body }),
   dismissNote: (id, body) => request(`/notes-review/${id}/dismiss`, { method: 'POST', body }),
   createPartner: (body) => request('/partners', { method: 'POST', body }),
+
+  // Auth
+  auth: {
+    users: () => request('/auth/users'),
+    setPassword: (userId, newPassword) =>
+      request('/auth/set-password', { method: 'POST', body: { userId, newPassword } }),
+    login: (userId, password) =>
+      request('/auth/login', { method: 'POST', body: { userId, password } }),
+    me: () => request('/auth/me'),
+    changePassword: (currentPassword, newPassword) =>
+      request('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword } }),
+    logout: () => request('/auth/logout', { method: 'POST' }),
+  },
 };
 
 export const OUTCOME_LABELS = {
