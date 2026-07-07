@@ -17,6 +17,7 @@ exports.up = async function up(knex) {
     t.string('author_raw');
     t.integer('author_user_id').references('id').inTable('users').onDelete('SET NULL');
     t.string('status').notNullable().defaultTo('pending'); // pending | assigned | dismissed
+    // Once a human resolves this row, these point at what it became.
     t.integer('assigned_partner_id').references('id').inTable('partners').onDelete('SET NULL');
     t.integer('assigned_visit_id').references('id').inTable('visits').onDelete('SET NULL');
     t.timestamp('created_at').defaultTo(knex.fn.now());

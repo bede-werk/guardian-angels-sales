@@ -8,6 +8,7 @@ import VisitLogModal from './VisitLogModal';
 
 const MINUTES_PER_STOP = 45; // matches the scheduler's 30min visit + 15min travel assumption
 
+// Turns a minute count into "1h 45m" / "45m" / "2h" for the progress line.
 function formatHoursUsed(minutes) {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -16,16 +17,22 @@ function formatHoursUsed(minutes) {
 }
 
 // Today's route: auto-generate ~4hrs of clustered, priority-ordered stops, then
-// manually reorder / swap / skip / log each one.
+// manually reorder / swap / skip / log each one. This is the "star screen" —
+// see server/src/services/scheduler.js for how the route is actually built.
 export default function Schedule({ date, userId }) {
-  const [route, setRoute] = useState([]);
+  const [route, setRoute] = useState([]); // array of stops, in route order
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [logging, setLogging] = useState(null); // visit being logged
-  const [hours, setHours] = useState(4);
-  const [dragIndex, setDragIndex] = useState(null); // for styling only
+  const [logging, setLogging] = useState(null); // the stop currently open in the Log Visit modal, or null
+  const [hours, setHours] = useState(4); // hours budget picked in the dropdown, used when (re)generating
+
+  // Drag-and-drop reordering state. dragIndex/overIndex are just for CSS
+  // styling (which row is being dragged / hovered over); dragIndexRef is the
+  // actual source of truth read inside onDrop, since state updates inside
+  // drag event handlers can be stale by the time the drop event fires.
+  const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
-  const dragIndexRef = useRef(null); // source of truth for the drag (avoids stale closure)
+  const dragIndexRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +50,8 @@ export default function Schedule({ date, userId }) {
     load();
   }, [load]);
 
+  // Builds (or rebuilds) today's route. `regenerate: true` throws out any
+  // not-yet-completed stops first (see POST /api/schedule/generate).
   async function generate(regenerate) {
     setError(null);
     try {
@@ -54,17 +63,19 @@ export default function Schedule({ date, userId }) {
   }
 
   // Persist a reordered array of stops (optimistic; reloads on failure).
+  // "Optimistic" means the UI updates instantly (setRoute(next)) instead of
+  // waiting for the server to confirm — feels snappier for a quick reorder.
   async function persistOrder(next) {
     setRoute(next);
     try {
       await api.reorder(next.map((v) => v.visit_id));
     } catch (e) {
       setError(e.message);
-      load();
+      load(); // something went wrong — reload the real order from the server
     }
   }
 
-  // Move a stop up/down (arrow-button fallback).
+  // Move a stop up/down (arrow-button fallback for devices without drag/drop, e.g. touch).
   function move(index, dir) {
     const target = index + dir;
     if (target < 0 || target >= route.length) return;
@@ -73,7 +84,9 @@ export default function Schedule({ date, userId }) {
     persistOrder(next);
   }
 
-  // Drag a stop to a new position and persist.
+  // Drag a stop to a new position and persist. Standard HTML5 drag-and-drop:
+  // onDragStart remembers which row is being dragged, onDrop on the target row
+  // splices it out of its old spot and into the new one.
   function onDrop(targetIndex) {
     const from = dragIndexRef.current;
     if (from === null || from === targetIndex) return;
@@ -95,6 +108,9 @@ export default function Schedule({ date, userId }) {
     load();
   }
 
+  // Progress bar math: skipped stops don't count toward "active" totals, and
+  // "time used" is an estimate (completed count × the scheduler's assumed
+  // 45 min/stop), since we don't track actual visit durations.
   const activeStops = route.filter((v) => v.status !== 'skipped');
   const completedCount = activeStops.filter((v) => v.status === 'completed').length;
   const progressPct = activeStops.length ? Math.round((completedCount / activeStops.length) * 100) : 0;
@@ -116,6 +132,7 @@ export default function Schedule({ date, userId }) {
                 ))}
               </select>
             </div>
+            {/* First-time build vs. rebuild get different labels/behavior. */}
             {route.length === 0 ? (
               <Button onClick={() => generate(false)}>Plan today's visits</Button>
             ) : (
@@ -133,6 +150,7 @@ export default function Schedule({ date, userId }) {
             />
           ) : (
             <>
+              {/* Progress bar: "X of Y visits done · Zh Zm of Nh used". */}
               <div style={{ marginBottom: 14 }}>
                 <div className="progress-bar">
                   <div className="fill" style={{ width: `${progressPct}%` }} />
@@ -143,6 +161,8 @@ export default function Schedule({ date, userId }) {
                 </div>
               </div>
               <ul className="list">
+                {/* Each <li> is one stop card: draggable for reordering, with
+                    up/down arrow buttons as a non-drag fallback. */}
                 {route.map((v, i) => (
                   <li
                     key={v.visit_id}
@@ -172,6 +192,8 @@ export default function Schedule({ date, userId }) {
                         <OutcomeChip outcome={v.outcome} />
                         {v.never_visited && <span className="badge star" style={{ background: 'var(--mauve-tint-1)', color: 'var(--mauve)' }}>Never visited</span>}
                       </div>
+                      {/* "Who to ask for" — this place's primary contact, from the
+                          contacts table, with their relationship temperature. */}
                       {v.primary_contact && (
                         <div className="stop-contact">
                           <span className="tiny">Ask for <strong>{v.primary_contact.name}</strong></span>{' '}
@@ -180,6 +202,7 @@ export default function Schedule({ date, userId }) {
                           )}
                         </div>
                       )}
+                      {/* A one-line preview of what happened last time you visited. */}
                       {v.last_visit_notes && (
                         <div className="stop-note-preview">"{v.last_visit_notes}"</div>
                       )}
@@ -206,6 +229,7 @@ export default function Schedule({ date, userId }) {
         </div>
       </div>
 
+      {/* Opened by the "Log Visit"/"Edit log" button on a stop above. */}
       {logging && (
         <VisitLogModal
           visit={logging}

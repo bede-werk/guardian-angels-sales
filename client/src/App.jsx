@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api, today, getToken, clearToken } from './api';
 import Dashboard from './components/Dashboard';
 import Schedule from './components/Schedule';
-import Partners from './components/Partners';
+import Places from './components/Places';
 import NeedsMapping from './components/NeedsMapping';
 import Login from './components/Login';
 import ChangePassword from './components/ChangePassword';
@@ -10,31 +10,39 @@ import Header from './components/ui/Header';
 import Splash from './components/ui/Splash';
 import Button from './components/ui/Button';
 
+// The four tabs shown in the nav bar under the header. `id` picks which
+// component renders below; `label` is the button text.
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'schedule', label: "Today's Route" },
-  { id: 'partners', label: 'Partners' },
+  { id: 'places', label: 'Places' },
   { id: 'mapping', label: 'Needs Mapping' },
 ];
 
+// The root component: handles login/session state and renders either the
+// Login screen or the main app shell (header + tabs + whichever tab is active).
 export default function App() {
-  const [tab, setTab] = useState('dashboard');
-  const date = today();
-  const [mappingCount, setMappingCount] = useState(0);
+  const [tab, setTab] = useState('dashboard'); // which of the 4 tabs is showing
+  const date = today(); // always "today" — there's no date picker (see HANDOFF/README)
+  const [mappingCount, setMappingCount] = useState(0); // pending "Needs Mapping" count, for the tab badge
 
-  const [authUser, setAuthUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [authUser, setAuthUser] = useState(null); // the logged-in user, or null if not logged in
+  const [authLoading, setAuthLoading] = useState(true); // true while checking for a saved session on load
+  const [showChangePassword, setShowChangePassword] = useState(false); // whether the change-password modal is open
 
   const refreshMappingCount = () =>
     api.notesReviewCount().then((r) => setMappingCount(r.pending)).catch(() => {});
 
+  // If any API call gets a 401 (see api.js), it fires this event — treat it as
+  // an instant logout so the app drops back to the login screen.
   useEffect(() => {
     const onUnauthorized = () => setAuthUser(null);
     window.addEventListener('ga:unauthorized', onUnauthorized);
     return () => window.removeEventListener('ga:unauthorized', onUnauthorized);
   }, []);
 
+  // On first load, if there's a saved token, ask the server who it belongs to
+  // (GET /api/auth/me) to restore the session without making the user log in again.
   useEffect(() => {
     if (!getToken()) {
       setAuthLoading(false);
@@ -42,21 +50,23 @@ export default function App() {
     }
     api.auth.me()
       .then((u) => setAuthUser(u))
-      .catch(() => clearToken())
+      .catch(() => clearToken()) // saved token was invalid/expired — clear it
       .finally(() => setAuthLoading(false));
   }, []);
 
+  // Once we know who's logged in, load the Needs Mapping badge count.
   useEffect(() => {
     if (!authUser) return;
     refreshMappingCount();
   }, [authUser]);
 
   function logout() {
-    api.auth.logout().catch(() => {});
+    api.auth.logout().catch(() => {}); // best-effort — log out locally regardless
     clearToken();
     setAuthUser(null);
   }
 
+  // Three possible screens: branded loading splash, the login form, or the app itself.
   if (authLoading) return <Splash />;
   if (!authUser) return <Login onLogin={setAuthUser} />;
 
@@ -86,6 +96,7 @@ export default function App() {
 
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
 
+      {/* Tab bar — clicking a tab just swaps which component renders below. */}
       <nav className="tabs">
         {TABS.map((t) => (
           <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
@@ -95,11 +106,13 @@ export default function App() {
         ))}
       </nav>
 
+      {/* Only the active tab's component is mounted — the others unmount entirely
+          (so e.g. Schedule's polling/state resets each time you come back to it). */}
       {tab === 'dashboard' && (
         <Dashboard date={date} userId={authUser.id} onGoToSchedule={() => setTab('schedule')} />
       )}
       {tab === 'schedule' && <Schedule date={date} userId={authUser.id} />}
-      {tab === 'partners' && <Partners />}
+      {tab === 'places' && <Places />}
       {tab === 'mapping' && <NeedsMapping onChanged={refreshMappingCount} />}
     </div>
   );

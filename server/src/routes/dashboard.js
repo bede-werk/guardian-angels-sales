@@ -1,6 +1,9 @@
+// The dashboard is one big "rollup" endpoint: it runs several independent
+// queries in parallel (Promise.all) and stitches the results into one JSON
+// response, so the frontend can render the whole dashboard from a single request.
 const express = require('express');
 const dayjs = require('dayjs');
-const isoWeek = require('dayjs/plugin/isoWeek');
+const isoWeek = require('dayjs/plugin/isoWeek'); // adds Monday-start-of-week helpers to dayjs
 const knex = require('../db/knex');
 const { loadRoute } = require('../services/scheduler');
 const { priorityLabel } = require('../services/priority');
@@ -10,7 +13,8 @@ dayjs.extend(isoWeek);
 const router = express.Router();
 
 // GET /api/dashboard?userId=&date=YYYY-MM-DD
-// Returns: today's route, count/list of visits completed this week, and never-visited partners.
+// Returns: today's route, visits completed this week, never-visited places,
+// and a "needs attention" rollup (departed/cooling contacts + overdue visits).
 router.get('/', async (req, res, next) => {
   try {
     const userId = req.query.userId ? Number(req.query.userId) : undefined;
@@ -25,33 +29,33 @@ router.get('/', async (req, res, next) => {
         loadRoute(knex, date, userId),
 
         knex('visits as v')
-          .join('partners as p', 'p.id', 'v.partner_id')
+          .join('places as p', 'p.id', 'v.place_id')
           .where('v.status', 'completed')
           .whereBetween('v.scheduled_date', [weekStart, weekEnd])
           .modify((qb) => userId && qb.andWhere('v.user_id', userId))
           .orderBy('v.scheduled_date', 'desc')
           .select('v.id as visit_id', 'v.scheduled_date', 'v.outcome', 'p.name', 'p.city', 'p.tier'),
 
-        // Never visited = no *completed* visit yet (a partner only planned still counts
+        // Never visited = no *completed* visit yet (a place only planned still counts
         // as not-yet-visited, so they stay on the prospecting list until the call is done).
-        knex('partners as p')
-          .whereNotIn('p.id', knex('visits').where('status', 'completed').select('partner_id'))
+        knex('places as p')
+          .whereNotIn('p.id', knex('visits').where('status', 'completed').select('place_id'))
           .orderBy('p.priority_score', 'desc')
           .orderBy('p.name', 'asc')
           .select('p.id', 'p.name', 'p.category', 'p.tier', 'p.is_priority', 'p.city', 'p.zip', 'p.region'),
 
-        knex('partners').count({ c: '*' }).first(),
+        knex('places').count({ c: '*' }).first(),
 
         // Needs attention: turnover (departed contacts)...
         knex('contacts as c')
-          .join('partners as p', 'p.id', 'c.partner_id')
+          .join('places as p', 'p.id', 'c.place_id')
           .where('c.departed', true)
           .orderBy('p.name', 'asc')
-          .select('c.id as contact_id', 'c.name as contact_name', 'c.partner_id', 'p.name as partner_name'),
+          .select('c.id as contact_id', 'c.name as contact_name', 'c.place_id', 'p.name as place_name'),
 
         // ...cooling relationships (dormant/cold contacts, not already departed)...
         knex('contacts as c')
-          .join('partners as p', 'p.id', 'c.partner_id')
+          .join('places as p', 'p.id', 'c.place_id')
           .where('c.departed', false)
           .whereIn('c.relationship_temp', ['dormant', 'cold'])
           .orderBy('p.name', 'asc')
@@ -59,19 +63,19 @@ router.get('/', async (req, res, next) => {
             'c.id as contact_id',
             'c.name as contact_name',
             'c.relationship_temp',
-            'c.partner_id',
-            'p.name as partner_name'
+            'c.place_id',
+            'p.name as place_name'
           ),
 
         // ...and every visit that has a next_visit_date on file, so we can find overdue ones.
         knex('visits as v')
-          .join('partners as p', 'p.id', 'v.partner_id')
+          .join('places as p', 'p.id', 'v.place_id')
           .whereNotNull('v.next_visit_date')
-          .orderBy('v.partner_id')
+          .orderBy('v.place_id')
           .orderBy('v.scheduled_date', 'desc')
           .orderBy('v.id', 'desc')
           .select(
-            'v.partner_id',
+            'v.place_id',
             'v.next_visit_date',
             'p.name',
             'p.category',
@@ -82,10 +86,13 @@ router.get('/', async (req, res, next) => {
           ),
       ]);
 
-    // Keep only each partner's most recent next_visit_date, then filter to overdue ones.
-    const latestNextVisitByPartner = {};
-    for (const r of nextVisitRows) if (!(r.partner_id in latestNextVisitByPartner)) latestNextVisitByPartner[r.partner_id] = r;
-    const overduePartners = Object.values(latestNextVisitByPartner)
+    // The query above returns every visit with a next_visit_date, one place at a
+    // time, newest-first — so the first row per place_id is that place's most
+    // current next-visit-date. Anything before "today" counts as overdue.
+    // Keep only each place's most recent next_visit_date, then filter to overdue ones.
+    const latestNextVisitByPlace = {};
+    for (const r of nextVisitRows) if (!(r.place_id in latestNextVisitByPlace)) latestNextVisitByPlace[r.place_id] = r;
+    const overduePlaces = Object.values(latestNextVisitByPlace)
       .filter((r) => r.next_visit_date < date)
       .sort((a, b) => a.next_visit_date.localeCompare(b.next_visit_date));
 
@@ -104,18 +111,18 @@ router.get('/', async (req, res, next) => {
       },
       never_visited: {
         count: neverVisited.length,
-        total_partners: Number(totals.c),
-        partners: neverVisited.map((p) => ({
+        total_places: Number(totals.c),
+        places: neverVisited.map((p) => ({
           ...p,
           is_priority: !!p.is_priority,
           priority_label: priorityLabel(p.tier, !!p.is_priority),
         })),
       },
       needs_attention: {
-        count: departedContacts.length + coolingContacts.length + overduePartners.length,
+        count: departedContacts.length + coolingContacts.length + overduePlaces.length,
         departed_contacts: departedContacts,
         cooling_contacts: coolingContacts,
-        overdue_partners: overduePartners,
+        overdue_places: overduePlaces,
       },
     });
   } catch (err) {

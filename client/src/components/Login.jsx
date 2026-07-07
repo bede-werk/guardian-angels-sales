@@ -7,16 +7,18 @@ const MIN_PASSWORD_LENGTH = 6;
 
 // Auth landing page: pick your name, then either log in (if you already have a
 // password) or create one (first time). Calls onLogin({ user }) once signed in.
+// App.jsx renders this instead of the main app whenever there's no logged-in user.
 export default function Login({ onLogin }) {
-  const [users, setUsers] = useState([]);
-  const [userId, setUserId] = useState('');
-  const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [users, setUsers] = useState([]); // the team member list for the dropdown
+  const [userId, setUserId] = useState(''); // currently selected user's id (as a string, matches <select> values)
+  const [password, setPassword] = useState(''); // login form field
+  const [newPassword, setNewPassword] = useState(''); // first-time setup form field
+  const [confirmPassword, setConfirmPassword] = useState(''); // first-time setup form field
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false); // true while a login/setup request is in flight
   const [loadingUsers, setLoadingUsers] = useState(true);
 
+  // Load the user list once on mount, and default the dropdown to the first person.
   useEffect(() => {
     api.auth.users()
       .then((u) => {
@@ -27,8 +29,11 @@ export default function Login({ onLogin }) {
       .finally(() => setLoadingUsers(false));
   }, []);
 
+  // The full user object for whichever id is currently selected — used to
+  // decide whether to show the "log in" form or the "set a password" form.
   const selected = users.find((u) => String(u.id) === String(userId));
 
+  // Switching the selected person clears whatever was typed for the previous one.
   function selectUser(id) {
     setUserId(id);
     setPassword('');
@@ -37,6 +42,7 @@ export default function Login({ onLogin }) {
     setError(null);
   }
 
+  // Shown when the selected user already has a password set.
   async function submitLogin(e) {
     e.preventDefault();
     setError(null);
@@ -44,7 +50,7 @@ export default function Login({ onLogin }) {
     try {
       const { token, user } = await api.auth.login(Number(userId), password);
       setToken(token);
-      onLogin(user);
+      onLogin(user); // tells App.jsx we're logged in now
     } catch (e) {
       setError(e.message);
     } finally {
@@ -52,6 +58,7 @@ export default function Login({ onLogin }) {
     }
   }
 
+  // Shown when the selected user has never set a password before.
   async function submitCreatePassword(e) {
     e.preventDefault();
     setError(null);
@@ -99,6 +106,7 @@ export default function Login({ onLogin }) {
                 </select>
               </div>
 
+              {/* Two different forms depending on whether this person has a password yet. */}
               {selected?.hasPassword ? (
                 <form onSubmit={submitLogin} className="stack" style={{ gap: 14, marginTop: 14 }}>
                   <div>

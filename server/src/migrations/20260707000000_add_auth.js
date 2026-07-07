@@ -3,9 +3,9 @@
 
 exports.up = async function up(knex) {
   await knex.schema.alterTable('users', (t) => {
-    t.string('password_hash');
-    t.string('auth_token');
-    t.index(['auth_token']);
+    t.string('password_hash'); // bcrypt hash; null until the user sets a password for the first time
+    t.string('auth_token'); // current session token, or null if logged out (see requireAuth.js)
+    t.index(['auth_token']); // requireAuth looks users up by this on every request
   });
 };
 

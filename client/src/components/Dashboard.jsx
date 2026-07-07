@@ -5,14 +5,16 @@ import TemperatureDot from './ui/TemperatureDot';
 import StatTile from './ui/StatTile';
 import EmptyState from './ui/EmptyState';
 import Button from './ui/Button';
-import PartnerDetail from './PartnerDetail';
+import PlaceDetail from './PlaceDetail';
 
-// At-a-glance: today's route, visits completed this week, partners never visited,
+// At-a-glance: today's route, visits completed this week, places never visited,
 // and relationships that need attention (departed / cooling contacts, overdue visits).
+// This whole screen is driven by one request: GET /api/dashboard (see
+// server/src/routes/dashboard.js), which bundles everything below into one response.
 export default function Dashboard({ date, userId, onGoToSchedule }) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(null); // the dashboard API response, or null while loading
   const [error, setError] = useState(null);
-  const [selectedPartnerId, setSelectedPartnerId] = useState(null);
+  const [selectedPlaceId, setSelectedPlaceId] = useState(null); // which place's detail modal is open, if any
 
   const load = useCallback(async () => {
     setError(null);
@@ -23,6 +25,8 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
     }
   }, [date, userId]);
 
+  // Reload whenever the logged-in user or date changes (date never actually
+  // changes today since there's no date picker, but userId can).
   useEffect(() => {
     load();
   }, [load]);
@@ -30,13 +34,14 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
   if (error) return <div className="error-banner">{error}</div>;
   if (!data) return <div className="loading">Loading dashboard…</div>;
 
-  const neverPct = data.never_visited.total_partners
-    ? Math.round((data.never_visited.count / data.never_visited.total_partners) * 100)
+  const neverPct = data.never_visited.total_places
+    ? Math.round((data.never_visited.count / data.never_visited.total_places) * 100)
     : 0;
   const attention = data.needs_attention;
 
   return (
     <div className="grid" style={{ gap: 20 }}>
+      {/* Three big stat tiles across the top. */}
       <div className="grid stats">
         <StatTile
           num={data.today.count}
@@ -50,11 +55,12 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
         />
         <StatTile
           num={data.never_visited.count}
-          label="Partners never visited"
-          hint={`${neverPct}% of ${data.never_visited.total_partners} total`}
+          label="Places never visited"
+          hint={`${neverPct}% of ${data.never_visited.total_places} total`}
         />
       </div>
 
+      {/* Two side-by-side cards: today's route preview, and this week's completed visits. */}
       <div className="grid cols2">
         <div className="card">
           <div className="card-head">
@@ -109,6 +115,9 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
         </div>
       </div>
 
+      {/* "Needs attention" merges three different lists from the API (overdue
+          next-visit dates, cooling/dormant contacts, departed contacts) into one
+          feed. Clicking any row opens that place's detail modal. */}
       <div className="card">
         <div className="card-head">
           <h2>Needs attention</h2>
@@ -119,8 +128,8 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
             <EmptyState message="Nothing needs attention right now — every relationship is in good shape." />
           ) : (
             <ul className="list">
-              {attention.overdue_partners.map((p) => (
-                <li key={`overdue-${p.partner_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPartnerId(p.partner_id)}>
+              {attention.overdue_places.map((p) => (
+                <li key={`overdue-${p.place_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(p.place_id)}>
                   <div className="main">
                     <div className="name tiny">{p.name}</div>
                     <div className="meta">Next visit was due {p.next_visit_date} · {p.city}</div>
@@ -129,17 +138,17 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
                 </li>
               ))}
               {attention.cooling_contacts.map((c) => (
-                <li key={`cooling-${c.contact_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPartnerId(c.partner_id)}>
+                <li key={`cooling-${c.contact_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
                   <div className="main">
-                    <div className="name tiny">{c.contact_name} <span className="muted">· {c.partner_name}</span></div>
+                    <div className="name tiny">{c.contact_name} <span className="muted">· {c.place_name}</span></div>
                   </div>
                   <TemperatureDot temp={c.relationship_temp} />
                 </li>
               ))}
               {attention.departed_contacts.map((c) => (
-                <li key={`departed-${c.contact_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPartnerId(c.partner_id)}>
+                <li key={`departed-${c.contact_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
                   <div className="main">
-                    <div className="name tiny">{c.contact_name} <span className="muted">· {c.partner_name}</span></div>
+                    <div className="name tiny">{c.contact_name} <span className="muted">· {c.place_name}</span></div>
                     <div className="meta">Departed — time to rebuild this relationship</div>
                   </div>
                 </li>
@@ -149,10 +158,11 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
         </div>
       </div>
 
+      {/* Prospecting list: highest-priority places that have never had a completed visit. */}
       <div className="card">
         <div className="card-head">
-          <h2>High-priority partners never visited</h2>
-          <span className="muted tiny">top {Math.min(12, data.never_visited.partners.length)} by priority</span>
+          <h2>High-priority places never visited</h2>
+          <span className="muted tiny">top {Math.min(12, data.never_visited.places.length)} by priority</span>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
           <table>
@@ -160,8 +170,8 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
               <tr><th>Organization</th><th>Category</th><th>Priority</th><th>Location</th></tr>
             </thead>
             <tbody>
-              {data.never_visited.partners.slice(0, 12).map((p) => (
-                <tr key={p.id} onClick={() => setSelectedPartnerId(p.id)}>
+              {data.never_visited.places.slice(0, 12).map((p) => (
+                <tr key={p.id} onClick={() => setSelectedPlaceId(p.id)}>
                   <td><strong>{p.name}</strong></td>
                   <td><CategoryChip category={p.category} /></td>
                   <td><TierChip tier={p.tier} isPriority={p.is_priority} /></td>
@@ -173,8 +183,9 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
         </div>
       </div>
 
-      {selectedPartnerId && (
-        <PartnerDetail partnerId={selectedPartnerId} onClose={() => setSelectedPartnerId(null)} onChanged={load} />
+      {/* Clicking any place row/card above opens this same detail modal. */}
+      {selectedPlaceId && (
+        <PlaceDetail placeId={selectedPlaceId} onClose={() => setSelectedPlaceId(null)} onChanged={load} />
       )}
     </div>
   );

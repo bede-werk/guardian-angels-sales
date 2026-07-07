@@ -1,10 +1,14 @@
+// Today's Route — thin HTTP wrappers around services/scheduler.js, which has
+// all the actual route-building logic. This file just validates input and
+// translates query/body params into the shapes the scheduler functions expect.
 const express = require('express');
 const knex = require('../db/knex');
 const { generateSchedule, loadRoute, capacityFor } = require('../services/scheduler');
 
 const router = express.Router();
 
-// GET /api/schedule?date=YYYY-MM-DD&userId= — the route for a given day.
+// GET /api/schedule?date=YYYY-MM-DD&userId= — the route for a given day
+// (read-only; does NOT create anything — use POST /generate for that).
 router.get('/', async (req, res, next) => {
   try {
     const { date, userId } = req.query;
@@ -18,6 +22,8 @@ router.get('/', async (req, res, next) => {
 
 // POST /api/schedule/generate — auto-build a ~4hr clustered, priority-ordered route.
 // Body: { date, userId, hours?, visitMinutes?, travelMinutes?, regenerate? }
+// (If a route already exists for that day, generateSchedule just returns it —
+// pass regenerate: true to throw out the unfinished stops and rebuild.)
 router.post('/generate', async (req, res, next) => {
   try {
     const { date, userId, hours, visitMinutes, travelMinutes, regenerate } = req.body;
@@ -41,7 +47,8 @@ router.post('/generate', async (req, res, next) => {
 });
 
 // PATCH /api/schedule/reorder — persist a manual reorder / swap of the day's stops.
-// Body: { orderedVisitIds: [id, id, ...] }
+// Body: { orderedVisitIds: [id, id, ...] } — the new order is just the array
+// order itself; each visit's sort_order is set to its index in the array.
 router.patch('/reorder', async (req, res, next) => {
   try {
     const { orderedVisitIds } = req.body;

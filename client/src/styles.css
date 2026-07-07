@@ -1,3 +1,11 @@
+/* Guardian Angels CRM — global stylesheet.
+   Loaded once in main.jsx; every component below relies on the same class
+   names and CSS variables defined here rather than writing their own styles.
+   Structure: :root design tokens (colors/fonts/spacing) first, then one
+   section per UI area, roughly in the order a screen would use them
+   (header/tabs -> cards/buttons/inputs -> chips/badges -> lists/tables ->
+   modals -> screen-specific bits at the bottom). */
+
 :root {
   /* ---- Brand hues (Guardian Angels brand guide) ---- */
   --blue: #005CB9;
@@ -36,13 +44,18 @@
   --grey-tint-2: #E4E4E6;
   --grey-tint-3: #C9CACC;
 
-  /* Relationship-temperature scale: full mauve (hot) -> full teal (dormant) */
+  /* Relationship-temperature scale: full mauve (hot) -> full teal (dormant).
+     Used by TemperatureDot.jsx — always paired with a text label in the UI,
+     never color alone (see that component's comment for why). */
   --temp-hot: var(--mauve);
   --temp-warm: #833A6C;
   --temp-cold: #4B718F;
   --temp-dormant: var(--teal);
 
-  /* ---- Semantic aliases used throughout the app ---- */
+  /* ---- Semantic aliases used throughout the app ----
+     Naming things by their ROLE (--text, --border, --danger) rather than
+     their hue means most of the app's CSS never has to know which brand
+     color backs a given role — only this block does. */
   --brand: var(--blue);
   --brand-dark: var(--blue-dark);
   --bg: #F7F9FB;
@@ -50,21 +63,24 @@
   --text: #24272B;
   --muted: var(--grey);
   --border: var(--grey-tint-2);
-  --ok: var(--blue);
+  --ok: var(--blue); /* "success/neutral" always maps to blue or grey, never green */
   --warn: var(--mauve-dark);
-  --danger: var(--mauve);
+  --danger: var(--mauve); /* mauve is reserved for attention/urgent states */
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
 
-  /* Tier badges */
+  /* Tier badges (Tier 1/2/3 — see TierChip in ui/Chip.jsx) */
   --tier1: var(--blue-dark);
   --tier2: var(--teal-dark);
   --tier3: var(--grey-dark);
 
-  /* ---- Type ---- */
-  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
-  --font-sans: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  /* ---- Type ----
+     Source Serif 4 / Nunito Sans are free substitutes for the licensed brand
+     fonts (Minion Pro / Avenir) — loaded via Google Fonts in index.html.
+     Changing which fonts the app uses only ever requires editing these two lines. */
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif; /* headings, titles, brand moments */
+  --font-sans: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; /* everything functional */
 
-  /* ---- Spacing / radius ---- */
+  /* ---- Spacing / radius ---- shared scale so cards/buttons/inputs stay visually consistent */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -85,22 +101,25 @@ body {
   font-size: 14px;
 }
 
+/* All headings get the brand serif; everything else (body text, the .btn/
+   input rules below) uses the sans font set on <body> above. */
 h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 
 .app { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
 
-/* Header */
+/* Header — see ui/Header.jsx. Logo on the left, whatever App.jsx passes as
+   children (date, signed-in-as) right-aligned via .controls. */
 .header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 18px 0; margin-bottom: 8px; flex-wrap: wrap; gap: 12px;
 }
 .brand { display: flex; align-items: center; gap: 12px; }
-.brand .logo-img { height: 40px; width: auto; display: block; }
+.brand .logo-img { height: 100px; width: auto; display: block; }
 .brand h1 { font-size: 18px; margin: 0; }
 .brand .sub { font-size: 12px; color: var(--muted); font-family: var(--font-sans); }
-.header .controls { display: flex; align-items: center; gap: 10px; }
+.header .controls { display: flex; align-items: center; gap: 20px; }
 
-/* Tabs */
+/* Tabs — the 4-item nav in App.jsx (Dashboard / Today's Route / Places / Needs Mapping) */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
 .tab {
   background: none; border: none; padding: 10px 16px; cursor: pointer;
@@ -109,7 +128,10 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
 
-/* Cards / grid */
+/* Cards / grid — .card is the white rounded box used everywhere (see
+   ui/Card.jsx, though most screens still write these divs by hand). .grid.stats
+   is the Dashboard's 3-tile row (see ui/StatTile.jsx); .grid.cols2 is a
+   2-column layout that collapses to 1 column on narrower screens. */
 .grid { display: grid; gap: 16px; }
 .grid.stats { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .grid.cols2 { grid-template-columns: 1.4fr 1fr; align-items: start; }
@@ -120,12 +142,15 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .card .card-head h2 { font-size: 16px; margin: 0; }
 .card .card-body { padding: 12px 16px; }
 
+/* One Dashboard stat tile (big number + label + hint) — see ui/StatTile.jsx */
 .stat { padding: 16px; }
 .stat .num { font-family: var(--font-serif); font-size: 30px; font-weight: 700; color: var(--blue-dark); }
 .stat .label { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .stat .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
-/* Buttons */
+/* Buttons — the one button system, see ui/Button.jsx for the variant/size props
+   that map onto these classes (.secondary/.ghost/.danger/.small/.big). Plain
+   ".btn" with no extra class is the primary (solid blue) look. */
 .btn {
   background: var(--blue); color: #fff; border: none; border-radius: var(--radius-sm);
   padding: 8px 14px; font-family: var(--font-sans); font-size: 13px; cursor: pointer; font-weight: 600;
@@ -141,7 +166,8 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .btn.danger:hover { background: var(--mauve-tint-2); }
 .btn.big { padding: 12px 18px; font-size: 14px; border-radius: var(--radius-md); }
 
-/* Inputs */
+/* Inputs — every text field/dropdown/textarea in the app shares this look;
+   `label.field` is the small grey caption above a field (e.g. "Contact name"). */
 input, select, textarea {
   font-family: var(--font-sans); font-size: 13px; padding: 8px 10px; border: 1px solid var(--border);
   border-radius: var(--radius-sm); background: #fff; color: var(--text); width: 100%;
@@ -151,12 +177,13 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1; min-width: 120px; }
 
-/* Chips / badges */
+/* Chips / badges — small colored pills. See ui/Chip.jsx (TierChip/StatusChip/
+   OutcomeChip) for which component renders which class below. */
 .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.badge.t1 { background: var(--blue-tint-1); color: var(--tier1); }
-.badge.t2 { background: var(--teal-tint-1); color: var(--tier2); }
-.badge.t3 { background: var(--grey-tint-1); color: var(--tier3); }
-.badge.star { background: var(--mauve-tint-1); color: var(--mauve); }
+.badge.t1 { background: var(--blue-tint-1); color: var(--tier1); } /* Tier 1 */
+.badge.t2 { background: var(--teal-tint-1); color: var(--tier2); } /* Tier 2 */
+.badge.t3 { background: var(--grey-tint-1); color: var(--tier3); } /* Tier 3 */
+.badge.star { background: var(--mauve-tint-1); color: var(--mauve); } /* ⭐ Priority flag */
 .badge.status-planned { background: var(--blue-tint-1); color: var(--blue); }
 .badge.status-completed { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.status-skipped { background: var(--grey-tint-1); color: var(--muted); }
@@ -169,14 +196,18 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 /* Category chips: generated blue/teal tint ramp, mauve deliberately excluded */
 .cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 
-/* Temperature dot */
+/* Temperature dot — see ui/TemperatureDot.jsx; the colored dot + text label
+   showing a contact's relationship_temp (hot/warm/cold/dormant). */
 .temp-dot-wrap { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
 .temp-dot { width: 9px; height: 9px; border-radius: 999px; flex-shrink: 0; display: inline-block; }
 
-/* Attention flag (overdue / departed / never-visited) */
+/* Attention flag (overdue / departed / never-visited) — a mauve left border,
+   applied to rows in Dashboard's "Needs attention" list and never-visited
+   stops on Today's Route. Mauve is used sparingly on purpose (see :root above). */
 .attention-flag { border-left: 3px solid var(--mauve); }
 
-/* Lists / tables */
+/* Lists / tables — .list/.stop is the vertical-timeline row style used by
+   Today's Route and the Dashboard's route/completed-this-week previews. */
 .list { list-style: none; margin: 0; padding: 0; }
 .stop {
   display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--border);
@@ -190,12 +221,13 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .stop .actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .stop.done { opacity: 0.75; }
 .stop.skipped { opacity: 0.5; }
-.stop.dragging { opacity: 0.4; }
-.stop.drag-over { box-shadow: inset 0 2px 0 var(--blue); }
+.stop.dragging { opacity: 0.4; } /* the row currently being dragged, in Schedule.jsx */
+.stop.drag-over { box-shadow: inset 0 2px 0 var(--blue); } /* the row a drag is currently hovering over */
 .stop.attention-flag { padding-left: 10px; }
 .drag-handle { color: var(--muted); cursor: grab; font-size: 14px; text-align: center; user-select: none; line-height: 1; }
 .drag-handle:active { cursor: grabbing; }
 
+/* Up/down arrow buttons — the non-drag fallback for reordering a stop (Schedule.jsx) */
 .reorder { display: flex; flex-direction: column; gap: 2px; }
 .reorder button { border: 1px solid var(--border); background: #fff; border-radius: 6px; width: 24px; height: 20px;
   cursor: pointer; line-height: 1; padding: 0; color: var(--muted); }
@@ -207,26 +239,32 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .stop-note-preview { margin-top: 4px; font-size: 12px; color: var(--muted); font-style: italic; }
 .stop-buttons { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
+/* Data tables — Places directory and Dashboard's "never visited" list */
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 
+/* Small general-purpose utility classes used all over the JSX */
 .muted { color: var(--muted); }
 .tiny { font-size: 12px; }
 .right { text-align: right; }
-.spacer { flex: 1; }
-.stack { display: flex; flex-direction: column; gap: 4px; }
-.tag-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.spacer { flex: 1; } /* pushes flex siblings apart, e.g. in a flex row's empty middle */
+.stack { display: flex; flex-direction: column; gap: 4px; } /* vertical stack of small pieces of text */
+.tag-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } /* row of chips/badges */
 
-/* Empty state */
+/* Empty state — see ui/EmptyState.jsx: the wing icon + brand-voice message
+   shown whenever a list/section has nothing to display. */
 .empty-state { padding: 36px 24px; text-align: center; color: var(--muted); }
 .empty-state .empty-icon { width: 56px; height: auto; opacity: 0.35; margin-bottom: 12px; }
 .empty-state .empty-message { font-size: 13px; max-width: 360px; margin: 0 auto 14px; line-height: 1.5; }
 /* Legacy alias so any un-migrated call site still renders sanely */
 .empty { padding: 24px; text-align: center; color: var(--muted); }
 
-/* Modal / slide-up sheet */
+/* Modal / slide-up sheet — the dark overlay + centered white box pattern used
+   by every *Modal.jsx component (VisitLogModal, ContactModal, PlaceDetail,
+   ChangePassword, NeedsMapping's create-place modal). On narrow screens the
+   @media rule further down turns this into a bottom slide-up sheet instead. */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); display: grid; place-items: center; padding: 20px; z-index: 50; }
 .modal { background: #fff; border-radius: var(--radius-lg); width: 100%; max-width: 560px; max-height: 90vh; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
 .modal .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: #fff; }
@@ -234,9 +272,11 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .modal .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .modal .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: #fff; }
 .close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--muted); line-height: 1; }
+/* The big tap-chip outcome picker in VisitLogModal (Interested / Not ready / etc). */
 .outcome-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .outcome-btn { padding: 14px 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; cursor: pointer; text-align: center; font-size: 13px; font-weight: 600; }
 .outcome-btn.active { border-color: var(--blue); background: var(--blue-tint-1); color: var(--blue); }
+/* The "✓ Visit logged. Well done." confirmation VisitLogModal shows briefly after saving. */
 .save-confirmation { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 10px; text-align: center; }
 .save-confirmation .check { width: 44px; height: 44px; border-radius: 999px; background: var(--teal-tint-2); color: var(--teal-dark); display: grid; place-items: center; font-size: 22px; }
 .save-confirmation .msg { font-family: var(--font-serif); font-size: 17px; color: var(--text); }
@@ -248,7 +288,8 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   @keyframes sheet-up { from { transform: translateY(24px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
 }
 
-/* Partner picker (needs-mapping) */
+/* Place picker (needs-mapping) — the custom autocomplete dropdown in
+   NeedsMapping.jsx's PlacePicker component. */
 .picker { position: relative; flex: 2; }
 .picker-menu { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--border);
   border-radius: var(--radius-sm); box-shadow: var(--shadow); z-index: 20; margin-top: 4px; max-height: 260px; overflow: auto; }
@@ -257,7 +298,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .picker-item:last-child { border-bottom: none; }
 .picker-item:hover { background: var(--blue-tint-1); }
 
-/* Tab count badge */
+/* Tab count badge — the "99" pending-count bubble on the Needs Mapping tab */
 .tab .count { display: inline-block; margin-left: 6px; background: var(--blue); color: #fff; border-radius: 999px;
   font-size: 11px; font-weight: 700; padding: 1px 7px; }
 .tab:not(.active) .count { background: var(--grey-tint-2); color: var(--text); }
@@ -265,32 +306,35 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .error-banner { background: var(--mauve-tint-1); color: var(--mauve); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
 
-/* Auth landing page */
+/* Auth landing page — Login.jsx, the pick-a-name-then-password screen */
 .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
 .auth-card { width: 100%; max-width: 380px; }
 .auth-card .card-body { display: flex; flex-direction: column; gap: 4px; padding: 28px 26px; }
 .auth-brand { margin-bottom: 18px; }
-.auth-brand .logo-img { height: 34px; width: auto; display: block; margin-bottom: 10px; }
+.auth-brand .logo-img { height: 80px; width: auto; display: block; margin-bottom: 10px; }
 .auth-brand h1 { font-size: 17px; margin: 0; }
 
-/* Splash / branded loading screen */
+/* Splash / branded loading screen — ui/Splash.jsx, shown while App.jsx checks
+   for a saved login session on page load. */
 .splash { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: var(--blue); color: #fff; text-align: center; padding: 20px; }
 .splash .logo-img { height: 56px; width: auto; }
 .splash .tagline { font-family: var(--font-serif); font-size: 16px; color: #fff; opacity: 0.92; max-width: 320px; }
 
-/* Signed-in-as chip in the header */
+/* Signed-in-as chip in the header (App.jsx's right-side header controls) */
 .user-menu { display: flex; flex-direction: column; }
 .user-menu .tag-list { font-size: 13px; font-weight: 600; }
 
-/* Static (read-only) date display in the header */
+/* Static (read-only) date display in the header — there's no date picker,
+   today's date is just shown as text (App.jsx) */
 .static-date { padding: 8px 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
 
-/* Progress bar (Today/Route) */
+/* Progress bar (Today/Route) — "X of Y visits done · Zh Zm of Nh used", see Schedule.jsx */
 .progress-bar { height: 8px; border-radius: 999px; background: var(--blue-tint-1); overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--blue); border-radius: 999px; transition: width 0.3s ease; }
 .progress-label { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
-/* Contact cards (People here) */
+/* Contact cards (People here) — the grid of ContactCard components on
+   PlaceDetail.jsx; .departed tints the card mauve for someone who's left their job. */
 .contact-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .contact-card.departed { border-color: var(--mauve-tint-3); background: var(--mauve-tint-1); }
 .contact-card .contact-name { font-weight: 700; }

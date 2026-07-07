@@ -3,10 +3,14 @@ import { api, OUTCOME_LABELS } from '../api';
 import Button from './ui/Button';
 
 // Modal for logging/updating a visit: outcome, notes, key contact, next visit date.
-// `visit` may be a scheduled stop (has visit_id) or, when opened from a partner with
-// no scheduled visit, `partnerId` is provided to create an ad-hoc visit.
-export default function VisitLogModal({ visit, partnerId, partnerName, onClose, onSaved }) {
-  const resolvedPartnerId = visit?.partner_id || partnerId;
+// `visit` may be a scheduled stop (has visit_id, from Schedule.jsx) or, when
+// opened from a place with no scheduled visit, `placeId` is provided
+// instead to create a brand-new ad-hoc visit (from PlaceDetail.jsx).
+// On narrow screens this renders as a bottom slide-up sheet instead of a
+// centered modal — see the @media rule for .modal-backdrop in styles.css.
+export default function VisitLogModal({ visit, placeId, placeName, onClose, onSaved }) {
+  // Whichever way this modal was opened, we need to know which place it's for.
+  const resolvedPlaceId = visit?.place_id || placeId;
   const [form, setForm] = useState({
     outcome: visit?.outcome || '',
     notes: visit?.notes || '',
@@ -16,20 +20,24 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
     contact_phone: visit?.contact_phone || '',
     next_visit_date: visit?.next_visit_date || '',
   });
-  const [contacts, setContacts] = useState([]);
-  const [pickedContactId, setPickedContactId] = useState('');
+  const [contacts, setContacts] = useState([]); // this place's contacts, for the "who did you meet?" picker
+  const [pickedContactId, setPickedContactId] = useState(''); // which contact is selected in that picker
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(false); // true after a successful save — shows the confirmation screen
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const title = partnerName || visit?.name || visit?.partner_name || 'Visit';
+  const title = placeName || visit?.name || visit?.place_name || 'Visit';
 
+  // Load this place's contact list once we know who the place is, so the
+  // "who did you meet?" dropdown has real options.
   useEffect(() => {
-    if (!resolvedPartnerId) return;
-    api.contacts.list(resolvedPartnerId).then(setContacts).catch(() => {});
-  }, [resolvedPartnerId]);
+    if (!resolvedPlaceId) return;
+    api.contacts.list(resolvedPlaceId).then(setContacts).catch(() => {});
+  }, [resolvedPlaceId]);
 
+  // Selecting someone from the "who did you meet?" dropdown pre-fills the
+  // contact_* fields below from their saved info (still editable afterward).
   function pickContact(id) {
     setPickedContactId(id);
     const c = contacts.find((x) => String(x.id) === String(id));
@@ -43,6 +51,10 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
     }));
   }
 
+  // Saves the form. If we're editing an existing scheduled stop, PATCH it;
+  // otherwise POST a new ad-hoc visit. `markComplete` is true for the "Save &
+  // mark complete" button, false for the plain "Save" (log progress without
+  // finishing the visit yet).
   async function save(markComplete) {
     setSaving(true);
     setError(null);
@@ -53,10 +65,12 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
       if (visit?.visit_id) {
         saved = await api.updateVisit(visit.visit_id, payload);
       } else {
-        saved = await api.createVisit({ partner_id: partnerId, scheduled_date: new Date().toISOString().slice(0, 10), ...payload });
+        saved = await api.createVisit({ place_id: placeId, scheduled_date: new Date().toISOString().slice(0, 10), ...payload });
       }
       onSaved?.(saved);
       setDone(true);
+      // Show the "Visit logged. Well done." confirmation briefly before
+      // auto-closing, instead of the modal just vanishing instantly.
       setTimeout(() => onClose(), 900);
     } catch (e) {
       setError(e.message);
@@ -64,6 +78,8 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
     }
   }
 
+  // After a successful save, swap the whole modal for a brief confirmation
+  // message (see the setTimeout above that closes it).
   if (done) {
     return (
       <div className="modal-backdrop">
@@ -87,6 +103,8 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
 
+          {/* Outcome as big tap-chips — the one required-feeling field, meant
+              to be logged in a couple of taps without much typing. */}
           <div>
             <label className="field">Outcome</label>
             <div className="outcome-group">
@@ -108,6 +126,7 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
             <textarea rows={3} value={form.notes} onChange={set('notes')} placeholder="What happened, next steps…" />
           </div>
 
+          {/* Only shown if this place actually has contacts on file. */}
           {contacts.length > 0 && (
             <div>
               <label className="field">Who did you meet?</label>
@@ -120,6 +139,8 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
             </div>
           )}
 
+          {/* These stay editable even after picking a contact above — this is
+              a per-visit snapshot, not a live link to the contacts table. */}
           <div className="row">
             <div>
               <label className="field">Contact name</label>

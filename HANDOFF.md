@@ -11,8 +11,8 @@ current state, and next steps.
 ## 1. What this is
 
 A full-stack **sales visit scheduling app** for **Guardian Angels Homecare** (Lincoln, NE).
-It helps a small team plan and log referral-partner sales visits, and it holds 2 years of
-historical notes as partner history.
+It helps a small team plan and log referral-place sales visits, and it holds 2 years of
+historical notes as place history.
 
 **Location on disk:** `/Users/bedefulton/guardian-angels-sales`
 **GitHub:** private repo `guardian-angels-sales` (source of truth)
@@ -38,7 +38,7 @@ or use the helper `./dev.sh` which sets PATH automatically.
 
 ```
 guardian-angels-sales/
-├── Guardian Angels Sales List.xlsx   # partner source data (sheet "📋 Visit Tracker", header row 2)
+├── Guardian Angels Sales List.xlsx   # place source data (sheet "📋 Visit Tracker", header row 2)
 ├── ReferrerNotes.xlsx                # 2 years of notes (Referrer, Time, Administrator, Note)
 ├── dev.sh                            # starts backend + frontend together (handles nvm PATH)
 ├── package.json                      # root: build/start scripts for cloud deploy
@@ -56,17 +56,17 @@ guardian-angels-sales/
 │       ├── services/
 │       │   ├── priority.js           # priority score + region ("side of town") helpers
 │       │   └── scheduler.js          # daily route generator
-│       ├── routes/                   # partners, visits, schedule, dashboard, users, notesReview
+│       ├── routes/                   # places, visits, schedule, dashboard, users, notesReview
 │       └── scripts/
-│           ├── import-excel.js       # importPartners() — partner list
+│           ├── import-excel.js       # importPlaces() — place list
 │           └── import-notes.js       # importNotes() — historical notes
 └── client/
     ├── vite.config.js                # dev proxy /api -> :4000
     └── src/
-        ├── App.jsx                   # tabs: Dashboard, Today's Route, Partners, Needs Mapping
+        ├── App.jsx                   # tabs: Dashboard, Today's Route, Places, Needs Mapping
         ├── api.js
         ├── styles.css
-        └── components/               # Dashboard, Schedule, Partners, PartnerDetail,
+        └── components/               # Dashboard, Schedule, Places, PlaceDetail,
                                       # VisitLogModal, NeedsMapping, Badges
 ```
 
@@ -76,30 +76,30 @@ guardian-angels-sales/
 
 - **users** — team members (`id, name, email`). Current: **Bede Fulton, Nikki Shasserre,
   Lisa Marks, Basil Fulton**. (Placeholder "Sales Rep" and test "Dana Fields" were removed.)
-- **partners** — referral partners from the Excel (`name, category, tier 1/2/3, is_priority,
+- **places** — referral places from the Excel (`name, category, tier 1/2/3, is_priority,
   priority_score, address, city, state, zip, region`). 261 rows.
-- **visits** — one planned/completed/skipped touchpoint by a user on a partner for a date.
+- **visits** — one planned/completed/skipped touchpoint by a user on a place for a date.
   Fields: `status, sort_order, outcome, notes, contact_*, next_visit_date, source, completed_at`.
   `source` = `manual` (in-app) or `imported_note` (from the notes spreadsheet).
 - **notes_review** — "needs mapping" bucket: imported notes whose referrer didn't match a
-  partner (`referrer_raw, note_text, note_date, author_*, status, assigned_*`).
+  place (`referrer_raw, note_text, note_date, author_*, status, assigned_*`).
 
 ---
 
 ## 5. Key features (all built & working)
 
-- **Import partners** from Excel (idempotent upsert). Normalizes category typos
+- **Import places** from Excel (idempotent upsert). Normalizes category typos
   (`Legal and Trust`→`Legal & Trust`, `Senior Adisors`→`Senior Advisors`).
 - **Daily schedule generator** — fills ~4 hrs (30 min visit + 15 min travel ≈ 5 stops),
-  seeds on highest-priority partner, clusters by region/zip, orders by priority. Manual
+  seeds on highest-priority place, clusters by region/zip, orders by priority. Manual
   reorder (drag-and-drop + up/down arrows), skip, remove.
 - **Visit logging** — outcome (interested / not_ready / follow_up / no_answer), notes,
   key contact (name/title/email/phone), next visit date.
-- **Partner directory** — search + filter (category, tier, city, zip, never-visited); shows
+- **Place directory** — search + filter (category, tier, city, zip, never-visited); shows
   last **completed** visit and latest contact.
 - **Dashboard** — today's route, visits completed this week, high-priority never-visited.
 - **Multi-user** — visits assigned to a team member; routes/dashboards are per-user;
-  scheduler avoids double-booking a partner across reps on the same day.
+  scheduler avoids double-booking a place across reps on the same day.
 - **Historical notes import + "Needs Mapping" tab** — see section 7.
 
 ### Priority scoring (see `services/priority.js`)
@@ -113,11 +113,11 @@ guardian-angels-sales/
 - **Dates stored as `'YYYY-MM-DD'` strings** for SQLite/Postgres parity.
 - **"Visited" = has a *completed* visit.** Last-visit-date and "never visited" ignore
   merely-planned visits.
-- **Notes are stored as visits** (one unified history timeline per partner), marked
+- **Notes are stored as visits** (one unified history timeline per place), marked
   `source='imported_note'`, rather than a separate notes concept.
 - **User asked (design decisions):** only import notes whose referrer cleanly matches a
-  partner; park everything else (including individual people's names) in a review bucket
-  to map by hand — do **not** auto-create partners.
+  place; park everything else (including individual people's names) in a review bucket
+  to map by hand — do **not** auto-create places.
 - Note author `"Nicole Shasserre"` in the sheet maps to the user **"Nikki Shasserre"**.
 
 ---
@@ -126,14 +126,14 @@ guardian-angels-sales/
 
 343 note rows, authors: Nikki (237), Bede (81), Lisa (25). Run via `npm run import:notes`
 (idempotent). Latest result:
-- **226 notes** matched a partner → imported as completed history visits (attributed to author).
+- **226 notes** matched a place → imported as completed history visits (attributed to author).
 - **110 notes / 77 referrers** unmatched → **Needs Mapping** tab.
 - 3 duplicate + 4 blank-referrer rows skipped.
 
 **Needs Mapping tab** (with count badge): each unmatched referrer grouped with its notes.
-Per referrer you can **assign to an existing partner** (searchable picker), **create a new
-partner**, or **set aside** — action applies to all of that referrer's notes. Assigning
-converts the note(s) into visits on the chosen partner.
+Per referrer you can **assign to an existing place** (searchable picker), **create a new
+place**, or **set aside** — action applies to all of that referrer's notes. Assigning
+converts the note(s) into visits on the chosen place.
 
 ---
 
@@ -145,7 +145,7 @@ Two terminals (or `./dev.sh` for both). Node is via nvm — run `nvm use 24` if 
 # Terminal 1 — API on http://localhost:4000
 cd ~/guardian-angels-sales/server
 npm install            # first time
-npm run seed           # first time: migrate + import partners + import notes
+npm run seed           # first time: migrate + import places + import notes
 npm run dev
 
 # Terminal 2 — app on http://localhost:5173
@@ -158,7 +158,7 @@ npm run dev
 | Command | Does |
 |---|---|
 | `npm run migrate` | Create/upgrade schema |
-| `npm run import` | Import partners (idempotent) |
+| `npm run import` | Import places (idempotent) |
 | `npm run import:notes` | Import historical notes (idempotent) |
 | `npm run seed` | migrate + import + import:notes |
 | `npm run reset` | Drop all + re-seed |
@@ -194,7 +194,7 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   - `e8dc851` Import historical referrer notes + Needs Mapping, add railway.json
   - `73b1bba` Initial commit
 - **Live deploy:** was successfully running at
-  `https://guardian-angels-sales-production.up.railway.app/` (261 partners, notes seeded).
+  `https://guardian-angels-sales-production.up.railway.app/` (261 places, notes seeded).
 - **⏸️ Decision in progress:** the user is **taking the Railway deployment DOWN** to avoid
   ongoing cost while still building (all dev happens locally). Plan: delete the Railway
   project (app + Postgres). GitHub repo and local app are unaffected. Redeploy later is
@@ -212,7 +212,7 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   live site to redeploy (every push to `main` auto-deploys).
 - Set a **spend cap** in Railway billing as a safety net.
 - Possible enhancements: custom domain, richer reporting/exports, map view for routes,
-  email/calendar integration, editing partner details in the UI.
+  email/calendar integration, editing place details in the UI.
 
 ---
 

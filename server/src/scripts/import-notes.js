@@ -3,8 +3,8 @@
 //   npm run import:notes            # default file path
 //   node src/scripts/import-notes.js "/path/to/ReferrerNotes.xlsx"
 //
-// Each note whose Referrer matches a partner becomes a completed, "imported_note"
-// visit on that partner (so it appears in the partner's history). Notes whose
+// Each note whose Referrer matches a place becomes a completed, "imported_note"
+// visit on that place (so it appears in the place's history). Notes whose
 // referrer can't be matched go into `notes_review` for manual mapping in the app.
 // Idempotent: re-running won't duplicate imported visits or review rows.
 const path = require('path');
@@ -41,11 +41,11 @@ function parseDate(raw) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
 
-// Build a matcher from partners. Tries exact-normalized, then the text before a
+// Build a matcher from places. Tries exact-normalized, then the text before a
 // parenthesis, then the text inside a parenthesis (e.g. "Crystal (Gateway Vista)").
-function buildMatcher(partners) {
+function buildMatcher(places) {
   const byNorm = new Map();
-  for (const p of partners) byNorm.set(norm(p.name), p);
+  for (const p of places) byNorm.set(norm(p.name), p);
 
   return function match(referrer) {
     if (!referrer) return null;
@@ -64,6 +64,9 @@ function buildMatcher(partners) {
   };
 }
 
+// Makes sure the real team members exist in the `users` table and removes
+// leftover placeholder/test accounts, then builds a lookup from however an
+// author's name was written in the spreadsheet to that user's id.
 async function setupUsers(trx) {
   // Upsert the real team members (match on name).
   const nameToId = {};
@@ -85,6 +88,9 @@ async function setupUsers(trx) {
   return { nameToId, aliasToId };
 }
 
+// Reads every note row from the workbook and, for each one, either imports it
+// as a completed visit (referrer matched a place) or parks it in
+// notes_review for a human to map later (referrer didn't match anything).
 async function importNotes(file) {
   if (!file) file = DEFAULT_FILE;
   console.log(`Reading: ${file}`);
@@ -92,14 +98,15 @@ async function importNotes(file) {
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: false });
   console.log(`Found ${rows.length} note rows.`);
 
-  const partners = await knex('partners').select('id', 'name');
-  const match = buildMatcher(partners);
+  const places = await knex('places').select('id', 'name');
+  const match = buildMatcher(places);
 
   const stats = { imported: 0, review: 0, skippedDup: 0, noReferrer: 0, matchedRefs: new Set(), unmatchedRefs: new Set() };
 
   await knex.transaction(async (trx) => {
     const { aliasToId } = await setupUsers(trx);
 
+    // One pass over every row in the spreadsheet.
     for (const r of rows) {
       const referrer = (r['Referrer'] || '').trim();
       const noteText = (r['Note'] || '').trim();
@@ -113,12 +120,12 @@ async function importNotes(file) {
         continue;
       }
 
-      const partner = match(referrer);
-      if (partner) {
+      const place = match(referrer);
+      if (place) {
         stats.matchedRefs.add(referrer);
-        // Dedup: same partner + date + note text already imported?
+        // Dedup: same place + date + note text already imported?
         const dup = await trx('visits')
-          .where({ partner_id: partner.id, source: 'imported_note', scheduled_date: noteDate })
+          .where({ place_id: place.id, source: 'imported_note', scheduled_date: noteDate })
           .andWhere('notes', noteText)
           .first();
         if (dup) {
@@ -126,7 +133,7 @@ async function importNotes(file) {
           continue;
         }
         await trx('visits').insert({
-          partner_id: partner.id,
+          place_id: place.id,
           user_id: authorUserId,
           scheduled_date: noteDate,
           status: 'completed',
