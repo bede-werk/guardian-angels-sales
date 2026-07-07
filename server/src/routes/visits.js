@@ -3,7 +3,7 @@ const knex = require('../db/knex');
 
 const router = express.Router();
 
-const OUTCOMES = ['interested', 'not_ready', 'follow_up', 'no_answer'];
+const OUTCOMES = ['interested', 'not_ready', 'follow_up', 'no_answer', 'left_materials'];
 const STATUSES = ['planned', 'completed', 'skipped'];
 
 // Fields a client is allowed to set when logging/updating a visit.

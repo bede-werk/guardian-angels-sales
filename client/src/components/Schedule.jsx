@@ -1,7 +1,19 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { api } from '../api';
-import { TierBadge, StatusBadge, OutcomeBadge } from './Badges';
+import { api, navigateUrl } from '../api';
+import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
+import TemperatureDot from './ui/TemperatureDot';
+import Button from './ui/Button';
+import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
+
+const MINUTES_PER_STOP = 45; // matches the scheduler's 30min visit + 15min travel assumption
+
+function formatHoursUsed(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
 
 // Today's route: auto-generate ~4hrs of clustered, priority-ordered stops, then
 // manually reorder / swap / skip / log each one.
@@ -83,7 +95,10 @@ export default function Schedule({ date, userId }) {
     load();
   }
 
-  const activeCount = route.filter((v) => v.status !== 'skipped').length;
+  const activeStops = route.filter((v) => v.status !== 'skipped');
+  const completedCount = activeStops.filter((v) => v.status === 'completed').length;
+  const progressPct = activeStops.length ? Math.round((completedCount / activeStops.length) * 100) : 0;
+  const minutesUsed = completedCount * MINUTES_PER_STOP;
 
   return (
     <div className="grid" style={{ gap: 16 }}>
@@ -91,7 +106,7 @@ export default function Schedule({ date, userId }) {
 
       <div className="card">
         <div className="card-head">
-          <h2>Route for {date}</h2>
+          <h2>Today's route</h2>
           <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
             <div style={{ minWidth: 90 }}>
               <label className="field">Hours</label>
@@ -102,9 +117,9 @@ export default function Schedule({ date, userId }) {
               </select>
             </div>
             {route.length === 0 ? (
-              <button className="btn" onClick={() => generate(false)}>Generate route</button>
+              <Button onClick={() => generate(false)}>Plan today's visits</Button>
             ) : (
-              <button className="btn secondary" onClick={() => generate(true)}>Regenerate</button>
+              <Button variant="secondary" onClick={() => generate(true)}>Plan again</Button>
             )}
           </div>
         </div>
@@ -112,20 +127,26 @@ export default function Schedule({ date, userId }) {
           {loading ? (
             <div className="loading">Loading…</div>
           ) : route.length === 0 ? (
-            <div className="empty">
-              No stops planned for this day.<br />
-              Click <strong>Generate route</strong> to auto-build a clustered, priority-ordered day.
-            </div>
+            <EmptyState
+              message="No visits planned yet. Let's map out your day."
+              action={<Button onClick={() => generate(false)}>Plan today's visits</Button>}
+            />
           ) : (
             <>
-              <div className="muted tiny" style={{ marginBottom: 8 }}>
-                {activeCount} active stop{activeCount === 1 ? '' : 's'} · ordered by priority within the tightest geographic cluster
+              <div style={{ marginBottom: 14 }}>
+                <div className="progress-bar">
+                  <div className="fill" style={{ width: `${progressPct}%` }} />
+                </div>
+                <div className="progress-label">
+                  {completedCount} of {activeStops.length} visit{activeStops.length === 1 ? '' : 's'} done ·{' '}
+                  {formatHoursUsed(minutesUsed)} of {hours}h used
+                </div>
               </div>
               <ul className="list">
                 {route.map((v, i) => (
                   <li
                     key={v.visit_id}
-                    className={`stop ${v.status === 'completed' ? 'done' : ''} ${v.status === 'skipped' ? 'skipped' : ''} ${overIndex === i ? 'drag-over' : ''} ${dragIndex === i ? 'dragging' : ''}`}
+                    className={`stop ${v.status === 'completed' ? 'done' : ''} ${v.status === 'skipped' ? 'skipped' : ''} ${v.never_visited ? 'attention-flag' : ''} ${overIndex === i ? 'drag-over' : ''} ${dragIndex === i ? 'dragging' : ''}`}
                     draggable
                     onDragStart={() => { dragIndexRef.current = i; setDragIndex(i); }}
                     onDragOver={(e) => { e.preventDefault(); setOverIndex(i); }}
@@ -142,23 +163,40 @@ export default function Schedule({ date, userId }) {
                     <div className="main">
                       <div className="name">{v.name}</div>
                       <div className="meta">
-                        {v.category} · {v.address ? `${v.address}, ` : ''}{v.city} {v.zip} · <strong>{v.region}</strong>
+                        {v.address ? `${v.address}, ` : ''}{v.city} {v.zip} · <strong>{v.region}</strong>
                       </div>
                       <div className="tag-list" style={{ marginTop: 6 }}>
-                        <TierBadge tier={v.tier} isPriority={!!v.is_priority} />
-                        <StatusBadge status={v.status} />
-                        <OutcomeBadge outcome={v.outcome} />
-                        {v.contact_name && <span className="tiny muted">· {v.contact_name}</span>}
+                        <CategoryChip category={v.category} />
+                        <TierChip tier={v.tier} isPriority={!!v.is_priority} />
+                        <StatusChip status={v.status} />
+                        <OutcomeChip outcome={v.outcome} />
+                        {v.never_visited && <span className="badge star" style={{ background: 'var(--mauve-tint-1)', color: 'var(--mauve)' }}>Never visited</span>}
+                      </div>
+                      {v.primary_contact && (
+                        <div className="stop-contact">
+                          <span className="tiny">Ask for <strong>{v.primary_contact.name}</strong></span>{' '}
+                          {v.primary_contact.relationship_temp && (
+                            <TemperatureDot temp={v.primary_contact.relationship_temp} />
+                          )}
+                        </div>
+                      )}
+                      {v.last_visit_notes && (
+                        <div className="stop-note-preview">"{v.last_visit_notes}"</div>
+                      )}
+                      <div className="stop-buttons">
+                        <Button variant="secondary" size="big" onClick={() => window.open(navigateUrl(v), '_blank')}>
+                          Navigate
+                        </Button>
+                        <Button size="big" onClick={() => setLogging(v)}>
+                          {v.status === 'completed' ? 'Edit log' : 'Log Visit'}
+                        </Button>
                       </div>
                     </div>
                     <div className="actions">
-                      <button className="btn small" onClick={() => setLogging(v)}>
-                        {v.status === 'completed' ? 'Edit log' : 'Log visit'}
-                      </button>
                       {v.status !== 'skipped' && (
-                        <button className="btn small secondary" onClick={() => skip(v)}>Skip</button>
+                        <Button variant="secondary" size="small" onClick={() => skip(v)}>Skip</Button>
                       )}
-                      <button className="btn small danger" onClick={() => remove(v)} title="Remove from route">✕</button>
+                      <Button variant="danger" size="small" onClick={() => remove(v)} title="Remove from route">✕</Button>
                     </div>
                   </li>
                 ))}

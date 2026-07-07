@@ -4,14 +4,18 @@
 //   Tier 1 + ⭐ Priority  >  Tier 1  >  Tier 2  >  Tier 3
 //
 // Score = tier weight + priority bonus, so a higher number always means visit sooner.
-//   Tier 1 (=30) + priority (+5) = 35   <- highest
-//   Tier 1                        = 30
-//   Tier 2                        = 20
-//   Tier 3                        = 10
+//   Tier 1 (=75) + priority (+25) = 100   <- highest
+//   Tier 1                        = 75
+//   Tier 2                        = 50
+//   Tier 3                        = 25
+//
+// This is a place-level score (drives routing) — a manual Tier/⭐ judgment today.
+// It may later be adjusted by linked contacts' relationship_temp + referral history
+// (see the `contacts`/`referrals` tables), but that feedback loop isn't wired in yet.
 
 function priorityScore(tier, isPriority) {
-  const tierWeight = { 1: 30, 2: 20, 3: 10 }[tier] || 0;
-  const bonus = isPriority ? 5 : 0;
+  const tierWeight = { 1: 75, 2: 50, 3: 25 }[tier] || 0;
+  const bonus = isPriority ? 25 : 0;
   return tierWeight + bonus;
 }
 

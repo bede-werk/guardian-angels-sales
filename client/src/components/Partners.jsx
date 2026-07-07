@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api';
-import { TierBadge } from './Badges';
+import { TierChip, CategoryChip } from './ui/Chip';
+import TemperatureDot from './ui/TemperatureDot';
+import Button from './ui/Button';
+import EmptyState from './ui/EmptyState';
 import PartnerDetail from './PartnerDetail';
 
 // Searchable / filterable partner directory with last-visit + contact info.
@@ -71,12 +74,12 @@ export default function Partners() {
             </div>
             <div style={{ flex: 'unset' }}>
               <label className="field">&nbsp;</label>
-              <button
-                className={`btn ${q.neverVisited ? '' : 'secondary'}`}
+              <Button
+                variant={q.neverVisited ? 'primary' : 'secondary'}
                 onClick={() => setQ((s) => ({ ...s, neverVisited: s.neverVisited ? '' : '1' }))}
               >
                 Never visited
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -102,15 +105,15 @@ export default function Partners() {
               {rows.map((p) => (
                 <tr key={p.id} onClick={() => setSelected(p.id)}>
                   <td><strong>{p.name}</strong></td>
-                  <td className="muted">{p.category}</td>
-                  <td><TierBadge tier={p.tier} isPriority={p.is_priority} /></td>
+                  <td><CategoryChip category={p.category} /></td>
+                  <td><TierChip tier={p.tier} isPriority={p.is_priority} /></td>
                   <td className="muted tiny">{p.city} {p.zip}<br />{p.region}</td>
                   <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
                   <td className="tiny">
                     {p.contact ? (
                       <div className="stack">
-                        <span>{p.contact.contact_name}</span>
-                        {p.contact.contact_phone && <span className="muted">{p.contact.contact_phone}</span>}
+                        <span>{p.contact.name}</span>
+                        {p.contact.relationship_temp && <TemperatureDot temp={p.contact.relationship_temp} />}
                       </div>
                     ) : (
                       <span className="muted">—</span>
@@ -119,7 +122,7 @@ export default function Partners() {
                 </tr>
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={6} className="empty">No partners match those filters.</td></tr>
+                <tr><td colSpan={6}><EmptyState message="No partners match those filters." /></td></tr>
               )}
             </tbody>
           </table>

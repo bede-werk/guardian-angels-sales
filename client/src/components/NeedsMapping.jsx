@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api';
+import Button from './ui/Button';
+import EmptyState from './ui/EmptyState';
 
 // Searchable partner picker: type, pick a result, calls onPick(partner).
 function PartnerPicker({ onPick }) {
@@ -104,10 +106,10 @@ function CreatePartnerModal({ referrer, categories, onClose, onCreate }) {
           <div className="tiny muted">All of this referrer's notes will be attached to the new partner.</div>
         </div>
         <div className="modal-foot">
-          <button className="btn secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="btn" onClick={save} disabled={saving || !form.name.trim()}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={save} disabled={saving || !form.name.trim()}>
             {saving ? 'Creating…' : 'Create & attach notes'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -190,7 +192,9 @@ export default function NeedsMapping({ onChanged }) {
       </div>
 
       {data.groups.length === 0 ? (
-        <div className="card"><div className="empty">🎉 Nothing left to map — every note has a home.</div></div>
+        <div className="card">
+          <EmptyState message="Nothing left to map — every note has found its home." />
+        </div>
       ) : (
         data.groups.map((group) => (
           <div className="card" key={group.referrer}>
@@ -210,12 +214,12 @@ export default function NeedsMapping({ onChanged }) {
               <div className="row" style={{ alignItems: 'center' }}>
                 <PartnerPicker onPick={(p) => assign(group, p)} />
                 <div style={{ flex: 'unset', display: 'flex', gap: 8 }}>
-                  <button className="btn secondary" disabled={busy === group.referrer} onClick={() => setCreating(group)}>
+                  <Button variant="secondary" disabled={busy === group.referrer} onClick={() => setCreating(group)}>
                     New partner
-                  </button>
-                  <button className="btn ghost" disabled={busy === group.referrer} onClick={() => dismiss(group)}>
+                  </Button>
+                  <Button variant="ghost" disabled={busy === group.referrer} onClick={() => dismiss(group)}>
                     Set aside
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

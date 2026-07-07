@@ -77,16 +77,16 @@ router.get('/', async (req, res, next) => {
 
     query.orderBy('p.priority_score', 'desc').orderBy('p.name', 'asc');
 
-    // Pull the latest contact details from that partner's most recent visit.
+    // Pull each partner's primary contact (or earliest-added, if none marked primary).
     const partners = await query;
     const ids = partners.map((p) => p.id);
     const contacts = ids.length
-      ? await knex('visits')
+      ? await knex('contacts')
           .whereIn('partner_id', ids)
-          .whereNotNull('contact_name')
-          .orderBy('scheduled_date', 'desc')
-          .orderBy('id', 'desc')
-          .select('partner_id', 'contact_name', 'contact_title', 'contact_email', 'contact_phone')
+          .where('departed', false)
+          .orderBy('is_primary', 'desc')
+          .orderBy('id', 'asc')
+          .select('partner_id', 'name', 'phone', 'email', 'relationship_temp')
       : [];
     const contactByPartner = {};
     for (const c of contacts) if (!contactByPartner[c.partner_id]) contactByPartner[c.partner_id] = c;
@@ -130,7 +130,16 @@ router.get('/:id', async (req, res, next) => {
       .orderBy('v.id', 'desc')
       .select('v.*', 'u.name as user_name');
 
-    res.json({ ...decorate(partner), visits });
+    const contacts = await knex('contacts')
+      .where({ partner_id: partner.id })
+      .orderBy('is_primary', 'desc')
+      .orderBy('name', 'asc');
+
+    res.json({
+      ...decorate(partner),
+      visits,
+      contacts: contacts.map((c) => ({ ...c, departed: !!c.departed, is_primary: !!c.is_primary })),
+    });
   } catch (err) {
     next(err);
   }

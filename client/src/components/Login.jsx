@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, setToken } from '../api';
+import Logo from './ui/Logo';
+import Button from './ui/Button';
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -77,12 +79,9 @@ export default function Login({ onLogin }) {
     <div className="auth-page">
       <div className="card auth-card">
         <div className="card-body">
-          <div className="brand auth-brand">
-            <div className="logo">GA</div>
-            <div>
-              <h1>Guardian Angels Homecare</h1>
-              <div className="sub">Sales Visit Scheduler · Lincoln, NE</div>
-            </div>
+          <div className="auth-brand">
+            <Logo variant="full-original" />
+            <div className="sub">Sales Visit CRM · Lincoln, NE</div>
           </div>
 
           {error && <div className="error-banner">{error}</div>}
@@ -111,9 +110,9 @@ export default function Login({ onLogin }) {
                       onChange={(e) => setPassword(e.target.value)}
                     />
                   </div>
-                  <button className="btn" type="submit" disabled={busy || !password}>
+                  <Button type="submit" disabled={busy || !password}>
                     {busy ? 'Logging in…' : 'Log in'}
-                  </button>
+                  </Button>
                 </form>
               ) : (
                 selected && (
@@ -138,9 +137,9 @@ export default function Login({ onLogin }) {
                         onChange={(e) => setConfirmPassword(e.target.value)}
                       />
                     </div>
-                    <button className="btn" type="submit" disabled={busy || !newPassword || !confirmPassword}>
+                    <Button type="submit" disabled={busy || !newPassword || !confirmPassword}>
                       {busy ? 'Creating…' : 'Create password & log in'}
-                    </button>
+                    </Button>
                   </form>
                 )
               )}

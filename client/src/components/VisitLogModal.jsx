@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api, OUTCOME_LABELS } from '../api';
+import Button from './ui/Button';
 
 // Modal for logging/updating a visit: outcome, notes, key contact, next visit date.
 // `visit` may be a scheduled stop (has visit_id) or, when opened from a partner with
 // no scheduled visit, `partnerId` is provided to create an ad-hoc visit.
 export default function VisitLogModal({ visit, partnerId, partnerName, onClose, onSaved }) {
+  const resolvedPartnerId = visit?.partner_id || partnerId;
   const [form, setForm] = useState({
     outcome: visit?.outcome || '',
     notes: visit?.notes || '',
@@ -14,11 +16,32 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
     contact_phone: visit?.contact_phone || '',
     next_visit_date: visit?.next_visit_date || '',
   });
+  const [contacts, setContacts] = useState([]);
+  const [pickedContactId, setPickedContactId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const title = partnerName || visit?.name || visit?.partner_name || 'Visit';
+
+  useEffect(() => {
+    if (!resolvedPartnerId) return;
+    api.contacts.list(resolvedPartnerId).then(setContacts).catch(() => {});
+  }, [resolvedPartnerId]);
+
+  function pickContact(id) {
+    setPickedContactId(id);
+    const c = contacts.find((x) => String(x.id) === String(id));
+    if (!c) return;
+    setForm((f) => ({
+      ...f,
+      contact_name: c.name || '',
+      contact_title: c.title || '',
+      contact_email: c.email || '',
+      contact_phone: c.phone || '',
+    }));
+  }
 
   async function save(markComplete) {
     setSaving(true);
@@ -33,12 +56,25 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
         saved = await api.createVisit({ partner_id: partnerId, scheduled_date: new Date().toISOString().slice(0, 10), ...payload });
       }
       onSaved?.(saved);
-      onClose();
+      setDone(true);
+      setTimeout(() => onClose(), 900);
     } catch (e) {
       setError(e.message);
-    } finally {
       setSaving(false);
     }
+  }
+
+  if (done) {
+    return (
+      <div className="modal-backdrop">
+        <div className="modal" style={{ maxWidth: 360 }}>
+          <div className="save-confirmation">
+            <div className="check">✓</div>
+            <div className="msg">Visit logged. Well done.</div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -72,6 +108,18 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
             <textarea rows={3} value={form.notes} onChange={set('notes')} placeholder="What happened, next steps…" />
           </div>
 
+          {contacts.length > 0 && (
+            <div>
+              <label className="field">Who did you meet?</label>
+              <select value={pickedContactId} onChange={(e) => pickContact(e.target.value)}>
+                <option value="">Someone not listed…</option>
+                {contacts.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}{c.title ? ` — ${c.title}` : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="row">
             <div>
               <label className="field">Contact name</label>
@@ -99,12 +147,12 @@ export default function VisitLogModal({ visit, partnerId, partnerName, onClose, 
           </div>
         </div>
         <div className="modal-foot">
-          <button className="btn secondary" onClick={() => save(false)} disabled={saving}>
+          <Button variant="secondary" onClick={() => save(false)} disabled={saving}>
             Save
-          </button>
-          <button className="btn" onClick={() => save(true)} disabled={saving}>
+          </Button>
+          <Button onClick={() => save(true)} disabled={saving}>
             {saving ? 'Saving…' : 'Save & mark complete'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
