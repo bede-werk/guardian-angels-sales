@@ -75,6 +75,14 @@ export const api = {
   dismissNote: (id, body) => request(`/notes-review/${id}/dismiss`, { method: 'POST', body }),
   createPartner: (body) => request('/partners', { method: 'POST', body }),
 
+  // Contacts ("people" at a partner/place)
+  contacts: {
+    list: (partnerId) => request(`/partners/${partnerId}/contacts`),
+    create: (partnerId, body) => request(`/partners/${partnerId}/contacts`, { method: 'POST', body }),
+    update: (id, body) => request(`/contacts/${id}`, { method: 'PATCH', body }),
+    remove: (id) => request(`/contacts/${id}`, { method: 'DELETE' }),
+  },
+
   // Auth
   auth: {
     users: () => request('/auth/users'),
@@ -94,8 +102,22 @@ export const OUTCOME_LABELS = {
   not_ready: 'Not ready',
   follow_up: 'Follow up',
   no_answer: 'No answer',
+  left_materials: 'Left materials',
+};
+
+export const ROLE_TYPE_LABELS = {
+  decision_maker: 'Decision maker',
+  gatekeeper: 'Gatekeeper',
+  champion: 'Champion',
+  other: 'Other',
 };
 
 export function today() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// A Google Maps directions link, so "Navigate" hands off to Apple/Google Maps.
+export function navigateUrl(partner) {
+  const dest = [partner.address, partner.city, partner.state, partner.zip].filter(Boolean).join(', ');
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`;
 }

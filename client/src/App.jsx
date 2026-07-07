@@ -6,6 +6,9 @@ import Partners from './components/Partners';
 import NeedsMapping from './components/NeedsMapping';
 import Login from './components/Login';
 import ChangePassword from './components/ChangePassword';
+import Header from './components/ui/Header';
+import Splash from './components/ui/Splash';
+import Button from './components/ui/Button';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -16,7 +19,7 @@ const TABS = [
 
 export default function App() {
   const [tab, setTab] = useState('dashboard');
-  const [date, setDate] = useState(today());
+  const date = today();
   const [mappingCount, setMappingCount] = useState(0);
 
   const [authUser, setAuthUser] = useState(null);
@@ -54,34 +57,32 @@ export default function App() {
     setAuthUser(null);
   }
 
-  if (authLoading) return <div className="loading">Loading…</div>;
+  if (authLoading) return <Splash />;
   if (!authUser) return <Login onLogin={setAuthUser} />;
 
   return (
     <div className="app">
-      <header className="header">
-        <div className="brand">
-          <div className="logo">GA</div>
-          <div>
-            <h1>Guardian Angels Homecare</h1>
-            <div className="sub">Sales Visit Scheduler · Lincoln, NE</div>
+      <Header tagline="Sales Visit CRM · Lincoln, NE">
+        <div>
+          <label className="field">Date</label>
+          <div className="static-date">
+            {new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric',
+            })}
           </div>
         </div>
-        <div className="controls">
-          <div>
-            <label className="field">Date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
-          <div className="user-menu">
-            <label className="field">Signed in as</label>
-            <div className="tag-list">
-              <span>{authUser.name}</span>
-              <button className="btn ghost small" onClick={() => setShowChangePassword(true)}>Change password</button>
-              <button className="btn ghost small" onClick={logout}>Log out</button>
-            </div>
+        <div className="user-menu">
+          <label className="field">Signed in as</label>
+          <div className="tag-list">
+            <span>{authUser.name}</span>
+            <Button variant="ghost" size="small" onClick={() => setShowChangePassword(true)}>Change password</Button>
+            <Button variant="ghost" size="small" onClick={logout}>Log out</Button>
           </div>
         </div>
-      </header>
+      </Header>
 
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
 

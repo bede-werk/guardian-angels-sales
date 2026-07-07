@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api, setToken } from '../api';
+import Button from './ui/Button';
 
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -44,7 +45,7 @@ export default function ChangePassword({ onClose }) {
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
           {done ? (
-            <div className="muted">Password updated.</div>
+            <div className="muted">Password updated. Well done.</div>
           ) : (
             <form onSubmit={submit} className="stack" style={{ gap: 14 }}>
               <div>
@@ -72,14 +73,14 @@ export default function ChangePassword({ onClose }) {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                 />
               </div>
-              <button className="btn" type="submit" disabled={saving || !currentPassword || !newPassword || !confirmPassword}>
+              <Button type="submit" disabled={saving || !currentPassword || !newPassword || !confirmPassword}>
                 {saving ? 'Saving…' : 'Save new password'}
-              </button>
+              </Button>
             </form>
           )}
         </div>
         <div className="modal-foot">
-          <button className="btn secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
+          <Button variant="secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</Button>
         </div>
       </div>
     </div>

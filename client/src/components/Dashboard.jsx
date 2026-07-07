@@ -1,11 +1,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api';
-import { TierBadge, StatusBadge, OutcomeBadge } from './Badges';
+import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
+import TemperatureDot from './ui/TemperatureDot';
+import StatTile from './ui/StatTile';
+import EmptyState from './ui/EmptyState';
+import Button from './ui/Button';
+import PartnerDetail from './PartnerDetail';
 
-// At-a-glance: today's route, visits completed this week, partners never visited.
+// At-a-glance: today's route, visits completed this week, partners never visited,
+// and relationships that need attention (departed / cooling contacts, overdue visits).
 export default function Dashboard({ date, userId, onGoToSchedule }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [selectedPartnerId, setSelectedPartnerId] = useState(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -26,36 +33,40 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
   const neverPct = data.never_visited.total_partners
     ? Math.round((data.never_visited.count / data.never_visited.total_partners) * 100)
     : 0;
+  const attention = data.needs_attention;
 
   return (
     <div className="grid" style={{ gap: 20 }}>
       <div className="grid stats">
-        <div className="card stat">
-          <div className="num">{data.today.count}</div>
-          <div className="label">Stops on today's route</div>
-          <div className="hint">{data.today.completed} completed · {data.today.planned} planned</div>
-        </div>
-        <div className="card stat">
-          <div className="num">{data.completed_this_week.count}</div>
-          <div className="label">Visits completed this week</div>
-          <div className="hint">{data.week.start} → {data.week.end}</div>
-        </div>
-        <div className="card stat">
-          <div className="num">{data.never_visited.count}</div>
-          <div className="label">Partners never visited</div>
-          <div className="hint">{neverPct}% of {data.never_visited.total_partners} total</div>
-        </div>
+        <StatTile
+          num={data.today.count}
+          label="Stops on today's route"
+          hint={`${data.today.completed} completed · ${data.today.planned} planned`}
+        />
+        <StatTile
+          num={data.completed_this_week.count}
+          label="Visits completed this week"
+          hint={`${data.week.start} → ${data.week.end}`}
+        />
+        <StatTile
+          num={data.never_visited.count}
+          label="Partners never visited"
+          hint={`${neverPct}% of ${data.never_visited.total_partners} total`}
+        />
       </div>
 
       <div className="grid cols2">
         <div className="card">
           <div className="card-head">
-            <h2>Today's route — {data.date}</h2>
-            <button className="btn small secondary" onClick={onGoToSchedule}>Open route</button>
+            <h2>Today's route</h2>
+            <Button size="small" variant="secondary" onClick={onGoToSchedule}>Open route</Button>
           </div>
           <div className="card-body">
             {data.today.route.length === 0 ? (
-              <div className="empty">No route yet. Go to <strong>Today's Route</strong> to generate one.</div>
+              <EmptyState
+                message="No visits planned yet. Let's map out your day."
+                action={<Button size="small" onClick={onGoToSchedule}>Plan today's visits</Button>}
+              />
             ) : (
               <ul className="list">
                 {data.today.route.map((v, i) => (
@@ -65,8 +76,8 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
                       <div className="name">{v.name}</div>
                       <div className="meta">{v.city} {v.zip} · {v.region}</div>
                       <div className="tag-list" style={{ marginTop: 4 }}>
-                        <StatusBadge status={v.status} />
-                        <OutcomeBadge outcome={v.outcome} />
+                        <StatusChip status={v.status} />
+                        <OutcomeChip outcome={v.outcome} />
                       </div>
                     </div>
                   </li>
@@ -80,7 +91,7 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
           <div className="card-head"><h2>Completed this week</h2></div>
           <div className="card-body">
             {data.completed_this_week.visits.length === 0 ? (
-              <div className="empty">Nothing completed yet this week.</div>
+              <EmptyState message="Nothing completed yet this week." />
             ) : (
               <ul className="list">
                 {data.completed_this_week.visits.map((v) => (
@@ -89,12 +100,52 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
                       <div className="name tiny">{v.name}</div>
                       <div className="meta">{v.scheduled_date} · {v.city}</div>
                     </div>
-                    <OutcomeBadge outcome={v.outcome} />
+                    <OutcomeChip outcome={v.outcome} />
                   </li>
                 ))}
               </ul>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2>Needs attention</h2>
+          {attention.count > 0 && <span className="muted tiny">{attention.count} item{attention.count === 1 ? '' : 's'}</span>}
+        </div>
+        <div className="card-body">
+          {attention.count === 0 ? (
+            <EmptyState message="Nothing needs attention right now — every relationship is in good shape." />
+          ) : (
+            <ul className="list">
+              {attention.overdue_partners.map((p) => (
+                <li key={`overdue-${p.partner_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPartnerId(p.partner_id)}>
+                  <div className="main">
+                    <div className="name tiny">{p.name}</div>
+                    <div className="meta">Next visit was due {p.next_visit_date} · {p.city}</div>
+                  </div>
+                  <CategoryChip category={p.category} />
+                </li>
+              ))}
+              {attention.cooling_contacts.map((c) => (
+                <li key={`cooling-${c.contact_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPartnerId(c.partner_id)}>
+                  <div className="main">
+                    <div className="name tiny">{c.contact_name} <span className="muted">· {c.partner_name}</span></div>
+                  </div>
+                  <TemperatureDot temp={c.relationship_temp} />
+                </li>
+              ))}
+              {attention.departed_contacts.map((c) => (
+                <li key={`departed-${c.contact_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPartnerId(c.partner_id)}>
+                  <div className="main">
+                    <div className="name tiny">{c.contact_name} <span className="muted">· {c.partner_name}</span></div>
+                    <div className="meta">Departed — time to rebuild this relationship</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
@@ -110,10 +161,10 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
             </thead>
             <tbody>
               {data.never_visited.partners.slice(0, 12).map((p) => (
-                <tr key={p.id}>
+                <tr key={p.id} onClick={() => setSelectedPartnerId(p.id)}>
                   <td><strong>{p.name}</strong></td>
-                  <td className="muted">{p.category}</td>
-                  <td><TierBadge tier={p.tier} isPriority={p.is_priority} /></td>
+                  <td><CategoryChip category={p.category} /></td>
+                  <td><TierChip tier={p.tier} isPriority={p.is_priority} /></td>
                   <td className="muted tiny">{p.city} {p.zip} · {p.region}</td>
                 </tr>
               ))}
@@ -121,6 +172,10 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
           </table>
         </div>
       </div>
+
+      {selectedPartnerId && (
+        <PartnerDetail partnerId={selectedPartnerId} onClose={() => setSelectedPartnerId(null)} onChanged={load} />
+      )}
     </div>
   );
 }

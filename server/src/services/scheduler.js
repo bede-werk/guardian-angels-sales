@@ -118,9 +118,12 @@ async function generateSchedule({ date, userId, hours, visitMinutes, travelMinut
   });
 }
 
-// Load a day's route with partner details, in route order.
+// Load a day's route with partner details, in route order. Each stop is enriched
+// with the partner's primary contact, a preview of their last completed visit's
+// notes, and whether they've never had a completed visit — the Today/Route screen
+// uses these to show "who to ask for" and to flag never-visited/overdue stops.
 async function loadRoute(db, date, userId) {
-  return db('visits as v')
+  const route = await db('visits as v')
     .join('partners as p', 'p.id', 'v.partner_id')
     .where('v.scheduled_date', date)
     .modify((qb) => userId && qb.andWhere('v.user_id', userId))
@@ -150,6 +153,42 @@ async function loadRoute(db, date, userId) {
       'p.zip',
       'p.region'
     );
+
+  if (route.length === 0) return route;
+  const partnerIds = route.map((r) => r.partner_id);
+
+  const [primaryContacts, completedVisits] = await Promise.all([
+    db('contacts')
+      .whereIn('partner_id', partnerIds)
+      .where('departed', false)
+      .orderBy('is_primary', 'desc')
+      .orderBy('id', 'asc')
+      .select('partner_id', 'name', 'relationship_temp'),
+
+    db('visits')
+      .whereIn('partner_id', partnerIds)
+      .where('status', 'completed')
+      .orderBy('partner_id')
+      .orderBy('scheduled_date', 'desc')
+      .orderBy('id', 'desc')
+      .select('partner_id', 'notes', 'scheduled_date'),
+  ]);
+
+  const contactByPartner = {};
+  for (const c of primaryContacts) if (!contactByPartner[c.partner_id]) contactByPartner[c.partner_id] = c;
+  const lastVisitByPartner = {};
+  const everVisited = new Set();
+  for (const v of completedVisits) {
+    everVisited.add(v.partner_id);
+    if (!lastVisitByPartner[v.partner_id]) lastVisitByPartner[v.partner_id] = v;
+  }
+
+  return route.map((r) => ({
+    ...r,
+    primary_contact: contactByPartner[r.partner_id] || null,
+    last_visit_notes: lastVisitByPartner[r.partner_id]?.notes || null,
+    never_visited: !everVisited.has(r.partner_id),
+  }));
 }
 
 module.exports = {

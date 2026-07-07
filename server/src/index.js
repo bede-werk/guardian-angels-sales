@@ -13,6 +13,7 @@ const schedule = require('./routes/schedule');
 const dashboard = require('./routes/dashboard');
 const users = require('./routes/users');
 const notesReview = require('./routes/notesReview');
+const contacts = require('./routes/contacts');
 const auth = require('./routes/auth');
 const requireAuth = require('./middleware/requireAuth');
 
@@ -30,6 +31,7 @@ app.use('/api/schedule', requireAuth, schedule);
 app.use('/api/dashboard', requireAuth, dashboard);
 app.use('/api/users', requireAuth, users);
 app.use('/api/notes-review', requireAuth, notesReview);
+app.use('/api', requireAuth, contacts);
 
 // In production, serve the built React app so a single service can host both.
 if (process.env.NODE_ENV === 'production') {
