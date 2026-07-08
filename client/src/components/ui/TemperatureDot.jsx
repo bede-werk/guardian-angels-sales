@@ -1,6 +1,6 @@
 import React from 'react';
 
-// The relationship-temperature scale (see contacts.relationship_temp): a
+// The relationship-temperature scale (see people.relationship_temp): a
 // small colored dot from full mauve (hot) down to full teal (dormant), each
 // with its own CSS variable defined in styles.css's :root block.
 const TEMP = {

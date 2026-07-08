@@ -1,18 +1,25 @@
 // Places — the organizations that get visited. This file covers
 // creating a place, the searchable/filterable directory list, filter-dropdown
-// options, and a single place's full detail (visits + contacts).
+// options, and a single place's full detail (visits + people).
 const express = require('express');
 const knex = require('../db/knex');
 const { priorityLabel, priorityScore, regionForPlace } = require('../services/priority');
+const { validatePhone } = require('../services/phone');
 
 const router = express.Router();
+
+// Fields a client is allowed to set on an existing place via PATCH. (POST
+// below has its own inline handling since it also derives priority_score/region.)
+const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes'];
 
 // POST /api/places — create a place (e.g. from an unmatched note in review,
 // or manually from the UI).
 router.post('/', async (req, res, next) => {
   try {
-    const { name, category, tier, is_priority, address, city, state, zip } = req.body;
+    const { name, category, tier, is_priority, address, city, state, zip, phone } = req.body;
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
+    const phoneError = validatePhone(phone);
+    if (phoneError) return res.status(400).json({ error: phoneError });
     const t = Number(tier) || 3;
     const pri = !!is_priority;
     const payload = {
@@ -25,6 +32,7 @@ router.post('/', async (req, res, next) => {
       city: city || null,
       state: state || 'NE',
       zip: zip || null,
+      phone: phone || null,
       region: regionForPlace({ city, zip }),
     };
     const [row] = await knex('places').insert(payload).returning('id');
@@ -83,13 +91,13 @@ router.get('/', async (req, res, next) => {
 
     query.orderBy('p.priority_score', 'desc').orderBy('p.name', 'asc');
 
-    // Pull each place's primary contact (or earliest-added, if none marked primary)
+    // Pull each place's primary person (or earliest-added, if none marked primary)
     // to show a name/phone/temperature preview in the directory table without
     // requiring a separate request per row.
     const places = await query;
     const ids = places.map((p) => p.id);
-    const contacts = ids.length
-      ? await knex('contacts')
+    const people = ids.length
+      ? await knex('people')
           .whereIn('place_id', ids)
           .where('departed', false)
           .orderBy('is_primary', 'desc')
@@ -98,14 +106,14 @@ router.get('/', async (req, res, next) => {
       : [];
     // Same "first row per place_id wins" trick used elsewhere: since the query
     // is sorted is_primary desc, the first row seen per place is the right one.
-    const contactByPlace = {};
-    for (const c of contacts) if (!contactByPlace[c.place_id]) contactByPlace[c.place_id] = c;
+    const personByPlace = {};
+    for (const c of people) if (!personByPlace[c.place_id]) personByPlace[c.place_id] = c;
 
     res.json(
       places.map((p) => ({
         ...decorate(p),
         visit_count: Number(p.visit_count) || 0,
-        contact: contactByPlace[p.id] || null,
+        person: personByPlace[p.id] || null,
       }))
     );
   } catch (err) {
@@ -128,7 +136,7 @@ router.get('/meta/filters', async (req, res, next) => {
   }
 });
 
-// GET /api/places/:id — a place with its full visit history and contacts.
+// GET /api/places/:id — a place with its full visit history and people.
 // NOTE: this route must come after the more specific routes above (/, /meta/filters)
 // since Express matches routes top-to-bottom and :id would otherwise swallow them.
 router.get('/:id', async (req, res, next) => {
@@ -143,7 +151,7 @@ router.get('/:id', async (req, res, next) => {
       .orderBy('v.id', 'desc')
       .select('v.*', 'u.name as user_name');
 
-    const contacts = await knex('contacts')
+    const people = await knex('people')
       .where({ place_id: place.id })
       .orderBy('is_primary', 'desc')
       .orderBy('name', 'asc');
@@ -151,8 +159,56 @@ router.get('/:id', async (req, res, next) => {
     res.json({
       ...decorate(place),
       visits,
-      contacts: contacts.map((c) => ({ ...c, departed: !!c.departed, is_primary: !!c.is_primary })),
+      people: people.map((c) => ({ ...c, departed: !!c.departed, is_primary: !!c.is_primary })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/places/:id — update a place's own fields (used today for the
+// durable, org-level "notes" field on PlaceDetail — separate from any single
+// visit's notes or a person's notes).
+router.patch('/:id', async (req, res, next) => {
+  try {
+    const existing = await knex('places').where({ id: req.params.id }).first();
+    if (!existing) return res.status(404).json({ error: 'Place not found' });
+
+    const update = { updated_at: knex.fn.now() };
+    for (const f of EDITABLE) if (req.body[f] !== undefined) update[f] = req.body[f];
+
+    const phoneError = validatePhone(update.phone);
+    if (phoneError) return res.status(400).json({ error: phoneError });
+
+    // Tier/region/priority changes need the same derived fields kept in sync
+    // as at creation time.
+    if (update.tier !== undefined || update.is_priority !== undefined) {
+      const t = update.tier !== undefined ? Number(update.tier) : existing.tier;
+      const pri = update.is_priority !== undefined ? !!update.is_priority : !!existing.is_priority;
+      update.priority_score = priorityScore(t, pri);
+    }
+    if (update.city !== undefined || update.zip !== undefined) {
+      update.region = regionForPlace({
+        city: update.city !== undefined ? update.city : existing.city,
+        zip: update.zip !== undefined ? update.zip : existing.zip,
+      });
+    }
+
+    await knex('places').where({ id: req.params.id }).update(update);
+    res.json(decorate(await knex('places').where({ id: req.params.id }).first()));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/places/:id — remove a place entirely. Cascades (at the DB level)
+// to its visits, people, and referrals, so this is a permanent, all-history-
+// erasing action, not a soft delete.
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const deleted = await knex('places').where({ id: req.params.id }).del();
+    if (!deleted) return res.status(404).json({ error: 'Place not found' });
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

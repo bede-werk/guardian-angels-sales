@@ -1,9 +1,10 @@
 // Visits — one planned/completed/skipped touchpoint on a place, by a rep,
-// on a date. This covers logging outcomes/notes/contact info, skipping a
+// on a date. This covers logging outcomes/notes/person info, skipping a
 // stop, and deleting one. (Creating a whole day's worth at once happens in
 // services/scheduler.js via POST /api/schedule/generate, not here.)
 const express = require('express');
 const knex = require('../db/knex');
+const { validatePhone } = require('../services/phone');
 
 const router = express.Router();
 
@@ -18,10 +19,11 @@ const EDITABLE = [
   'status',
   'outcome',
   'notes',
-  'contact_name',
-  'contact_title',
-  'contact_email',
-  'contact_phone',
+  'person_id',
+  'person_name',
+  'person_title',
+  'person_email',
+  'person_phone',
   'next_visit_date',
   'sort_order',
 ];
@@ -48,6 +50,8 @@ router.post('/', async (req, res, next) => {
     if (payload.outcome && !OUTCOMES.includes(payload.outcome)) {
       return res.status(400).json({ error: `outcome must be one of ${OUTCOMES.join(', ')}` });
     }
+    const phoneError = validatePhone(payload.person_phone);
+    if (phoneError) return res.status(400).json({ error: phoneError });
 
     const [inserted] = await knex('visits').insert(payload).returning('id');
     const id = inserted && inserted.id ? inserted.id : inserted;
@@ -57,7 +61,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// PATCH /api/visits/:id — log or update a visit (notes, contact, outcome, etc.).
+// PATCH /api/visits/:id — log or update a visit (notes, person, outcome, etc.).
 // This is what the "Log Visit" form actually calls when saving.
 router.patch('/:id', async (req, res, next) => {
   try {
@@ -73,6 +77,8 @@ router.patch('/:id', async (req, res, next) => {
     if (update.status && !STATUSES.includes(update.status)) {
       return res.status(400).json({ error: `status must be one of ${STATUSES.join(', ')}` });
     }
+    const phoneError = validatePhone(update.person_phone);
+    if (phoneError) return res.status(400).json({ error: phoneError });
 
     // Stamp completion time only the moment a visit *becomes* completed, not
     // on every subsequent edit to an already-completed visit.

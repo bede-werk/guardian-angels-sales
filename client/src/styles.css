@@ -262,7 +262,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .empty { padding: 24px; text-align: center; color: var(--muted); }
 
 /* Modal / slide-up sheet — the dark overlay + centered white box pattern used
-   by every *Modal.jsx component (VisitLogModal, ContactModal, PlaceDetail,
+   by every *Modal.jsx component (VisitLogModal, PersonModal, PlaceDetail,
    ChangePassword, NeedsMapping's create-place modal). On narrow screens the
    @media rule further down turns this into a bottom slide-up sheet instead. */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); display: grid; place-items: center; padding: 20px; z-index: 50; }

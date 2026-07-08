@@ -192,13 +192,13 @@ export default function Schedule({ date, userId }) {
                         <OutcomeChip outcome={v.outcome} />
                         {v.never_visited && <span className="badge star" style={{ background: 'var(--mauve-tint-1)', color: 'var(--mauve)' }}>Never visited</span>}
                       </div>
-                      {/* "Who to ask for" — this place's primary contact, from the
-                          contacts table, with their relationship temperature. */}
-                      {v.primary_contact && (
+                      {/* "Who to ask for" — this place's primary person, from the
+                          people table, with their relationship temperature. */}
+                      {v.primary_person && (
                         <div className="stop-contact">
-                          <span className="tiny">Ask for <strong>{v.primary_contact.name}</strong></span>{' '}
-                          {v.primary_contact.relationship_temp && (
-                            <TemperatureDot temp={v.primary_contact.relationship_temp} />
+                          <span className="tiny">Ask for <strong>{v.primary_person.name}</strong></span>{' '}
+                          {v.primary_person.relationship_temp && (
+                            <TemperatureDot temp={v.primary_person.relationship_temp} />
                           )}
                         </div>
                       )}

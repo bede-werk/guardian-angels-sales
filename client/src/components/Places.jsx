@@ -5,6 +5,7 @@ import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
+import PlaceModal from './PlaceModal';
 
 // Searchable / filterable place directory with last-visit + contact info.
 // Clicking any row opens that place's full detail (PlaceDetail.jsx).
@@ -14,6 +15,7 @@ export default function Places() {
   const [rows, setRows] = useState([]); // the filtered place list from the API
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null); // place id whose detail modal is open, if any
+  const [adding, setAdding] = useState(false); // whether the Add Place modal is open
 
   // Load the filter dropdown options (distinct categories/cities/zips) once on mount.
   useEffect(() => {
@@ -95,6 +97,7 @@ export default function Places() {
       <div className="card">
         <div className="card-head">
           <h2>{loading ? 'Loading…' : `${rows.length} places`}</h2>
+          <Button variant="secondary" size="small" onClick={() => setAdding(true)}>+ Add place</Button>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
           <table>
@@ -117,13 +120,13 @@ export default function Places() {
                   <td className="muted tiny">{p.city} {p.zip}<br />{p.region}</td>
                   <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
                   <td className="tiny">
-                    {/* p.contact is this place's primary contact, included by
+                    {/* p.person is this place's primary person, included by
                         the API's list endpoint so this column doesn't need a
                         separate request per row. */}
-                    {p.contact ? (
+                    {p.person ? (
                       <div className="stack">
-                        <span>{p.contact.name}</span>
-                        {p.contact.relationship_temp && <TemperatureDot temp={p.contact.relationship_temp} />}
+                        <span>{p.person.name}</span>
+                        {p.person.relationship_temp && <TemperatureDot temp={p.person.relationship_temp} />}
                       </div>
                     ) : (
                       <span className="muted">—</span>
@@ -140,7 +143,15 @@ export default function Places() {
       </div>
 
       {selected && (
-        <PlaceDetail placeId={selected} onClose={() => setSelected(null)} onChanged={load} />
+        <PlaceDetail placeId={selected} onClose={() => setSelected(null)} onChanged={load} onDeleted={load} />
+      )}
+
+      {adding && (
+        <PlaceModal
+          categories={filters.categories}
+          onClose={() => setAdding(false)}
+          onSaved={load}
+        />
       )}
     </div>
   );
