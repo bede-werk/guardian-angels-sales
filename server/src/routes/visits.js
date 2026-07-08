@@ -30,11 +30,14 @@ const EDITABLE = [
 
 // Re-fetches a visit joined to its place's basic info, for the response
 // after a create/update (so the frontend doesn't need a second request).
+// Left join, not inner — a visit's place can be gone (deleted) while the
+// visit itself survives; v.place_name is the durable snapshot that still
+// identifies it either way, so it isn't overridden by the (possibly absent) live join.
 async function fetchVisit(id) {
   return knex('visits as v')
-    .join('places as p', 'p.id', 'v.place_id')
+    .leftJoin('places as p', 'p.id', 'v.place_id')
     .where('v.id', id)
-    .select('v.*', 'p.name as place_name', 'p.city as place_city', 'p.zip as place_zip')
+    .select('v.*', 'p.city as place_city', 'p.zip as place_zip')
     .first();
 }
 
@@ -44,8 +47,13 @@ router.post('/', async (req, res, next) => {
   try {
     const { place_id } = req.body;
     if (!place_id) return res.status(400).json({ error: 'place_id is required' });
+    const place = await knex('places').where({ id: place_id }).first();
+    if (!place) return res.status(404).json({ error: 'Place not found' });
 
-    const payload = { place_id };
+    // place_name is a one-time snapshot taken here, at logging time — a
+    // visit's place_id is never changed after creation, so this never needs
+    // re-deriving later, even if the place is later renamed or deleted.
+    const payload = { place_id, place_name: place.name };
     for (const f of EDITABLE) if (req.body[f] !== undefined) payload[f] = req.body[f];
     if (payload.outcome && !OUTCOMES.includes(payload.outcome)) {
       return res.status(400).json({ error: `outcome must be one of ${OUTCOMES.join(', ')}` });

@@ -104,9 +104,15 @@ export const api = {
     },
     get: (id) => request(`/people/${id}`), // a person + their place + full visit history
     listForPlace: (placeId) => request(`/places/${placeId}/people`),
-    create: (placeId, body) => request(`/places/${placeId}/people`, { method: 'POST', body }),
+    create: (body) => request('/people', { method: 'POST', body }), // place_id in body is optional
     update: (id, body) => request(`/people/${id}`, { method: 'PATCH', body }),
     remove: (id) => request(`/people/${id}`, { method: 'DELETE' }),
+  },
+
+  // Referrals — server/src/routes/referrals.js
+  referrals: {
+    create: (body) => request('/referrals', { method: 'POST', body }),
+    remove: (id) => request(`/referrals/${id}`, { method: 'DELETE' }),
   },
 
   // Auth (login/logout/password) — server/src/routes/auth.js
@@ -139,6 +145,10 @@ export const ROLE_TYPE_LABELS = {
   champion: 'Champion',
   other: 'Other',
 };
+
+// Display labels for a person's relationship_temp enum (also used for the
+// server-computed suggested_relationship_temp — see services/relationshipTemp.js).
+export const TEMP_LABELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', dormant: 'Dormant' };
 
 // Today's date as 'YYYY-MM-DD', matching how dates are stored/compared everywhere else.
 export function today() {

@@ -5,8 +5,10 @@
 // their own full paths (some nest under /places/:placeId, some don't),
 // rather than all sharing one /api/people prefix.
 const express = require('express');
+const dayjs = require('dayjs');
 const knex = require('../db/knex');
 const { validatePhone } = require('../services/phone');
+const { suggestRelationshipTemp } = require('../services/relationshipTemp');
 
 const router = express.Router();
 
@@ -69,8 +71,11 @@ router.get('/people', async (req, res, next) => {
       .groupBy('person_id')
       .as('lv');
 
+    // Left join, not inner — a person can now be unassigned (place_id null),
+    // e.g. after their place was deleted or they were manually detached, and
+    // should still show up in the directory rather than disappearing.
     const query = knex('people as pe')
-      .join('places as p', 'p.id', 'pe.place_id')
+      .leftJoin('places as p', 'p.id', 'pe.place_id')
       .leftJoin(lastVisit, 'lv.person_id', 'pe.id')
       .select(
         'pe.*',
@@ -100,8 +105,9 @@ router.get('/people', async (req, res, next) => {
   }
 });
 
-// GET /api/people/:id — a person with their place and full visit history
-// (every visit where this person was the recorded contact).
+// GET /api/people/:id — a person with their place, full visit history (every
+// visit where this person was the recorded contact), and every referral
+// they've sent us.
 router.get('/people/:id', async (req, res, next) => {
   try {
     const person = await knex('people').where({ id: req.params.id }).first();
@@ -116,7 +122,36 @@ router.get('/people/:id', async (req, res, next) => {
       .orderBy('v.id', 'desc')
       .select('v.*', 'u.name as user_name');
 
-    res.json({ ...decorate(person), place, visits });
+    const referrals = await knex('referrals')
+      .where({ person_id: person.id })
+      .orderBy('referral_date', 'desc')
+      .orderBy('id', 'desc');
+
+    // Suggested temperature needs a place to judge cadence against — an
+    // unassigned person has no visit recency to speak of, so no suggestion.
+    let suggestedRelationshipTemp = null;
+    if (place) {
+      const lastPlaceVisit = await knex('visits')
+        .where({ place_id: place.id, status: 'completed' })
+        .orderBy('scheduled_date', 'desc')
+        .first();
+      const daysSinceLastVisit = lastPlaceVisit
+        ? dayjs().diff(dayjs(lastPlaceVisit.scheduled_date), 'day')
+        : null;
+      suggestedRelationshipTemp = suggestRelationshipTemp({
+        currentTemp: person.relationship_temp,
+        tier: place.tier,
+        daysSinceLastVisit,
+      });
+    }
+
+    res.json({
+      ...decorate(person),
+      place,
+      visits,
+      referrals,
+      suggested_relationship_temp: suggestedRelationshipTemp,
+    });
   } catch (err) {
     next(err);
   }
@@ -136,18 +171,25 @@ router.get('/places/:placeId/people', async (req, res, next) => {
   }
 });
 
-// POST /api/places/:placeId/people — add a person at this place.
-router.post('/places/:placeId/people', async (req, res, next) => {
+// POST /api/people — add a person. place_id is optional (a person doesn't
+// have to belong anywhere, same as a place doesn't need anyone on file) —
+// pass it to create them already assigned, e.g. from PlaceDetail's
+// "Add person" button, or omit it to create them unassigned.
+router.post('/people', async (req, res, next) => {
   try {
-    const placeId = req.params.placeId;
-    const place = await knex('places').where({ id: placeId }).first();
-    if (!place) return res.status(404).json({ error: 'Place not found' });
-
-    const { name } = req.body;
+    const { name, place_id } = req.body;
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
+
+    let placeId = null;
+    if (place_id !== undefined && place_id !== null && place_id !== '') {
+      const place = await knex('places').where({ id: place_id }).first();
+      if (!place) return res.status(400).json({ error: 'place not found' });
+      placeId = place_id;
+    }
 
     const payload = { place_id: placeId, name: String(name).trim() };
     for (const f of EDITABLE) if (f !== 'name' && req.body[f] !== undefined) payload[f] = req.body[f];
+    if (!placeId) payload.is_primary = false; // "primary at a place" needs a place
 
     const validationError = validate(payload);
     if (validationError) return res.status(400).json({ error: validationError });
@@ -157,7 +199,7 @@ router.post('/places/:placeId/people', async (req, res, next) => {
       // better-sqlite3's returning() gives back an id-only row on some Knex
       // versions; Postgres gives the full row. Normalize to just the id here.
       const id = inserted && inserted.id ? inserted.id : inserted;
-      if (payload.is_primary) await unsetOtherPrimaries(trx, placeId, id);
+      if (payload.is_primary && placeId) await unsetOtherPrimaries(trx, placeId, id);
       return trx('people').where({ id }).first();
     });
 
@@ -176,12 +218,27 @@ router.patch('/people/:id', async (req, res, next) => {
     const update = { updated_at: knex.fn.now() };
     for (const f of EDITABLE) if (req.body[f] !== undefined) update[f] = req.body[f];
 
+    // place_id isn't in EDITABLE — it needs its own validation and side
+    // effects (rather than a straight copy), since it's how a person gets
+    // detached from a place (null) or reassigned to a different one.
+    if (req.body.place_id !== undefined) {
+      if (req.body.place_id === null || req.body.place_id === '') {
+        update.place_id = null;
+        update.is_primary = false; // "primary at a place" is meaningless once unassigned
+      } else {
+        const place = await knex('places').where({ id: req.body.place_id }).first();
+        if (!place) return res.status(400).json({ error: 'place not found' });
+        update.place_id = req.body.place_id;
+      }
+    }
+
     const validationError = validate(update);
     if (validationError) return res.status(400).json({ error: validationError });
 
     const person = await knex.transaction(async (trx) => {
       await trx('people').where({ id: req.params.id }).update(update);
-      if (update.is_primary) await unsetOtherPrimaries(trx, existing.place_id, req.params.id);
+      const effectivePlaceId = update.place_id !== undefined ? update.place_id : existing.place_id;
+      if (update.is_primary && effectivePlaceId) await unsetOtherPrimaries(trx, effectivePlaceId, req.params.id);
       return trx('people').where({ id: req.params.id }).first();
     });
 

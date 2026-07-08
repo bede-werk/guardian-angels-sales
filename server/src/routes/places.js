@@ -2,9 +2,11 @@
 // creating a place, the searchable/filterable directory list, filter-dropdown
 // options, and a single place's full detail (visits + people).
 const express = require('express');
+const dayjs = require('dayjs');
 const knex = require('../db/knex');
 const { priorityLabel, priorityScore, regionForPlace } = require('../services/priority');
 const { validatePhone } = require('../services/phone');
+const { suggestRelationshipTemp } = require('../services/relationshipTemp');
 
 const router = express.Router();
 
@@ -109,11 +111,27 @@ router.get('/', async (req, res, next) => {
     const personByPlace = {};
     for (const c of people) if (!personByPlace[c.place_id]) personByPlace[c.place_id] = c;
 
+    // Referral totals: same rule as GET /:id — a place's total is the sum of
+    // its *current* people's own referral counts, computed here for every
+    // place at once (referrals joined to people's live place_id, not the
+    // referral's own place_id snapshot) so the directory doesn't need N+1 requests.
+    const referralTotals = ids.length
+      ? await knex('referrals as r')
+          .join('people as pe', 'pe.id', 'r.person_id')
+          .whereIn('pe.place_id', ids)
+          .groupBy('pe.place_id')
+          .select('pe.place_id')
+          .count('r.id as count')
+      : [];
+    const referralTotalByPlace = {};
+    for (const row of referralTotals) referralTotalByPlace[row.place_id] = Number(row.count);
+
     res.json(
       places.map((p) => ({
         ...decorate(p),
         visit_count: Number(p.visit_count) || 0,
         person: personByPlace[p.id] || null,
+        referral_total: referralTotalByPlace[p.id] || 0,
       }))
     );
   } catch (err) {
@@ -156,10 +174,44 @@ router.get('/:id', async (req, res, next) => {
       .orderBy('is_primary', 'desc')
       .orderBy('name', 'asc');
 
+    // A place's referral total is just the sum of its *current* people's own
+    // referral counts — not a count keyed off referrals.place_id — so it
+    // automatically drops when someone's removed and rises when someone new
+    // (who already has referrals on their record) is added.
+    const peopleIds = people.map((p) => p.id);
+    const referralCounts = peopleIds.length
+      ? await knex('referrals').whereIn('person_id', peopleIds).select('person_id').count('* as count').groupBy('person_id')
+      : [];
+    const countByPerson = {};
+    for (const r of referralCounts) countByPerson[r.person_id] = Number(r.count);
+
+    // Suggested relationship temperature: same recency-vs-cadence decay for
+    // every person here, since it's judged off this one place's own last
+    // completed visit — reuses `visits` (already fetched above) instead of a
+    // separate query. Each person's *starting point* still differs, since
+    // decay is relative to their own current manual value.
+    const lastCompletedVisit = visits.find((v) => v.status === 'completed');
+    const daysSinceLastVisit = lastCompletedVisit
+      ? dayjs().diff(dayjs(lastCompletedVisit.scheduled_date), 'day')
+      : null;
+
+    const peopleWithCounts = people.map((c) => ({
+      ...c,
+      departed: !!c.departed,
+      is_primary: !!c.is_primary,
+      referral_count: countByPerson[c.id] || 0,
+      suggested_relationship_temp: suggestRelationshipTemp({
+        currentTemp: c.relationship_temp,
+        tier: place.tier,
+        daysSinceLastVisit,
+      }),
+    }));
+
     res.json({
       ...decorate(place),
       visits,
-      people: people.map((c) => ({ ...c, departed: !!c.departed, is_primary: !!c.is_primary })),
+      people: peopleWithCounts,
+      referral_total: peopleWithCounts.reduce((sum, p) => sum + p.referral_count, 0),
     });
   } catch (err) {
     next(err);
@@ -201,11 +253,17 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-// DELETE /api/places/:id — remove a place entirely. Cascades (at the DB level)
-// to its visits, people, and referrals, so this is a permanent, all-history-
-// erasing action, not a soft delete.
+// DELETE /api/places/:id — remove only the place itself. People who were here
+// are detached, not deleted (place_id -> null, at the DB level via ON DELETE
+// SET NULL), and every visit logged here survives the same way (its
+// place_name snapshot is what keeps that history readable afterward). This
+// is permanent for the place's own details, but not for anyone's history.
 router.delete('/:id', async (req, res, next) => {
   try {
+    // "Primary contact at this place" stops making sense the moment they're
+    // unassigned, so clear it before the place (and the FK's SET NULL) detaches them.
+    await knex('people').where({ place_id: req.params.id }).update({ is_primary: false });
+
     const deleted = await knex('places').where({ id: req.params.id }).del();
     if (!deleted) return res.status(404).json({ error: 'Place not found' });
     res.status(204).end();

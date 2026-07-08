@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api';
 import { TierChip, CategoryChip } from './ui/Chip';
-import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
@@ -108,7 +107,7 @@ export default function Places() {
                 <th>Priority</th>
                 <th>Location</th>
                 <th>Last visit</th>
-                <th>Contact</th>
+                <th>Referrals</th>
               </tr>
             </thead>
             <tbody>
@@ -120,17 +119,7 @@ export default function Places() {
                   <td className="muted tiny">{p.city} {p.zip}<br />{p.region}</td>
                   <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
                   <td className="tiny">
-                    {/* p.person is this place's primary person, included by
-                        the API's list endpoint so this column doesn't need a
-                        separate request per row. */}
-                    {p.person ? (
-                      <div className="stack">
-                        <span>{p.person.name}</span>
-                        {p.person.relationship_temp && <TemperatureDot temp={p.person.relationship_temp} />}
-                      </div>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
+                    {p.referral_total > 0 ? p.referral_total : <span className="muted">—</span>}
                   </td>
                 </tr>
               ))}

@@ -113,8 +113,11 @@ async function generateSchedule({ date, userId, hours, visitMinutes, travelMinut
     const ordered = clusterSort(candidates, seed).slice(0, capacity);
 
     // Insert one 'planned' visit per chosen stop, in route order (sort_order).
+    // place_name is snapshotted here too (mirrors routes/visits.js's POST /) since
+    // this bypasses that route entirely to insert the whole day's rows at once.
     const rows = ordered.map((p, i) => ({
       place_id: p.id,
+      place_name: p.name,
       user_id: userId || null,
       scheduled_date: date,
       status: 'planned',
