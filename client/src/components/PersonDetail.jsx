@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { api, ROLE_TYPE_LABELS, TEMP_LABELS } from '../api';
+import { api, ROLE_TYPE_LABELS } from '../api';
 import { StatusChip, OutcomeChip, CategoryChip, TierChip } from './ui/Chip';
-import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
@@ -21,7 +20,6 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
   const [placeDraft, setPlaceDraft] = useState('');
   const [removingReferralId, setRemovingReferralId] = useState(null); // referral currently being deleted (disables its row)
   const [loggingReferral, setLoggingReferral] = useState(false); // whether the Log Referral modal is open
-  const [applyingSuggestedTemp, setApplyingSuggestedTemp] = useState(false);
 
   async function load() {
     setData(await api.people.get(personId));
@@ -91,21 +89,6 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
     }
   }
 
-  // Accepts the suggested temperature by writing it to the manual field —
-  // still a deliberate action, never automatic (see relationshipTemp.js).
-  async function applySuggestedTemp() {
-    setApplyingSuggestedTemp(true);
-    try {
-      await api.people.update(data.id, { relationship_temp: data.suggested_relationship_temp });
-      load();
-      onChanged?.();
-    } catch (e) {
-      window.alert(e.message);
-    } finally {
-      setApplyingSuggestedTemp(false);
-    }
-  }
-
   if (!data) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
@@ -116,7 +99,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
     );
   }
 
-  const tempDiffers = data.suggested_relationship_temp && data.suggested_relationship_temp !== (data.relationship_temp || null);
+  const { referral_metrics: metrics } = data;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -127,26 +110,16 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
             <div className="tag-list" style={{ marginTop: 4 }}>
               {data.title && <span className="tiny muted">{data.title}</span>}
               {data.role_type && <span className="contact-role">{ROLE_TYPE_LABELS[data.role_type]}</span>}
-              {data.relationship_temp && <TemperatureDot temp={data.relationship_temp} />}
-              {tempDiffers && (
-                <>
-                  <span
-                    className="badge"
-                    style={{ background: 'var(--mauve-tint-1)', color: 'var(--mauve)' }}
-                    title="Suggested from visit recency — the manual value is never changed automatically"
-                  >
-                    Suggested: {TEMP_LABELS[data.suggested_relationship_temp]}
-                  </span>
-                  <Button variant="ghost" size="small" onClick={applySuggestedTemp} disabled={applyingSuggestedTemp}>
-                    {applyingSuggestedTemp ? 'Applying…' : 'Use this'}
-                  </Button>
-                </>
-              )}
               {data.is_primary && <span className="badge star">★ Primary</span>}
               {data.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
               <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
-                {data.referrals.length} referral{data.referrals.length === 1 ? '' : 's'}
+                {metrics.lifetime_referrals} referral{metrics.lifetime_referrals === 1 ? '' : 's'}
               </span>
+              {metrics.needs_attention && (
+                <span className="badge attention" title="Referred before, but nothing in the last 90 days">
+                  Cooling — needs attention
+                </span>
+              )}
             </div>
           </div>
           <button className="close" onClick={onClose}>×</button>
@@ -218,13 +191,23 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
             </div>
           </div>
 
-          {/* Every referral this person has sent us, most recent first. */}
+          {/* Every referral this person has sent us, most recent first, plus
+              the three headline metrics computed live from that list (see
+              services/referralMetrics.js) — no manual "temperature" to set. */}
           <div className="card">
             <div className="card-head">
-              <h2>Referrals ({data.referrals.length})</h2>
+              <h2>Referrals ({metrics.lifetime_referrals})</h2>
               <Button size="small" onClick={() => setLoggingReferral(true)}>Log a referral</Button>
             </div>
-            <div className="card-body">
+            <div className="card-body stack">
+              <div className="tiny muted">
+                Last referral: {metrics.last_referral_date || 'none yet'} · {metrics.referrals_last_90_days} in the last 90 days
+              </div>
+              {metrics.needs_attention && (
+                <div className="tiny" style={{ color: 'var(--mauve)' }}>
+                  Cooling — referred before, but nothing in the last 90 days.
+                </div>
+              )}
               {data.referrals.length === 0 ? (
                 <EmptyState message="No referrals logged for this person yet." />
               ) : (

@@ -175,7 +175,7 @@ async function loadRoute(db, date, userId) {
       .where('departed', false)
       .orderBy('is_primary', 'desc')
       .orderBy('id', 'asc')
-      .select('place_id', 'name', 'relationship_temp'),
+      .select('place_id', 'name'),
 
     db('visits')
       .whereIn('place_id', placeIds)

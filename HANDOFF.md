@@ -18,14 +18,22 @@ to plan visits to referral places, log who they talked to, and track referrals �
 year in a series of same-day feature sessions directly with Bede (the owner/primary user).
 
 **Where things stand right now:**
-- The last full session (2026-07-08) built, in order: Places CRUD, a People tab (renamed
-  from "contacts"), phone-number formatting, detach-not-delete semantics for places/people/
-  visits (see §8), a full person-attributed referral system (see §8), and a computed
-  "suggested relationship temperature" feature (see §9). All of it is implemented, smoke-
-  tested against the real dev DB, and working.
-- **None of it is committed.** Run `git status` before doing anything else — every file
-  touched this session is still sitting as uncommitted changes/untracked files on `main`.
-  Don't assume section 13's snapshot is still accurate; re-check.
+- The 2026-07-08 CRM-buildout session (Places CRUD, People tab, detach-not-delete
+  semantics, a person-attributed referral system, and a computed "suggested relationship
+  temperature" feature) is **committed and merged to `main`** (PR #4, `2547bfb`).
+- A same-day follow-up session then **removed relationship temperature entirely** and
+  replaced it with objective, time-aware **referral metrics** computed live from the
+  `referrals` table — no manual field, no upkeep. See §9 (rewritten) for the full design;
+  §4/§5/§8 are updated to match.
+- **The referral-metrics session is NOT yet committed.** Run `git status` before doing
+  anything else. Touched: `server/src/services/referralMetrics.js` (new),
+  `server/src/services/relationshipTemp.js` (deleted),
+  `server/src/migrations/20260710000000_drop_relationship_temp.js` (new), edits across
+  `routes/people.js`, `routes/places.js`, `routes/dashboard.js`, `services/scheduler.js`,
+  `services/priority.js`, and the client (`api.js`, `styles.css`, `Dashboard.jsx`,
+  `People.jsx`, `Places.jsx`, `PersonDetail.jsx`, `PersonModal.jsx`, `PlaceDetail.jsx`,
+  `Schedule.jsx`), plus `ui/TemperatureDot.jsx` (deleted). Don't assume section 13's
+  snapshot is still accurate by the time you read this — re-check.
 - Don't start new feature work without first asking Bede whether to commit the pending
   changes — he explicitly only wants commits when asked for.
 
@@ -33,31 +41,41 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
    never destroys another's history. If you're tempted to `CASCADE` a foreign key, stop and
    re-read §8 — that's almost certainly the wrong call here.
-2. **Referrals belong to a person, never a place.** A place's referral total is *always*
-   derived live (sum of its current roster's own counts), never stored. If you see a bug
-   where a place's total doesn't match expectations, check who's currently assigned there
-   first, not the referrals table's own `place_id`-shaped assumptions (there is no
-   `place_id` on referrals).
-3. **Suggested-but-not-applied is the house style for "smart" fields.** Relationship
-   temperature works this way (§9) — compute a suggestion, show it next to the manual
-   value, let the user opt in with a button, never silently overwrite. Follow this pattern
-   for anything else "smart" Bede asks for later.
-4. **SQLite migrations in this repo need care**, not `.alter()`. Adding/changing a FK on an
-   existing column with `.alter()` leaves duplicate FKs, and index names collide
-   database-wide across rebuild attempts. Use the `rebuildSqliteTable`-style rebuild
-   pattern already established in `20260709000000_detach_instead_of_cascade.js` (temp table
-   → copy via raw INSERT SELECT → drop → rename, explicit index names, defensive
-   `DROP INDEX IF EXISTS`) rather than reinventing it.
+2. **Referrals belong to a person, never a place.** A place's referral metrics are *always*
+   derived live (rolled up from its current roster's own numbers), never stored. If you see
+   a bug where a place's numbers don't match expectations, check who's currently assigned
+   there first, not the referrals table's own `place_id`-shaped assumptions (`place_id` on
+   `referrals` is just a historical snapshot, not the source of truth for a place's total).
+3. **No more manual "smart" fields that need upkeep.** The old house style was
+   suggested-but-not-applied (compute a suggestion, show it next to a manual value, let the
+   user opt in) — that's how relationship temperature worked. It was replaced because the
+   manual field it suggested against never actually got kept up to date. The new standard
+   for anything like this is **fully computed, no manual field at all** (see referral
+   metrics in §9) — prefer that shape for future "smart" fields unless there's a real reason
+   a human needs to be able to override it.
+4. **SQLite migrations in this repo need care**, not `.alter()` for FK-bearing columns.
+   Adding/changing a FK on an existing column with `.alter()` leaves duplicate FKs, and
+   index names collide database-wide across rebuild attempts. Use the
+   `rebuildSqliteTable`-style rebuild pattern established in
+   `20260709000000_detach_instead_of_cascade.js` (temp table → copy via raw INSERT SELECT →
+   drop → rename, explicit index names, defensive `DROP INDEX IF EXISTS`) for that case.
+   Dropping a plain non-FK column (no rebuild needed) is simpler — see
+   `20260710000000_drop_relationship_temp.js` for that pattern instead.
 5. **Smoke-test safely** (§10) — passwordless user Lisa Marks (id 5) for temp auth tokens,
    `__SMOKETEST_`/`__E2E_` prefixes, clean up after, and never touch Bede's own real test
    data (place 264 "Guardian Angels (Test)"; people Lionel Messi / Mohamed Salah / Neymar
    Jr.). Never set a password on a real user's account to get a token — that happened once
-   this project and it was a mistake (see §10).
+   this project and it was a mistake (see §10). Note: the referral-metrics session's own
+   smoke test deviated from this — it set a temporary `auth_token` (not a password) directly
+   on Bede's real account (id 3) instead of using Lisa Marks, then restored the original
+   token afterward. No data was lost (only a rotating session token, not the password hash),
+   but it should have used id 5 per this convention — don't repeat that shortcut.
 
 **Natural next steps Bede has flagged but not yet asked for** (don't just do these — check
-first): extending the relationship-temp suggestion to the People tab/Dashboard/Today's
-Route, a Phase 2 referral-activity factor for relationship temp, committing/pushing this
-session's work, finishing the remaining Needs Mapping referrers.
+first): committing/pushing the referral-metrics session, extending "needs attention"
+coverage to Today's Route, feeding referral metrics into priority scoring (the natural
+successor to the old "Phase 2 relationship-temp" idea), finishing the remaining Needs
+Mapping referrers.
 
 **If something in this note contradicts the actual code** (a file's gone, a function's
 renamed), trust the code — this note is a snapshot from one point in time, not a live source
@@ -112,13 +130,13 @@ guardian-angels-sales/
 │       ├── middleware/               # requireAuth (bearer token)
 │       ├── migrations/               # init, notes_import, add_auth, places_and_people,
 │       │                             # rename_partners_to_places, people_and_place_notes,
-│       │                             # detach_instead_of_cascade
+│       │                             # detach_instead_of_cascade, drop_relationship_temp
 │       ├── services/
 │       │   ├── priority.js           # priority score + region ("side of town") helpers
 │       │   ├── scheduler.js          # daily route generator
 │       │   ├── auth.js               # password hashing / token helpers
 │       │   ├── phone.js              # phone validation + (402) 555-1234 normalization
-│       │   └── relationshipTemp.js   # suggested relationship-temperature decay model
+│       │   └── referralMetrics.js    # lifetime/last/90-day referral metrics + needs_attention
 │       ├── routes/                   # auth, places, people, referrals, visits, schedule,
 │       │                             # dashboard, users, notesReview
 │       └── scripts/
@@ -137,7 +155,7 @@ guardian-angels-sales/
             ├── People.jsx, PersonDetail.jsx, PersonModal.jsx, AssignPersonModal.jsx
             ├── ReferralModal.jsx
             ├── VisitLogModal.jsx, NeedsMapping.jsx
-            └── ui/                    # Button, Chip, EmptyState, PhoneInput, TemperatureDot, ...
+            └── ui/                    # Button, Chip, EmptyState, PhoneInput, ...
 ```
 
 ---
@@ -152,18 +170,21 @@ guardian-angels-sales/
   Excel (261 rows), now a full CRUD directory — add/edit/delete from the UI. Deleting a place
   deletes only that row; see section 8 for what happens to its people/visits.
 - **people** — individual contacts (`place_id` nullable, `name, title, role_type, email,
-  phone, relationship_temp, preferences, notes, birthday, departed, is_primary`). Renamed
-  from "contacts" this session. A person doesn't have to belong to a place, mirroring how a
-  place doesn't need a person on file.
+  phone, preferences, notes, birthday, departed, is_primary`). Renamed from "contacts" the
+  session before last. A person doesn't have to belong to a place, mirroring how a place
+  doesn't need a person on file. (No `relationship_temp` column — dropped by
+  `20260710000000_drop_relationship_temp.js`; see §9.)
 - **visits** — one planned/completed/skipped touchpoint by a user on a place for a date.
   Fields: `status, sort_order, outcome, notes, next_visit_date, source, completed_at`, plus
   **snapshot fields** (`place_name`, `person_name/title/email/phone`) captured at creation time
   so a visit's history stays fully readable even after the live place/person is deleted.
   `source` = `manual` (in-app) or `imported_note` (from the notes spreadsheet).
-- **referrals** — one referral, always attributed to a `person_id` (cascade-deletes with the
-  person, since a referral has no meaning detached from who sent it), with `referral_date` and
-  `notes`. A place's referral total is never stored — it's computed live as the sum of its
-  *currently assigned* people's own counts (see section 8).
+- **referrals** — one referral, attributed to a `person_id` plus a `place_id` snapshot (both
+  `ON DELETE SET NULL` — a referral outlives the person/place it came from, orphaned but
+  preserved), with `referral_date` and `notes`. Nothing about relationship strength is
+  stored anywhere: `services/referralMetrics.js` derives lifetime count / last referral date
+  / last-90-days count / a `needs_attention` flag live from this table, for both people and
+  places, on every read (see section 9).
 - **notes_review** — "needs mapping" bucket: imported notes whose referrer didn't match a
   place (`referrer_raw, note_text, note_date, author_*, status, assigned_*`).
 
@@ -186,21 +207,22 @@ guardian-angels-sales/
   place's live referral tally (Contact column was removed once phone/email moved into
   PlaceDetail itself).
 - **People tab** — cross-place directory of every person, independent of place assignment;
-  filter by place, category, relationship temp, never-contacted.
-- **Place detail** — org-level notes; "People here" roster showing name + referral count +
-  relationship temp (+ suggested temp hint) per person; **Assign person** (attach an
-  existing/unassigned person) vs **New person** (create one for this place) vs detach
-  (✕, removes from place without deleting); **Log a referral** and **Log a visit** live in
-  the Referrals/Visit History sections respectively, not a generic modal footer.
+  filter by place, category, needs-attention (referred before, quiet the last 90 days),
+  never-contacted.
+- **Place detail** — org-level notes; "People here" roster showing name + each person's own
+  referral metrics (lifetime / last referral date / last 90 days) + a "Cooling" flag for
+  anyone who needs attention; **Assign person** (attach an existing/unassigned person) vs
+  **New person** (create one for this place) vs detach (✕, removes from place without
+  deleting); **Log a referral** and **Log a visit** live in the Referrals/Visit History
+  sections respectively, not a generic modal footer.
 - **Person detail** — phone/email shown as real text (not just Call/Email buttons); place
   assignment with "remove from place" / "assign to a place"; durable notes/preferences;
-  referral log + count + "Log a referral"; full visit history; relationship-temp suggestion
-  with a one-click "Use this" apply button.
+  referral log with lifetime/last-referral/last-90-days metrics, a "needs attention" badge,
+  and "Log a referral"; full visit history.
 - **Referrals** — always logged against a specific person (no "unknown contact" concept — an
   earlier draft had one, replaced per the user's revision — see section 8).
-- **Relationship temperature suggestion** — Phase 1 (recency-vs-cadence decay); see section
-  9. Manual value is the source of truth; the suggestion is only ever surfaced, never
-  auto-applied.
+- **Referral metrics ("needs attention")** — see section 9. Fully computed, no manual field;
+  replaced the earlier manual relationship-temperature system.
 - **Dashboard** — today's route, visits completed this week, high-priority never-visited.
 - **Multi-user** — visits assigned to a team member; routes/dashboards are per-user;
   scheduler avoids double-booking a place across reps on the same day.
@@ -227,11 +249,14 @@ guardian-angels-sales/
   decision made this session and touches places, people, visits, and referrals.
 - **A referral's "owner" is a person, full stop.** No place-only/unattributed referral
   concept — the user explicitly asked for that to be removed after an earlier draft
-  included it. A place's total is *derived*, never stored, from its current roster.
-- **Suggested values are additive, never destructive** — same pattern used for relationship
-  temperature: compute and display a suggestion, let the user apply it deliberately, never
-  overwrite the manual field automatically. Apply this pattern to any future "smart
-  suggestion" feature.
+  included it. A place's metrics are *derived*, never stored, from its current roster.
+- **No manual relationship-temperature field anymore.** It was a manual `hot/warm/cold/
+  dormant` field with a server-computed *suggestion* alongside it (compute, display, let
+  the user opt in with "Use this," never auto-overwrite — a reasonable pattern in the
+  abstract, kept here as a note in case a future "smart suggestion" feature wants it) — but
+  the manual field itself just never got kept up to date in practice. The user asked for it
+  to be replaced outright with objective, always-current referral metrics computed live
+  from the `referrals` table — nothing to set, nothing to go stale. See section 9.
 
 ---
 
@@ -276,50 +301,87 @@ never lose history when a place or person is removed.
   ("unknown contact / attribute to location only") and rolled that into the place's total —
   the user later asked for that concept to be removed entirely, so every referral is now
   always attributed to a specific person, full stop.
-- **A place's referral total is always computed live**, not stored: `GET /api/places/:id`
-  sums `referral_count` across the people *currently* assigned there
-  (`server/src/routes/places.js`'s `peopleWithCounts`/`referral_total`). Remove someone from
-  the place and the total drops immediately, even though their own referral count (visible on
-  their own PersonDetail) is untouched. The same live-sum logic is precomputed per-place in
-  the `GET /api/places` list query so the directory table can show it without N+1 requests.
-- Referral UI lives in two places: **PlaceDetail** (tally badge up top next to
+- **A place's referral metrics are always computed live**, not stored: `GET /api/places/:id`
+  rolls up each person's own `referral_metrics` (via `referralMetricsByPersonId` in
+  `services/referralMetrics.js`) across the people *currently* assigned there
+  (`server/src/routes/places.js`'s `peopleWithMetrics`/`referralMetrics`) — lifetime and
+  last-90-days sum across the roster, last-referral-date is whichever person's is most
+  recent. Remove someone from the place and its numbers drop immediately, even though their
+  own metrics (visible on their own PersonDetail) are untouched. The list endpoint
+  (`GET /api/places`) uses a separate batched query, `referralMetricsByPlaceId`, that joins
+  straight through to each place for the same numbers without N+1 requests — see §9.
+- Referral UI lives in two places: **PlaceDetail** (metrics badge(s) up top next to
   category/tier, "Log a referral" button next to Navigate/Call — moved there from a less
-  prominent spot per the user's request) and **PersonDetail** (its own referral log + count
-  + "Log a referral" button).
+  prominent spot per the user's request) and **PersonDetail** (its own referral log +
+  lifetime/last/90-day metrics + "Log a referral" button).
 
 ---
 
-## 9. Relationship temperature: manual + suggested (Phase 1)
+## 9. Referral metrics — the replacement for relationship temperature
 
-`relationship_temp` (`hot > warm > cold > dormant`) has always been a manual field on
-`people`. This session added a **server-computed suggestion** alongside it — the manual
-value stays the single source of truth; the suggestion is only ever displayed, never
-auto-applied.
+**This entire section replaces what used to be here.** The old design (a manual
+`relationship_temp` field — `hot > warm > cold > dormant` — plus a server-computed
+*suggestion* alongside it, shown but never auto-applied) is gone: no column, no service, no
+UI. It was removed because the manual field it suggested against never got kept current in
+practice — a suggestion next to a stale manual value doesn't help if nobody's updating the
+manual value. The replacement is **fully computed, no manual field, nothing to forget to
+update**.
 
-- **Logic:** `server/src/services/relationshipTemp.js`. `TARGET_CADENCE_DAYS` per place tier
-  (`{1: 30, 2: 60, 3: 90}`). Compares days-since-last-*completed*-visit-at-that-place against
-  the cadence: on-cadence → holds; past 1× → suggest one step cooler; past 2× (or never
-  visited) → suggest `dormant`. The decay steps from the person's *current* manual value
-  (not an independent absolute scale), and is intentionally structured (`recencyDecaySteps`
-  as its own function, `suggestRelationshipTemp` composing it) so a second factor — referral
-  activity — can be added later without reworking the shape.
-- **Wired into:** `GET /api/people/:id` (uses the person's place's last completed visit) and
-  `GET /api/places/:id` (computed per-person in the roster, reusing the visits already
-  fetched for the place — no extra query). **Not** wired into the People-tab directory list,
-  Dashboard, or Today's Route — those would need extra per-row queries; a natural follow-up
-  if the user wants it everywhere.
-- **UI:** shown only when the suggestion differs from the manual value (`tempDiffers` in both
-  `PersonDetail.jsx` and `PlaceDetail.jsx`). PersonDetail gets a full "Suggested: X" badge +
-  "Use this" button (PATCHes `relationship_temp` to match). PlaceDetail's roster rows get a
-  compact "→ cold" style hint instead, since space is tighter there.
+- **The three numbers**, per person and (rolled up) per place, computed live from the
+  `referrals` table by `server/src/services/referralMetrics.js`:
+  - `lifetime_referrals` — total referral rows attributed to them, ever.
+  - `last_referral_date` — the most recent `referral_date` on file, or `null` ("none yet").
+  - `referrals_last_90_days` — how many landed in the trailing 90-day window
+    (`RECENT_WINDOW_DAYS = 90`; cutoff computed against wall-clock "now," not the dashboard's
+    `date` query param, except in the one dashboard query described below).
+- **The flag:** `needs_attention` — `true` only when `lifetime_referrals > 0 &&
+  referrals_last_90_days === 0`. A brand-new contact/place with zero lifetime referrals
+  reads as "none yet," never as needing attention — only someone who's referred before and
+  then gone quiet gets flagged. This is the load-bearing edge case the whole feature was
+  built around; don't collapse the "zero ever" and "zero recently" cases into one check.
+- **Three ways to get the numbers**, all in `referralMetrics.js`, pick based on context:
+  - `referralMetricsByPersonId(knex, personIds)` — one batched query, `person_id -> metrics`,
+    for a list of people (People-tab directory, a place's roster).
+  - `referralMetricsByPlaceId(knex, placeIds)` — one batched query joined through each
+    place's *current* people, `place_id -> metrics` (same "live membership, not the
+    referral's own `place_id` snapshot" rule the old `referral_total` used) — for the Places
+    directory list, so it doesn't need N+1 requests.
+  - `summarizeReferralDates(dates)` — pure JS reduction over a `referral_date[]` you already
+    have in hand (e.g. `GET /api/people/:id` already fetched its own `referrals` array — no
+    second query needed).
+  - A place's own detail rollup (`GET /api/places/:id`) is a fourth path: it sums each
+    *already-fetched* person's `referral_metrics` in JS (lifetime/last-90 sum, last-referral
+    is whichever person's is most recent) rather than a separate query — see `metricsFor`/
+    `EMPTY_METRICS` in the same file for the shared reduce-to-map helper.
+- **Wired into:** `GET /api/people` (list) and `GET /api/people/:id`; `GET /api/places`
+  (list) and `GET /api/places/:id` (place rollup + per-person breakdown); `GET /api/dashboard`
+  (`needs_attention.cooling_people` — people who've referred before but nothing in the last
+  90 days, replacing the old dormant/cold temperature query). `needsAttention=1` is a filter
+  param on both `/api/people` and `/api/places` list endpoints (applied in JS after the
+  batched metrics query, not pushed into SQL — fine at this data scale).
+- **UI:** `client/src/styles.css` has one small reusable class for this, `.badge.attention`
+  (mauve tint, same token family as the old temperature dot's "hot" color) — used for the
+  "Cooling — needs attention" / "Needs attention" badges in `PersonDetail.jsx`,
+  `PlaceDetail.jsx`, `People.jsx`, and `Places.jsx`, plus a plain `.attention-flag` row style
+  reused as-is in `Dashboard.jsx`'s "Needs attention" list (that class predates this feature
+  and was already the house style for flagged rows). `PersonDetail`/`PlaceDetail` show all
+  three numbers as text (`"Last referral: 2026-03-30 · 0 in the last 90 days"`); `People.jsx`/
+  `Places.jsx` show lifetime count + a badge in their directory tables; both tabs also have a
+  "Needs attention" toggle button next to their existing "Never contacted"/"Never visited"
+  buttons.
+- **Migration:** `server/src/migrations/20260710000000_drop_relationship_temp.js` drops the
+  column and its index. Simple `t.dropColumn()` after an explicit `DROP INDEX IF EXISTS` —
+  no `rebuildSqliteTable` needed since there's no FK on this column (see mental-model point 4
+  above for when you *do* need the heavier rebuild pattern).
 
 ---
 
 ## 10. Smoke-testing methodology (worth knowing before you test again)
 
-Schema changes this session (detach semantics, referrals, relationship temp) were all
-verified with live HTTP calls against the running dev server, not just unit-level DB checks.
-Conventions used, worth keeping:
+Schema changes across sessions (detach semantics, referrals, and — most recently — the
+relationship-temp removal / referral-metrics rollout) were all verified with live HTTP calls
+against the running dev server, not just unit-level DB checks. Conventions used, worth
+keeping:
 
 - **Never use the real user's password to get a token.** Early on, a temp password was set
   on the real "Bede Fulton" account to get a bearer token for curl — this overwrote the real
@@ -328,6 +390,10 @@ Conventions used, worth keeping:
   password. **Don't repeat this.**
 - Instead, use a passwordless seeded user (**Lisa Marks, id 5**) — set a temporary
   `auth_token` directly in the DB for the test, and always clear it back to `null` afterward.
+  (The referral-metrics session's smoke test deviated from this — it set a temp `auth_token`
+  on Bede's real account, id 3, and restored the original token value afterward. No data was
+  lost since only the rotating session token was touched, not the password hash, but it
+  should have used id 5 — flagged here so it doesn't happen again.)
 - Test data is always prefixed distinctly (`__E2E_`, `__SMOKETEST_`) and cleaned up by that
   prefix immediately after verification.
 - Never touch the user's own real records while testing — in particular, place id 264
@@ -394,17 +460,21 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 - **Auth shipped:** the "add authentication before sharing the URL" item from the previous
   handoff is done — bearer-token login is live and required on all `/api` routes except the
   login flow itself.
-- **Git:** current branch `main`, clean-ish history through `22f2a87` (merge of the visual
-  redesign / places-rename work). **Everything described in sections 4–10 above (people/place
-  rework, detach semantics, referrals, phone formatting, relationship-temp suggestion) is
-  present in the working tree but not yet committed** — check `git status` before assuming
-  it's pushed. New/modified files include `server/src/routes/referrals.js`,
-  `server/src/services/relationshipTemp.js`,
-  `server/src/migrations/20260709000000_detach_instead_of_cascade.js`,
-  `client/src/components/AssignPersonModal.jsx`, `client/src/components/ReferralModal.jsx`,
-  plus edits across `PlaceDetail.jsx`, `PersonDetail.jsx`, `Places.jsx`, `People.jsx`,
-  `PersonModal.jsx`, `api.js`, `people.js`, `places.js`, `visits.js`, `scheduler.js`,
-  `index.js`.
+- **Git:** current branch `main`, history through `2547bfb` (merge of PR #4, "A lotta
+  changes. Trying to finalize the people and places tabs"). **The full 2026-07-08 CRM
+  buildout (sections 4–10's people/place rework, detach semantics, referrals, phone
+  formatting) is committed and merged** — the "not yet committed" note that used to be here
+  is stale; that work landed in `95b484b`/`2547bfb`.
+- **What's uncommitted right now** is the same-day follow-up that removed relationship
+  temperature and replaced it with referral metrics (see §9). Check `git status` before
+  assuming otherwise — as of this writing that's: `server/src/services/referralMetrics.js`
+  (new), `server/src/migrations/20260710000000_drop_relationship_temp.js` (new),
+  `server/src/services/relationshipTemp.js` (deleted),
+  `client/src/components/ui/TemperatureDot.jsx` (deleted), plus edits across
+  `routes/people.js`, `routes/places.js`, `routes/dashboard.js`, `services/scheduler.js`,
+  `services/priority.js`, `api.js`, `styles.css`, `Dashboard.jsx`, `People.jsx`,
+  `Places.jsx`, `PersonDetail.jsx`, `PersonModal.jsx`, `PlaceDetail.jsx`, `Schedule.jsx`,
+  and this file / `README.md` / `NOTES.md`.
 - **Live deploy:** the Railway deployment was taken down after the previous handoff to avoid
   ongoing cost while still building — all dev happens locally via `./dev.sh` or the two
   npm-run-dev terminals. Redeploying later is still ~5 min (New → GitHub Repo → add Postgres
@@ -414,13 +484,16 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 ## 14. Next steps / ideas (not yet done)
 
-- **Commit and push the current working-tree changes** (see section 13) — nothing from this
-  session has been committed yet.
-- **Relationship-temp suggestion coverage:** currently only on PersonDetail/PlaceDetail.
-  Extending it to the People-tab directory list, Dashboard, or Today's Route would need
-  per-row query work — a natural follow-up if wanted everywhere.
-- **Phase 2 of relationship temp:** fold in referral-activity as a second decay factor (the
-  service was structured to make this additive).
+- **Commit and push the referral-metrics working-tree changes** (see section 13) — the CRM
+  buildout before it is already committed, but this follow-up isn't.
+- **"Needs attention" coverage on Today's Route:** referral metrics are wired into the
+  People tab, Places tab, both detail pages, and the Dashboard, but not Today's Route's stop
+  cards — a natural follow-up if wanted there too.
+- **Feed referral metrics into priority scoring:** `services/priority.js` still only scores
+  off tier + the manual priority star; folding in a place's `referral_metrics` (e.g. boost
+  the ones with high recent referral activity, or resurface ones that are `needs_attention`)
+  is the natural successor to the old "Phase 2 relationship-temp" idea now that there's an
+  objective activity signal to use instead.
 - **Finish mapping** the remaining unmatched referrers in the Needs Mapping tab.
 - **Postgres backups** once real data accumulates (Railway backups or `pg_dump`), if/when
   redeployed.

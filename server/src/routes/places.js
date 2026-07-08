@@ -2,11 +2,10 @@
 // creating a place, the searchable/filterable directory list, filter-dropdown
 // options, and a single place's full detail (visits + people).
 const express = require('express');
-const dayjs = require('dayjs');
 const knex = require('../db/knex');
 const { priorityLabel, priorityScore, regionForPlace } = require('../services/priority');
 const { validatePhone } = require('../services/phone');
-const { suggestRelationshipTemp } = require('../services/relationshipTemp');
+const { referralMetricsByPersonId, referralMetricsByPlaceId, metricsFor, EMPTY_METRICS } = require('../services/referralMetrics');
 
 const router = express.Router();
 
@@ -53,10 +52,11 @@ function decorate(p) {
 }
 
 // GET /api/places — searchable / filterable list with last-visit + contact info.
-// Query params: search, category, tier, city, zip, neverVisited=1
+// Query params: search, category, tier, city, zip, neverVisited=1,
+// needsAttention=1 (referred before but nothing in the last 90 days).
 router.get('/', async (req, res, next) => {
   try {
-    const { search, category, tier, city, zip, neverVisited } = req.query;
+    const { search, category, tier, city, zip, neverVisited, needsAttention } = req.query;
 
     // Subquery: last *completed* visit per place. A visit that's only planned
     // (on today's route but not yet done) must not count as a real visit.
@@ -94,8 +94,8 @@ router.get('/', async (req, res, next) => {
     query.orderBy('p.priority_score', 'desc').orderBy('p.name', 'asc');
 
     // Pull each place's primary person (or earliest-added, if none marked primary)
-    // to show a name/phone/temperature preview in the directory table without
-    // requiring a separate request per row.
+    // to show a name/phone preview in the directory table without requiring a
+    // separate request per row.
     const places = await query;
     const ids = places.map((p) => p.id);
     const people = ids.length
@@ -104,36 +104,30 @@ router.get('/', async (req, res, next) => {
           .where('departed', false)
           .orderBy('is_primary', 'desc')
           .orderBy('id', 'asc')
-          .select('place_id', 'name', 'phone', 'email', 'relationship_temp')
+          .select('place_id', 'name', 'phone', 'email')
       : [];
     // Same "first row per place_id wins" trick used elsewhere: since the query
     // is sorted is_primary desc, the first row seen per place is the right one.
     const personByPlace = {};
     for (const c of people) if (!personByPlace[c.place_id]) personByPlace[c.place_id] = c;
 
-    // Referral totals: same rule as GET /:id — a place's total is the sum of
-    // its *current* people's own referral counts, computed here for every
-    // place at once (referrals joined to people's live place_id, not the
-    // referral's own place_id snapshot) so the directory doesn't need N+1 requests.
-    const referralTotals = ids.length
-      ? await knex('referrals as r')
-          .join('people as pe', 'pe.id', 'r.person_id')
-          .whereIn('pe.place_id', ids)
-          .groupBy('pe.place_id')
-          .select('pe.place_id')
-          .count('r.id as count')
-      : [];
-    const referralTotalByPlace = {};
-    for (const row of referralTotals) referralTotalByPlace[row.place_id] = Number(row.count);
+    // Referral metrics: same rule as GET /:id — a place's numbers are rolled
+    // up from its *current* people (referrals joined to people's live
+    // place_id, not the referral's own place_id snapshot), computed here for
+    // every place at once so the directory doesn't need N+1 requests.
+    const metricsByPlace = await referralMetricsByPlaceId(knex, ids);
 
-    res.json(
-      places.map((p) => ({
-        ...decorate(p),
-        visit_count: Number(p.visit_count) || 0,
-        person: personByPlace[p.id] || null,
-        referral_total: referralTotalByPlace[p.id] || 0,
-      }))
-    );
+    let decorated = places.map((p) => ({
+      ...decorate(p),
+      visit_count: Number(p.visit_count) || 0,
+      person: personByPlace[p.id] || null,
+      referral_metrics: metricsFor(metricsByPlace, p.id),
+    }));
+    if (needsAttention === '1' || needsAttention === 'true') {
+      decorated = decorated.filter((p) => p.referral_metrics.needs_attention);
+    }
+
+    res.json(decorated);
   } catch (err) {
     next(err);
   }
@@ -174,44 +168,42 @@ router.get('/:id', async (req, res, next) => {
       .orderBy('is_primary', 'desc')
       .orderBy('name', 'asc');
 
-    // A place's referral total is just the sum of its *current* people's own
-    // referral counts — not a count keyed off referrals.place_id — so it
-    // automatically drops when someone's removed and rises when someone new
+    // A place's referral metrics are just the roll-up of its *current*
+    // people's own metrics — not keyed off referrals.place_id — so they
+    // automatically drop when someone's removed and rise when someone new
     // (who already has referrals on their record) is added.
     const peopleIds = people.map((p) => p.id);
-    const referralCounts = peopleIds.length
-      ? await knex('referrals').whereIn('person_id', peopleIds).select('person_id').count('* as count').groupBy('person_id')
-      : [];
-    const countByPerson = {};
-    for (const r of referralCounts) countByPerson[r.person_id] = Number(r.count);
+    const metricsByPerson = await referralMetricsByPersonId(knex, peopleIds);
 
-    // Suggested relationship temperature: same recency-vs-cadence decay for
-    // every person here, since it's judged off this one place's own last
-    // completed visit — reuses `visits` (already fetched above) instead of a
-    // separate query. Each person's *starting point* still differs, since
-    // decay is relative to their own current manual value.
-    const lastCompletedVisit = visits.find((v) => v.status === 'completed');
-    const daysSinceLastVisit = lastCompletedVisit
-      ? dayjs().diff(dayjs(lastCompletedVisit.scheduled_date), 'day')
-      : null;
-
-    const peopleWithCounts = people.map((c) => ({
+    const peopleWithMetrics = people.map((c) => ({
       ...c,
       departed: !!c.departed,
       is_primary: !!c.is_primary,
-      referral_count: countByPerson[c.id] || 0,
-      suggested_relationship_temp: suggestRelationshipTemp({
-        currentTemp: c.relationship_temp,
-        tier: place.tier,
-        daysSinceLastVisit,
-      }),
+      referral_metrics: metricsFor(metricsByPerson, c.id),
     }));
+
+    // Sum lifetime and last-90-days across people; last_referral_date is
+    // whichever person's is most recent. A place with no referrals at all
+    // reads as "none yet" (needs_attention stays false), same rule as a person.
+    const referralMetrics = peopleWithMetrics.reduce(
+      (acc, p) => ({
+        lifetime_referrals: acc.lifetime_referrals + p.referral_metrics.lifetime_referrals,
+        referrals_last_90_days: acc.referrals_last_90_days + p.referral_metrics.referrals_last_90_days,
+        last_referral_date:
+          p.referral_metrics.last_referral_date &&
+          (!acc.last_referral_date || p.referral_metrics.last_referral_date > acc.last_referral_date)
+            ? p.referral_metrics.last_referral_date
+            : acc.last_referral_date,
+      }),
+      { ...EMPTY_METRICS }
+    );
+    referralMetrics.needs_attention = referralMetrics.lifetime_referrals > 0 && referralMetrics.referrals_last_90_days === 0;
 
     res.json({
       ...decorate(place),
       visits,
-      people: peopleWithCounts,
-      referral_total: peopleWithCounts.reduce((sum, p) => sum + p.referral_count, 0),
+      people: peopleWithMetrics,
+      referral_metrics: referralMetrics,
     });
   } catch (err) {
     next(err);

@@ -5,15 +5,13 @@
 // their own full paths (some nest under /places/:placeId, some don't),
 // rather than all sharing one /api/people prefix.
 const express = require('express');
-const dayjs = require('dayjs');
 const knex = require('../db/knex');
 const { validatePhone } = require('../services/phone');
-const { suggestRelationshipTemp } = require('../services/relationshipTemp');
+const { referralMetricsByPersonId, summarizeReferralDates, metricsFor } = require('../services/referralMetrics');
 
 const router = express.Router();
 
 const ROLE_TYPES = ['decision_maker', 'gatekeeper', 'champion', 'other'];
-const TEMPS = ['hot', 'warm', 'cold', 'dormant'];
 
 // Fields a client is allowed to set on a person (mirrors the `people` migration).
 const EDITABLE = [
@@ -22,7 +20,6 @@ const EDITABLE = [
   'role_type',
   'email',
   'phone',
-  'relationship_temp',
   'preferences',
   'notes',
   'birthday',
@@ -35,9 +32,6 @@ const EDITABLE = [
 function validate(payload) {
   if (payload.role_type && !ROLE_TYPES.includes(payload.role_type)) {
     return `role_type must be one of ${ROLE_TYPES.join(', ')}`;
-  }
-  if (payload.relationship_temp && !TEMPS.includes(payload.relationship_temp)) {
-    return `relationship_temp must be one of ${TEMPS.join(', ')}`;
   }
   return validatePhone(payload.phone);
 }
@@ -55,11 +49,12 @@ function decorate(p) {
 }
 
 // GET /api/people — cross-place directory (the People tab). Query params:
-// search (name/title), placeId, category (of their place), temp
-// (relationship_temp), neverContacted=1 (no completed visit on file yet).
+// search (name/title), placeId, category (of their place), neverContacted=1
+// (no completed visit on file yet), needsAttention=1 (referred before but
+// nothing in the last 90 days — see services/referralMetrics.js).
 router.get('/people', async (req, res, next) => {
   try {
-    const { search, placeId, category, temp, neverContacted } = req.query;
+    const { search, placeId, category, neverContacted, needsAttention } = req.query;
 
     // Last *completed* visit per person, same "only a finished call counts"
     // rule used for places (see places.js's lastVisit subquery).
@@ -93,13 +88,17 @@ router.get('/people', async (req, res, next) => {
     }
     if (placeId) query.where('pe.place_id', placeId);
     if (category) query.where('p.category', category);
-    if (temp) query.where('pe.relationship_temp', temp);
     if (neverContacted === '1' || neverContacted === 'true') query.whereNull('lv.last_visit_date');
 
     query.orderBy('p.name', 'asc').orderBy('pe.is_primary', 'desc').orderBy('pe.name', 'asc');
 
     const people = await query;
-    res.json(people.map(decorate));
+    const metricsById = await referralMetricsByPersonId(knex, people.map((p) => p.id));
+    let decorated = people.map((p) => ({ ...decorate(p), referral_metrics: metricsFor(metricsById, p.id) }));
+    if (needsAttention === '1' || needsAttention === 'true') {
+      decorated = decorated.filter((p) => p.referral_metrics.needs_attention);
+    }
+    res.json(decorated);
   } catch (err) {
     next(err);
   }
@@ -127,30 +126,12 @@ router.get('/people/:id', async (req, res, next) => {
       .orderBy('referral_date', 'desc')
       .orderBy('id', 'desc');
 
-    // Suggested temperature needs a place to judge cadence against — an
-    // unassigned person has no visit recency to speak of, so no suggestion.
-    let suggestedRelationshipTemp = null;
-    if (place) {
-      const lastPlaceVisit = await knex('visits')
-        .where({ place_id: place.id, status: 'completed' })
-        .orderBy('scheduled_date', 'desc')
-        .first();
-      const daysSinceLastVisit = lastPlaceVisit
-        ? dayjs().diff(dayjs(lastPlaceVisit.scheduled_date), 'day')
-        : null;
-      suggestedRelationshipTemp = suggestRelationshipTemp({
-        currentTemp: person.relationship_temp,
-        tier: place.tier,
-        daysSinceLastVisit,
-      });
-    }
-
     res.json({
       ...decorate(person),
       place,
       visits,
       referrals,
-      suggested_relationship_temp: suggestedRelationshipTemp,
+      referral_metrics: summarizeReferralDates(referrals.map((r) => r.referral_date)),
     });
   } catch (err) {
     next(err);

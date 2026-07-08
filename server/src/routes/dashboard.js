@@ -7,6 +7,7 @@ const isoWeek = require('dayjs/plugin/isoWeek'); // adds Monday-start-of-week he
 const knex = require('../db/knex');
 const { loadRoute } = require('../services/scheduler');
 const { priorityLabel } = require('../services/priority');
+const { recentWindowCutoff } = require('../services/referralMetrics');
 
 dayjs.extend(isoWeek);
 
@@ -53,18 +54,22 @@ router.get('/', async (req, res, next) => {
           .orderBy('p.name', 'asc')
           .select('pe.id as person_id', 'pe.name as person_name', 'pe.place_id', 'p.name as place_name'),
 
-        // ...cooling relationships (dormant/cold people, not already departed)...
+        // ...cooling relationships (referred before, but nothing in the last
+        // 90 days — not already departed, that's its own bucket below)...
         knex('people as pe')
           .join('places as p', 'p.id', 'pe.place_id')
+          .join('referrals as r', 'r.person_id', 'pe.id')
           .where('pe.departed', false)
-          .whereIn('pe.relationship_temp', ['dormant', 'cold'])
+          .groupBy('pe.id', 'pe.name', 'pe.place_id', 'p.name')
+          .havingRaw('SUM(CASE WHEN r.referral_date >= ? THEN 1 ELSE 0 END) = 0', [recentWindowCutoff(dayjs(date).toDate())])
           .orderBy('p.name', 'asc')
           .select(
             'pe.id as person_id',
             'pe.name as person_name',
-            'pe.relationship_temp',
             'pe.place_id',
-            'p.name as place_name'
+            'p.name as place_name',
+            knex.raw('COUNT(r.id) as lifetime_referrals'),
+            knex.raw('MAX(r.referral_date) as last_referral_date')
           ),
 
         // ...and every visit that has a next_visit_date on file, so we can find overdue ones.

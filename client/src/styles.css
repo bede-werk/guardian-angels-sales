@@ -44,14 +44,6 @@
   --grey-tint-2: #E4E4E6;
   --grey-tint-3: #C9CACC;
 
-  /* Relationship-temperature scale: full mauve (hot) -> full teal (dormant).
-     Used by TemperatureDot.jsx — always paired with a text label in the UI,
-     never color alone (see that component's comment for why). */
-  --temp-hot: var(--mauve);
-  --temp-warm: #833A6C;
-  --temp-cold: #4B718F;
-  --temp-dormant: var(--teal);
-
   /* ---- Semantic aliases used throughout the app ----
      Naming things by their ROLE (--text, --border, --danger) rather than
      their hue means most of the app's CSS never has to know which brand
@@ -184,6 +176,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.t2 { background: var(--teal-tint-1); color: var(--tier2); } /* Tier 2 */
 .badge.t3 { background: var(--grey-tint-1); color: var(--tier3); } /* Tier 3 */
 .badge.star { background: var(--mauve-tint-1); color: var(--mauve); } /* ⭐ Priority flag */
+.badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* "Cooling — needs attention": referred before, quiet the last 90 days */
 .badge.status-planned { background: var(--blue-tint-1); color: var(--blue); }
 .badge.status-completed { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.status-skipped { background: var(--grey-tint-1); color: var(--muted); }
@@ -195,11 +188,6 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 
 /* Category chips: generated blue/teal tint ramp, mauve deliberately excluded */
 .cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-
-/* Temperature dot — see ui/TemperatureDot.jsx; the colored dot + text label
-   showing a contact's relationship_temp (hot/warm/cold/dormant). */
-.temp-dot-wrap { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
-.temp-dot { width: 9px; height: 9px; border-radius: 999px; flex-shrink: 0; display: inline-block; }
 
 /* Attention flag (overdue / departed / never-visited) — a mauve left border,
    applied to rows in Dashboard's "Needs attention" list and never-visited

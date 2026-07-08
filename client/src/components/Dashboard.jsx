@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api';
 import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
-import TemperatureDot from './ui/TemperatureDot';
 import StatTile from './ui/StatTile';
 import EmptyState from './ui/EmptyState';
 import Button from './ui/Button';
@@ -141,8 +140,10 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
                 <li key={`cooling-${c.person_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
                   <div className="main">
                     <div className="name tiny">{c.person_name} <span className="muted">· {c.place_name}</span></div>
+                    <div className="meta">
+                      Referred {c.lifetime_referrals}x, last {c.last_referral_date} — nothing in the last 90 days
+                    </div>
                   </div>
-                  <TemperatureDot temp={c.relationship_temp} />
                 </li>
               ))}
               {attention.departed_people.map((c) => (

@@ -95,7 +95,7 @@ export const api = {
 
   // People — server/src/routes/people.js
   people: {
-    // Cross-place People directory tab. params: search, placeId, category, temp, neverContacted
+    // Cross-place People directory tab. params: search, placeId, category, neverContacted, needsAttention
     list: (params = {}) => {
       const q = new URLSearchParams(
         Object.entries(params).filter(([, v]) => v !== '' && v != null)
@@ -145,10 +145,6 @@ export const ROLE_TYPE_LABELS = {
   champion: 'Champion',
   other: 'Other',
 };
-
-// Display labels for a person's relationship_temp enum (also used for the
-// server-computed suggested_relationship_temp — see services/relationshipTemp.js).
-export const TEMP_LABELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', dormant: 'Dormant' };
 
 // Today's date as 'YYYY-MM-DD', matching how dates are stored/compared everywhere else.
 export function today() {

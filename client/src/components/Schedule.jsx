@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, navigateUrl } from '../api';
 import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
-import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
@@ -192,14 +191,11 @@ export default function Schedule({ date, userId }) {
                         <OutcomeChip outcome={v.outcome} />
                         {v.never_visited && <span className="badge star" style={{ background: 'var(--mauve-tint-1)', color: 'var(--mauve)' }}>Never visited</span>}
                       </div>
-                      {/* "Who to ask for" — this place's primary person, from the
-                          people table, with their relationship temperature. */}
+                      {/* "Who to ask for" — this place's primary person, from
+                          the people table. */}
                       {v.primary_person && (
                         <div className="stop-contact">
-                          <span className="tiny">Ask for <strong>{v.primary_person.name}</strong></span>{' '}
-                          {v.primary_person.relationship_temp && (
-                            <TemperatureDot temp={v.primary_person.relationship_temp} />
-                          )}
+                          <span className="tiny">Ask for <strong>{v.primary_person.name}</strong></span>
                         </div>
                       )}
                       {/* A one-line preview of what happened last time you visited. */}

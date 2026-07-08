@@ -3,9 +3,6 @@ import { api, ROLE_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 
-const TEMPS = ['hot', 'warm', 'cold', 'dormant'];
-const TEMP_LABELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', dormant: 'Dormant' };
-
 // Create or edit a person. `person` present = editing (form is pre-filled from
 // it); absent = creating a brand-new one from a blank form.
 // Opened from PlaceDetail.jsx's "New person" button or PersonDetail.jsx's
@@ -18,7 +15,6 @@ export default function PersonModal({ placeId, places, person, onClose, onSaved 
     name: person?.name || '',
     title: person?.title || '',
     role_type: person?.role_type || '',
-    relationship_temp: person?.relationship_temp || '',
     email: person?.email || '',
     phone: person?.phone || '',
     birthday: person?.birthday || '',
@@ -97,18 +93,6 @@ export default function PersonModal({ placeId, places, person, onClose, onSaved 
                 ))}
               </select>
             </div>
-            <div>
-              <label className="field">Relationship</label>
-              <select value={form.relationship_temp} onChange={set('relationship_temp')}>
-                <option value="">—</option>
-                {TEMPS.map((t) => (
-                  <option key={t} value={t}>{TEMP_LABELS[t]}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="row">
             <div>
               <label className="field">Email</label>
               <input type="email" value={form.email} onChange={set('email')} />

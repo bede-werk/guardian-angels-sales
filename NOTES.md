@@ -68,18 +68,64 @@ In order:
 - Left alone on purpose: real data strings like the "Aging Partners" place name
   and "Community Partners" category — those are business names, not code terms.
 
+## 2026-07-08
+
+A big CRM-buildout session happened earlier this day too (Places CRUD, People tab,
+detach-not-delete semantics, a person-attributed referral system, and a manual
+`relationship_temp` field with a computed suggestion) — it's not written up as its
+own entry here, but it's committed (`95b484b`/`2547bfb`, merged PR #4) and fully
+documented in `HANDOFF.md` sections 4–10 if you need the detail.
+
+### Removed relationship temperature, replaced with referral metrics
+The manual `hot/warm/cold/dormant` field on people (plus the suggestion feature
+from the session above) is gone. It never actually got kept up to date in
+practice — a suggestion next to a stale manual value isn't useful — so at the
+user's request it's replaced entirely with **objective, time-aware referral
+metrics** that need no manual upkeep:
+- For every person, and rolled up for every place: **lifetime referral count**,
+  **last referral date** ("none yet" if there aren't any), and **referrals in
+  the last 90 days**.
+- A person/place with referrals in the past but nothing in the last 90 days is
+  flagged **"needs attention"** — surfaced on the Dashboard's Needs Attention
+  card, and as a filter + badge on both the People and Places tabs.
+- Edge cases handled explicitly: brand-new (zero lifetime referrals) reads as
+  "none yet," never as needing attention — only a referrer who's gone quiet
+  after actually referring before gets flagged.
+- New: `server/src/services/referralMetrics.js` (all the computation logic),
+  `server/src/migrations/20260710000000_drop_relationship_temp.js` (drops the
+  column). Deleted: `server/src/services/relationshipTemp.js`,
+  `client/src/components/ui/TemperatureDot.jsx`. Updated: the people/places/
+  dashboard routes, the scheduler's primary-person query, and every screen that
+  used to show a temperature dot (People, Places, PersonDetail, PlaceDetail,
+  Dashboard, Schedule).
+- Smoke-tested against the real dev DB (inserted/removed dated test referrals on
+  the existing "Lionel Messi" test person to exercise the 90-day boundary, then
+  cleaned up) — see `HANDOFF.md` §9/§10 for the full writeup, including a note
+  that this session's smoke test used Bede's own account for a temp auth token
+  instead of the usual passwordless test user, which it shouldn't have.
+
 ## Current state
-- All of the above is committed and merged to `main` (see recent commits).
+- The 2026-07-08 CRM buildout (see above) is committed and merged to `main`.
+  **This session's relationship-temp removal / referral-metrics work is not
+  committed yet** — check `git status`.
 - Local dev only — nothing deployed. `./dev.sh` runs both servers
   (backend :4000, frontend :5173).
-- Database: 261 real places, 0 visits, 0 contacts, 0 notes-review backlog — a
-  clean slate. Only Bede's account has a real password set; Nikki/Lisa/Basil
-  still need to log in once to create theirs.
+- Database: 261 real places, a handful of real visits/referrals logged since
+  the clean-slate wipe, plus Bede's own manually-created test data (place
+  "Guardian Angels (Test)"; people Lionel Messi / Mohamed Salah / Neymar Jr. —
+  don't delete these, they're fixtures he made on purpose). Only Bede's account
+  has a real password set; Nikki/Lisa/Basil still need to log in once to create
+  theirs.
+- See `HANDOFF.md` §13 for the authoritative, more detailed current-state
+  snapshot — this section is a summary, that one's the source of truth.
 
 ## Next steps / ideas not yet done
-- Referral logging UI (schema exists, nothing writes to it yet).
-- Feeding contact relationship_temp + referral history back into place
-  priority scoring (explicitly deferred in the data-model spec).
+- **Commit and push** this session's relationship-temp-removal / referral-metrics
+  work.
+- Referral metrics currently aren't shown on Today's Route's stop cards — only
+  the People tab, Places tab, both detail pages, and the Dashboard.
+- Feeding referral metrics (not relationship_temp — that's gone) back into place
+  priority scoring is still an open idea, now with an objective signal to use.
 - Picking a date other than today when planning a route (currently today-only).
 - Populating `places.phone` (not in the original Excel import) so the Call
   button on Place Detail actually shows up.

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api, navigateUrl } from '../api';
 import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
-import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
@@ -108,8 +107,13 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
               <CategoryChip category={data.category} />
               <TierChip tier={data.tier} isPriority={data.is_priority} />
               <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
-                {data.referral_total} referral{data.referral_total === 1 ? '' : 's'}
+                {data.referral_metrics.lifetime_referrals} referral{data.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
               </span>
+              {data.referral_metrics.needs_attention && (
+                <span className="badge attention" title="Referred before, but nothing in the last 90 days">
+                  Cooling — needs attention
+                </span>
+              )}
             </div>
           </div>
           <button className="close" onClick={onClose}>×</button>
@@ -165,9 +169,10 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           </div>
 
           {/* People here: names, click one to open their full detail
-              (PersonDetail) — each person's own referral count shows in
-              their row; the place-level total lives up top next to the
-              category/tier badges, since it's important place-level info. */}
+              (PersonDetail) — each person's own referral metrics show in
+              their row (the per-person breakdown); the place-level roll-up
+              lives up top next to the category/tier badges, and again below
+              as a one-line summary since it's important place-level info. */}
           <div className="card">
             <div className="card-head">
               <h2>People ({data.people.length})</h2>
@@ -176,7 +181,10 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                 <Button variant="secondary" size="small" onClick={() => setEditingPerson(null)}>New person</Button>
               </div>
             </div>
-            <div className="card-body">
+            <div className="card-body stack">
+              <div className="tiny muted">
+                Last referral: {data.referral_metrics.last_referral_date || 'none yet'} · {data.referral_metrics.referrals_last_90_days} in the last 90 days
+              </div>
               {data.people.length === 0 ? (
                 <EmptyState message="No one on file here yet. Add the people you meet so the team knows who to ask for." />
               ) : (
@@ -194,18 +202,16 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                       </div>
                       <div className="tag-list" style={{ flex: 'unset' }}>
                         {p.is_primary && <span className="badge star">★</span>}
-                        {p.relationship_temp && <TemperatureDot temp={p.relationship_temp} />}
-                        {p.suggested_relationship_temp && p.suggested_relationship_temp !== (p.relationship_temp || null) && (
-                          <span
-                            className="tiny"
-                            style={{ color: 'var(--mauve)' }}
-                            title="Suggested from visit recency — the manual value is never changed automatically"
-                          >
-                            → {p.suggested_relationship_temp}
+                        {p.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
+                        <span className="tiny muted">
+                          {p.referral_metrics.lifetime_referrals} referral{p.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
+                          {p.referral_metrics.last_referral_date ? ` · last ${p.referral_metrics.last_referral_date}` : ''}
+                        </span>
+                        {p.referral_metrics.needs_attention && (
+                          <span className="badge attention" title="Referred before, but nothing in the last 90 days">
+                            Cooling
                           </span>
                         )}
-                        {p.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
-                        <span className="tiny muted">{p.referral_count} referral{p.referral_count === 1 ? '' : 's'}</span>
                         <Button
                           variant="danger"
                           size="small"

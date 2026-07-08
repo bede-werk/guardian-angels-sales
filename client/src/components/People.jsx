@@ -1,15 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api';
 import { CategoryChip } from './ui/Chip';
-import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonDetail from './PersonDetail';
 import PersonModal from './PersonModal';
 import PlaceDetail from './PlaceDetail';
-
-const TEMPS = ['hot', 'warm', 'cold', 'dormant'];
-const TEMP_LABELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', dormant: 'Dormant' };
 
 // Searchable / filterable directory of every person across every place —
 // the People counterpart to Places.jsx. Clicking any row opens that
@@ -17,7 +13,7 @@ const TEMP_LABELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', dormant: 'Dormant'
 export default function People() {
   const [filters, setFilters] = useState({ categories: [] }); // category dropdown options, loaded once
   const [places, setPlaces] = useState([]); // every place, for the place filter + the Add Person picker
-  const [q, setQ] = useState({ search: '', placeId: '', category: '', temp: '', neverContacted: '' });
+  const [q, setQ] = useState({ search: '', placeId: '', category: '', neverContacted: '', needsAttention: '' });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null); // person id whose detail modal is open, if any
@@ -48,8 +44,8 @@ export default function People() {
 
   return (
     <div className="grid" style={{ gap: 16 }}>
-      {/* Filter bar: search box + place/category/relationship dropdowns + a
-          "Never contacted" toggle button. */}
+      {/* Filter bar: search box + place/category dropdowns + "Never
+          contacted" / "Needs attention" toggle buttons. */}
       <div className="card">
         <div className="card-body">
           <div className="row">
@@ -71,13 +67,6 @@ export default function People() {
                 {filters.categories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            <div>
-              <label className="field">Relationship</label>
-              <select value={q.temp} onChange={set('temp')}>
-                <option value="">All</option>
-                {TEMPS.map((t) => <option key={t} value={t}>{TEMP_LABELS[t]}</option>)}
-              </select>
-            </div>
             <div style={{ flex: 'unset' }}>
               <label className="field">&nbsp;</label>
               <Button
@@ -85,6 +74,16 @@ export default function People() {
                 onClick={() => setQ((s) => ({ ...s, neverContacted: s.neverContacted ? '' : '1' }))}
               >
                 Never contacted
+              </Button>
+            </div>
+            <div style={{ flex: 'unset' }}>
+              <label className="field">&nbsp;</label>
+              <Button
+                variant={q.needsAttention ? 'primary' : 'secondary'}
+                onClick={() => setQ((s) => ({ ...s, needsAttention: s.needsAttention ? '' : '1' }))}
+                title="Referred before, but nothing in the last 90 days"
+              >
+                Needs attention
               </Button>
             </div>
           </div>
@@ -104,7 +103,7 @@ export default function People() {
                 <th>Name</th>
                 <th>Place</th>
                 <th>Category</th>
-                <th>Relationship</th>
+                <th>Referrals</th>
                 <th>Last contacted</th>
               </tr>
             </thead>
@@ -124,7 +123,18 @@ export default function People() {
                     )}
                   </td>
                   <td><CategoryChip category={p.place_category} /></td>
-                  <td>{p.relationship_temp ? <TemperatureDot temp={p.relationship_temp} /> : <span className="muted">—</span>}</td>
+                  <td className="tiny">
+                    {p.referral_metrics.lifetime_referrals > 0 ? (
+                      <>
+                        {p.referral_metrics.lifetime_referrals} · last {p.referral_metrics.last_referral_date}
+                        {p.referral_metrics.needs_attention && (
+                          <div><span className="badge attention" style={{ marginTop: 2 }}>Needs attention</span></div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="muted">None yet</span>
+                    )}
+                  </td>
                   <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
                 </tr>
               ))}

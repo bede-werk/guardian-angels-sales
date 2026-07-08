@@ -10,8 +10,9 @@
 //   Tier 3                        = 25
 //
 // This is a place-level score (drives routing) — a manual Tier/⭐ judgment today.
-// It may later be adjusted by linked people's relationship_temp + referral history
-// (see the `people`/`referrals` tables), but that feedback loop isn't wired in yet.
+// It may later be adjusted by linked people's referral history (see
+// services/referralMetrics.js and the `referrals` table), but that feedback
+// loop isn't wired in yet.
 
 // Computes a place's numeric priority score from its tier (1/2/3) and
 // whether it's starred. Stored on places.priority_score so routes can sort

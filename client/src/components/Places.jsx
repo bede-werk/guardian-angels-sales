@@ -10,7 +10,7 @@ import PlaceModal from './PlaceModal';
 // Clicking any row opens that place's full detail (PlaceDetail.jsx).
 export default function Places() {
   const [filters, setFilters] = useState({ categories: [], cities: [], zips: [], tiers: [] }); // dropdown options, loaded once
-  const [q, setQ] = useState({ search: '', category: '', tier: '', city: '', zip: '', neverVisited: '' }); // current filter values
+  const [q, setQ] = useState({ search: '', category: '', tier: '', city: '', zip: '', neverVisited: '', needsAttention: '' }); // current filter values
   const [rows, setRows] = useState([]); // the filtered place list from the API
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null); // place id whose detail modal is open, if any
@@ -88,6 +88,16 @@ export default function Places() {
                 Never visited
               </Button>
             </div>
+            <div style={{ flex: 'unset' }}>
+              <label className="field">&nbsp;</label>
+              <Button
+                variant={q.needsAttention ? 'primary' : 'secondary'}
+                onClick={() => setQ((s) => ({ ...s, needsAttention: s.needsAttention ? '' : '1' }))}
+                title="Referred before, but nothing in the last 90 days"
+              >
+                Needs attention
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -119,7 +129,16 @@ export default function Places() {
                   <td className="muted tiny">{p.city} {p.zip}<br />{p.region}</td>
                   <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
                   <td className="tiny">
-                    {p.referral_total > 0 ? p.referral_total : <span className="muted">—</span>}
+                    {p.referral_metrics.lifetime_referrals > 0 ? (
+                      <>
+                        {p.referral_metrics.lifetime_referrals}
+                        {p.referral_metrics.needs_attention && (
+                          <span className="badge attention" style={{ marginLeft: 6 }}>Needs attention</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="muted">None yet</span>
+                    )}
                   </td>
                 </tr>
               ))}
