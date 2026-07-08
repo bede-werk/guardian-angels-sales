@@ -8,9 +8,10 @@ const TEMP_LABELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', dormant: 'Dormant'
 
 // Create or edit a person. `person` present = editing (form is pre-filled from
 // it); absent = creating a brand-new one from a blank form.
-// Opened from PlaceDetail.jsx's "Add person" button or a person card's "Edit"
-// (both pass a fixed `placeId`), or from People.jsx's "+ Add person" button
-// (passes `places` instead, so the form includes a place picker).
+// Opened from PlaceDetail.jsx's "New person" button or PersonDetail.jsx's
+// "Edit" button (both pass a fixed `placeId`), or from People.jsx's
+// "+ Add person" button (passes `places` instead, so the form includes a
+// place picker).
 export default function PersonModal({ placeId, places, person, onClose, onSaved }) {
   const [form, setForm] = useState({
     place_id: placeId || person?.place_id || '',
@@ -43,7 +44,7 @@ export default function PersonModal({ placeId, places, person, onClose, onSaved 
     try {
       const saved = person
         ? await api.people.update(person.id, form)
-        : await api.people.create(placeId || form.place_id, form);
+        : await api.people.create({ ...form, place_id: placeId || form.place_id || null });
       onSaved?.(saved);
       onClose();
     } catch (e) {
@@ -69,7 +70,7 @@ export default function PersonModal({ placeId, places, person, onClose, onSaved 
             <div>
               <label className="field">Place</label>
               <select value={form.place_id} onChange={set('place_id')}>
-                <option value="">Select a place…</option>
+                <option value="">No place (unassigned)</option>
                 {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
@@ -150,7 +151,7 @@ export default function PersonModal({ placeId, places, person, onClose, onSaved 
         </div>
         <div className="modal-foot">
           <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving || !form.name.trim() || (needsPlacePicker && !form.place_id) || !isCompletePhone(form.phone)}>
+          <Button onClick={save} disabled={saving || !form.name.trim() || !isCompletePhone(form.phone)}>
             {saving ? 'Saving…' : person ? 'Save changes' : 'Add person'}
           </Button>
         </div>

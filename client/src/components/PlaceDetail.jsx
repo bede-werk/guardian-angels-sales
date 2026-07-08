@@ -1,42 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { api, navigateUrl, ROLE_TYPE_LABELS } from '../api';
+import { api, navigateUrl } from '../api';
 import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
 import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
 import PersonModal from './PersonModal';
-
-// One card in the "People here" grid: a person's name/title/role/temperature,
-// plus quick call/email links and an Edit button (opens PersonModal).
-function PersonCard({ person, onEdit }) {
-  return (
-    <div className={`contact-card ${person.departed ? 'departed' : ''}`}>
-      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-        <span className="contact-name">{person.name}</span>
-        {person.is_primary && <span className="badge star">★ Primary</span>}
-      </div>
-      {person.title && <div className="tiny muted">{person.title}</div>}
-      <div className="tag-list">
-        {person.role_type && <span className="contact-role">{ROLE_TYPE_LABELS[person.role_type]}</span>}
-        {person.relationship_temp && <TemperatureDot temp={person.relationship_temp} />}
-        {person.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
-      </div>
-      {(person.phone || person.email) && (
-        <div className="tiny muted">
-          {person.phone}
-          {person.phone && person.email ? ' · ' : ''}
-          {person.email}
-        </div>
-      )}
-      <div className="contact-actions">
-        {person.phone && <a className="btn ghost small" href={`tel:${person.phone}`}>Call</a>}
-        {person.email && <a className="btn ghost small" href={`mailto:${person.email}`}>Email</a>}
-        <Button variant="ghost" size="small" onClick={() => onEdit(person)}>Edit</Button>
-      </div>
-    </div>
-  );
-}
+import AssignPersonModal from './AssignPersonModal';
+import PersonDetail from './PersonDetail';
+import ReferralModal from './ReferralModal';
 
 // Slide-in modal: place details + people here + full visit history + "log a
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
@@ -44,9 +16,13 @@ function PersonCard({ person, onEdit }) {
 export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) {
   const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + people)
   const [logging, setLogging] = useState(false); // whether the Log Visit modal is open
-  // Controls the (Add/Edit) person modal: undefined = closed, null = creating
-  // a brand-new person, an object = editing that existing person.
+  // Controls the (Create/Edit) person modal: undefined = closed, null =
+  // creating a brand-new person, an object = editing that existing person.
   const [editingPerson, setEditingPerson] = useState(undefined);
+  const [assigningPerson, setAssigningPerson] = useState(false); // "Assign person" (pick someone already on file) modal
+  const [selectedPersonId, setSelectedPersonId] = useState(null); // whose full PersonDetail is open, if any
+  const [removingPersonId, setRemovingPersonId] = useState(null); // person currently being detached (disables their row)
+  const [loggingReferral, setLoggingReferral] = useState(false); // whether the Log Referral modal is open
   const [deleting, setDeleting] = useState(false);
   // Durable, org-level notes (separate from any single visit's notes or a
   // person's notes) — editable inline via a small textarea + Save.
@@ -61,10 +37,12 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
     load();
   }, [placeId]);
 
-  // Permanently removes the place along with all of its visits/people
-  // (cascaded at the DB level) — confirm since there's no undo.
+  // Permanently removes only the place itself. People who were here are
+  // detached (not deleted) and every visit logged here survives, still
+  // visible from each person's own page — only this place's own record is
+  // gone for good.
   async function deletePlace() {
-    if (!window.confirm(`Delete ${data.name}? This removes all of its visit history and people and can't be undone.`)) return;
+    if (!window.confirm(`Delete ${data.name}? People who were here will stay on file (just unassigned from this place), and all visit history is preserved. This can't be undone.`)) return;
     setDeleting(true);
     try {
       await api.deletePlace(data.id);
@@ -90,6 +68,23 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
     }
   }
 
+  // Detaches a person from this place (place_id -> null) without deleting
+  // them — same as PersonDetail's own "Remove from place", just reachable
+  // straight from the list here too.
+  async function removePerson(person) {
+    if (!window.confirm(`Remove ${person.name} from ${data.name}? Their visit history will stay on file.`)) return;
+    setRemovingPersonId(person.id);
+    try {
+      await api.people.update(person.id, { place_id: null });
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setRemovingPersonId(null);
+    }
+  }
+
   // Show a lightweight loading modal while the initial fetch is in flight.
   if (!data) {
     return (
@@ -112,6 +107,9 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
             <div className="tag-list" style={{ marginTop: 4 }}>
               <CategoryChip category={data.category} />
               <TierChip tier={data.tier} isPriority={data.is_priority} />
+              <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
+                {data.referral_total} referral{data.referral_total === 1 ? '' : 's'}
+              </span>
             </div>
           </div>
           <button className="close" onClick={onClose}>×</button>
@@ -127,6 +125,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
             {/* Call button only shows if this place has a phone number on file
                 (not populated from the original Excel import — added manually). */}
             {data.phone && <a className="btn secondary small" href={`tel:${data.phone}`}>Call</a>}
+            <Button size="small" onClick={() => setLoggingReferral(true)}>Log a referral</Button>
           </div>
 
           {/* Durable notes about the organization itself — not tied to any one
@@ -165,37 +164,71 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
             </div>
           </div>
 
-          {/* People here: every person recorded at this place. */}
+          {/* People here: names, click one to open their full detail
+              (PersonDetail) — each person's own referral count shows in
+              their row; the place-level total lives up top next to the
+              category/tier badges, since it's important place-level info. */}
           <div className="card">
             <div className="card-head">
-              <h2>People here ({data.people.length})</h2>
-              <Button variant="secondary" size="small" onClick={() => setEditingPerson(null)}>Add person</Button>
+              <h2>People ({data.people.length})</h2>
+              <div className="tag-list" style={{ flex: 'unset' }}>
+                <Button variant="secondary" size="small" onClick={() => setAssigningPerson(true)}>Assign person</Button>
+                <Button variant="secondary" size="small" onClick={() => setEditingPerson(null)}>New person</Button>
+              </div>
             </div>
             <div className="card-body">
               {data.people.length === 0 ? (
                 <EmptyState message="No one on file here yet. Add the people you meet so the team knows who to ask for." />
               ) : (
-                <div className="contact-grid">
+                <ul className="list">
                   {data.people.map((p) => (
-                    <PersonCard key={p.id} person={p} onEdit={setEditingPerson} />
+                    <li
+                      key={p.id}
+                      className={`stop ${p.departed ? 'skipped' : ''}`}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setSelectedPersonId(p.id)}
+                    >
+                      <div className="main">
+                        <div className="name">{p.name}</div>
+                        {p.title && <div className="meta">{p.title}</div>}
+                      </div>
+                      <div className="tag-list" style={{ flex: 'unset' }}>
+                        {p.is_primary && <span className="badge star">★</span>}
+                        {p.relationship_temp && <TemperatureDot temp={p.relationship_temp} />}
+                        {p.suggested_relationship_temp && p.suggested_relationship_temp !== (p.relationship_temp || null) && (
+                          <span
+                            className="tiny"
+                            style={{ color: 'var(--mauve)' }}
+                            title="Suggested from visit recency — the manual value is never changed automatically"
+                          >
+                            → {p.suggested_relationship_temp}
+                          </span>
+                        )}
+                        {p.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
+                        <span className="tiny muted">{p.referral_count} referral{p.referral_count === 1 ? '' : 's'}</span>
+                        <Button
+                          variant="danger"
+                          size="small"
+                          title="Remove from this place"
+                          disabled={removingPersonId === p.id}
+                          onClick={(e) => { e.stopPropagation(); removePerson(p); }}
+                        >
+                          ✕
+                        </Button>
+                      </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
-            </div>
-          </div>
-
-          {/* Referral attribution isn't wired up yet — placeholder for now
-              (see the referrals table in the data-model migration). */}
-          <div className="card">
-            <div className="card-head"><h2>Referrals</h2></div>
-            <div className="card-body">
-              <EmptyState message="No referrals recorded yet." />
             </div>
           </div>
 
           {/* Every visit ever logged on this place, most recent first. */}
           <div className="card">
-            <div className="card-head"><h2>Visit history ({data.visits.length})</h2></div>
+            <div className="card-head">
+              <h2>Visit history ({data.visits.length})</h2>
+              <Button size="small" onClick={() => setLogging(true)}>Log a visit</Button>
+            </div>
             <div className="card-body">
               {data.visits.length === 0 ? (
                 <EmptyState message="No visits logged yet." />
@@ -229,10 +262,9 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="danger" style={{ marginRight: 'auto' }} onClick={deletePlace} disabled={deleting}>
+          <Button variant="danger" onClick={deletePlace} disabled={deleting}>
             {deleting ? 'Deleting…' : 'Delete place'}
           </Button>
-          <Button onClick={() => setLogging(true)}>Log a visit</Button>
         </div>
       </div>
 
@@ -246,12 +278,43 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
         />
       )}
 
-      {/* Add/Edit person modal — only rendered when editingPerson isn't undefined. */}
+      {/* Create/Edit person modal — only rendered when editingPerson isn't undefined. */}
       {editingPerson !== undefined && (
         <PersonModal
           placeId={data.id}
           person={editingPerson}
           onClose={() => setEditingPerson(undefined)}
+          onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {/* "Assign person" — assign someone who already exists elsewhere (or is
+          unassigned) to this place, instead of creating a new record. */}
+      {assigningPerson && (
+        <AssignPersonModal
+          placeId={data.id}
+          placeName={data.name}
+          onClose={() => setAssigningPerson(false)}
+          onAssigned={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {/* Clicking a name in "People here" opens their full detail on top of
+          this one. onOpenPlace just closes it back to this same place. */}
+      {selectedPersonId && (
+        <PersonDetail
+          personId={selectedPersonId}
+          onClose={() => setSelectedPersonId(null)}
+          onChanged={() => { load(); onChanged?.(); }}
+          onDeleted={() => { setSelectedPersonId(null); load(); onChanged?.(); }}
+          onOpenPlace={() => setSelectedPersonId(null)}
+        />
+      )}
+
+      {loggingReferral && (
+        <ReferralModal
+          people={data.people}
+          onClose={() => setLoggingReferral(false)}
           onSaved={() => { load(); onChanged?.(); }}
         />
       )}

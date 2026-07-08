@@ -17,6 +17,7 @@ const dashboard = require('./routes/dashboard');
 const users = require('./routes/users');
 const notesReview = require('./routes/notesReview');
 const people = require('./routes/people');
+const referrals = require('./routes/referrals');
 const auth = require('./routes/auth');
 const requireAuth = require('./middleware/requireAuth'); // blocks a request unless it has a valid login token
 
@@ -41,6 +42,7 @@ app.use('/api/notes-review', requireAuth, notesReview);
 // people.js defines its own full paths (/places/:id/people, /people, /people/:id),
 // so it's mounted at the bare '/api' prefix rather than a single resource prefix.
 app.use('/api', requireAuth, people);
+app.use('/api/referrals', requireAuth, referrals);
 
 // In production, serve the built React app so a single service can host both.
 if (process.env.NODE_ENV === 'production') {

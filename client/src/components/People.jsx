@@ -116,7 +116,13 @@ export default function People() {
                     {p.is_primary && <span className="badge star" style={{ marginLeft: 6 }}>★</span>}
                     {p.title && <div className="tiny muted">{p.title}</div>}
                   </td>
-                  <td className="tiny">{p.place_name}<br /><span className="muted">{p.place_city}</span></td>
+                  <td className="tiny">
+                    {p.place_name ? (
+                      <>{p.place_name}<br /><span className="muted">{p.place_city}</span></>
+                    ) : (
+                      <span className="muted">Unassigned</span>
+                    )}
+                  </td>
                   <td><CategoryChip category={p.place_category} /></td>
                   <td>{p.relationship_temp ? <TemperatureDot temp={p.relationship_temp} /> : <span className="muted">—</span>}</td>
                   <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
