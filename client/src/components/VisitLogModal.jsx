@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { api, OUTCOME_LABELS } from '../api';
 import Button from './ui/Button';
+import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 
-// Modal for logging/updating a visit: outcome, notes, key contact, next visit date.
+// Modal for logging/updating a visit: outcome, notes, key person, next visit date.
 // `visit` may be a scheduled stop (has visit_id, from Schedule.jsx) or, when
 // opened from a place with no scheduled visit, `placeId` is provided
 // instead to create a brand-new ad-hoc visit (from PlaceDetail.jsx).
@@ -14,14 +15,14 @@ export default function VisitLogModal({ visit, placeId, placeName, onClose, onSa
   const [form, setForm] = useState({
     outcome: visit?.outcome || '',
     notes: visit?.notes || '',
-    contact_name: visit?.contact_name || '',
-    contact_title: visit?.contact_title || '',
-    contact_email: visit?.contact_email || '',
-    contact_phone: visit?.contact_phone || '',
+    person_id: visit?.person_id || '',
+    person_name: visit?.person_name || '',
+    person_title: visit?.person_title || '',
+    person_email: visit?.person_email || '',
+    person_phone: visit?.person_phone || '',
     next_visit_date: visit?.next_visit_date || '',
   });
-  const [contacts, setContacts] = useState([]); // this place's contacts, for the "who did you meet?" picker
-  const [pickedContactId, setPickedContactId] = useState(''); // which contact is selected in that picker
+  const [people, setPeople] = useState([]); // this place's people, for the "who did you meet?" picker
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false); // true after a successful save — shows the confirmation screen
@@ -29,25 +30,26 @@ export default function VisitLogModal({ visit, placeId, placeName, onClose, onSa
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const title = placeName || visit?.name || visit?.place_name || 'Visit';
 
-  // Load this place's contact list once we know who the place is, so the
+  // Load this place's people once we know who the place is, so the
   // "who did you meet?" dropdown has real options.
   useEffect(() => {
     if (!resolvedPlaceId) return;
-    api.contacts.list(resolvedPlaceId).then(setContacts).catch(() => {});
+    api.people.listForPlace(resolvedPlaceId).then(setPeople).catch(() => {});
   }, [resolvedPlaceId]);
 
-  // Selecting someone from the "who did you meet?" dropdown pre-fills the
-  // contact_* fields below from their saved info (still editable afterward).
-  function pickContact(id) {
-    setPickedContactId(id);
-    const c = contacts.find((x) => String(x.id) === String(id));
-    if (!c) return;
+  // Selecting someone from the "who did you meet?" dropdown links this visit
+  // to their person record (person_id) and pre-fills the person_* snapshot
+  // fields below from their saved info (still editable afterward). Picking
+  // "someone not listed…" clears the link but leaves any typed-in snapshot alone.
+  function pickPerson(id) {
+    const p = people.find((x) => String(x.id) === String(id));
     setForm((f) => ({
       ...f,
-      contact_name: c.name || '',
-      contact_title: c.title || '',
-      contact_email: c.email || '',
-      contact_phone: c.phone || '',
+      person_id: id || '',
+      person_name: p ? p.name || '' : f.person_name,
+      person_title: p ? p.title || '' : f.person_title,
+      person_email: p ? p.email || '' : f.person_email,
+      person_phone: p ? p.phone || '' : f.person_phone,
     }));
   }
 
@@ -56,10 +58,14 @@ export default function VisitLogModal({ visit, placeId, placeName, onClose, onSa
   // mark complete" button, false for the plain "Save" (log progress without
   // finishing the visit yet).
   async function save(markComplete) {
+    if (!isCompletePhone(form.person_phone)) {
+      setError('Phone must be a complete number, e.g. (402) 555-1234');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const payload = { ...form };
+      const payload = { ...form, person_id: form.person_id || null };
       if (markComplete) payload.status = 'completed';
       let saved;
       if (visit?.visit_id) {
@@ -126,39 +132,40 @@ export default function VisitLogModal({ visit, placeId, placeName, onClose, onSa
             <textarea rows={3} value={form.notes} onChange={set('notes')} placeholder="What happened, next steps…" />
           </div>
 
-          {/* Only shown if this place actually has contacts on file. */}
-          {contacts.length > 0 && (
+          {/* Only shown if this place actually has people on file. */}
+          {people.length > 0 && (
             <div>
               <label className="field">Who did you meet?</label>
-              <select value={pickedContactId} onChange={(e) => pickContact(e.target.value)}>
+              <select value={form.person_id} onChange={(e) => pickPerson(e.target.value)}>
                 <option value="">Someone not listed…</option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}{c.title ? ` — ${c.title}` : ''}</option>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}{p.title ? ` — ${p.title}` : ''}</option>
                 ))}
               </select>
             </div>
           )}
 
-          {/* These stay editable even after picking a contact above — this is
-              a per-visit snapshot, not a live link to the contacts table. */}
+          {/* These stay editable even after picking a person above — this is
+              a per-visit snapshot, not a live link to the people table
+              (person_id above is what makes the real link). */}
           <div className="row">
             <div>
               <label className="field">Contact name</label>
-              <input value={form.contact_name} onChange={set('contact_name')} />
+              <input value={form.person_name} onChange={set('person_name')} />
             </div>
             <div>
               <label className="field">Title</label>
-              <input value={form.contact_title} onChange={set('contact_title')} />
+              <input value={form.person_title} onChange={set('person_title')} />
             </div>
           </div>
           <div className="row">
             <div>
               <label className="field">Email</label>
-              <input type="email" value={form.contact_email} onChange={set('contact_email')} />
+              <input type="email" value={form.person_email} onChange={set('person_email')} />
             </div>
             <div>
               <label className="field">Phone</label>
-              <input value={form.contact_phone} onChange={set('contact_phone')} />
+              <PhoneInput value={form.person_phone} onChange={(v) => setForm((f) => ({ ...f, person_phone: v }))} />
             </div>
           </div>
 
@@ -168,10 +175,10 @@ export default function VisitLogModal({ visit, placeId, placeName, onClose, onSa
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={() => save(false)} disabled={saving}>
+          <Button variant="secondary" onClick={() => save(false)} disabled={saving || !isCompletePhone(form.person_phone)}>
             Save
           </Button>
-          <Button onClick={() => save(true)} disabled={saving}>
+          <Button onClick={() => save(true)} disabled={saving || !isCompletePhone(form.person_phone)}>
             {saving ? 'Saving…' : 'Save & mark complete'}
           </Button>
         </div>

@@ -5,27 +5,34 @@ import TemperatureDot from './ui/TemperatureDot';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
-import ContactModal from './ContactModal';
+import PersonModal from './PersonModal';
 
 // One card in the "People here" grid: a person's name/title/role/temperature,
-// plus quick call/email links and an Edit button (opens ContactModal).
-function ContactCard({ contact, onEdit }) {
+// plus quick call/email links and an Edit button (opens PersonModal).
+function PersonCard({ person, onEdit }) {
   return (
-    <div className={`contact-card ${contact.departed ? 'departed' : ''}`}>
+    <div className={`contact-card ${person.departed ? 'departed' : ''}`}>
       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-        <span className="contact-name">{contact.name}</span>
-        {contact.is_primary && <span className="badge star">★ Primary</span>}
+        <span className="contact-name">{person.name}</span>
+        {person.is_primary && <span className="badge star">★ Primary</span>}
       </div>
-      {contact.title && <div className="tiny muted">{contact.title}</div>}
+      {person.title && <div className="tiny muted">{person.title}</div>}
       <div className="tag-list">
-        {contact.role_type && <span className="contact-role">{ROLE_TYPE_LABELS[contact.role_type]}</span>}
-        {contact.relationship_temp && <TemperatureDot temp={contact.relationship_temp} />}
-        {contact.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
+        {person.role_type && <span className="contact-role">{ROLE_TYPE_LABELS[person.role_type]}</span>}
+        {person.relationship_temp && <TemperatureDot temp={person.relationship_temp} />}
+        {person.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
       </div>
+      {(person.phone || person.email) && (
+        <div className="tiny muted">
+          {person.phone}
+          {person.phone && person.email ? ' · ' : ''}
+          {person.email}
+        </div>
+      )}
       <div className="contact-actions">
-        {contact.phone && <a className="btn ghost small" href={`tel:${contact.phone}`}>Call</a>}
-        {contact.email && <a className="btn ghost small" href={`mailto:${contact.email}`}>Email</a>}
-        <Button variant="ghost" size="small" onClick={() => onEdit(contact)}>Edit</Button>
+        {person.phone && <a className="btn ghost small" href={`tel:${person.phone}`}>Call</a>}
+        {person.email && <a className="btn ghost small" href={`mailto:${person.email}`}>Email</a>}
+        <Button variant="ghost" size="small" onClick={() => onEdit(person)}>Edit</Button>
       </div>
     </div>
   );
@@ -34,12 +41,18 @@ function ContactCard({ contact, onEdit }) {
 // Slide-in modal: place details + people here + full visit history + "log a
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
 // (clicking any place-linked row/card).
-export default function PlaceDetail({ placeId, onClose, onChanged }) {
-  const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + contacts)
+export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) {
+  const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + people)
   const [logging, setLogging] = useState(false); // whether the Log Visit modal is open
-  // Controls the (Add/Edit) contact modal: undefined = closed, null = creating
-  // a brand-new contact, an object = editing that existing contact.
-  const [editingContact, setEditingContact] = useState(undefined);
+  // Controls the (Add/Edit) person modal: undefined = closed, null = creating
+  // a brand-new person, an object = editing that existing person.
+  const [editingPerson, setEditingPerson] = useState(undefined);
+  const [deleting, setDeleting] = useState(false);
+  // Durable, org-level notes (separate from any single visit's notes or a
+  // person's notes) — editable inline via a small textarea + Save.
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
 
   async function load() {
     setData(await api.place(placeId));
@@ -47,6 +60,35 @@ export default function PlaceDetail({ placeId, onClose, onChanged }) {
   useEffect(() => {
     load();
   }, [placeId]);
+
+  // Permanently removes the place along with all of its visits/people
+  // (cascaded at the DB level) — confirm since there's no undo.
+  async function deletePlace() {
+    if (!window.confirm(`Delete ${data.name}? This removes all of its visit history and people and can't be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.deletePlace(data.id);
+      onDeleted?.();
+      onClose();
+    } catch (e) {
+      window.alert(e.message);
+      setDeleting(false);
+    }
+  }
+
+  async function saveNotes() {
+    setSavingNotes(true);
+    try {
+      await api.updatePlace(data.id, { notes: notesDraft });
+      setEditingNotes(false);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setSavingNotes(false);
+    }
+  }
 
   // Show a lightweight loading modal while the initial fetch is in flight.
   if (!data) {
@@ -78,6 +120,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged }) {
           <div className="tiny">
             {data.address && <div>{data.address}</div>}
             <div>{data.city}, {data.state} {data.zip} · <strong>{data.region}</strong></div>
+            {data.phone && <div>{data.phone}</div>}
           </div>
           <div className="tag-list">
             <Button variant="secondary" size="small" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
@@ -86,19 +129,55 @@ export default function PlaceDetail({ placeId, onClose, onChanged }) {
             {data.phone && <a className="btn secondary small" href={`tel:${data.phone}`}>Call</a>}
           </div>
 
-          {/* People here: every contact (person) recorded at this place. */}
+          {/* Durable notes about the organization itself — not tied to any one
+              visit or person (e.g. "front desk is picky about walk-ins"). */}
           <div className="card">
             <div className="card-head">
-              <h2>People here ({data.contacts.length})</h2>
-              <Button variant="secondary" size="small" onClick={() => setEditingContact(null)}>Add contact</Button>
+              <h2>Notes</h2>
+              {!editingNotes && (
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}
+                >
+                  {data.notes ? 'Edit' : 'Add notes'}
+                </Button>
+              )}
             </div>
             <div className="card-body">
-              {data.contacts.length === 0 ? (
+              {editingNotes ? (
+                <div className="stack">
+                  <textarea rows={3} value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} autoFocus />
+                  <div className="tag-list">
+                    <Button size="small" onClick={saveNotes} disabled={savingNotes}>
+                      {savingNotes ? 'Saving…' : 'Save'}
+                    </Button>
+                    <Button variant="secondary" size="small" onClick={() => setEditingNotes(false)} disabled={savingNotes}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : data.notes ? (
+                <div className="tiny">{data.notes}</div>
+              ) : (
+                <EmptyState message="No standing notes about this place yet." />
+              )}
+            </div>
+          </div>
+
+          {/* People here: every person recorded at this place. */}
+          <div className="card">
+            <div className="card-head">
+              <h2>People here ({data.people.length})</h2>
+              <Button variant="secondary" size="small" onClick={() => setEditingPerson(null)}>Add person</Button>
+            </div>
+            <div className="card-body">
+              {data.people.length === 0 ? (
                 <EmptyState message="No one on file here yet. Add the people you meet so the team knows who to ask for." />
               ) : (
                 <div className="contact-grid">
-                  {data.contacts.map((c) => (
-                    <ContactCard key={c.id} contact={c} onEdit={setEditingContact} />
+                  {data.people.map((p) => (
+                    <PersonCard key={p.id} person={p} onEdit={setEditingPerson} />
                   ))}
                 </div>
               )}
@@ -133,12 +212,12 @@ export default function PlaceDetail({ placeId, onClose, onChanged }) {
                       {v.notes && <div className="tiny">{v.notes}</div>}
                       {/* This is the free-text "who I talked to on this specific
                           visit" snapshot stored on the visit itself — separate
-                          from the durable contacts list above. */}
-                      {(v.contact_name || v.contact_email || v.contact_phone) && (
+                          from the durable people list above. */}
+                      {(v.person_name || v.person_email || v.person_phone) && (
                         <div className="tiny muted">
-                          {[v.contact_name, v.contact_title].filter(Boolean).join(', ')}
-                          {v.contact_email ? ` · ${v.contact_email}` : ''}
-                          {v.contact_phone ? ` · ${v.contact_phone}` : ''}
+                          {[v.person_name, v.person_title].filter(Boolean).join(', ')}
+                          {v.person_email ? ` · ${v.person_email}` : ''}
+                          {v.person_phone ? ` · ${v.person_phone}` : ''}
                         </div>
                       )}
                       {v.next_visit_date && <div className="tiny muted">Next visit: {v.next_visit_date}</div>}
@@ -150,6 +229,9 @@ export default function PlaceDetail({ placeId, onClose, onChanged }) {
           </div>
         </div>
         <div className="modal-foot">
+          <Button variant="danger" style={{ marginRight: 'auto' }} onClick={deletePlace} disabled={deleting}>
+            {deleting ? 'Deleting…' : 'Delete place'}
+          </Button>
           <Button onClick={() => setLogging(true)}>Log a visit</Button>
         </div>
       </div>
@@ -164,12 +246,12 @@ export default function PlaceDetail({ placeId, onClose, onChanged }) {
         />
       )}
 
-      {/* Add/Edit contact modal — only rendered when editingContact isn't undefined. */}
-      {editingContact !== undefined && (
-        <ContactModal
+      {/* Add/Edit person modal — only rendered when editingPerson isn't undefined. */}
+      {editingPerson !== undefined && (
+        <PersonModal
           placeId={data.id}
-          contact={editingContact}
-          onClose={() => setEditingContact(undefined)}
+          person={editingPerson}
+          onClose={() => setEditingPerson(undefined)}
           onSaved={() => { load(); onChanged?.(); }}
         />
       )}

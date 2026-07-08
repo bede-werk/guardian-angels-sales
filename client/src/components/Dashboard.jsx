@@ -8,7 +8,7 @@ import Button from './ui/Button';
 import PlaceDetail from './PlaceDetail';
 
 // At-a-glance: today's route, visits completed this week, places never visited,
-// and relationships that need attention (departed / cooling contacts, overdue visits).
+// and relationships that need attention (departed / cooling people, overdue visits).
 // This whole screen is driven by one request: GET /api/dashboard (see
 // server/src/routes/dashboard.js), which bundles everything below into one response.
 export default function Dashboard({ date, userId, onGoToSchedule }) {
@@ -116,7 +116,7 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
       </div>
 
       {/* "Needs attention" merges three different lists from the API (overdue
-          next-visit dates, cooling/dormant contacts, departed contacts) into one
+          next-visit dates, cooling/dormant people, departed people) into one
           feed. Clicking any row opens that place's detail modal. */}
       <div className="card">
         <div className="card-head">
@@ -137,18 +137,18 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
                   <CategoryChip category={p.category} />
                 </li>
               ))}
-              {attention.cooling_contacts.map((c) => (
-                <li key={`cooling-${c.contact_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
+              {attention.cooling_people.map((c) => (
+                <li key={`cooling-${c.person_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
                   <div className="main">
-                    <div className="name tiny">{c.contact_name} <span className="muted">· {c.place_name}</span></div>
+                    <div className="name tiny">{c.person_name} <span className="muted">· {c.place_name}</span></div>
                   </div>
                   <TemperatureDot temp={c.relationship_temp} />
                 </li>
               ))}
-              {attention.departed_contacts.map((c) => (
-                <li key={`departed-${c.contact_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
+              {attention.departed_people.map((c) => (
+                <li key={`departed-${c.person_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
                   <div className="main">
-                    <div className="name tiny">{c.contact_name} <span className="muted">· {c.place_name}</span></div>
+                    <div className="name tiny">{c.person_name} <span className="muted">· {c.place_name}</span></div>
                     <div className="meta">Departed — time to rebuild this relationship</div>
                   </div>
                 </li>

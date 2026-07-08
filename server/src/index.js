@@ -16,7 +16,7 @@ const schedule = require('./routes/schedule');
 const dashboard = require('./routes/dashboard');
 const users = require('./routes/users');
 const notesReview = require('./routes/notesReview');
-const contacts = require('./routes/contacts');
+const people = require('./routes/people');
 const auth = require('./routes/auth');
 const requireAuth = require('./middleware/requireAuth'); // blocks a request unless it has a valid login token
 
@@ -38,9 +38,9 @@ app.use('/api/schedule', requireAuth, schedule);
 app.use('/api/dashboard', requireAuth, dashboard);
 app.use('/api/users', requireAuth, users);
 app.use('/api/notes-review', requireAuth, notesReview);
-// contacts.js defines its own full paths (/places/:id/contacts and /contacts/:id),
+// people.js defines its own full paths (/places/:id/people, /people, /people/:id),
 // so it's mounted at the bare '/api' prefix rather than a single resource prefix.
-app.use('/api', requireAuth, contacts);
+app.use('/api', requireAuth, people);
 
 // In production, serve the built React app so a single service can host both.
 if (process.env.NODE_ENV === 'production') {

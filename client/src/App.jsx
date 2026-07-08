@@ -3,6 +3,7 @@ import { api, today, getToken, clearToken } from './api';
 import Dashboard from './components/Dashboard';
 import Schedule from './components/Schedule';
 import Places from './components/Places';
+import People from './components/People';
 import NeedsMapping from './components/NeedsMapping';
 import Login from './components/Login';
 import ChangePassword from './components/ChangePassword';
@@ -10,12 +11,13 @@ import Header from './components/ui/Header';
 import Splash from './components/ui/Splash';
 import Button from './components/ui/Button';
 
-// The four tabs shown in the nav bar under the header. `id` picks which
+// The five tabs shown in the nav bar under the header. `id` picks which
 // component renders below; `label` is the button text.
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'schedule', label: "Today's Route" },
   { id: 'places', label: 'Places' },
+  { id: 'people', label: 'People' },
   { id: 'mapping', label: 'Needs Mapping' },
 ];
 
@@ -113,6 +115,7 @@ export default function App() {
       )}
       {tab === 'schedule' && <Schedule date={date} userId={authUser.id} />}
       {tab === 'places' && <Places />}
+      {tab === 'people' && <People />}
       {tab === 'mapping' && <NeedsMapping onChanged={refreshMappingCount} />}
     </div>
   );

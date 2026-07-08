@@ -14,7 +14,7 @@ const router = express.Router();
 
 // GET /api/dashboard?userId=&date=YYYY-MM-DD
 // Returns: today's route, visits completed this week, never-visited places,
-// and a "needs attention" rollup (departed/cooling contacts + overdue visits).
+// and a "needs attention" rollup (departed/cooling people + overdue visits).
 router.get('/', async (req, res, next) => {
   try {
     const userId = req.query.userId ? Number(req.query.userId) : undefined;
@@ -24,7 +24,7 @@ router.get('/', async (req, res, next) => {
     const weekStart = dayjs(date).isoWeekday(1).format('YYYY-MM-DD');
     const weekEnd = dayjs(date).isoWeekday(7).format('YYYY-MM-DD');
 
-    const [todaysRoute, completedThisWeek, neverVisited, totals, departedContacts, coolingContacts, nextVisitRows] =
+    const [todaysRoute, completedThisWeek, neverVisited, totals, departedPeople, coolingPeople, nextVisitRows] =
       await Promise.all([
         loadRoute(knex, date, userId),
 
@@ -46,24 +46,24 @@ router.get('/', async (req, res, next) => {
 
         knex('places').count({ c: '*' }).first(),
 
-        // Needs attention: turnover (departed contacts)...
-        knex('contacts as c')
-          .join('places as p', 'p.id', 'c.place_id')
-          .where('c.departed', true)
+        // Needs attention: turnover (departed people)...
+        knex('people as pe')
+          .join('places as p', 'p.id', 'pe.place_id')
+          .where('pe.departed', true)
           .orderBy('p.name', 'asc')
-          .select('c.id as contact_id', 'c.name as contact_name', 'c.place_id', 'p.name as place_name'),
+          .select('pe.id as person_id', 'pe.name as person_name', 'pe.place_id', 'p.name as place_name'),
 
-        // ...cooling relationships (dormant/cold contacts, not already departed)...
-        knex('contacts as c')
-          .join('places as p', 'p.id', 'c.place_id')
-          .where('c.departed', false)
-          .whereIn('c.relationship_temp', ['dormant', 'cold'])
+        // ...cooling relationships (dormant/cold people, not already departed)...
+        knex('people as pe')
+          .join('places as p', 'p.id', 'pe.place_id')
+          .where('pe.departed', false)
+          .whereIn('pe.relationship_temp', ['dormant', 'cold'])
           .orderBy('p.name', 'asc')
           .select(
-            'c.id as contact_id',
-            'c.name as contact_name',
-            'c.relationship_temp',
-            'c.place_id',
+            'pe.id as person_id',
+            'pe.name as person_name',
+            'pe.relationship_temp',
+            'pe.place_id',
             'p.name as place_name'
           ),
 
@@ -119,9 +119,9 @@ router.get('/', async (req, res, next) => {
         })),
       },
       needs_attention: {
-        count: departedContacts.length + coolingContacts.length + overduePlaces.length,
-        departed_contacts: departedContacts,
-        cooling_contacts: coolingContacts,
+        count: departedPeople.length + coolingPeople.length + overduePlaces.length,
+        departed_people: departedPeople,
+        cooling_people: coolingPeople,
         overdue_places: overduePlaces,
       },
     });

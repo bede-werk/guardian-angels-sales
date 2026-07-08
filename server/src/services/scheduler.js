@@ -127,7 +127,7 @@ async function generateSchedule({ date, userId, hours, visitMinutes, travelMinut
 }
 
 // Load a day's route with place details, in route order. Each stop is enriched
-// with the place's primary contact, a preview of their last completed visit's
+// with the place's primary person, a preview of their last completed visit's
 // notes, and whether they've never had a completed visit — the Today/Route screen
 // uses these to show "who to ask for" and to flag never-visited/overdue stops.
 async function loadRoute(db, date, userId) {
@@ -142,10 +142,11 @@ async function loadRoute(db, date, userId) {
       'v.sort_order',
       'v.outcome',
       'v.notes',
-      'v.contact_name',
-      'v.contact_title',
-      'v.contact_email',
-      'v.contact_phone',
+      'v.person_id',
+      'v.person_name',
+      'v.person_title',
+      'v.person_email',
+      'v.person_phone',
       'v.next_visit_date',
       'v.scheduled_date',
       'v.user_id',
@@ -165,8 +166,8 @@ async function loadRoute(db, date, userId) {
   if (route.length === 0) return route;
   const placeIds = route.map((r) => r.place_id);
 
-  const [primaryContacts, completedVisits] = await Promise.all([
-    db('contacts')
+  const [primaryPeople, completedVisits] = await Promise.all([
+    db('people')
       .whereIn('place_id', placeIds)
       .where('departed', false)
       .orderBy('is_primary', 'desc')
@@ -185,9 +186,9 @@ async function loadRoute(db, date, userId) {
   // Reduce each list down to "one row per place" in JS (simpler and more portable
   // across SQLite/Postgres than a correlated subquery). Because both queries are
   // pre-sorted, the FIRST row seen per place_id is the one we want to keep:
-  // the primary contact (is_primary desc) and the most recent completed visit.
-  const contactByPlace = {};
-  for (const c of primaryContacts) if (!contactByPlace[c.place_id]) contactByPlace[c.place_id] = c;
+  // the primary person (is_primary desc) and the most recent completed visit.
+  const personByPlace = {};
+  for (const c of primaryPeople) if (!personByPlace[c.place_id]) personByPlace[c.place_id] = c;
   const lastVisitByPlace = {};
   const everVisited = new Set();
   for (const v of completedVisits) {
@@ -197,7 +198,7 @@ async function loadRoute(db, date, userId) {
 
   return route.map((r) => ({
     ...r,
-    primary_contact: contactByPlace[r.place_id] || null,
+    primary_person: personByPlace[r.place_id] || null,
     last_visit_notes: lastVisitByPlace[r.place_id]?.notes || null,
     never_visited: !everVisited.has(r.place_id),
   }));

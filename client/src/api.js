@@ -65,6 +65,8 @@ export const api = {
   place: (id) => request(`/places/${id}`),
   filters: () => request('/places/meta/filters'), // distinct categories/cities/zips for the filter dropdowns
   createPlace: (body) => request('/places', { method: 'POST', body }),
+  updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
+  deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
 
   // Today's Route — server/src/routes/schedule.js
   schedule: (date, userId) =>
@@ -91,12 +93,20 @@ export const api = {
     request(`/notes-review/${id}/create-place`, { method: 'POST', body }),
   dismissNote: (id, body) => request(`/notes-review/${id}/dismiss`, { method: 'POST', body }),
 
-  // Contacts ("people" at a place) — server/src/routes/contacts.js
-  contacts: {
-    list: (placeId) => request(`/places/${placeId}/contacts`),
-    create: (placeId, body) => request(`/places/${placeId}/contacts`, { method: 'POST', body }),
-    update: (id, body) => request(`/contacts/${id}`, { method: 'PATCH', body }),
-    remove: (id) => request(`/contacts/${id}`, { method: 'DELETE' }),
+  // People — server/src/routes/people.js
+  people: {
+    // Cross-place People directory tab. params: search, placeId, category, temp, neverContacted
+    list: (params = {}) => {
+      const q = new URLSearchParams(
+        Object.entries(params).filter(([, v]) => v !== '' && v != null)
+      ).toString();
+      return request(`/people${q ? `?${q}` : ''}`);
+    },
+    get: (id) => request(`/people/${id}`), // a person + their place + full visit history
+    listForPlace: (placeId) => request(`/places/${placeId}/people`),
+    create: (placeId, body) => request(`/places/${placeId}/people`, { method: 'POST', body }),
+    update: (id, body) => request(`/people/${id}`, { method: 'PATCH', body }),
+    remove: (id) => request(`/people/${id}`, { method: 'DELETE' }),
   },
 
   // Auth (login/logout/password) — server/src/routes/auth.js
@@ -122,7 +132,7 @@ export const OUTCOME_LABELS = {
   left_materials: 'Left materials',
 };
 
-// Display labels for a contact's role_type enum (server/src/routes/contacts.js's ROLE_TYPES).
+// Display labels for a person's role_type enum (server/src/routes/people.js's ROLE_TYPES).
 export const ROLE_TYPE_LABELS = {
   decision_maker: 'Decision maker',
   gatekeeper: 'Gatekeeper',

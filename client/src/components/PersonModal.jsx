@@ -1,26 +1,30 @@
 import React, { useState } from 'react';
 import { api, ROLE_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
+import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 
 const TEMPS = ['hot', 'warm', 'cold', 'dormant'];
 const TEMP_LABELS = { hot: 'Hot', warm: 'Warm', cold: 'Cold', dormant: 'Dormant' };
 
-// Create or edit a person at a place. `contact` present = editing (form is
-// pre-filled from it); absent = creating a brand-new one from a blank form.
-// Opened from PlaceDetail.jsx's "Add contact" button or a contact card's "Edit".
-export default function ContactModal({ placeId, contact, onClose, onSaved }) {
+// Create or edit a person. `person` present = editing (form is pre-filled from
+// it); absent = creating a brand-new one from a blank form.
+// Opened from PlaceDetail.jsx's "Add person" button or a person card's "Edit"
+// (both pass a fixed `placeId`), or from People.jsx's "+ Add person" button
+// (passes `places` instead, so the form includes a place picker).
+export default function PersonModal({ placeId, places, person, onClose, onSaved }) {
   const [form, setForm] = useState({
-    name: contact?.name || '',
-    title: contact?.title || '',
-    role_type: contact?.role_type || '',
-    relationship_temp: contact?.relationship_temp || '',
-    email: contact?.email || '',
-    phone: contact?.phone || '',
-    birthday: contact?.birthday || '',
-    preferences: contact?.preferences || '',
-    notes: contact?.notes || '',
-    departed: contact?.departed || false,
-    is_primary: contact?.is_primary || false,
+    place_id: placeId || person?.place_id || '',
+    name: person?.name || '',
+    title: person?.title || '',
+    role_type: person?.role_type || '',
+    relationship_temp: person?.relationship_temp || '',
+    email: person?.email || '',
+    phone: person?.phone || '',
+    birthday: person?.birthday || '',
+    preferences: person?.preferences || '',
+    notes: person?.notes || '',
+    departed: person?.departed || false,
+    is_primary: person?.is_primary || false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -28,14 +32,18 @@ export default function ContactModal({ placeId, contact, onClose, onSaved }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value })); // wires a text input/select to `form`
   const toggle = (k) => () => setForm((f) => ({ ...f, [k]: !f[k] })); // wires a checkbox to `form`
 
-  // PATCH if editing an existing contact, POST if creating a new one.
+  // PATCH if editing an existing person, POST if creating a new one.
   async function save() {
+    if (!isCompletePhone(form.phone)) {
+      setError('Phone must be a complete number, e.g. (402) 555-1234');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const saved = contact
-        ? await api.contacts.update(contact.id, form)
-        : await api.contacts.create(placeId, form);
+      const saved = person
+        ? await api.people.update(person.id, form)
+        : await api.people.create(placeId || form.place_id, form);
       onSaved?.(saved);
       onClose();
     } catch (e) {
@@ -45,15 +53,27 @@ export default function ContactModal({ placeId, contact, onClose, onSaved }) {
     }
   }
 
+  const needsPlacePicker = !placeId && !person && places;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{contact ? 'Edit contact' : 'Add a contact'}</h2>
+          <h2>{person ? 'Edit person' : 'Add a person'}</h2>
           <button className="close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
+
+          {needsPlacePicker && (
+            <div>
+              <label className="field">Place</label>
+              <select value={form.place_id} onChange={set('place_id')}>
+                <option value="">Select a place…</option>
+                {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
 
           <div className="row">
             <div>
@@ -94,7 +114,7 @@ export default function ContactModal({ placeId, contact, onClose, onSaved }) {
             </div>
             <div>
               <label className="field">Phone</label>
-              <input value={form.phone} onChange={set('phone')} />
+              <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
             </div>
           </div>
 
@@ -113,8 +133,8 @@ export default function ContactModal({ placeId, contact, onClose, onSaved }) {
               <label className="field">Birthday</label>
               <input value={form.birthday} onChange={set('birthday')} placeholder="e.g. March 14" />
             </div>
-            {/* is_primary: only one contact per place can be primary — the
-                server automatically un-checks it on any other contact at this
+            {/* is_primary: only one person per place can be primary — the
+                server automatically un-checks it on any other person at this
                 same place when this one is saved as primary. */}
             <div className="tag-list" style={{ alignItems: 'center', paddingTop: 20 }}>
               <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -130,8 +150,8 @@ export default function ContactModal({ placeId, contact, onClose, onSaved }) {
         </div>
         <div className="modal-foot">
           <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving || !form.name.trim()}>
-            {saving ? 'Saving…' : contact ? 'Save changes' : 'Add contact'}
+          <Button onClick={save} disabled={saving || !form.name.trim() || (needsPlacePicker && !form.place_id) || !isCompletePhone(form.phone)}>
+            {saving ? 'Saving…' : person ? 'Save changes' : 'Add person'}
           </Button>
         </div>
       </div>
