@@ -106,9 +106,9 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
         <div className="modal-head">
           <div>
             <h2>{data.name}</h2>
-            <div className="tag-list" style={{ marginTop: 4 }}>
-              {data.title && <span className="tiny muted">{data.title}</span>}
-              {data.role_type && <span className="contact-role">{ROLE_TYPE_LABELS[data.role_type]}</span>}
+            {data.title && <div className="tiny muted" style={{ marginTop: 2 }}>{data.title}</div>}
+            <div className="tag-list" style={{ marginTop: 6 }}>
+              {data.role_type && <span className="badge role">{ROLE_TYPE_LABELS[data.role_type]}</span>}
               {data.is_primary && <span className="badge star">★ Primary</span>}
               {data.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
               <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
