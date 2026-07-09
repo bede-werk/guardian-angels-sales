@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, today, getToken, clearToken } from './api';
+import { api, today, formatDate, getToken, clearToken } from './api';
 import Dashboard from './components/Dashboard';
 import Schedule from './components/Schedule';
 import Places from './components/Places';
@@ -77,14 +77,7 @@ export default function App() {
       <Header tagline="Sales Visit CRM · Lincoln, NE">
         <div>
           <label className="field">Date</label>
-          <div className="static-date">
-            {new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </div>
+          <div className="static-date">{formatDate(date)}</div>
         </div>
         <div className="user-menu">
           <label className="field">Signed in as</label>

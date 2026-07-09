@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { api } from '../api';
+import { api, formatDate } from '../api';
 import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
@@ -126,7 +126,7 @@ export default function People() {
                   <td className="tiny">
                     {p.referral_metrics.lifetime_referrals > 0 ? (
                       <>
-                        {p.referral_metrics.lifetime_referrals} · last {p.referral_metrics.last_referral_date}
+                        {p.referral_metrics.lifetime_referrals} · last {formatDate(p.referral_metrics.last_referral_date)}
                         {p.referral_metrics.needs_attention && (
                           <div><span className="badge attention" style={{ marginTop: 2 }}>Needs attention</span></div>
                         )}
@@ -135,7 +135,7 @@ export default function People() {
                       <span className="muted">None yet</span>
                     )}
                   </td>
-                  <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
+                  <td className="tiny">{p.last_visit_date ? formatDate(p.last_visit_date) : <span className="muted">—</span>}</td>
                 </tr>
               ))}
               {!loading && rows.length === 0 && (

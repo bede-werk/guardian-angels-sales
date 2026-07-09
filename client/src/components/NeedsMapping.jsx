@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { api } from '../api';
+import { api, formatDate } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 
@@ -223,7 +223,7 @@ export default function NeedsMapping({ onChanged }) {
               <ul className="list" style={{ marginBottom: 12 }}>
                 {group.notes.map((n) => (
                   <li key={n.id} className="stack" style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
-                    <div className="tiny muted">{n.note_date || 'no date'} · {n.author_name || n.author_raw || '—'}</div>
+                    <div className="tiny muted">{n.note_date ? formatDate(n.note_date) : 'no date'} · {n.author_name || n.author_raw || '—'}</div>
                     <div className="tiny">{n.note_text}</div>
                   </li>
                 ))}

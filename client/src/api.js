@@ -151,6 +151,17 @@ export function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Formats a 'YYYY-MM-DD' date string as 'M/D/YYYY' for display (no leading
+// zeros on month/day). Dates are stored/compared as 'YYYY-MM-DD' throughout
+// the app (see today() above) — this is only for rendering, never for
+// <input type="date"> values.
+export function formatDate(dateStr) {
+  if (!dateStr) return dateStr;
+  const [year, month, day] = dateStr.slice(0, 10).split('-');
+  if (!year || !month || !day) return dateStr;
+  return `${Number(month)}/${Number(day)}/${year}`;
+}
+
 // A Google Maps directions link, so "Navigate" hands off to Apple/Google Maps.
 export function navigateUrl(place) {
   const dest = [place.address, place.city, place.state, place.zip].filter(Boolean).join(', ');
