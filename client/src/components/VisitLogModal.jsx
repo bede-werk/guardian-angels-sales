@@ -104,7 +104,7 @@ export default function VisitLogModal({ visit, placeId, placeName, onClose, onSa
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Log visit — {title}</h2>
-          <button className="close" onClick={onClose}>×</button>
+          <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -175,10 +175,19 @@ export default function VisitLogModal({ visit, placeId, placeName, onClose, onSa
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={() => save(false)} disabled={saving || !isCompletePhone(form.person_phone)}>
+          <Button
+            variant="secondary"
+            title="Save progress without marking this visit as done yet"
+            onClick={() => save(false)}
+            disabled={saving || !isCompletePhone(form.person_phone)}
+          >
             Save
           </Button>
-          <Button onClick={() => save(true)} disabled={saving || !isCompletePhone(form.person_phone)}>
+          <Button
+            title="Save and mark this visit as completed"
+            onClick={() => save(true)}
+            disabled={saving || !isCompletePhone(form.person_phone)}
+          >
             {saving ? 'Saving…' : 'Save & mark complete'}
           </Button>
         </div>

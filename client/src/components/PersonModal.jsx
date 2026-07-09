@@ -9,7 +9,7 @@ import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 // "Edit" button (both pass a fixed `placeId`), or from People.jsx's
 // "+ Add person" button (passes `places` instead, so the form includes a
 // place picker).
-export default function PersonModal({ placeId, places, person, onClose, onSaved }) {
+export default function PersonModal({ placeId, placeName, places, person, onClose, onSaved }) {
   const [form, setForm] = useState({
     place_id: placeId || person?.place_id || '',
     name: person?.name || '',
@@ -56,8 +56,8 @@ export default function PersonModal({ placeId, places, person, onClose, onSaved 
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{person ? 'Edit person' : 'Add a person'}</h2>
-          <button className="close" onClick={onClose}>×</button>
+          <h2>{person ? 'Edit person' : placeName ? `Add a person to ${placeName}` : 'Add a person'}</h2>
+          <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -134,8 +134,12 @@ export default function PersonModal({ placeId, places, person, onClose, onSaved 
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving || !form.name.trim() || !isCompletePhone(form.phone)}>
+          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button
+            title={person ? "Save changes to this person's details" : 'Create this new person'}
+            onClick={save}
+            disabled={saving || !form.name.trim() || !isCompletePhone(form.phone)}
+          >
             {saving ? 'Saving…' : person ? 'Save changes' : 'Add person'}
           </Button>
         </div>

@@ -83,6 +83,7 @@ export default function Places() {
               <label className="field">&nbsp;</label>
               <Button
                 variant={q.neverVisited ? 'primary' : 'secondary'}
+                title={q.neverVisited ? 'Showing only places with no visit ever logged — click to clear this filter' : 'Filter to only places with no visit ever logged'}
                 onClick={() => setQ((s) => ({ ...s, neverVisited: s.neverVisited ? '' : '1' }))}
               >
                 Never visited
@@ -106,7 +107,7 @@ export default function Places() {
       <div className="card">
         <div className="card-head">
           <h2>{loading ? 'Loading…' : `${rows.length} places`}</h2>
-          <Button variant="secondary" size="small" onClick={() => setAdding(true)}>+ Add place</Button>
+          <Button variant="secondary" size="small" title="Create a brand-new place" onClick={() => setAdding(true)}>+ Add place</Button>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
           <table>

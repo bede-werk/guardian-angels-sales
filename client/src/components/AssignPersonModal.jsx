@@ -48,7 +48,7 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Assign a person{placeName ? ` to ${placeName}` : ''}</h2>
-          <button className="close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -67,7 +67,13 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
                       {p.title && <span className="tiny muted"> · {p.title}</span>}
                       <div className="tiny muted">{p.place_name ? `Currently at ${p.place_name}` : 'Unassigned'}</div>
                     </div>
-                    <Button size="small" style={{ flex: 'unset' }} onClick={() => assign(p)} disabled={busyId === p.id}>
+                    <Button
+                      size="small"
+                      style={{ flex: 'unset' }}
+                      title={`Link ${p.name} to ${placeName || 'this place'}${p.place_name ? ` (moves them from ${p.place_name})` : ''}`}
+                      onClick={() => assign(p)}
+                      disabled={busyId === p.id}
+                    >
                       {busyId === p.id ? 'Assigning…' : 'Assign here'}
                     </Button>
                   </div>
