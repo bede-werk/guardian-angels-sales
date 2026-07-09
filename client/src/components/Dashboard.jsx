@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { api } from '../api';
+import { api, formatDate } from '../api';
 import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
 import StatTile from './ui/StatTile';
 import EmptyState from './ui/EmptyState';
@@ -50,7 +50,7 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
         <StatTile
           num={data.completed_this_week.count}
           label="Visits completed this week"
-          hint={`${data.week.start} → ${data.week.end}`}
+          hint={`${formatDate(data.week.start)} → ${formatDate(data.week.end)}`}
         />
         <StatTile
           num={data.never_visited.count}
@@ -103,7 +103,7 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
                   <li key={v.visit_id} className="stop">
                     <div className="main">
                       <div className="name tiny">{v.name}</div>
-                      <div className="meta">{v.scheduled_date} · {v.city}</div>
+                      <div className="meta">{formatDate(v.scheduled_date)} · {v.city}</div>
                     </div>
                     <OutcomeChip outcome={v.outcome} />
                   </li>
@@ -131,7 +131,7 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
                 <li key={`overdue-${p.place_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(p.place_id)}>
                   <div className="main">
                     <div className="name tiny">{p.name}</div>
-                    <div className="meta">Next visit was due {p.next_visit_date} · {p.city}</div>
+                    <div className="meta">Next visit was due {formatDate(p.next_visit_date)} · {p.city}</div>
                   </div>
                   <CategoryChip category={p.category} />
                 </li>
@@ -141,7 +141,7 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
                   <div className="main">
                     <div className="name tiny">{c.person_name} <span className="muted">· {c.place_name}</span></div>
                     <div className="meta">
-                      Referred {c.lifetime_referrals}x, last {c.last_referral_date} — nothing in the last 90 days
+                      Referred {c.lifetime_referrals}x, last {formatDate(c.last_referral_date)} — nothing in the last 90 days
                     </div>
                   </div>
                 </li>

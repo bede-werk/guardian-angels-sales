@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { api } from '../api';
+import { api, formatDate } from '../api';
 import { TierChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
@@ -127,7 +127,7 @@ export default function Places() {
                   <td><CategoryChip category={p.category} /></td>
                   <td><TierChip tier={p.tier} isPriority={p.is_priority} /></td>
                   <td className="muted tiny">{p.city} {p.zip}<br />{p.region}</td>
-                  <td className="tiny">{p.last_visit_date || <span className="muted">—</span>}</td>
+                  <td className="tiny">{p.last_visit_date ? formatDate(p.last_visit_date) : <span className="muted">—</span>}</td>
                   <td className="tiny">
                     {p.referral_metrics.lifetime_referrals > 0 ? (
                       <>

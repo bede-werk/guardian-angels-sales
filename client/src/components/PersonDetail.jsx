@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { api, ROLE_TYPE_LABELS } from '../api';
+import { api, ROLE_TYPE_LABELS, formatDate } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
 import ReferralModal from './ReferralModal';
+import VisitDetailModal from './VisitDetailModal';
+import VisitLogModal from './VisitLogModal';
 
 // Slide-in modal: a person's own detail — their place, contact info,
 // durable notes/preferences, and every visit where they were the recorded
@@ -19,6 +21,14 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
   const [placeDraft, setPlaceDraft] = useState('');
   const [removingReferralId, setRemovingReferralId] = useState(null); // referral currently being deleted (disables its row)
   const [loggingReferral, setLoggingReferral] = useState(false); // whether the Log Referral modal is open
+  const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
+  const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
+  const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
+  // Durable notes about this person — editable inline via a small textarea +
+  // Save, same pattern as PlaceDetail's org-level notes.
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
 
   async function load() {
     setData(await api.people.get(personId));
@@ -59,6 +69,20 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
     }
   }
 
+  async function saveNotes() {
+    setSavingNotes(true);
+    try {
+      await api.people.update(data.id, { notes: notesDraft });
+      setEditingNotes(false);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setSavingNotes(false);
+    }
+  }
+
   async function assignToPlace() {
     if (!placeDraft) return;
     try {
@@ -88,6 +112,22 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
     }
   }
 
+  // Deletes a visit entirely — it's the same underlying row PlaceDetail
+  // reads too, so removing it here also removes it there on next load.
+  async function removeVisit(visit) {
+    if (!window.confirm("Delete this visit? This can't be undone.")) return;
+    setRemovingVisitId(visit.id);
+    try {
+      await api.deleteVisit(visit.id);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setRemovingVisitId(null);
+    }
+  }
+
   if (!data) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
@@ -105,9 +145,8 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <h2>{data.name}</h2>
-            {data.title && <div className="tiny muted" style={{ marginTop: 2 }}>{data.title}</div>}
-            <div className="tag-list" style={{ marginTop: 6 }}>
+            <div className="tag-list" style={{ alignItems: 'center' }}>
+              <h2 style={{ fontSize: 22 }}>{data.name}</h2>
               {data.role_type && <span className="badge role">{ROLE_TYPE_LABELS[data.role_type]}</span>}
               {data.is_primary && <span className="badge star">★ Primary</span>}
               {data.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
@@ -120,10 +159,24 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                 </span>
               )}
             </div>
+            {data.title && <div className="tiny muted" style={{ marginTop: 4 }}>{data.title}</div>}
           </div>
           <button className="close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
+          {(data.phone || data.email) && (
+            <div className="stack" style={{ background: 'var(--bg)', borderRadius: 'var(--radius-md)', padding: '12px 16px' }}>
+              <div className="tiny">
+                {data.phone && <div>{data.phone}</div>}
+                {data.email && <div>{data.email}</div>}
+              </div>
+              <div className="tag-list">
+                {data.phone && <a className="btn secondary small" href={`tel:${data.phone}`}>Call</a>}
+                {data.email && <a className="btn secondary small" href={`mailto:${data.email}`}>Email</a>}
+              </div>
+            </div>
+          )}
+
           {/* Which place they belong to — or, since a person doesn't have to
               be tied to one, a way to assign them to one. */}
           <div className="card">
@@ -161,24 +214,36 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
             </div>
           </div>
 
-          {(data.phone || data.email) && (
-            <div className="tiny">
-              {data.phone && <div>{data.phone}</div>}
-              {data.email && <div>{data.email}</div>}
-            </div>
-          )}
-          <div className="tag-list">
-            {data.phone && <a className="btn secondary small" href={`tel:${data.phone}`}>Call</a>}
-            {data.email && <a className="btn secondary small" href={`mailto:${data.email}`}>Email</a>}
-          </div>
-
           {/* Durable notes/preferences about this person — persist across visits. */}
           <div className="card">
-            <div className="card-head"><h2>Notes</h2></div>
+            <div className="card-head">
+              <h2>Notes</h2>
+              {!editingNotes && (
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}
+                >
+                  {data.notes ? 'Edit' : 'Add notes'}
+                </Button>
+              )}
+            </div>
             <div className="card-body stack">
               {data.preferences && <div className="tiny"><strong>Preferences:</strong> {data.preferences}</div>}
               {data.birthday && <div className="tiny"><strong>Birthday:</strong> {data.birthday}</div>}
-              {data.notes ? (
+              {editingNotes ? (
+                <div className="stack">
+                  <textarea rows={3} value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} autoFocus />
+                  <div className="tag-list">
+                    <Button size="small" onClick={saveNotes} disabled={savingNotes}>
+                      {savingNotes ? 'Saving…' : 'Save'}
+                    </Button>
+                    <Button variant="secondary" size="small" onClick={() => setEditingNotes(false)} disabled={savingNotes}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : data.notes ? (
                 <div className="tiny">{data.notes}</div>
               ) : (
                 !data.preferences && !data.birthday && <EmptyState message="No notes on file for this person yet." />
@@ -196,7 +261,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
             </div>
             <div className="card-body stack">
               <div className="tiny muted">
-                Last referral: {metrics.last_referral_date || 'none yet'} · {metrics.referrals_last_90_days} in the last 90 days
+                Last referral: {metrics.last_referral_date ? formatDate(metrics.last_referral_date) : 'none yet'} · {metrics.referrals_last_90_days} in the last 90 days
               </div>
               {metrics.needs_attention && (
                 <div className="tiny" style={{ color: 'var(--mauve)' }}>
@@ -210,7 +275,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                   {data.referrals.map((r) => (
                     <li key={r.id} className="stack" style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                        <strong className="tiny">{r.referral_date || 'no date'}</strong>
+                        <strong className="tiny">{r.referral_date ? formatDate(r.referral_date) : 'no date'}</strong>
                         <Button
                           variant="danger"
                           size="small"
@@ -241,14 +306,30 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
               ) : (
                 <ul className="list">
                   {data.visits.map((v) => (
-                    <li key={v.id} className="stack" style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
-                      <div className="tag-list">
-                        <strong className="tiny">{v.scheduled_date || 'unscheduled'}</strong>
-                        {v.place_name && <span className="tiny muted">· at {v.place_name}</span>}
-                        {v.user_name && <span className="tiny muted">· {v.user_name}</span>}
+                    <li
+                      key={v.id}
+                      className="stack"
+                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)', cursor: 'pointer' }}
+                      onClick={() => setViewingVisit(v)}
+                    >
+                      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                        <div className="tag-list" style={{ flex: 'unset' }}>
+                          <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
+                          {v.place_name && <span className="tiny muted">· at {v.place_name}</span>}
+                          {v.user_name && <span className="tiny muted">· {v.user_name}</span>}
+                        </div>
+                        <Button
+                          variant="danger"
+                          size="small"
+                          title="Delete this visit"
+                          disabled={removingVisitId === v.id}
+                          onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
+                        >
+                          ✕
+                        </Button>
                       </div>
                       {v.notes && <div className="tiny">{v.notes}</div>}
-                      {v.next_visit_date && <div className="tiny muted">Next visit: {v.next_visit_date}</div>}
+                      {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
                     </li>
                   ))}
                 </ul>
@@ -277,6 +358,26 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
         <ReferralModal
           person={{ id: data.id, name: data.name }}
           onClose={() => setLoggingReferral(false)}
+          onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {viewingVisit && (
+        <VisitDetailModal
+          visit={viewingVisit}
+          onClose={() => setViewingVisit(null)}
+          onEdit={(v) => { setViewingVisit(null); setEditingVisit(v); }}
+        />
+      )}
+
+      {/* VisitLogModal expects `visit_id` (it doubles as Schedule.jsx's stop
+          editor, where visits come shaped that way) — map our row's `id` to
+          it here so editing an existing visit PATCHes instead of creating a
+          new one. */}
+      {editingVisit && (
+        <VisitLogModal
+          visit={{ ...editingVisit, visit_id: editingVisit.id }}
+          onClose={() => setEditingVisit(null)}
           onSaved={() => { load(); onChanged?.(); }}
         />
       )}

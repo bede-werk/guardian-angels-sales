@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, navigateUrl } from '../api';
+import { api, navigateUrl, formatDate } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
@@ -7,6 +7,7 @@ import PersonModal from './PersonModal';
 import AssignPersonModal from './AssignPersonModal';
 import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
+import VisitDetailModal from './VisitDetailModal';
 
 // Slide-in modal: place details + people here + full visit history + "log a
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
@@ -22,6 +23,9 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
   const [removingPersonId, setRemovingPersonId] = useState(null); // person currently being detached (disables their row)
   const [loggingReferral, setLoggingReferral] = useState(false); // whether the Log Referral modal is open
   const [deleting, setDeleting] = useState(false);
+  const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
+  const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
+  const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
   // Durable, org-level notes (separate from any single visit's notes or a
   // person's notes) — editable inline via a small textarea + Save.
   const [editingNotes, setEditingNotes] = useState(false);
@@ -83,6 +87,22 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
     }
   }
 
+  // Deletes a visit entirely — it's the same underlying row PersonDetail
+  // reads too, so removing it here also removes it there on next load.
+  async function removeVisit(visit) {
+    if (!window.confirm("Delete this visit? This can't be undone.")) return;
+    setRemovingVisitId(visit.id);
+    try {
+      await api.deleteVisit(visit.id);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setRemovingVisitId(null);
+    }
+  }
+
   // Show a lightweight loading modal while the initial fetch is in flight.
   if (!data) {
     return (
@@ -101,8 +121,8 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div>
-            <h2>{data.name}</h2>
-            <div className="tag-list" style={{ marginTop: 4 }}>
+            <div className="tag-list" style={{ alignItems: 'center' }}>
+              <h2 style={{ fontSize: 22 }}>{data.name}</h2>
               <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
                 {data.referral_metrics.lifetime_referrals} referral{data.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
               </span>
@@ -116,17 +136,19 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           <button className="close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
-          <div className="tiny">
-            {data.address && <div>{data.address}</div>}
-            <div>{data.city}, {data.state} {data.zip} · <strong>{data.region}</strong></div>
-            {data.phone && <div>{data.phone}</div>}
-          </div>
-          <div className="tag-list">
-            <Button variant="secondary" size="small" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
-            {/* Call button only shows if this place has a phone number on file
-                (not populated from the original Excel import — added manually). */}
-            {data.phone && <a className="btn secondary small" href={`tel:${data.phone}`}>Call</a>}
-            <Button size="small" onClick={() => setLoggingReferral(true)}>Log a referral</Button>
+          <div className="stack" style={{ background: 'var(--bg)', borderRadius: 'var(--radius-md)', padding: '12px 16px' }}>
+            <div className="tiny">
+              {data.address && <div>{data.address}</div>}
+              <div>{data.city}, {data.state} {data.zip} · <strong>{data.region}</strong></div>
+              {data.phone && <div>{data.phone}</div>}
+            </div>
+            <div className="tag-list">
+              <Button variant="secondary" size="small" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
+              {/* Call button only shows if this place has a phone number on file
+                  (not populated from the original Excel import — added manually). */}
+              {data.phone && <a className="btn secondary small" href={`tel:${data.phone}`}>Call</a>}
+              <Button size="small" onClick={() => setLoggingReferral(true)}>Log a referral</Button>
+            </div>
           </div>
 
           {/* Durable notes about the organization itself — not tied to any one
@@ -180,7 +202,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
             </div>
             <div className="card-body stack">
               <div className="tiny muted">
-                Last referral: {data.referral_metrics.last_referral_date || 'none yet'} · {data.referral_metrics.referrals_last_90_days} in the last 90 days
+                Last referral: {data.referral_metrics.last_referral_date ? formatDate(data.referral_metrics.last_referral_date) : 'none yet'} · {data.referral_metrics.referrals_last_90_days} in the last 90 days
               </div>
               {data.people.length === 0 ? (
                 <EmptyState message="No one on file here yet. Add the people you meet so the team knows who to ask for." />
@@ -202,7 +224,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                         {p.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
                         <span className="tiny muted">
                           {p.referral_metrics.lifetime_referrals} referral{p.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
-                          {p.referral_metrics.last_referral_date ? ` · last ${p.referral_metrics.last_referral_date}` : ''}
+                          {p.referral_metrics.last_referral_date ? ` · last ${formatDate(p.referral_metrics.last_referral_date)}` : ''}
                         </span>
                         {p.referral_metrics.needs_attention && (
                           <span className="badge attention" title="Referred before, but nothing in the last 90 days">
@@ -238,23 +260,29 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
               ) : (
                 <ul className="list">
                   {data.visits.map((v) => (
-                    <li key={v.id} className="stack" style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
-                      <div className="tag-list">
-                        <strong className="tiny">{v.scheduled_date || 'unscheduled'}</strong>
-                        {v.user_name && <span className="tiny muted">· {v.user_name}</span>}
+                    <li
+                      key={v.id}
+                      className="stack"
+                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)', cursor: 'pointer' }}
+                      onClick={() => setViewingVisit(v)}
+                    >
+                      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                        <div className="tag-list" style={{ flex: 'unset' }}>
+                          <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
+                          {v.person_name && <span className="tiny muted">· with {v.person_name}</span>}
+                        </div>
+                        <Button
+                          variant="danger"
+                          size="small"
+                          title="Delete this visit"
+                          disabled={removingVisitId === v.id}
+                          onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
+                        >
+                          ✕
+                        </Button>
                       </div>
                       {v.notes && <div className="tiny">{v.notes}</div>}
-                      {/* This is the free-text "who I talked to on this specific
-                          visit" snapshot stored on the visit itself — separate
-                          from the durable people list above. */}
-                      {(v.person_name || v.person_email || v.person_phone) && (
-                        <div className="tiny muted">
-                          {[v.person_name, v.person_title].filter(Boolean).join(', ')}
-                          {v.person_email ? ` · ${v.person_email}` : ''}
-                          {v.person_phone ? ` · ${v.person_phone}` : ''}
-                        </div>
-                      )}
-                      {v.next_visit_date && <div className="tiny muted">Next visit: {v.next_visit_date}</div>}
+                      {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
                     </li>
                   ))}
                 </ul>
@@ -316,6 +344,26 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
         <ReferralModal
           people={data.people}
           onClose={() => setLoggingReferral(false)}
+          onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {viewingVisit && (
+        <VisitDetailModal
+          visit={viewingVisit}
+          onClose={() => setViewingVisit(null)}
+          onEdit={(v) => { setViewingVisit(null); setEditingVisit(v); }}
+        />
+      )}
+
+      {/* VisitLogModal expects `visit_id` (it doubles as Schedule.jsx's stop
+          editor, where visits come shaped that way) — map our row's `id` to
+          it here so editing an existing visit PATCHes instead of creating a
+          new one. */}
+      {editingVisit && (
+        <VisitLogModal
+          visit={{ ...editingVisit, visit_id: editingVisit.id }}
+          onClose={() => setEditingVisit(null)}
           onSaved={() => { load(); onChanged?.(); }}
         />
       )}
