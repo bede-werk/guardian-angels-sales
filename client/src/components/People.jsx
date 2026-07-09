@@ -71,6 +71,7 @@ export default function People() {
               <label className="field">&nbsp;</label>
               <Button
                 variant={q.neverContacted ? 'primary' : 'secondary'}
+                title={q.neverContacted ? 'Showing only people with no visit ever logged — click to clear this filter' : 'Filter to only people with no visit ever logged'}
                 onClick={() => setQ((s) => ({ ...s, neverContacted: s.neverContacted ? '' : '1' }))}
               >
                 Never contacted
@@ -94,7 +95,7 @@ export default function People() {
       <div className="card">
         <div className="card-head">
           <h2>{loading ? 'Loading…' : `${rows.length} people`}</h2>
-          <Button variant="secondary" size="small" onClick={() => setAdding(true)}>+ Add person</Button>
+          <Button variant="secondary" size="small" title="Create a brand-new person" onClick={() => setAdding(true)}>+ Add person</Button>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
           <table>
@@ -152,7 +153,7 @@ export default function People() {
           onClose={() => setSelected(null)}
           onChanged={load}
           onDeleted={load}
-          onOpenPlace={(placeId) => { setSelected(null); setViewingPlaceId(placeId); }}
+          onOpenPlace={(placeId) => setViewingPlaceId(placeId)}
         />
       )}
 

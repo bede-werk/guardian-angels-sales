@@ -14,7 +14,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit }) {
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Visit — {visit.scheduled_date ? formatDate(visit.scheduled_date) : 'unscheduled'}</h2>
-          <button className="close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body stack">
           <div className="tag-list">
@@ -41,7 +41,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit }) {
         </div>
         <div className="modal-foot">
           <Button variant="secondary" onClick={onClose}>Close</Button>
-          <Button onClick={() => onEdit?.(visit)}>Edit</Button>
+          <Button title="Edit this visit's details" onClick={() => onEdit?.(visit)}>Edit</Button>
         </div>
       </div>
     </div>

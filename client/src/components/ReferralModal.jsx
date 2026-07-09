@@ -39,7 +39,7 @@ export default function ReferralModal({ people = [], person, onClose, onSaved })
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Log a referral</h2>
-          <button className="close" onClick={onClose}>×</button>
+          <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -69,8 +69,8 @@ export default function ReferralModal({ people = [], person, onClose, onSaved })
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving || !form.person_id}>
+          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button title="Record this referral" onClick={save} disabled={saving || !form.person_id}>
             {saving ? 'Saving…' : 'Log referral'}
           </Button>
         </div>

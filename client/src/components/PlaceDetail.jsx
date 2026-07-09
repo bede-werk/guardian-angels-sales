@@ -4,6 +4,7 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
 import PersonModal from './PersonModal';
+import PlaceModal from './PlaceModal';
 import AssignPersonModal from './AssignPersonModal';
 import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
@@ -14,6 +15,8 @@ import VisitDetailModal from './VisitDetailModal';
 // (clicking any place-linked row/card).
 export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) {
   const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + people)
+  const [categories, setCategories] = useState([]); // known category names, for PlaceModal's autocomplete
+  const [editing, setEditing] = useState(false); // whether the Edit place modal is open
   const [logging, setLogging] = useState(false); // whether the Log Visit modal is open
   // Controls the (Create/Edit) person modal: undefined = closed, null =
   // creating a brand-new person, an object = editing that existing person.
@@ -31,6 +34,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
+  const [removingNotes, setRemovingNotes] = useState(false);
 
   async function load() {
     setData(await api.place(placeId));
@@ -38,6 +42,9 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
   useEffect(() => {
     load();
   }, [placeId]);
+  useEffect(() => {
+    api.filters().then((f) => setCategories(f.categories)).catch(() => {});
+  }, []);
 
   // Permanently removes only the place itself. People who were here are
   // detached (not deleted) and every visit logged here survives, still
@@ -67,6 +74,21 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
       window.alert(e.message);
     } finally {
       setSavingNotes(false);
+    }
+  }
+
+  async function removeNotes() {
+    if (!window.confirm("Remove this note? This can't be undone.")) return;
+    setRemovingNotes(true);
+    try {
+      await api.updatePlace(data.id, { notes: null });
+      setEditingNotes(false);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setRemovingNotes(false);
     }
   }
 
@@ -133,7 +155,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
               )}
             </div>
           </div>
-          <button className="close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
           <div className="stack" style={{ background: 'var(--bg)', borderRadius: 'var(--radius-md)', padding: '12px 16px' }}>
@@ -143,11 +165,10 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
               {data.phone && <div>{data.phone}</div>}
             </div>
             <div className="tag-list">
-              <Button variant="secondary" size="small" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
+              <Button variant="secondary" size="small" title="Open directions to this address in Google Maps" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
               {/* Call button only shows if this place has a phone number on file
                   (not populated from the original Excel import — added manually). */}
-              {data.phone && <a className="btn secondary small" href={`tel:${data.phone}`}>Call</a>}
-              <Button size="small" onClick={() => setLoggingReferral(true)}>Log a referral</Button>
+              {data.phone && <a className="btn secondary small" title={`Call ${data.phone}`} href={`tel:${data.phone}`}>Call</a>}
             </div>
           </div>
 
@@ -156,31 +177,46 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           <div className="card">
             <div className="card-head">
               <h2>Notes</h2>
-              {!editingNotes && (
+              {!data.notes && !editingNotes && (
                 <Button
                   variant="secondary"
                   size="small"
-                  onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}
+                  title="Add a standing note about this place"
+                  onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
                 >
-                  {data.notes ? 'Edit' : 'Add notes'}
+                  Add notes
                 </Button>
               )}
             </div>
             <div className="card-body">
               {editingNotes ? (
                 <div className="stack">
-                  <textarea rows={3} value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} autoFocus />
+                  <textarea
+                    rows={3}
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
+                    autoFocus
+                  />
                   <div className="tag-list">
-                    <Button size="small" onClick={saveNotes} disabled={savingNotes}>
+                    <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes}>
                       {savingNotes ? 'Saving…' : 'Save'}
                     </Button>
-                    <Button variant="secondary" size="small" onClick={() => setEditingNotes(false)} disabled={savingNotes}>
-                      Cancel
-                    </Button>
+                    {data.notes ? (
+                      <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
+                        {removingNotes ? 'Removing…' : 'Remove'}
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes}>
+                        Cancel
+                      </Button>
+                    )}
                   </div>
                 </div>
               ) : data.notes ? (
-                <div className="tiny">{data.notes}</div>
+                <div className="tiny hover-highlight" style={{ display: 'inline-block' }} title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
+                  {data.notes}
+                </div>
               ) : (
                 <EmptyState message="No standing notes about this place yet." />
               )}
@@ -196,8 +232,9 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
             <div className="card-head">
               <h2>People ({data.people.length})</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                <Button variant="secondary" size="small" onClick={() => setAssigningPerson(true)}>Assign person</Button>
-                <Button variant="secondary" size="small" onClick={() => setEditingPerson(null)}>New person</Button>
+                <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => setAssigningPerson(true)}>Assign person</Button>
+                <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => setEditingPerson(null)}>New person</Button>
+                <Button size="small" title="Record a referral from someone at this place" onClick={() => setLoggingReferral(true)}>Log a referral</Button>
               </div>
             </div>
             <div className="card-body stack">
@@ -211,8 +248,8 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                   {data.people.map((p) => (
                     <li
                       key={p.id}
-                      className={`stop ${p.departed ? 'skipped' : ''}`}
-                      style={{ cursor: 'pointer' }}
+                      className={`stop hover-row ${p.departed ? 'skipped' : ''}`}
+                      style={{ justifyContent: 'space-between' }}
                       onClick={() => setSelectedPersonId(p.id)}
                     >
                       <div className="main">
@@ -232,9 +269,9 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                           </span>
                         )}
                         <Button
-                          variant="danger"
+                          variant="ghost"
                           size="small"
-                          title="Remove from this place"
+                          title="Unassign person — they stay on file, just no longer linked to this place"
                           disabled={removingPersonId === p.id}
                           onClick={(e) => { e.stopPropagation(); removePerson(p); }}
                         >
@@ -252,7 +289,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           <div className="card">
             <div className="card-head">
               <h2>Visit history ({data.visits.length})</h2>
-              <Button size="small" onClick={() => setLogging(true)}>Log a visit</Button>
+              <Button size="small" title="Record a visit to this place" onClick={() => setLogging(true)}>Log a visit</Button>
             </div>
             <div className="card-body">
               {data.visits.length === 0 ? (
@@ -262,8 +299,8 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                   {data.visits.map((v) => (
                     <li
                       key={v.id}
-                      className="stack"
-                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)', cursor: 'pointer' }}
+                      className="stack hover-row"
+                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
                       onClick={() => setViewingVisit(v)}
                     >
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
@@ -291,11 +328,27 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="danger" onClick={deletePlace} disabled={deleting}>
+          <Button
+            variant="danger"
+            style={{ marginRight: 'auto' }}
+            title="Permanently delete this place — can't be undone. People and visit history stay on file, just no longer linked to it."
+            onClick={deletePlace}
+            disabled={deleting}
+          >
             {deleting ? 'Deleting…' : 'Delete place'}
           </Button>
+          <Button variant="secondary" title="Edit this place's details" onClick={() => setEditing(true)}>Edit</Button>
         </div>
       </div>
+
+      {editing && (
+        <PlaceModal
+          place={data}
+          categories={categories}
+          onClose={() => setEditing(false)}
+          onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
 
       {/* Ad-hoc visit logging — not tied to today's generated route, just this place. */}
       {logging && (
@@ -311,6 +364,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
       {editingPerson !== undefined && (
         <PersonModal
           placeId={data.id}
+          placeName={data.name}
           person={editingPerson}
           onClose={() => setEditingPerson(undefined)}
           onSaved={() => { load(); onChanged?.(); }}

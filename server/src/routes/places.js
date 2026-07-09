@@ -4,6 +4,7 @@
 const express = require('express');
 const knex = require('../db/knex');
 const { priorityLabel, priorityScore, regionForPlace } = require('../services/priority');
+const { geocodeAddress } = require('../services/geocoding');
 const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, referralMetricsByPlaceId, metricsFor, EMPTY_METRICS } = require('../services/referralMetrics');
 
@@ -36,6 +37,12 @@ router.post('/', async (req, res, next) => {
       phone: phone || null,
       region: regionForPlace({ city, zip }),
     };
+    if (address || city || zip) {
+      const coords = await geocodeAddress({ address, city, state: payload.state, zip });
+      payload.lat = coords ? coords.lat : null;
+      payload.lng = coords ? coords.lng : null;
+      payload.geocoded_at = knex.fn.now();
+    }
     const [row] = await knex('places').insert(payload).returning('id');
     const id = row && row.id ? row.id : row;
     const place = await knex('places').where({ id }).first();
@@ -236,6 +243,22 @@ router.patch('/:id', async (req, res, next) => {
         city: update.city !== undefined ? update.city : existing.city,
         zip: update.zip !== undefined ? update.zip : existing.zip,
       });
+    }
+    if (
+      update.address !== undefined ||
+      update.city !== undefined ||
+      update.state !== undefined ||
+      update.zip !== undefined
+    ) {
+      const coords = await geocodeAddress({
+        address: update.address !== undefined ? update.address : existing.address,
+        city: update.city !== undefined ? update.city : existing.city,
+        state: update.state !== undefined ? update.state : existing.state,
+        zip: update.zip !== undefined ? update.zip : existing.zip,
+      });
+      update.lat = coords ? coords.lat : null;
+      update.lng = coords ? coords.lng : null;
+      update.geocoded_at = knex.fn.now();
     }
 
     await knex('places').where({ id: req.params.id }).update(update);

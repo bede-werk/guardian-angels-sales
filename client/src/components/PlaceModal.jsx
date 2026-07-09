@@ -3,19 +3,20 @@ import { api } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 
-// Create a new place (organization) manually from the Places directory.
-// Opened from Places.jsx's "Add place" button.
-export default function PlaceModal({ categories = [], onClose, onSaved }) {
+// Create or edit a place (organization). `place` present = editing (form is
+// pre-filled from it); absent = creating a brand-new one from a blank form.
+// Opened from Places.jsx's "Add place" button, or PlaceDetail.jsx's "Edit" button.
+export default function PlaceModal({ place, categories = [], onClose, onSaved }) {
   const [form, setForm] = useState({
-    name: '',
-    category: '',
-    tier: '3',
-    is_priority: false,
-    address: '',
-    city: '',
-    state: 'NE',
-    zip: '',
-    phone: '',
+    name: place?.name || '',
+    category: place?.category || '',
+    tier: place ? String(place.tier) : '3',
+    is_priority: place?.is_priority || false,
+    address: place?.address || '',
+    city: place?.city || '',
+    state: place?.state || 'NE',
+    zip: place?.zip || '',
+    phone: place?.phone || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -31,8 +32,8 @@ export default function PlaceModal({ categories = [], onClose, onSaved }) {
     setSaving(true);
     setError(null);
     try {
-      const place = await api.createPlace(form);
-      onSaved?.(place);
+      const saved = place ? await api.updatePlace(place.id, form) : await api.createPlace(form);
+      onSaved?.(saved);
       onClose();
     } catch (e) {
       setError(e.message);
@@ -45,8 +46,8 @@ export default function PlaceModal({ categories = [], onClose, onSaved }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Add a place</h2>
-          <button className="close" onClick={onClose}>×</button>
+          <h2>{place ? 'Edit place' : 'Add a place'}</h2>
+          <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -105,9 +106,13 @@ export default function PlaceModal({ categories = [], onClose, onSaved }) {
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={save} disabled={saving || !form.name.trim() || !isCompletePhone(form.phone)}>
-            {saving ? 'Saving…' : 'Add place'}
+          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button
+            title={place ? "Save changes to this place's details" : 'Create this new place'}
+            onClick={save}
+            disabled={saving || !form.name.trim() || !isCompletePhone(form.phone)}
+          >
+            {saving ? 'Saving…' : place ? 'Save changes' : 'Add place'}
           </Button>
         </div>
       </div>

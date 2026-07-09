@@ -8,6 +8,7 @@
     "rollback": "knex migrate:rollback",
     "import": "node src/scripts/import-excel.js",
     "import:notes": "node src/scripts/import-notes.js",
+    "geocode": "node src/scripts/geocode-places.js",
     "seed": "npm run migrate && npm run import && npm run import:notes",
     "reset": "knex migrate:rollback --all && npm run seed",
     "dev": "node --watch src/index.js",
