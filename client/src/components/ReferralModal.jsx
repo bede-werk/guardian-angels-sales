@@ -35,7 +35,7 @@ export default function ReferralModal({ people = [], person, onClose, onSaved })
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Log a referral</h2>

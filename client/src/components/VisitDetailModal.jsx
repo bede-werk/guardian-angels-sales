@@ -10,7 +10,7 @@ import Button from './ui/Button';
 // (status, outcome, logged-by rep, full contact snapshot) still lives.
 export default function VisitDetailModal({ visit, onClose, onEdit }) {
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Visit — {visit.scheduled_date ? formatDate(visit.scheduled_date) : 'unscheduled'}</h2>

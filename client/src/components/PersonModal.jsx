@@ -53,7 +53,7 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
   const needsPlacePicker = !placeId && !person && places;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{person ? 'Edit person' : placeName ? `Add a person to ${placeName}` : 'Add a person'}</h2>

@@ -211,9 +211,28 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
     }
   }
 
+  // Clicking the backdrop backs out of whatever's actively being edited
+  // (the place picker, or an inline notes/preferences/birthday edit) instead
+  // of closing the whole card out from under an in-progress edit — a second
+  // backdrop click (with nothing left open) closes the card as normal.
+  // stopPropagation matters here too: this card can itself be nested inside
+  // PlaceDetail's own backdrop (opened by clicking a person row there), so
+  // without it, closing this card would bubble up and close PlaceDetail too.
+  function handleBackdropClick(e) {
+    e.stopPropagation();
+    if (assigning || editingNotes || editingPreferences || editingBirthday) {
+      setAssigning(false);
+      setEditingNotes(false);
+      setEditingPreferences(false);
+      setEditingBirthday(false);
+    } else {
+      onClose();
+    }
+  }
+
   if (!data) {
     return (
-      <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="loading">Loading…</div>
         </div>
@@ -224,7 +243,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
   const { referral_metrics: metrics } = data;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={handleBackdropClick}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div>
@@ -266,8 +285,13 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
             <div className="card-head"><h2>Place</h2></div>
             <div className="card-body">
               {data.place ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                  <div className="hover-highlight" title="Open this person's place" onClick={() => onOpenPlace?.(data.place.id)}>
+                <div
+                  className="hover-row"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
+                  title="Open this person's place"
+                  onClick={() => onOpenPlace?.(data.place.id)}
+                >
+                  <div>
                     <strong>{data.place.name}</strong>
                     <div className="tiny muted">{data.place.city}, {data.place.state} {data.place.zip}</div>
                   </div>
@@ -276,7 +300,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                     size="small"
                     title="Unassign from this place — they stay on file, just no longer linked here"
                     disabled={removingFromPlace}
-                    onClick={removeFromPlace}
+                    onClick={(e) => { e.stopPropagation(); removeFromPlace(); }}
                   >
                     ✕
                   </Button>
@@ -364,7 +388,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                   </div>
                 </div>
               ) : data.preferences ? (
-                <div className="tiny hover-highlight" style={{ display: 'inline-block' }} title="Click to edit" onClick={() => { setPreferencesDraft(data.preferences || ''); setEditingPreferences(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => { setPreferencesDraft(data.preferences || ''); setEditingPreferences(true); }}>
                   <strong>Preferences:</strong> {data.preferences}
                 </div>
               ) : null}
@@ -395,7 +419,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                   </div>
                 </div>
               ) : data.birthday ? (
-                <div className="tiny hover-highlight" style={{ display: 'inline-block' }} title="Click to edit" onClick={() => { setBirthdayDraft(data.birthday || ''); setEditingBirthday(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => { setBirthdayDraft(data.birthday || ''); setEditingBirthday(true); }}>
                   <strong>Birthday:</strong> {data.birthday}
                 </div>
               ) : null}
@@ -425,7 +449,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                   </div>
                 </div>
               ) : data.notes ? (
-                <div className="tiny hover-highlight" style={{ display: 'inline-block' }} title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
                   {data.notes}
                 </div>
               ) : (

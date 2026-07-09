@@ -100,7 +100,7 @@ export default function VisitLogModal({ visit, placeId, placeName, onClose, onSa
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Log visit — {title}</h2>

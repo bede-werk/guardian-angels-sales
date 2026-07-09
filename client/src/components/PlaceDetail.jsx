@@ -128,7 +128,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
   // Show a lightweight loading modal while the initial fetch is in flight.
   if (!data) {
     return (
-      <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="loading">Loading…</div>
         </div>
@@ -136,8 +136,22 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
     );
   }
 
+  // Clicking the backdrop backs out of an in-progress inline notes edit
+  // instead of closing the whole card out from under it — a second backdrop
+  // click (with nothing left open) closes the card as normal. stopPropagation
+  // so this doesn't bubble up to any ancestor modal-backdrop this card might
+  // itself be nested inside.
+  function handleBackdropClick(e) {
+    e.stopPropagation();
+    if (editingNotes) {
+      setEditingNotes(false);
+    } else {
+      onClose();
+    }
+  }
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={handleBackdropClick}>
       {/* stopPropagation so clicking inside the modal doesn't bubble up to the
           backdrop's onClick (which would close the modal). */}
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -214,7 +228,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                   </div>
                 </div>
               ) : data.notes ? (
-                <div className="tiny hover-highlight" style={{ display: 'inline-block' }} title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
                   {data.notes}
                 </div>
               ) : (
