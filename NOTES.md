@@ -104,10 +104,82 @@ metrics** that need no manual upkeep:
   that this session's smoke test used Bede's own account for a temp auth token
   instead of the usual passwordless test user, which it shouldn't have.
 
+## 2026-07-09
+
+A polish-and-fill-gaps session on top of the 2026-07-08 CRM buildout — no new
+entities, mostly making the People/Places detail views actually complete and
+adding one real new capability (geocoding). Five commits through the day
+(`74ca2a1`…`cb706a8`), all committed.
+
+### 1. Geocoding — places now have real lat/lng
+- New `server/src/services/geocoding.js`: one function, `geocodeAddress()`,
+  against the US Census Bureau's free public geocoder (no API key needed).
+  Returns `{ lat, lng }` or `null` — best-effort only, never blocks creating/
+  editing a place if it fails.
+- Wired into `POST /api/places` and `PATCH /api/places/:id`: whenever
+  address/city/state/zip is set or changes, the place is automatically
+  re-geocoded and `geocoded_at` stamped.
+- New backfill script, `npm run geocode` (`server/src/scripts/geocode-places.js`),
+  using the Census's *batch* endpoint (up to 10k addresses/request) to geocode
+  every existing place that doesn't have a `geocoded_at` yet in one shot —
+  safe to re-run, only touches unprocessed rows.
+- New migration `20260711000000_add_geocoded_at_to_places.js` adds the
+  `geocoded_at` timestamp. The `lat`/`lng` columns themselves already existed
+  (added back in the original places/people schema for future routing use)
+  but were never actually populated until now.
+- Nothing in the UI consumes lat/lng yet (no map view) — this just lays the
+  groundwork by making sure the data's actually there.
+
+### 2. Visit detail popup + editing, in both People and Places
+- New `client/src/components/VisitDetailModal.jsx` — a read-only popup with
+  everything on file for one visit (status, outcome, logged-by rep, full
+  contact snapshot, notes, next-visit date), reached by clicking a visit row
+  in either PersonDetail or PlaceDetail. Has an Edit button that opens the
+  existing `VisitLogModal` pre-filled so it PATCHes instead of creating a
+  duplicate.
+- This let the inline visit-history rows themselves get decluttered — they
+  used to show status/outcome chips and the full contact snapshot inline;
+  now they're just date + who/where + a notes preview, with everything else
+  moved into the popup.
+- Visits can now also be deleted directly from either detail view (a small ✕
+  on the row) — `DELETE /api/visits/:id`, no route change needed, this was
+  just never wired up client-side before.
+
+### 3. Places can finally be edited
+- `PlaceModal.jsx` only ever supported *creating* a place — there was no way
+  to fix a typo'd address or category on an existing one short of delete +
+  recreate. It now doubles as an edit form: pass it a `place` prop and it
+  pre-fills and PATCHes instead of POSTs. Wired up via a new "Edit" button on
+  `PlaceDetail`.
+
+### 4. PersonDetail brought up to parity with PlaceDetail
+PersonDetail's notes/preferences/birthday used to be one static block, edited
+all-or-nothing. It now matches the click-to-edit pattern PlaceDetail's notes
+already had — each of the three fields is independently click-to-edit with
+its own Save/Remove, and PlaceDetail's own notes gained a Remove option it
+was missing (edit-only before today). Also: the contact block (phone/email)
+moved to the top of the card as its own tinted panel, the role_type badge is
+now visible in the header, and clicking a person's assigned place jumps
+straight to that place instead of needing a separate "View place" button.
+
+### 5. Small UX polish, app-wide
+- Hover tooltips (`title=`) added to nearly every button and icon-only
+  control — closes, filter toggles, detach/delete actions — for affordance.
+- New reusable `.hover-row` CSS class (subtle blue-tint hover) for the new
+  crop of click-to-edit/click-to-view rows, with a `:has(.btn:hover)` rule so
+  a nested button's own hover state wins instead of both lighting up.
+- Dates are now formatted `M/D/YYYY` for display everywhere (new
+  `formatDate()` helper in `api.js`) instead of showing the raw
+  `YYYY-MM-DD` storage format — visit dates, referral dates, the header date,
+  dashboard stat hints, Needs Mapping note dates, all of it. Storage/query
+  format is unchanged, this is display-only.
+- The "unassign a person from a place" (✕) button changed from a red danger
+  button to a plain ghost button in both detail views — it wasn't destructive
+  enough to earn the red treatment (the person isn't deleted, just detached).
+
 ## Current state
-- The 2026-07-08 CRM buildout (see above) is committed and merged to `main`.
-  **This session's relationship-temp removal / referral-metrics work is not
-  committed yet** — check `git status`.
+- Everything through today (2026-07-09, `cb706a8`) is committed. `git status`
+  is clean as of this writeup.
 - Local dev only — nothing deployed. `./dev.sh` runs both servers
   (backend :4000, frontend :5173).
 - Database: 261 real places, a handful of real visits/referrals logged since
@@ -116,19 +188,26 @@ metrics** that need no manual upkeep:
   don't delete these, they're fixtures he made on purpose). Only Bede's account
   has a real password set; Nikki/Lisa/Basil still need to log in once to create
   theirs.
+- Existing places haven't been backfilled with coordinates yet — `npm run
+  geocode` hasn't been run against the real dataset (only new/edited places
+  going forward get geocoded automatically).
 - See `HANDOFF.md` §13 for the authoritative, more detailed current-state
   snapshot — this section is a summary, that one's the source of truth.
 
 ## Next steps / ideas not yet done
-- **Commit and push** this session's relationship-temp-removal / referral-metrics
-  work.
-- Referral metrics currently aren't shown on Today's Route's stop cards — only
+- **Run `npm run geocode`** to backfill lat/lng on the 261 existing places —
+  new/edited ones get it automatically, but the bulk of the dataset predates
+  today's geocoding work.
+- Nothing in the UI uses lat/lng yet — a map view of places/routes is the
+  natural next step now that coordinates exist.
+- Referral metrics still aren't shown on Today's Route's stop cards — only
   the People tab, Places tab, both detail pages, and the Dashboard.
-- Feeding referral metrics (not relationship_temp — that's gone) back into place
-  priority scoring is still an open idea, now with an objective signal to use.
+- Feeding referral metrics back into place priority scoring is still an open
+  idea, now with an objective signal to use.
 - Picking a date other than today when planning a route (currently today-only).
 - Populating `places.phone` (not in the original Excel import) so the Call
-  button on Place Detail actually shows up.
+  button on Place Detail always shows up (currently only for places someone's
+  added a phone number to by hand).
 - Re-running `npm run import:notes` when ready to bring back the 2 years of
   historical referrer notes.
 - Still true from the original handoff: consider Postgres backups and a
