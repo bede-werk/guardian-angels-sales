@@ -152,7 +152,7 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .btn.secondary { background: var(--blue-tint-1); color: var(--blue-dark); }
 .btn.secondary:hover { background: var(--blue-tint-2); }
 .btn.ghost { background: none; color: var(--blue); padding: 6px 8px; }
-.btn.ghost:hover { background: var(--blue-tint-1); }
+.btn.ghost:hover { background: var(--blue-tint-2); }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .btn.danger { background: var(--mauve-tint-1); color: var(--mauve); }
 .btn.danger:hover { background: var(--mauve-tint-2); }
@@ -230,15 +230,16 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 
 /* Reusable hover highlight for clickable rows/blocks that aren't <button>s
    (e.g. click-to-edit notes, a person's place, a visit row) — same subtle
-   blue-tint background as the Places directory's tbody tr:hover. */
-.hover-highlight { cursor: pointer; border-radius: var(--radius-sm); padding: 4px 10px; margin: -4px -10px; transition: background 0.1s ease; }
-.hover-highlight:hover { background: var(--blue-tint-1); }
-
-/* Same hover treatment, for a full list row (e.g. a visit or person row)
-   that's already the click target and has its own padding — no
-   padding/margin hit-area hack needed here. */
+   blue-tint background as the Places directory's tbody tr:hover. Full-width:
+   the click target is a block-level element that already spans the width of
+   its container (a card-body or flex row), so no side padding is needed to
+   make the highlight reach edge to edge. */
 .hover-row { cursor: pointer; transition: background 0.1s ease; }
 .hover-row:hover { background: var(--blue-tint-1); }
+/* Hovering a button inside the row (e.g. its "x" remove/delete action) is a
+   more specific target than the row itself — drop the row's own highlight so
+   only the button appears selected, instead of both lighting up at once. */
+.hover-row:has(.btn:hover) { background: none; }
 
 /* Data tables — Places directory and Dashboard's "never visited" list */
 table { width: 100%; border-collapse: collapse; }
