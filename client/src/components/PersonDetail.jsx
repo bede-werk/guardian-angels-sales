@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { api, ROLE_TYPE_LABELS } from '../api';
-import { StatusChip, OutcomeChip, CategoryChip, TierChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
@@ -132,11 +131,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
               {data.place ? (
                 <div className="row" style={{ alignItems: 'center' }}>
                   <div>
-                    <div className="tag-list">
-                      <strong>{data.place.name}</strong>
-                      <CategoryChip category={data.place.category} />
-                      <TierChip tier={data.place.tier} isPriority={data.place.is_priority} />
-                    </div>
+                    <strong>{data.place.name}</strong>
                     <div className="tiny muted">{data.place.city}, {data.place.state} {data.place.zip}</div>
                   </div>
                   <div className="tag-list" style={{ flex: 'unset' }}>
@@ -249,8 +244,6 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                     <li key={v.id} className="stack" style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
                       <div className="tag-list">
                         <strong className="tiny">{v.scheduled_date || 'unscheduled'}</strong>
-                        <StatusChip status={v.status} />
-                        <OutcomeChip outcome={v.outcome} />
                         {v.place_name && <span className="tiny muted">· at {v.place_name}</span>}
                         {v.user_name && <span className="tiny muted">· {v.user_name}</span>}
                       </div>

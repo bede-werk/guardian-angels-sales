@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { api, navigateUrl } from '../api';
-import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
@@ -104,8 +103,6 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           <div>
             <h2>{data.name}</h2>
             <div className="tag-list" style={{ marginTop: 4 }}>
-              <CategoryChip category={data.category} />
-              <TierChip tier={data.tier} isPriority={data.is_priority} />
               <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
                 {data.referral_metrics.lifetime_referrals} referral{data.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
               </span>
@@ -244,8 +241,6 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                     <li key={v.id} className="stack" style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}>
                       <div className="tag-list">
                         <strong className="tiny">{v.scheduled_date || 'unscheduled'}</strong>
-                        <StatusChip status={v.status} />
-                        <OutcomeChip outcome={v.outcome} />
                         {v.user_name && <span className="tiny muted">· {v.user_name}</span>}
                       </div>
                       {v.notes && <div className="tiny">{v.notes}</div>}
