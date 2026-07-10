@@ -13,7 +13,7 @@ import VisitDetailModal from './VisitDetailModal';
 // Slide-in modal: place details + people here + full visit history + "log a
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
 // (clicking any place-linked row/card).
-export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) {
+export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDeleted }) {
   const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + people)
   const [categories, setCategories] = useState([]); // known category names, for PlaceModal's autocomplete
   const [editing, setEditing] = useState(false); // whether the Edit place modal is open
@@ -212,19 +212,20 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
                     autoFocus
                   />
-                  <div className="tag-list">
-                    <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes}>
-                      {savingNotes ? 'Saving…' : 'Save'}
-                    </Button>
+                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                     {data.notes ? (
                       <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
-                        {removingNotes ? 'Removing…' : 'Remove'}
+                        {removingNotes ? 'Deleting…' : 'Delete'}
                       </Button>
-                    ) : (
-                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes}>
+                    ) : <span />}
+                    <div className="tag-list">
+                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes || removingNotes}>
                         Cancel
                       </Button>
-                    )}
+                      <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes || removingNotes}>
+                        {savingNotes ? 'Saving…' : 'Save'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ) : data.notes ? (
@@ -246,9 +247,9 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
             <div className="card-head">
               <h2>People ({data.people.length})</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => setAssigningPerson(true)}>Assign person</Button>
-                <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => setEditingPerson(null)}>New person</Button>
-                <Button size="small" title="Record a referral from someone at this place" onClick={() => setLoggingReferral(true)}>Log a referral</Button>
+                <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => { setEditingNotes(false); setAssigningPerson(true); }}>Assign person</Button>
+                <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => { setEditingNotes(false); setEditingPerson(null); }}>New person</Button>
+                <Button size="small" title="Record a referral from someone at this place" onClick={() => { setEditingNotes(false); setLoggingReferral(true); }}>Log a referral</Button>
               </div>
             </div>
             <div className="card-body stack">
@@ -262,17 +263,15 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                   {data.people.map((p) => (
                     <li
                       key={p.id}
-                      className={`stop hover-row ${p.departed ? 'skipped' : ''}`}
+                      className="stop hover-row"
                       style={{ justifyContent: 'space-between' }}
-                      onClick={() => setSelectedPersonId(p.id)}
+                      onClick={() => { setEditingNotes(false); setSelectedPersonId(p.id); }}
                     >
                       <div className="main">
                         <div className="name">{p.name}</div>
                         {p.title && <div className="meta">{p.title}</div>}
                       </div>
                       <div className="tag-list" style={{ flex: 'unset' }}>
-                        {p.is_primary && <span className="badge star">★</span>}
-                        {p.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
                         <span className="tiny muted">
                           {p.referral_metrics.lifetime_referrals} referral{p.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
                           {p.referral_metrics.last_referral_date ? ` · last ${formatDate(p.referral_metrics.last_referral_date)}` : ''}
@@ -303,7 +302,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           <div className="card">
             <div className="card-head">
               <h2>Visit history ({data.visits.length})</h2>
-              <Button size="small" title="Record a visit to this place" onClick={() => setLogging(true)}>Log a visit</Button>
+              <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setLogging(true); }}>Log a visit</Button>
             </div>
             <div className="card-body">
               {data.visits.length === 0 ? (
@@ -315,12 +314,17 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
                       key={v.id}
                       className="stack hover-row"
                       style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => setViewingVisit(v)}
+                      onClick={() => { setEditingNotes(false); setViewingVisit(v); }}
                     >
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                         <div className="tag-list" style={{ flex: 'unset' }}>
                           <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
-                          {v.person_name && <span className="tiny muted">· with {v.person_name}</span>}
+                          {/* "Bede Fulton with Lionel Messi" — who visited, then who they met. */}
+                          {(v.user_name || v.person_name) && (
+                            <span className="tiny muted">
+                              · {[v.user_name, v.person_name && `with ${v.person_name}`].filter(Boolean).join(' ')}
+                            </span>
+                          )}
                         </div>
                         <Button
                           variant="danger"
@@ -351,7 +355,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           >
             {deleting ? 'Deleting…' : 'Delete place'}
           </Button>
-          <Button variant="secondary" title="Edit this place's details" onClick={() => setEditing(true)}>Edit</Button>
+          <Button variant="secondary" title="Edit this place's details" onClick={() => { setEditingNotes(false); setEditing(true); }}>Edit</Button>
         </div>
       </div>
 
@@ -369,6 +373,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
         <VisitLogModal
           placeId={data.id}
           placeName={data.name}
+          userId={userId}
           onClose={() => setLogging(false)}
           onSaved={() => { load(); onChanged?.(); }}
         />
@@ -401,6 +406,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
       {selectedPersonId && (
         <PersonDetail
           personId={selectedPersonId}
+          userId={userId}
           onClose={() => setSelectedPersonId(null)}
           onChanged={() => { load(); onChanged?.(); }}
           onDeleted={() => { setSelectedPersonId(null); load(); onChanged?.(); }}
@@ -421,6 +427,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
           visit={viewingVisit}
           onClose={() => setViewingVisit(null)}
           onEdit={(v) => { setViewingVisit(null); setEditingVisit(v); }}
+          onDelete={(v) => { setViewingVisit(null); removeVisit(v); }}
         />
       )}
 
@@ -431,6 +438,7 @@ export default function PlaceDetail({ placeId, onClose, onChanged, onDeleted }) 
       {editingVisit && (
         <VisitLogModal
           visit={{ ...editingVisit, visit_id: editingVisit.id }}
+          userId={userId}
           onClose={() => setEditingVisit(null)}
           onSaved={() => { load(); onChanged?.(); }}
         />

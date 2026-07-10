@@ -15,7 +15,7 @@ const router = express.Router();
 
 // GET /api/dashboard?userId=&date=YYYY-MM-DD
 // Returns: today's route, visits completed this week, never-visited places,
-// and a "needs attention" rollup (departed/cooling people + overdue visits).
+// and a "needs attention" rollup (cooling people + overdue visits).
 router.get('/', async (req, res, next) => {
   try {
     const userId = req.query.userId ? Number(req.query.userId) : undefined;
@@ -25,7 +25,7 @@ router.get('/', async (req, res, next) => {
     const weekStart = dayjs(date).isoWeekday(1).format('YYYY-MM-DD');
     const weekEnd = dayjs(date).isoWeekday(7).format('YYYY-MM-DD');
 
-    const [todaysRoute, completedThisWeek, neverVisited, totals, departedPeople, coolingPeople, nextVisitRows] =
+    const [todaysRoute, completedThisWeek, neverVisited, totals, coolingPeople, nextVisitRows] =
       await Promise.all([
         loadRoute(knex, date, userId),
 
@@ -47,19 +47,11 @@ router.get('/', async (req, res, next) => {
 
         knex('places').count({ c: '*' }).first(),
 
-        // Needs attention: turnover (departed people)...
-        knex('people as pe')
-          .join('places as p', 'p.id', 'pe.place_id')
-          .where('pe.departed', true)
-          .orderBy('p.name', 'asc')
-          .select('pe.id as person_id', 'pe.name as person_name', 'pe.place_id', 'p.name as place_name'),
-
-        // ...cooling relationships (referred before, but nothing in the last
-        // 90 days — not already departed, that's its own bucket below)...
+        // Needs attention: cooling relationships (referred before, but
+        // nothing in the last 90 days)...
         knex('people as pe')
           .join('places as p', 'p.id', 'pe.place_id')
           .join('referrals as r', 'r.person_id', 'pe.id')
-          .where('pe.departed', false)
           .groupBy('pe.id', 'pe.name', 'pe.place_id', 'p.name')
           .havingRaw('SUM(CASE WHEN r.referral_date >= ? THEN 1 ELSE 0 END) = 0', [recentWindowCutoff(dayjs(date).toDate())])
           .orderBy('p.name', 'asc')
@@ -124,8 +116,7 @@ router.get('/', async (req, res, next) => {
         })),
       },
       needs_attention: {
-        count: departedPeople.length + coolingPeople.length + overduePlaces.length,
-        departed_people: departedPeople,
+        count: coolingPeople.length + overduePlaces.length,
         cooling_people: coolingPeople,
         overdue_places: overduePlaces,
       },

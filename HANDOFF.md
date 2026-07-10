@@ -31,8 +31,21 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   geocoded** (address → lat/lng) automatically via the free US Census geocoder, with a
   `npm run geocode` backfill script for the 261 existing places. See §5 and the new §9A for
   the full design. Five commits, all committed (`74ca2a1`…`cb706a8`).
-- **Everything is committed as of this writing** — `git status` is clean on `bede-working`.
-  Don't assume that stays true by the time you read this — re-check.
+- **2026-07-10 was another polish-plus-audit session, still UNCOMMITTED as of this
+  writing** (check `git status`): `ReferralDetailModal.jsx` and `VisitDetailModal.jsx` both
+  got a bottom-left **Delete** button; the Place-notes / Person-notes/preferences/birthday
+  inline editors were all standardized to Delete-far-left / Cancel+Save-on-the-right (Save
+  always the rightmost button), and starting an edit on any one of them (or taking any other
+  action on the card — assign to place, log/view a referral or visit, open Edit) now backs
+  out of whichever other field was mid-edit instead of leaving multiple drafts open;
+  Person's preferences field became a resizable textarea (was a single-line input, now
+  matches notes); `AssignPersonModal` got its default "browse everyone unassigned" list back
+  alongside the existing search box. Then, at Bede's request, ran a 4-agent audit of the
+  whole People/Places surface plus a route-planner-readiness assessment — **see §14A for two
+  real data-integrity bugs found (not yet fixed) and §14B for the route-planner findings**,
+  most notably that the geocoding backfill mentioned above **has now actually been run**
+  (contradicts the still-stale-sounding wording elsewhere in this doc before this edit pass —
+  see §9A/§13, now corrected).
 - Don't start new feature work without first asking Bede whether to commit pending
   changes — he explicitly only wants commits when asked for.
 
@@ -73,11 +86,12 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
    If you touch this, keep that contract.
 
 **Natural next steps Bede has flagged but not yet asked for** (don't just do these — check
-first): running `npm run geocode` to backfill the 261 existing places (only new/edited ones
-get coordinates automatically so far), a map view now that lat/lng actually exists, extending
-"needs attention" coverage to Today's Route, feeding referral metrics into priority scoring
-(the natural successor to the old "Phase 2 relationship-temp" idea), finishing the remaining
-Needs Mapping referrers.
+first): fixing the two known-issue bugs in §14A before anything else touches this data, a
+map view / real route-planner logic now that lat/lng actually exists for 255/262 places
+(§9A, §14B), extending "needs attention" coverage to Today's Route, feeding referral metrics
+into priority scoring (the natural successor to the old "Phase 2 relationship-temp" idea),
+finishing the remaining Needs Mapping referrers, the 7 places whose addresses didn't geocode
+(§9A) need manual review.
 
 **If something in this note contradicts the actual code** (a file's gone, a function's
 renamed), trust the code — this note is a snapshot from one point in time, not a live source
@@ -157,7 +171,7 @@ guardian-angels-sales/
             ├── Dashboard.jsx, Schedule.jsx
             ├── Places.jsx, PlaceDetail.jsx, PlaceModal.jsx      # PlaceModal: create AND edit
             ├── People.jsx, PersonDetail.jsx, PersonModal.jsx, AssignPersonModal.jsx
-            ├── ReferralModal.jsx
+            ├── ReferralModal.jsx, ReferralDetailModal.jsx
             ├── VisitLogModal.jsx, VisitDetailModal.jsx, NeedsMapping.jsx
             └── ui/                    # Button, Chip, EmptyState, PhoneInput, ...
 ```
@@ -188,7 +202,9 @@ guardian-angels-sales/
   preserved), with `referral_date` and `notes`. Nothing about relationship strength is
   stored anywhere: `services/referralMetrics.js` derives lifetime count / last referral date
   / last-90-days count / a `needs_attention` flag live from this table, for both people and
-  places, on every read (see section 9).
+  places, on every read (see section 9). **Known gap (§14A #1):** unlike `visits`, this table
+  has no name-snapshot columns, so once `person_id` nulls out the referral is unattributed and
+  drops out of every metric even though the row itself still exists.
 - **notes_review** — "needs mapping" bucket: imported notes whose referrer didn't match a
   place (`referrer_raw, note_text, note_date, author_*, status, assigned_*`).
 
@@ -215,22 +231,40 @@ guardian-angels-sales/
   never-contacted.
 - **Place detail** — editable core fields via an **Edit** button (`PlaceModal.jsx` doubles as
   create/edit, added 2026-07-09 — there was previously no way to fix a typo'd address short
-  of delete + recreate); org-level notes (click-to-edit, Remove option); "People here" roster
-  showing name + each person's own referral metrics (lifetime / last referral date / last 90
-  days) + a "Cooling" flag for anyone who needs attention; **Assign person** (attach an
-  existing/unassigned person) vs **New person** (create one for this place) vs detach (✕,
-  ghost-styled, removes from place without deleting); **Log a referral** and **Log a visit**
-  live in the People/Visit History sections respectively, not a generic modal footer.
+  of delete + recreate); org-level notes (click-to-edit, standardized Delete/Cancel/Save
+  layout — see below); "People here" roster showing name + each person's own referral
+  metrics (lifetime / last referral date / last 90 days) + a "Cooling" flag for anyone who
+  needs attention; **Assign person** — `AssignPersonModal` shows a default list of every
+  currently-unassigned person plus the existing debounced search-everyone box (the default
+  list was restored 2026-07-10 after being dropped in an earlier pass) — vs **New person**
+  (create one for this place) vs detach (✕, ghost-styled, removes from place without
+  deleting); **Log a referral** and **Log a visit** live in the People/Visit History sections
+  respectively, not a generic modal footer.
 - **Person detail** — phone/email shown as real text in its own panel (not just Call/Email
   buttons); place assignment with "remove from place" / "assign to a place" (clicking the
   place row itself now navigates there); notes/preferences/birthday each independently
-  click-to-edit with Save/Remove (2026-07-09 — previously one static all-or-nothing block);
-  referral log with lifetime/last-referral/last-90-days metrics, a "needs attention" badge,
-  and "Log a referral"; full visit history.
+  click-to-edit (2026-07-09 — previously one static all-or-nothing block; preferences became
+  a resizable textarea on 2026-07-10, was a single-line input); referral log with
+  lifetime/last-referral/last-90-days metrics, a "needs attention" badge, and "Log a
+  referral"; full visit history.
+- **Inline field editors — standardized layout (2026-07-10).** Place notes and Person
+  notes/preferences/birthday all now show the same button arrangement while editing:
+  **Delete** far left (only rendered once there's a saved value to delete), **Cancel** and
+  **Save** grouped on the right with Save always the rightmost button. Labels changed from
+  "Remove" to "Delete" for consistency with the visit/referral detail popups below. Opening
+  any one of these fields for editing — or taking any other action on the card at all
+  (assign to a place, log/view a referral or visit, click Edit) — now backs out of whichever
+  other field was mid-edit, the same way a backdrop click already did; see
+  `exitFieldEdits()`/`beginEdit*()` in `PersonDetail.jsx` and the inline `setEditingNotes(false)`
+  calls threaded through `PlaceDetail.jsx`'s other action handlers.
 - **Visit detail popup** — click any visit row (either detail page) to open `VisitDetailModal`:
   status/outcome chips, logged-by rep, full contact snapshot, notes, next-visit date, an Edit
-  button (opens `VisitLogModal` pre-filled to PATCH), and delete. Added 2026-07-09 so the
-  inline visit-history rows could be trimmed down to date + who/where + a notes preview.
+  button (opens `VisitLogModal` pre-filled to PATCH), and a bottom-left **Delete** button.
+  Added 2026-07-09 (delete button added 2026-07-10) so the inline visit-history rows could be
+  trimmed down to date + who/where + a notes preview.
+- **Referral detail popup** — same pattern as the visit detail popup: click a referral row
+  (either detail page) to open `ReferralDetailModal` — full note, an Edit button into
+  `ReferralModal`, and a bottom-left **Delete** button (added 2026-07-10).
 - **Referrals** — always logged against a specific person (no "unknown contact" concept — an
   earlier draft had one, replaced per the user's revision — see section 8).
 - **Referral metrics ("needs attention")** — see section 9. Fully computed, no manual field;
@@ -419,7 +453,12 @@ future routing use, never populated). This session actually populated them.
   endpoint (CSV in, CSV out, up to 10,000 addresses/request — comfortably one call for the
   whole table), and stamps every row's `geocoded_at` whether it matched or not so re-running
   the script never re-sends already-attempted rows. Logs a list of unmatched addresses at the
-  end for manual review. **Not yet run against the real 261-place dataset** — see §13/§14.
+  end for manual review. **Has now been run against the real dataset** (confirmed against the
+  dev DB during the 2026-07-10 audit — see §14A/§14B): 255 of 262 places have `lat`/`lng`; the
+  other 7 are stamped `geocoded_at` (so the script won't re-attempt them) but have no
+  coordinates because their address didn't match — those 7 need manual review before any
+  routing logic can use them. (Earlier revisions of this doc said the backfill hadn't run
+  yet — that was true as of 2026-07-09, corrected here.)
 - **Migration:** `server/src/migrations/20260711000000_add_geocoded_at_to_places.js` adds a
   plain `t.timestamp('geocoded_at')` — no FK, no rebuild needed (see mental-model point 4).
   The `lat`/`lng` columns themselves are older (`20260707010000_places_and_people.js`).
@@ -519,11 +558,13 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   **2026-07-09's polish session is also fully committed** (`74ca2a1`…`cb706a8`): place editing,
   the visit detail popup, PersonDetail's click-to-edit notes/preferences/birthday, `M/D/YYYY`
   date display, and geocoding — see §5/§9A and `NOTES.md`'s 2026-07-09 entry for the blow-by-
-  blow. `git status` is clean as of this writing. **Don't assume that's still true** — check
-  `git status` before starting new work, same as always.
-- **Geocoding backfill not yet run against real data:** `npm run geocode` exists (§9A) but
-  hasn't been run against the 261 real places yet, so most existing rows still have
-  `lat`/`lng = null`. Only places created or edited since 2026-07-09 have coordinates so far.
+  blow. **2026-07-10's session (delete buttons on the visit/referral popups, the standardized
+  inline-editor button layout, mutual-exclusion between in-progress field edits, the
+  AssignPersonModal unassigned-list restore, and the audit in §14A/§14B) is UNCOMMITTED** —
+  check `git status` before starting new work and ask Bede before committing, same as always.
+- **Geocoding backfill has been run against real data** (corrected 2026-07-10 — earlier
+  revisions of this doc said it hadn't been): 255 of 262 places have `lat`/`lng`; 7 are
+  stamped `geocoded_at` but unmatched and need manual address review. See §9A.
 - **Live deploy:** the Railway deployment was taken down after an earlier handoff to avoid
   ongoing cost while still building — all dev happens locally via `./dev.sh` or the two
   npm-run-dev terminals. Redeploying later is still ~5 min (New → GitHub Repo → add Postgres
@@ -533,10 +574,13 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 ## 14. Next steps / ideas (not yet done)
 
-- **Run `npm run geocode`** against the real dataset — see §13. Everything created/edited from
-  now on gets coordinates automatically; the backlog of pre-2026-07-09 places doesn't yet.
-- **Do something with lat/lng now that it exists:** a map view of places/routes is the obvious
-  next step — nothing in the UI reads the coordinates yet (§9A).
+- **Fix the two known-issue bugs in §14A first** — before building the route planner or
+  anything else that leans on visits/referrals data, since both bugs can silently corrupt
+  that data.
+- **Manually review the 7 places whose addresses didn't geocode** (§9A/§14B) before any
+  routing logic trusts every place having coordinates.
+- **Build the route planner** — see §14B for exactly what's ready vs. missing and a suggested
+  build order.
 - **"Needs attention" coverage on Today's Route:** referral metrics are wired into the
   People tab, Places tab, both detail pages, and the Dashboard, but not Today's Route's stop
   cards — a natural follow-up if wanted there too.
@@ -555,6 +599,111 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 ---
 
+## 14A. Known issues (found in the 2026-07-10 audit — not yet fixed)
+
+Bede asked for a full read through the People/Places tabs and everything they touch before
+starting the route planner. Ran a 4-agent audit (People flow, Places flow, shared
+visit/referral machinery, route-planner readiness). Two findings are real data-integrity bugs
+that contradict this app's own detach-not-delete convention (§8) — fix these before anything
+else builds on top of this data:
+
+1. **Deleting a person orphans their referrals — no snapshot, unlike visits.**
+   `DELETE /api/people/:id` (`server/src/routes/people.js`) hard-deletes the person row.
+   `referrals.person_id` goes `null` via `ON DELETE SET NULL`, same as `visits.person_id`
+   does — but `visits` has snapshot columns (`person_name`, `person_title`, `person_email`,
+   `person_phone`) captured at creation time specifically so history survives detachment, and
+   `referrals` has no equivalent. Once `person_id` nulls out, that referral becomes
+   permanently unattributed and silently disappears from every referral-metrics rollup
+   (`referralMetricsByPersonId`/`referralMetricsByPlaceId` in `services/referralMetrics.js`
+   both key/join on `person_id`) — forever, with no UI path to see it again. The delete
+   confirmation dialog (`PersonDetail.jsx`) only warns "This can't be undone," not that
+   referral history specifically disappears. **Likely fix shape:** add name-snapshot columns
+   to `referrals` (mirroring `visits`) via the `rebuildSqliteTable` migration pattern (§ mental
+   model point 4), or reconsider whether `DELETE /api/people/:id` should detach-not-delete the
+   same way places do instead of hard-deleting.
+2. **Editing a visit becomes permanently blocked once its linked person is deleted.**
+   `VisitLogModal.jsx`'s `canSave` requires a *currently-assigned* `person_id`
+   (`form.person_id`), initialized straight from `visit.person_id`. If that person is later
+   deleted, `visits.person_id` nulls out (the `person_name`/etc. snapshot survives, by design)
+   — so the edit form's person dropdown resets to empty and Save stays disabled until someone
+   picks a *different, currently-assigned* person, which would silently reattribute that
+   visit's history to them. Net effect: you can no longer fix even a typo in an old visit's
+   notes without corrupting who it's attributed to. **Likely fix shape:** let `canSave` accept
+   the visit's existing snapshot (no live person required) when only editing fields other than
+   the person, or show the snapshotted name as read-only text instead of a live-people
+   dropdown when the original person is gone.
+
+Lower-priority findings from the same audit, worth a pass but not blocking:
+- `People.jsx`, `Places.jsx`, and `AssignPersonModal.jsx`'s search/list loads swallow fetch
+  errors (`try { ... } finally { setLoading(false) }`, no `catch`) — a failed request just
+  leaves stale results on screen with no error shown. Same three spots have no stale-response
+  guard on their 200ms-debounced search, so out-of-order responses can overwrite newer results.
+- The People directory list never shows "Departed" status (PlaceDetail's roster does) and
+  there's no filter to exclude departed people.
+- Places created via the Needs Mapping "create place" flow (`server/src/routes/notesReview.js`)
+  skip geocoding entirely — a second, hand-rolled insert path that duplicates
+  `POST /api/places` but forgot the `geocodeAddress(...)` call.
+- `Schedule.jsx`'s remove/skip-stop actions have no confirm dialog, no error handling, and no
+  disabled-state, unlike the identical `removeVisit()` in `PersonDetail.jsx`/`PlaceDetail.jsx`.
+- `places.category` is free text with no `.trim()`/normalization (unlike `name`), so stray
+  whitespace or casing differences silently fragment the Category filter dropdown.
+- Filter dropdown options (category/city/zip) are fetched once per mount and don't refresh
+  when a new value is added elsewhere in the same session.
+
+What's confirmed solid (don't second-guess these without new evidence): referral-metrics
+rollups are correctly live-computed from each entity's *current* state, never stale/stored;
+`needs_attention`/`never_visited` are computed live on every read; detach-not-delete works
+correctly for places/visits (just not for people→referrals, per #1 above).
+
+---
+
+## 14B. Route-planner readiness (2026-07-10 assessment)
+
+Bede's next planned feature is a real route planner (plan a day's driving route between
+places). Assessed what's actually ready vs. missing:
+
+**Ready:**
+- `lat`/`lng` are populated for 255/262 places (§9A) and already returned by
+  `GET /api/places` / `GET /api/places/:id` (plain `p.*`/spread, nothing strips them) — no
+  backend change needed to start reading coordinates.
+- `region` (side-of-town bucket, `services/priority.js`) is already computed and stored per
+  place, usable as a coarse pre-filter.
+- `services/geocoding.js` is a clean, swappable single-function boundary if a real routing
+  provider (driving-distance/duration, not just geocoding) gets added later.
+- Referral-metrics rollups (needed if routing ever factors in referral activity) are solid
+  and live-computed — see §14A's "confirmed solid" note.
+
+**Missing (in rough build order):**
+1. **The 7 unmatched-address places** need manual review/correction before a router can trust
+   "every place has coordinates."
+2. **No distance/duration math anywhere.** `services/scheduler.js`'s `clusterSort` only buckets
+   by `region` → `city` → zip-code-number proximity — a coarse sort, not geographic routing.
+   No haversine calc, no routing-API call, nothing touches `lat`/`lng` in `scheduler.js`,
+   `priority.js`, or `routes/schedule.js`. Neither `client/package.json` nor
+   `server/package.json` has a mapping/routing library (no leaflet, mapbox-gl, turf,
+   google-maps, osrm-client, etc.) — this is the core missing piece.
+3. **No visit-duration, time-window, working-hours, or driver-start-location data anywhere in
+   the schema.** `scheduler.js`'s `DEFAULT_VISIT_MINUTES`/`DEFAULT_TRAVEL_MINUTES` are
+   hardcoded global constants, not per-place/per-visit/per-user data. `users` has no
+   home-base/start-location field. A real router needs at least a start point and per-stop
+   duration estimates — this needs a schema decision, not just new logic.
+4. **`Schedule.jsx` presents visits in priority/region-bucket order, not a geographically
+   routed order** — no distance shown between stops, no map, no multi-stop route. "Navigate"
+   builds a single-destination Google Maps link from address text, not coordinates.
+5. **No UI surfaces lat/lng at all** — no map view, no "needs geocoding" indicator anywhere in
+   `Places.jsx`/`PlaceDetail.jsx`.
+6. **No "pick which places to route today" selection UI** — `generateSchedule`
+   (`scheduler.js`) auto-picks candidates by priority/never-visited; there's no way to
+   manually choose a subset to route.
+
+**Suggested build order:** (a) resolve the 7 unmatched addresses, (b) add a distance/duration
+engine (haversine is enough to start; a real routing API is a later upgrade) plus a driver
+start location and a per-stop duration model — this is a schema change, decide it early, (c)
+wire that into `scheduler.js`'s ordering in place of/alongside `clusterSort`, (d) surface it in
+`Schedule.jsx`/`PlaceDetail` with an actual map.
+
+---
+
 ## 15. Quick "resume tomorrow" checklist
 
 1. Open the folder: `code ~/guardian-angels-sales`
@@ -562,3 +711,5 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 3. Start it: `cd ~/guardian-angels-sales && ./dev.sh` → open http://localhost:5173
 4. Check `git status` — this session's work is uncommitted; decide whether to commit before
    starting anything new.
+5. Read §14A before touching People/Places/visits/referrals data — two real bugs there, not
+   yet fixed. Read §14B before starting the route planner specifically.

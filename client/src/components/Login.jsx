@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { api, setToken } from '../api';
+import { api, setToken, passwordError } from '../api';
 import Logo from './ui/Logo';
 import Button from './ui/Button';
-
-const MIN_PASSWORD_LENGTH = 6;
 
 // Auth landing page: pick your name, then either log in (if you already have a
 // password) or create one (first time). Calls onLogin({ user }) once signed in.
@@ -62,12 +60,9 @@ export default function Login({ onLogin }) {
   async function submitCreatePassword(e) {
     e.preventDefault();
     setError(null);
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match');
+    const err = passwordError(newPassword, confirmPassword);
+    if (err) {
+      setError(err);
       return;
     }
     setBusy(true);

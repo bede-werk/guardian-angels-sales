@@ -191,11 +191,11 @@ export default function Schedule({ date, userId }) {
                         <OutcomeChip outcome={v.outcome} />
                         {v.never_visited && <span className="badge star" style={{ background: 'var(--mauve-tint-1)', color: 'var(--mauve)' }}>Never visited</span>}
                       </div>
-                      {/* "Who to ask for" — this place's primary person, from
+                      {/* "Who to ask for" — this place's contact person, from
                           the people table. */}
-                      {v.primary_person && (
+                      {v.contact_person && (
                         <div className="stop-contact">
-                          <span className="tiny">Ask for <strong>{v.primary_person.name}</strong></span>
+                          <span className="tiny">Ask for <strong>{v.contact_person.name}</strong></span>
                         </div>
                       )}
                       {/* A one-line preview of what happened last time you visited. */}
@@ -229,6 +229,7 @@ export default function Schedule({ date, userId }) {
       {logging && (
         <VisitLogModal
           visit={logging}
+          userId={userId}
           onClose={() => setLogging(null)}
           onSaved={load}
         />

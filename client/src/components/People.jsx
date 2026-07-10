@@ -10,7 +10,7 @@ import PlaceDetail from './PlaceDetail';
 // Searchable / filterable directory of every person across every place —
 // the People counterpart to Places.jsx. Clicking any row opens that
 // person's full detail (PersonDetail.jsx).
-export default function People() {
+export default function People({ userId }) {
   const [filters, setFilters] = useState({ categories: [] }); // category dropdown options, loaded once
   const [places, setPlaces] = useState([]); // every place, for the place filter + the Add Person picker
   const [q, setQ] = useState({ search: '', placeId: '', category: '', neverContacted: '', needsAttention: '' });
@@ -113,7 +113,6 @@ export default function People() {
                 <tr key={p.id} onClick={() => setSelected(p.id)}>
                   <td>
                     <strong>{p.name}</strong>
-                    {p.is_primary && <span className="badge star" style={{ marginLeft: 6 }}>★</span>}
                     {p.title && <div className="tiny muted">{p.title}</div>}
                   </td>
                   <td className="tiny">
@@ -150,6 +149,7 @@ export default function People() {
       {selected && (
         <PersonDetail
           personId={selected}
+          userId={userId}
           onClose={() => setSelected(null)}
           onChanged={load}
           onDeleted={load}
@@ -158,7 +158,7 @@ export default function People() {
       )}
 
       {viewingPlaceId && (
-        <PlaceDetail placeId={viewingPlaceId} onClose={() => setViewingPlaceId(null)} onChanged={load} onDeleted={load} />
+        <PlaceDetail placeId={viewingPlaceId} userId={userId} onClose={() => setViewingPlaceId(null)} onChanged={load} onDeleted={load} />
       )}
 
       {adding && (

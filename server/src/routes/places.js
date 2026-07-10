@@ -44,7 +44,7 @@ router.post('/', async (req, res, next) => {
       payload.geocoded_at = knex.fn.now();
     }
     const [row] = await knex('places').insert(payload).returning('id');
-    const id = row && row.id ? row.id : row;
+    const id = knex.extractId(row);
     const place = await knex('places').where({ id }).first();
     res.status(201).json(place);
   } catch (err) {
@@ -100,21 +100,18 @@ router.get('/', async (req, res, next) => {
 
     query.orderBy('p.priority_score', 'desc').orderBy('p.name', 'asc');
 
-    // Pull each place's primary person (or earliest-added, if none marked primary)
-    // to show a name/phone preview in the directory table without requiring a
-    // separate request per row.
+    // Pull each place's earliest-added person to show a name/phone preview in
+    // the directory table without requiring a separate request per row.
     const places = await query;
     const ids = places.map((p) => p.id);
     const people = ids.length
       ? await knex('people')
           .whereIn('place_id', ids)
-          .where('departed', false)
-          .orderBy('is_primary', 'desc')
           .orderBy('id', 'asc')
           .select('place_id', 'name', 'phone', 'email')
       : [];
     // Same "first row per place_id wins" trick used elsewhere: since the query
-    // is sorted is_primary desc, the first row seen per place is the right one.
+    // is sorted by id, the first row seen per place is the earliest-added person.
     const personByPlace = {};
     for (const c of people) if (!personByPlace[c.place_id]) personByPlace[c.place_id] = c;
 
@@ -163,16 +160,18 @@ router.get('/:id', async (req, res, next) => {
     const place = await knex('places').where({ id: req.params.id }).first();
     if (!place) return res.status(404).json({ error: 'Place not found' });
 
+    // Visit history is for what actually happened — a still-planned or
+    // skipped stop from Today's Route doesn't belong here.
     const visits = await knex('visits as v')
       .leftJoin('users as u', 'u.id', 'v.user_id')
       .where('v.place_id', place.id)
+      .where('v.status', 'completed')
       .orderBy('v.scheduled_date', 'desc')
       .orderBy('v.id', 'desc')
       .select('v.*', 'u.name as user_name');
 
     const people = await knex('people')
       .where({ place_id: place.id })
-      .orderBy('is_primary', 'desc')
       .orderBy('name', 'asc');
 
     // A place's referral metrics are just the roll-up of its *current*
@@ -184,8 +183,6 @@ router.get('/:id', async (req, res, next) => {
 
     const peopleWithMetrics = people.map((c) => ({
       ...c,
-      departed: !!c.departed,
-      is_primary: !!c.is_primary,
       referral_metrics: metricsFor(metricsByPerson, c.id),
     }));
 
@@ -275,10 +272,6 @@ router.patch('/:id', async (req, res, next) => {
 // is permanent for the place's own details, but not for anyone's history.
 router.delete('/:id', async (req, res, next) => {
   try {
-    // "Primary contact at this place" stops making sense the moment they're
-    // unassigned, so clear it before the place (and the FK's SET NULL) detaches them.
-    await knex('people').where({ place_id: req.params.id }).update({ is_primary: false });
-
     const deleted = await knex('places').where({ id: req.params.id }).del();
     if (!deleted) return res.status(404).json({ error: 'Place not found' });
     res.status(204).end();

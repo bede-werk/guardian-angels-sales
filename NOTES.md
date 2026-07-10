@@ -177,9 +177,78 @@ straight to that place instead of needing a separate "View place" button.
   button to a plain ghost button in both detail views — it wasn't destructive
   enough to earn the red treatment (the person isn't deleted, just detached).
 
+## 2026-07-10
+
+A polish session on the People/Places detail views, then a full audit at Bede's request
+before he moves on to the route planner. **Everything below is uncommitted** — check
+`git status`.
+
+### 1. Delete buttons + standardized inline-editor button layout
+- `ReferralDetailModal.jsx` and `VisitDetailModal.jsx` both got a bottom-left **Delete**
+  button (wired to the existing `removeReferral`/`removeVisit` handlers, which already
+  confirm + error-handle) — these popups previously only offered Edit.
+- Place notes and Person notes/preferences/birthday's inline click-to-edit forms were all
+  standardized to the same button layout: **Delete** far left (only shown once there's a
+  saved value to delete), **Cancel** and **Save** grouped on the right with **Save always the
+  rightmost button**. Button label changed from "Remove" to "Delete" throughout for
+  consistency with the popups above.
+- Person's preferences field changed from a single-line `<input>` to a resizable 3-row
+  `<textarea>`, matching notes (same Enter-to-save / Shift+Enter-for-newline behavior).
+
+### 2. Editing one field now backs out of any other in-progress action
+Previously, clicking to edit notes while preferences was already mid-edit left both open at
+once — same for opening any other action (Assign to a place, Log a referral, viewing a
+referral/visit row, clicking Edit) while a field edit was in progress. Now:
+- `PersonDetail.jsx` — `beginEditNotes`/`beginEditPreferences`/`beginEditBirthday` each close
+  the other two fields (and the assign-to-place picker) before opening; a new
+  `exitFieldEdits()` is called from every other action button/row (Assign to a place, Log a
+  referral, viewing a referral/visit row, Edit) so starting any of those also backs out of
+  whichever field was mid-edit.
+- `PlaceDetail.jsx` — same idea, simpler since there's only one field (notes):
+  `setEditingNotes(false)` threaded into Assign person, New person, Log a referral, Log a
+  visit, viewing a visit row, viewing a person row, and Edit.
+- This extends the existing "backdrop click cancels an in-progress edit" behavior
+  (`handleBackdropClick` in both files) to cover every other way to navigate away, not just
+  the backdrop.
+
+### 3. AssignPersonModal's "browse unassigned" list is back
+`AssignPersonModal.jsx` (opened from PlaceDetail's "Assign person" button) used to require
+typing something before showing any results. It now loads and shows every currently-
+unassigned person by default (labeled "Unassigned people"), on top of the existing 200ms-
+debounced search-everyone box, which still works for reassigning someone from another place.
+
+### 4. Full audit of People/Places + route-planner readiness
+Bede asked to review the whole People/Places surface — "does it look good, am I missing
+anything" — before starting the route planner, and to split into as many agents as needed.
+Ran 4 parallel agents (People flow, Places flow, shared visit/referral machinery, and a
+route-planner-readiness pass). **Full findings written up in `HANDOFF.md` §14A (known issues)
+and §14B (route-planner readiness) — not duplicated here, go there for the real detail.**
+Headlines:
+- **Two real data-integrity bugs, not yet fixed:** deleting a person orphans their referrals
+  with no snapshot (unlike visits) so the referrals silently vanish from every metric forever;
+  and editing a visit becomes permanently blocked once its linked person is deleted, because
+  `VisitLogModal` requires picking a currently-assigned person to save. Both contradict the
+  app's own detach-not-delete convention — fix these before building the route planner on top
+  of this data.
+- **Correction to earlier notes/HANDOFF entries:** the geocoding backfill (§9A in HANDOFF,
+  and the "Next steps" list below) said it "hasn't been run yet against the real dataset" —
+  that was checked against the live dev DB during this audit and is **no longer true**: 255 of
+  262 places have `lat`/`lng`. 7 addresses didn't match and need manual review. Both
+  HANDOFF.md and this file's "Current state"/"Next steps" sections below have been corrected.
+- **Route-planner readiness:** geocoding data is ready, but nothing downstream uses it yet —
+  `scheduler.js` only does priority + region/zip-bucket clustering, no distance/duration math
+  anywhere, no mapping library in either `package.json`, no visit-duration/time-window/driver-
+  start-location fields in the schema, no UI shows a map or per-stop distance. See HANDOFF
+  §14B for the full punch list and suggested build order.
+- Several medium-priority gaps also flagged (silently-swallowed fetch errors and stale-
+  response races in People/Places/AssignPersonModal search, Departed status invisible in the
+  People list, Needs-Mapping's place-create path skips geocoding, Schedule.jsx's remove/skip
+  actions missing confirm/error-handling that the equivalent action has elsewhere, unnormalized
+  category free text) — see HANDOFF §14A for the complete list.
+
 ## Current state
-- Everything through today (2026-07-09, `cb706a8`) is committed. `git status`
-  is clean as of this writeup.
+- 2026-07-09's work (`cb706a8`) is committed. **2026-07-10's work above is not** —
+  check `git status` before starting anything new.
 - Local dev only — nothing deployed. `./dev.sh` runs both servers
   (backend :4000, frontend :5173).
 - Database: 261 real places, a handful of real visits/referrals logged since
@@ -188,18 +257,25 @@ straight to that place instead of needing a separate "View place" button.
   don't delete these, they're fixtures he made on purpose). Only Bede's account
   has a real password set; Nikki/Lisa/Basil still need to log in once to create
   theirs.
-- Existing places haven't been backfilled with coordinates yet — `npm run
-  geocode` hasn't been run against the real dataset (only new/edited places
-  going forward get geocoded automatically).
+- **Geocoding backfill has been run** — 255/262 places have coordinates, 7 need
+  manual address review (corrected 2026-07-10; earlier revisions of this file
+  said the backfill hadn't run yet).
+- **Two known data-integrity bugs are open** (referral orphaning on person
+  delete; visit-edit lockout when the linked person is later deleted) — see the
+  2026-07-10 entry above and `HANDOFF.md` §14A. Fix before building the route
+  planner.
 - See `HANDOFF.md` §13 for the authoritative, more detailed current-state
   snapshot — this section is a summary, that one's the source of truth.
 
 ## Next steps / ideas not yet done
-- **Run `npm run geocode`** to backfill lat/lng on the 261 existing places —
-  new/edited ones get it automatically, but the bulk of the dataset predates
-  today's geocoding work.
-- Nothing in the UI uses lat/lng yet — a map view of places/routes is the
-  natural next step now that coordinates exist.
+- **Fix the two known bugs in `HANDOFF.md` §14A first** — before building the
+  route planner or anything else that leans on visits/referrals data.
+- **Manually review the 7 places with unmatched addresses** (see above) before
+  any routing logic assumes every place has coordinates.
+- **Build the route planner** — see `HANDOFF.md` §14B for what's ready vs.
+  missing and a suggested build order (short version: no distance/duration math
+  or mapping library exists yet, and there's no visit-duration/time-window/
+  driver-start-location data in the schema).
 - Referral metrics still aren't shown on Today's Route's stop cards — only
   the People tab, Places tab, both detail pages, and the Dashboard.
 - Feeding referral metrics back into place priority scoring is still an open

@@ -50,9 +50,6 @@ async function request(path, options = {}) {
 // Every function below is grouped by the backend route file it talks to
 // (see server/src/routes/*.js) and just builds the URL/body for `request()`.
 export const api = {
-  // Users (team members) — server/src/routes/users.js
-  users: () => request('/users'),
-
   // Places — server/src/routes/places.js
   places: (params = {}) => {
     // Turns { search: 'foo', tier: 1 } into "?search=foo&tier=1", dropping
@@ -112,6 +109,7 @@ export const api = {
   // Referrals — server/src/routes/referrals.js
   referrals: {
     create: (body) => request('/referrals', { method: 'POST', body }),
+    update: (id, body) => request(`/referrals/${id}`, { method: 'PATCH', body }),
     remove: (id) => request(`/referrals/${id}`, { method: 'DELETE' }),
   },
 
@@ -160,6 +158,19 @@ export function formatDate(dateStr) {
   const [year, month, day] = dateStr.slice(0, 10).split('-');
   if (!year || !month || !day) return dateStr;
   return `${Number(month)}/${Number(day)}/${year}`;
+}
+
+// Shared by Login.jsx (first-time password setup) and ChangePassword.jsx.
+// Returns an error string, or null if the new/confirm pair is valid.
+export const MIN_PASSWORD_LENGTH = 6;
+export function passwordError(newPassword, confirmPassword, label = 'Password') {
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return `${label} must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  if (newPassword !== confirmPassword) {
+    return `${label}s do not match`;
+  }
+  return null;
 }
 
 // A Google Maps directions link, so "Navigate" hands off to Apple/Google Maps.

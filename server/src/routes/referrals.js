@@ -32,8 +32,28 @@ router.post('/', async (req, res, next) => {
         notes: notes || null,
       })
       .returning('id');
-    const id = inserted && inserted.id ? inserted.id : inserted;
+    const id = knex.extractId(inserted);
     res.status(201).json(await knex('referrals').where({ id }).first());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/referrals/:id — edit the date/notes on an existing referral.
+// person_id isn't editable here — a referral attributed to the wrong person
+// should be deleted and re-logged instead, same as place_id (its snapshot
+// follows person_id at creation time, see POST above).
+router.patch('/:id', async (req, res, next) => {
+  try {
+    const existing = await knex('referrals').where({ id: req.params.id }).first();
+    if (!existing) return res.status(404).json({ error: 'Referral not found' });
+
+    const update = {};
+    if (req.body.referral_date !== undefined) update.referral_date = req.body.referral_date || null;
+    if (req.body.notes !== undefined) update.notes = req.body.notes || null;
+
+    await knex('referrals').where({ id: req.params.id }).update(update);
+    res.json(await knex('referrals').where({ id: req.params.id }).first());
   } catch (err) {
     next(err);
   }

@@ -4,6 +4,7 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
 import ReferralModal from './ReferralModal';
+import ReferralDetailModal from './ReferralDetailModal';
 import VisitDetailModal from './VisitDetailModal';
 import VisitLogModal from './VisitLogModal';
 
@@ -11,7 +12,7 @@ import VisitLogModal from './VisitLogModal';
 // durable notes/preferences, and every visit where they were the recorded
 // contact (their personal "last time we spoke" history). Opened from
 // People.jsx (clicking a row).
-export default function PersonDetail({ personId, onClose, onChanged, onDeleted, onOpenPlace }) {
+export default function PersonDetail({ personId, userId, onClose, onChanged, onDeleted, onOpenPlace }) {
   const [data, setData] = useState(null); // GET /api/people/:id response (person + place + visits)
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -21,6 +22,8 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
   const [placeDraft, setPlaceDraft] = useState('');
   const [removingReferralId, setRemovingReferralId] = useState(null); // referral currently being deleted (disables its row)
   const [loggingReferral, setLoggingReferral] = useState(false); // whether the Log Referral modal is open
+  const [viewingReferral, setViewingReferral] = useState(null); // referral whose full detail popup is open, if any
+  const [editingReferral, setEditingReferral] = useState(null); // referral currently open in ReferralModal for editing, if any
   const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
   const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
   const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
@@ -79,91 +82,86 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
     }
   }
 
-  async function saveNotes() {
-    setSavingNotes(true);
+  // Shared by the notes/preferences/birthday click-to-edit fields below — same
+  // save-one-field / remove-one-field shape for each, differing only in which
+  // field and which state setters/confirm text apply.
+  async function saveField(field, value, { setEditing, setSaving }) {
+    setSaving(true);
     try {
-      await api.people.update(data.id, { notes: notesDraft });
-      setEditingNotes(false);
+      await api.people.update(data.id, { [field]: value });
+      setEditing(false);
       load();
       onChanged?.();
     } catch (e) {
       window.alert(e.message);
     } finally {
-      setSavingNotes(false);
+      setSaving(false);
     }
   }
 
-  async function removeNotes() {
-    if (!window.confirm("Remove this note? This can't be undone.")) return;
-    setRemovingNotes(true);
+  async function removeField(field, confirmText, { setEditing, setRemoving }) {
+    if (!window.confirm(confirmText)) return;
+    setRemoving(true);
     try {
-      await api.people.update(data.id, { notes: null });
-      setEditingNotes(false);
+      await api.people.update(data.id, { [field]: null });
+      setEditing(false);
       load();
       onChanged?.();
     } catch (e) {
       window.alert(e.message);
     } finally {
-      setRemovingNotes(false);
+      setRemoving(false);
     }
   }
 
-  async function savePreferences() {
-    setSavingPreferences(true);
-    try {
-      await api.people.update(data.id, { preferences: preferencesDraft });
-      setEditingPreferences(false);
-      load();
-      onChanged?.();
-    } catch (e) {
-      window.alert(e.message);
-    } finally {
-      setSavingPreferences(false);
-    }
+  const saveNotes = () => saveField('notes', notesDraft, { setEditing: setEditingNotes, setSaving: setSavingNotes });
+  const removeNotes = () =>
+    removeField('notes', "Remove this note? This can't be undone.", { setEditing: setEditingNotes, setRemoving: setRemovingNotes });
+
+  const savePreferences = () =>
+    saveField('preferences', preferencesDraft, { setEditing: setEditingPreferences, setSaving: setSavingPreferences });
+  const removePreferences = () =>
+    removeField('preferences', "Remove these preferences? This can't be undone.", { setEditing: setEditingPreferences, setRemoving: setRemovingPreferences });
+
+  const saveBirthday = () =>
+    saveField('birthday', birthdayDraft, { setEditing: setEditingBirthday, setSaving: setSavingBirthday });
+  const removeBirthday = () =>
+    removeField('birthday', "Remove this birthday? This can't be undone.", { setEditing: setEditingBirthday, setRemoving: setRemovingBirthday });
+
+  // The Notes card packs three independently-editable fields into one place;
+  // opening one should back out of whichever of the other two is mid-edit
+  // (and the place picker, if that's open) rather than leaving multiple
+  // drafts open at once.
+  function beginEditNotes(value) {
+    setNotesDraft(value);
+    setEditingNotes(true);
+    setEditingPreferences(false);
+    setEditingBirthday(false);
+    setAssigning(false);
+  }
+  function beginEditPreferences(value) {
+    setPreferencesDraft(value);
+    setEditingPreferences(true);
+    setEditingNotes(false);
+    setEditingBirthday(false);
+    setAssigning(false);
+  }
+  function beginEditBirthday(value) {
+    setBirthdayDraft(value);
+    setEditingBirthday(true);
+    setEditingNotes(false);
+    setEditingPreferences(false);
+    setAssigning(false);
   }
 
-  async function removePreferences() {
-    if (!window.confirm("Remove these preferences? This can't be undone.")) return;
-    setRemovingPreferences(true);
-    try {
-      await api.people.update(data.id, { preferences: null });
-      setEditingPreferences(false);
-      load();
-      onChanged?.();
-    } catch (e) {
-      window.alert(e.message);
-    } finally {
-      setRemovingPreferences(false);
-    }
-  }
-
-  async function saveBirthday() {
-    setSavingBirthday(true);
-    try {
-      await api.people.update(data.id, { birthday: birthdayDraft });
-      setEditingBirthday(false);
-      load();
-      onChanged?.();
-    } catch (e) {
-      window.alert(e.message);
-    } finally {
-      setSavingBirthday(false);
-    }
-  }
-
-  async function removeBirthday() {
-    if (!window.confirm("Remove this birthday? This can't be undone.")) return;
-    setRemovingBirthday(true);
-    try {
-      await api.people.update(data.id, { birthday: null });
-      setEditingBirthday(false);
-      load();
-      onChanged?.();
-    } catch (e) {
-      window.alert(e.message);
-    } finally {
-      setRemovingBirthday(false);
-    }
+  // Any other action taken on this card — assigning a place, logging or
+  // viewing a referral/visit, editing the person — should back out of
+  // whichever notes/preferences/birthday field is mid-edit, same as a
+  // backdrop click does (see handleBackdropClick below).
+  function exitFieldEdits() {
+    setEditingNotes(false);
+    setEditingPreferences(false);
+    setEditingBirthday(false);
   }
 
   async function assignToPlace() {
@@ -222,6 +220,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
     e.stopPropagation();
     if (assigning || editingNotes || editingPreferences || editingBirthday) {
       setAssigning(false);
+      setPlaceDraft('');
       setEditingNotes(false);
       setEditingPreferences(false);
       setEditingBirthday(false);
@@ -250,8 +249,6 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
             <div className="tag-list" style={{ alignItems: 'center' }}>
               <h2 style={{ fontSize: 22 }}>{data.name}</h2>
               {data.role_type && <span className="badge role">{ROLE_TYPE_LABELS[data.role_type]}</span>}
-              {data.is_primary && <span className="badge star">★ Primary</span>}
-              {data.departed && <span className="badge" style={{ background: 'var(--mauve-tint-2)', color: 'var(--mauve)' }}>Departed</span>}
               <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
                 {metrics.lifetime_referrals} referral{metrics.lifetime_referrals === 1 ? '' : 's'}
               </span>
@@ -313,13 +310,13 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                   </select>
                   <div className="tag-list" style={{ flex: 'unset' }}>
                     <Button size="small" title="Link this person to the selected place" onClick={assignToPlace} disabled={!placeDraft}>Save</Button>
-                    <Button variant="secondary" size="small" title="Close without assigning" onClick={() => setAssigning(false)}>Cancel</Button>
+                    <Button variant="secondary" size="small" title="Close without assigning" onClick={() => { setAssigning(false); setPlaceDraft(''); }}>Cancel</Button>
                   </div>
                 </div>
               ) : (
                 <div className="row" style={{ alignItems: 'center' }}>
                   <EmptyState message="Not currently assigned to a place." />
-                  <Button variant="secondary" size="small" title="Link this person to a place" onClick={() => setAssigning(true)}>Assign to a place</Button>
+                  <Button variant="secondary" size="small" title="Link this person to a place" onClick={() => { exitFieldEdits(); setAssigning(true); }}>Assign to a place</Button>
                 </div>
               )}
             </div>
@@ -335,7 +332,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                     variant="secondary"
                     size="small"
                     title="Add preferences for this person"
-                    onClick={() => { setPreferencesDraft(''); setEditingPreferences(true); }}
+                    onClick={() => beginEditPreferences('')}
                   >
                     Add preferences
                   </Button>
@@ -345,7 +342,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                     variant="secondary"
                     size="small"
                     title="Add this person's birthday"
-                    onClick={() => { setBirthdayDraft(''); setEditingBirthday(true); }}
+                    onClick={() => beginEditBirthday('')}
                   >
                     Add birthday
                   </Button>
@@ -355,7 +352,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                     variant="secondary"
                     size="small"
                     title="Add a standing note about this person"
-                    onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
+                    onClick={() => beginEditNotes('')}
                   >
                     Add notes
                   </Button>
@@ -365,30 +362,32 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
             <div className="card-body stack">
               {editingPreferences ? (
                 <div className="stack">
-                  <input
+                  <textarea
+                    rows={3}
                     value={preferencesDraft}
                     onChange={(e) => setPreferencesDraft(e.target.value)}
                     placeholder="Coffee order, how they like to be reached…"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); savePreferences(); } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); savePreferences(); } }}
                     autoFocus
                   />
-                  <div className="tag-list">
-                    <Button size="small" title="Save preferences" onClick={savePreferences} disabled={savingPreferences}>
-                      {savingPreferences ? 'Saving…' : 'Save'}
-                    </Button>
+                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                     {data.preferences ? (
-                      <Button variant="danger" size="small" title="Remove preferences — can't be undone" onClick={removePreferences} disabled={removingPreferences || savingPreferences}>
-                        {removingPreferences ? 'Removing…' : 'Remove'}
+                      <Button variant="danger" size="small" title="Delete preferences — can't be undone" onClick={removePreferences} disabled={removingPreferences || savingPreferences}>
+                        {removingPreferences ? 'Deleting…' : 'Delete'}
                       </Button>
-                    ) : (
-                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingPreferences(false)} disabled={savingPreferences}>
+                    ) : <span />}
+                    <div className="tag-list">
+                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingPreferences(false)} disabled={savingPreferences || removingPreferences}>
                         Cancel
                       </Button>
-                    )}
+                      <Button size="small" title="Save preferences" onClick={savePreferences} disabled={savingPreferences || removingPreferences}>
+                        {savingPreferences ? 'Saving…' : 'Save'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ) : data.preferences ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => { setPreferencesDraft(data.preferences || ''); setEditingPreferences(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => beginEditPreferences(data.preferences || '')}>
                   <strong>Preferences:</strong> {data.preferences}
                 </div>
               ) : null}
@@ -403,23 +402,24 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveBirthday(); } }}
                     autoFocus
                   />
-                  <div className="tag-list">
-                    <Button size="small" title="Save birthday" onClick={saveBirthday} disabled={savingBirthday}>
-                      {savingBirthday ? 'Saving…' : 'Save'}
-                    </Button>
+                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                     {data.birthday ? (
-                      <Button variant="danger" size="small" title="Remove birthday — can't be undone" onClick={removeBirthday} disabled={removingBirthday || savingBirthday}>
-                        {removingBirthday ? 'Removing…' : 'Remove'}
+                      <Button variant="danger" size="small" title="Delete birthday — can't be undone" onClick={removeBirthday} disabled={removingBirthday || savingBirthday}>
+                        {removingBirthday ? 'Deleting…' : 'Delete'}
                       </Button>
-                    ) : (
-                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingBirthday(false)} disabled={savingBirthday}>
+                    ) : <span />}
+                    <div className="tag-list">
+                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingBirthday(false)} disabled={savingBirthday || removingBirthday}>
                         Cancel
                       </Button>
-                    )}
+                      <Button size="small" title="Save birthday" onClick={saveBirthday} disabled={savingBirthday || removingBirthday}>
+                        {savingBirthday ? 'Saving…' : 'Save'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ) : data.birthday ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => { setBirthdayDraft(data.birthday || ''); setEditingBirthday(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => beginEditBirthday(data.birthday || '')}>
                   <strong>Birthday:</strong> {data.birthday}
                 </div>
               ) : null}
@@ -433,23 +433,24 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
                     autoFocus
                   />
-                  <div className="tag-list">
-                    <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes}>
-                      {savingNotes ? 'Saving…' : 'Save'}
-                    </Button>
+                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                     {data.notes ? (
                       <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
-                        {removingNotes ? 'Removing…' : 'Remove'}
+                        {removingNotes ? 'Deleting…' : 'Delete'}
                       </Button>
-                    ) : (
-                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes}>
+                    ) : <span />}
+                    <div className="tag-list">
+                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes || removingNotes}>
                         Cancel
                       </Button>
-                    )}
+                      <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes || removingNotes}>
+                        {savingNotes ? 'Saving…' : 'Save'}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ) : data.notes ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => beginEditNotes(data.notes || '')}>
                   {data.notes}
                 </div>
               ) : (
@@ -466,7 +467,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
           <div className="card">
             <div className="card-head">
               <h2>Referrals ({metrics.lifetime_referrals})</h2>
-              <Button size="small" title="Record a new referral from this person" onClick={() => setLoggingReferral(true)}>Log a referral</Button>
+              <Button size="small" title="Record a new referral from this person" onClick={() => { exitFieldEdits(); setLoggingReferral(true); }}>Log a referral</Button>
             </div>
             <div className="card-body stack">
               <div className="tiny muted">
@@ -482,7 +483,12 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
               ) : (
                 <ul className="list">
                   {data.referrals.map((r) => (
-                    <li key={r.id} className="stack" style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+                    <li
+                      key={r.id}
+                      className="stack hover-row"
+                      style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}
+                      onClick={() => { exitFieldEdits(); setViewingReferral(r); }}
+                    >
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                         <strong className="tiny">{r.referral_date ? formatDate(r.referral_date) : 'no date'}</strong>
                         <Button
@@ -490,7 +496,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                           size="small"
                           title="Delete this referral"
                           disabled={removingReferralId === r.id}
-                          onClick={() => removeReferral(r)}
+                          onClick={(e) => { e.stopPropagation(); removeReferral(r); }}
                         >
                           ✕
                         </Button>
@@ -519,13 +525,17 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
                       key={v.id}
                       className="stack hover-row"
                       style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => setViewingVisit(v)}
+                      onClick={() => { exitFieldEdits(); setViewingVisit(v); }}
                     >
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                         <div className="tag-list" style={{ flex: 'unset' }}>
                           <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
-                          {v.place_name && <span className="tiny muted">· at {v.place_name}</span>}
-                          {v.user_name && <span className="tiny muted">· {v.user_name}</span>}
+                          {/* "Bede Fulton at Guardian Angels (Test)" — who visited, then where. */}
+                          {(v.user_name || v.place_name) && (
+                            <span className="tiny muted">
+                              · {[v.user_name, v.place_name && `at ${v.place_name}`].filter(Boolean).join(' ')}
+                            </span>
+                          )}
                         </div>
                         <Button
                           variant="danger"
@@ -556,7 +566,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
           >
             {deleting ? 'Deleting…' : 'Delete person'}
           </Button>
-          <Button variant="secondary" title="Edit this person's details" onClick={() => setEditing(true)}>Edit</Button>
+          <Button variant="secondary" title="Edit this person's details" onClick={() => { exitFieldEdits(); setEditing(true); }}>Edit</Button>
         </div>
       </div>
 
@@ -577,11 +587,30 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
         />
       )}
 
+      {viewingReferral && (
+        <ReferralDetailModal
+          referral={viewingReferral}
+          onClose={() => setViewingReferral(null)}
+          onEdit={(r) => { setViewingReferral(null); setEditingReferral(r); }}
+          onDelete={(r) => { setViewingReferral(null); removeReferral(r); }}
+        />
+      )}
+
+      {editingReferral && (
+        <ReferralModal
+          referral={editingReferral}
+          person={{ id: data.id, name: data.name }}
+          onClose={() => setEditingReferral(null)}
+          onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
       {viewingVisit && (
         <VisitDetailModal
           visit={viewingVisit}
           onClose={() => setViewingVisit(null)}
           onEdit={(v) => { setViewingVisit(null); setEditingVisit(v); }}
+          onDelete={(v) => { setViewingVisit(null); removeVisit(v); }}
         />
       )}
 
@@ -592,6 +621,7 @@ export default function PersonDetail({ personId, onClose, onChanged, onDeleted, 
       {editingVisit && (
         <VisitLogModal
           visit={{ ...editingVisit, visit_id: editingVisit.id }}
+          userId={userId}
           onClose={() => setEditingVisit(null)}
           onSaved={() => { load(); onChanged?.(); }}
         />

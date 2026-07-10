@@ -107,8 +107,8 @@ export default function App() {
         <Dashboard date={date} userId={authUser.id} onGoToSchedule={() => setTab('schedule')} />
       )}
       {tab === 'schedule' && <Schedule date={date} userId={authUser.id} />}
-      {tab === 'places' && <Places />}
-      {tab === 'people' && <People />}
+      {tab === 'places' && <Places userId={authUser.id} />}
+      {tab === 'people' && <People userId={authUser.id} />}
       {tab === 'mapping' && <NeedsMapping onChanged={refreshMappingCount} />}
     </div>
   );

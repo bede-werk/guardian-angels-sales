@@ -12,7 +12,6 @@
 //      keeping priority as the primary sort — this yields a tight, high-value route.
 //   4. Take as many as fit in the time budget.
 const knex = require('../db/knex');
-const { regionForPlace } = require('./priority');
 
 const DEFAULT_VISIT_MINUTES = 30; // time spent per visit
 const DEFAULT_TRAVEL_MINUTES = 15; // assumed travel between clustered stops
@@ -50,25 +49,6 @@ function clusterSort(candidates, seed) {
     if (da !== db) return da - db;
     return a.name.localeCompare(b.name);
   });
-}
-
-// Places that still need a first visit and aren't already planned for `date`.
-// (Exported for reuse/testing; generateSchedule below has its own inline version
-// of this same query since it needs to run inside a transaction.)
-async function candidatePlaces(date, userId) {
-  // Place ids with a completed visit ever, or already on the plan for this date/user.
-  // (Single-column subqueries — Knex wraps these in parentheses for the IN clause.)
-  const completed = knex('visits').where({ status: 'completed' }).select('place_id');
-  const plannedToday = knex('visits')
-    .where({ scheduled_date: date })
-    .modify((qb) => userId && qb.andWhere({ user_id: userId }))
-    .select('place_id');
-
-  return knex('places')
-    .whereNotIn('id', completed)
-    .whereNotIn('id', plannedToday)
-    .orderBy('priority_score', 'desc')
-    .orderBy('name', 'asc');
 }
 
 // Build (and persist) a day's route. Returns the created visit rows joined to places.
@@ -130,8 +110,8 @@ async function generateSchedule({ date, userId, hours, visitMinutes, travelMinut
 }
 
 // Load a day's route with place details, in route order. Each stop is enriched
-// with the place's primary person, a preview of their last completed visit's
-// notes, and whether they've never had a completed visit — the Today/Route screen
+// with a preview of the place's contact, their last completed visit's notes,
+// and whether they've never had a completed visit — the Today/Route screen
 // uses these to show "who to ask for" and to flag never-visited/overdue stops.
 async function loadRoute(db, date, userId) {
   const route = await db('visits as v')
@@ -169,11 +149,9 @@ async function loadRoute(db, date, userId) {
   if (route.length === 0) return route;
   const placeIds = route.map((r) => r.place_id);
 
-  const [primaryPeople, completedVisits] = await Promise.all([
+  const [contactPeople, completedVisits] = await Promise.all([
     db('people')
       .whereIn('place_id', placeIds)
-      .where('departed', false)
-      .orderBy('is_primary', 'desc')
       .orderBy('id', 'asc')
       .select('place_id', 'name'),
 
@@ -189,9 +167,9 @@ async function loadRoute(db, date, userId) {
   // Reduce each list down to "one row per place" in JS (simpler and more portable
   // across SQLite/Postgres than a correlated subquery). Because both queries are
   // pre-sorted, the FIRST row seen per place_id is the one we want to keep:
-  // the primary person (is_primary desc) and the most recent completed visit.
+  // the earliest-added person and the most recent completed visit.
   const personByPlace = {};
-  for (const c of primaryPeople) if (!personByPlace[c.place_id]) personByPlace[c.place_id] = c;
+  for (const c of contactPeople) if (!personByPlace[c.place_id]) personByPlace[c.place_id] = c;
   const lastVisitByPlace = {};
   const everVisited = new Set();
   for (const v of completedVisits) {
@@ -201,7 +179,7 @@ async function loadRoute(db, date, userId) {
 
   return route.map((r) => ({
     ...r,
-    primary_person: personByPlace[r.place_id] || null,
+    contact_person: personByPlace[r.place_id] || null,
     last_visit_notes: lastVisitByPlace[r.place_id]?.notes || null,
     never_visited: !everVisited.has(r.place_id),
   }));
@@ -210,7 +188,6 @@ async function loadRoute(db, date, userId) {
 module.exports = {
   generateSchedule,
   loadRoute,
-  candidatePlaces,
   capacityFor,
   clusterSort,
 };
