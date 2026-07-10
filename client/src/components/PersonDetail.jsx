@@ -54,7 +54,11 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   }, []);
 
   async function deletePerson() {
-    if (!window.confirm(`Delete ${data.name}? This can't be undone.`)) return;
+    const referralCount = data.referral_metrics.lifetime_referrals;
+    const referralWarning = referralCount
+      ? ` They're credited with ${referralCount} referral${referralCount === 1 ? '' : 's'} — those will be permanently deleted too, since a referral needs someone to attribute it to.`
+      : '';
+    if (!window.confirm(`Delete ${data.name}? This can't be undone. Their visit history stays on file.${referralWarning}`)) return;
     setDeleting(true);
     try {
       await api.people.remove(data.id);
@@ -560,7 +564,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
           <Button
             variant="danger"
             style={{ marginRight: 'auto' }}
-            title="Permanently delete this person — can't be undone. Their visit history stays on file, but is no longer linked to them."
+            title="Permanently delete this person — can't be undone. Their visit history stays on file (no longer linked to them), but their referrals are deleted along with them."
             onClick={deletePerson}
             disabled={deleting}
           >

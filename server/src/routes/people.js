@@ -210,11 +210,23 @@ router.patch('/people/:id', async (req, res, next) => {
   }
 });
 
-// DELETE /api/people/:id — permanently remove a person record.
+// DELETE /api/people/:id — permanently remove a person record. Their visit
+// history survives (visits.person_id -> null via ON DELETE SET NULL, with
+// the person_name/etc. snapshot keeping it readable), but their referrals
+// are deleted along with them rather than left floating with no one to
+// attribute them to — a referral only makes sense tied to the person who
+// sent it, unlike a visit which is meaningful on its own as a record of
+// something that happened. The UI confirms this with the rep before calling here.
 router.delete('/people/:id', async (req, res, next) => {
   try {
-    const count = await knex('people').where({ id: req.params.id }).del();
-    if (!count) return res.status(404).json({ error: 'Person not found' });
+    const deleted = await knex.transaction(async (trx) => {
+      const person = await trx('people').where({ id: req.params.id }).first();
+      if (!person) return false;
+      await trx('referrals').where({ person_id: req.params.id }).del();
+      await trx('people').where({ id: req.params.id }).del();
+      return true;
+    });
+    if (!deleted) return res.status(404).json({ error: 'Person not found' });
     res.status(204).end();
   } catch (err) {
     next(err);

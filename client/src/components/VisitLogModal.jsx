@@ -36,7 +36,13 @@ export default function VisitLogModal({ visit, placeId, placeName, userId, onClo
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const title = placeName || visit?.name || visit?.place_name || 'Visit';
-  const canSave = form.notes.trim() && form.person_id;
+  // The person originally linked to this visit was since deleted (person_id
+  // nulled out via ON DELETE SET NULL, but the person_name snapshot
+  // survives). Reassigning the "who did you meet?" picker in that state
+  // would silently reattribute this visit's history to someone else, so
+  // instead the picker is locked and only the notes stay editable.
+  const personRecordGone = Boolean(visit && !visit.person_id && visit.person_name);
+  const canSave = form.notes.trim() && (form.person_id || personRecordGone);
 
   // Load this place's people once we know who the place is, so the
   // "who did you meet?" dropdown has real options.
@@ -147,16 +153,25 @@ export default function VisitLogModal({ visit, placeId, placeName, userId, onClo
             <textarea rows={3} value={form.notes} onChange={set('notes')} placeholder="What happened, next steps…" autoFocus />
           </div>
 
-          <div>
-            <label className="field">Who did you meet?</label>
-            <select value={form.person_id} onChange={handlePersonSelect}>
-              <option value="">Select who you met with…</option>
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}{p.title ? ` — ${p.title}` : ''}</option>
-              ))}
-              <option value={CREATE_PERSON}>+ Create new person…</option>
-            </select>
-          </div>
+          {personRecordGone ? (
+            <div>
+              <label className="field">Who you met</label>
+              <div className="muted" title="This person's record was deleted — reassigning would rewrite this visit's history, so only the notes can be edited.">
+                {form.person_name}{form.person_title ? ` — ${form.person_title}` : ''} (no longer on file — only notes are editable)
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="field">Who did you meet?</label>
+              <select value={form.person_id} onChange={handlePersonSelect}>
+                <option value="">Select who you met with…</option>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}{p.title ? ` — ${p.title}` : ''}</option>
+                ))}
+                <option value={CREATE_PERSON}>+ Create new person…</option>
+              </select>
+            </div>
+          )}
         </div>
         <div className="modal-foot">
           <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>
