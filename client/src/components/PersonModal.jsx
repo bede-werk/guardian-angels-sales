@@ -20,14 +20,11 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
     birthday: person?.birthday || '',
     preferences: person?.preferences || '',
     notes: person?.notes || '',
-    departed: person?.departed || false,
-    is_primary: person?.is_primary || false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value })); // wires a text input/select to `form`
-  const toggle = (k) => () => setForm((f) => ({ ...f, [k]: !f[k] })); // wires a checkbox to `form`
 
   // PATCH if editing an existing person, POST if creating a new one.
   async function save() {
@@ -56,7 +53,7 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{person ? 'Edit person' : placeName ? `Add a person to ${placeName}` : 'Add a person'}</h2>
+          <h2>{person ? 'Edit person' : placeName ? `Add a new person to ${placeName}` : 'Add a person'}</h2>
           <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
@@ -113,24 +110,9 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
             <textarea rows={2} value={form.notes} onChange={set('notes')} />
           </div>
 
-          <div className="row">
-            <div style={{ maxWidth: 200 }}>
-              <label className="field">Birthday</label>
-              <input value={form.birthday} onChange={set('birthday')} placeholder="e.g. March 14" />
-            </div>
-            {/* is_primary: only one person per place can be primary — the
-                server automatically un-checks it on any other person at this
-                same place when this one is saved as primary. */}
-            <div className="tag-list" style={{ alignItems: 'center', paddingTop: 20 }}>
-              <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input type="checkbox" style={{ width: 'auto' }} checked={form.is_primary} onChange={toggle('is_primary')} />
-                Primary contact
-              </label>
-              <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <input type="checkbox" style={{ width: 'auto' }} checked={form.departed} onChange={toggle('departed')} />
-                Departed
-              </label>
-            </div>
+          <div style={{ maxWidth: 200 }}>
+            <label className="field">Birthday</label>
+            <input value={form.birthday} onChange={set('birthday')} placeholder="e.g. March 14" />
           </div>
         </div>
         <div className="modal-foot">

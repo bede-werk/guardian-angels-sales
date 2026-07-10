@@ -2,29 +2,36 @@ import React, { useState } from 'react';
 import { api, today } from '../api';
 import Button from './ui/Button';
 
-// Log a referral. Opened either from a place (pass `people`, its roster, so
-// the form includes a picker) or from a person's own page (pass `person`
-// directly, so who it's for is already fixed and no picker is needed).
+// Log or edit a referral. Opened either from a place (pass `people`, its
+// roster, so the form includes a picker) or from a person's own page (pass
+// `person` directly, so who it's for is already fixed and no picker is
+// needed). Pass `referral` to edit an existing one instead of creating a new
+// one — who it's attributed to isn't editable there (delete and re-log
+// instead), so `person`/`people` still just drive the read-only display.
 // Every referral is attributed to a specific person — there's no "unknown
 // contact" option, since a place's referral total is just the sum of its
 // people's own counts (see PlaceDetail.jsx / routes/places.js), so a
 // referral with no person would have nowhere to be counted.
-export default function ReferralModal({ people = [], person, onClose, onSaved }) {
-  const [form, setForm] = useState({ person_id: person?.id || '', referral_date: today(), notes: '' });
+export default function ReferralModal({ people = [], person, referral, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    person_id: referral?.person_id || person?.id || '',
+    referral_date: referral?.referral_date || today(),
+    notes: referral?.notes || '',
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const canSave = form.person_id && form.notes.trim();
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
-      const saved = await api.referrals.create({
-        person_id: form.person_id,
-        referral_date: form.referral_date || null,
-        notes: form.notes || null,
-      });
+      const payload = { referral_date: form.referral_date || null, notes: form.notes || null };
+      const saved = referral
+        ? await api.referrals.update(referral.id, payload)
+        : await api.referrals.create({ ...payload, person_id: form.person_id });
       onSaved?.(saved);
       onClose();
     } catch (e) {
@@ -38,7 +45,7 @@ export default function ReferralModal({ people = [], person, onClose, onSaved })
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Log a referral</h2>
+          <h2>{referral ? 'Edit referral' : 'Log a referral'}</h2>
           <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
@@ -70,8 +77,12 @@ export default function ReferralModal({ people = [], person, onClose, onSaved })
         </div>
         <div className="modal-foot">
           <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button title="Record this referral" onClick={save} disabled={saving || !form.person_id}>
-            {saving ? 'Saving…' : 'Log referral'}
+          <Button
+            title={canSave ? 'Save this referral' : 'Add a note first'}
+            onClick={save}
+            disabled={saving || !canSave}
+          >
+            {saving ? 'Saving…' : referral ? 'Save changes' : 'Log referral'}
           </Button>
         </div>
       </div>

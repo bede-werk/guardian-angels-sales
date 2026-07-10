@@ -28,16 +28,19 @@ router.post('/generate', async (req, res, next) => {
   try {
     const { date, userId, hours, visitMinutes, travelMinutes, regenerate } = req.body;
     if (!date) return res.status(400).json({ error: 'date is required (YYYY-MM-DD)' });
-    const route = await generateSchedule({
-      date,
-      userId: userId ? Number(userId) : undefined,
+    const normalized = {
       hours: hours ? Number(hours) : undefined,
       visitMinutes: visitMinutes ? Number(visitMinutes) : undefined,
       travelMinutes: travelMinutes ? Number(travelMinutes) : undefined,
+    };
+    const route = await generateSchedule({
+      date,
+      userId: userId ? Number(userId) : undefined,
       regenerate: !!regenerate,
+      ...normalized,
     });
     res.json({
-      capacity: capacityFor({ hours, visitMinutes, travelMinutes }),
+      capacity: capacityFor(normalized),
       count: route.length,
       route,
     });

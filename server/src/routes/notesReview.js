@@ -60,7 +60,7 @@ async function assignRowToPlace(trx, review, placeId) {
       completed_at: review.note_date ? `${review.note_date} 12:00:00` : trx.fn.now(),
     })
     .returning('id');
-  const visitId = row && row.id ? row.id : row;
+  const visitId = knex.extractId(row);
   await trx('notes_review')
     .where({ id: review.id })
     .update({ status: 'assigned', assigned_place_id: placeId, assigned_visit_id: visitId });
@@ -128,7 +128,7 @@ router.post('/:id/create-place', async (req, res, next) => {
           region: regionForPlace({ city, zip }),
         })
         .returning('id');
-      const placeId = pRow && pRow.id ? pRow.id : pRow;
+      const placeId = knex.extractId(pRow);
 
       const targets = applyToReferrer
         ? await trx('notes_review').where({ referrer_raw: review.referrer_raw, status: 'pending' })

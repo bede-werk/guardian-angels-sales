@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
-import { api, setToken } from '../api';
+import { api, setToken, passwordError } from '../api';
 import Button from './ui/Button';
-
-const MIN_PASSWORD_LENGTH = 6;
 
 // Modal opened from the header's "Change password" link (see App.jsx). Asks
 // for the current password (to prove it's really you) plus a new one twice.
@@ -17,12 +15,9 @@ export default function ChangePassword({ onClose }) {
   async function submit(e) {
     e.preventDefault();
     setError(null);
-    if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError(`New password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
+    const err = passwordError(newPassword, confirmPassword, 'New password');
+    if (err) {
+      setError(err);
       return;
     }
     setSaving(true);

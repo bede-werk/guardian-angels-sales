@@ -23,8 +23,6 @@ const EDITABLE = [
   'preferences',
   'notes',
   'birthday',
-  'departed',
-  'is_primary',
 ];
 
 // Checks the enum-like fields against their allowed values. Returns an error
@@ -34,18 +32,6 @@ function validate(payload) {
     return `role_type must be one of ${ROLE_TYPES.join(', ')}`;
   }
   return validatePhone(payload.phone);
-}
-
-// Only one person per place can be primary at a time. Called whenever a
-// create/update sets is_primary=true, so the previous primary (if any) is
-// automatically demoted in the same transaction.
-async function unsetOtherPrimaries(trx, placeId, keepId) {
-  await trx('people').where({ place_id: placeId }).whereNot({ id: keepId }).update({ is_primary: false });
-}
-
-// SQLite stores booleans as 0/1 — coerce them back to real booleans for the API.
-function decorate(p) {
-  return { ...p, departed: !!p.departed, is_primary: !!p.is_primary };
 }
 
 // GET /api/people — cross-place directory (the People tab). Query params:
@@ -90,11 +76,11 @@ router.get('/people', async (req, res, next) => {
     if (category) query.where('p.category', category);
     if (neverContacted === '1' || neverContacted === 'true') query.whereNull('lv.last_visit_date');
 
-    query.orderBy('p.name', 'asc').orderBy('pe.is_primary', 'desc').orderBy('pe.name', 'asc');
+    query.orderBy('p.name', 'asc').orderBy('pe.name', 'asc');
 
     const people = await query;
     const metricsById = await referralMetricsByPersonId(knex, people.map((p) => p.id));
-    let decorated = people.map((p) => ({ ...decorate(p), referral_metrics: metricsFor(metricsById, p.id) }));
+    let decorated = people.map((p) => ({ ...p, referral_metrics: metricsFor(metricsById, p.id) }));
     if (needsAttention === '1' || needsAttention === 'true') {
       decorated = decorated.filter((p) => p.referral_metrics.needs_attention);
     }
@@ -114,9 +100,12 @@ router.get('/people/:id', async (req, res, next) => {
 
     const place = await knex('places').where({ id: person.place_id }).first();
 
+    // Visit history is for what actually happened — a still-planned or
+    // skipped stop from Today's Route doesn't belong here.
     const visits = await knex('visits as v')
       .leftJoin('users as u', 'u.id', 'v.user_id')
       .where('v.person_id', person.id)
+      .where('v.status', 'completed')
       .orderBy('v.scheduled_date', 'desc')
       .orderBy('v.id', 'desc')
       .select('v.*', 'u.name as user_name');
@@ -127,7 +116,7 @@ router.get('/people/:id', async (req, res, next) => {
       .orderBy('id', 'desc');
 
     res.json({
-      ...decorate(person),
+      ...person,
       place,
       visits,
       referrals,
@@ -138,15 +127,14 @@ router.get('/people/:id', async (req, res, next) => {
   }
 });
 
-// GET /api/places/:placeId/people — a place's people, primary first. Used by
-// PlaceDetail's "People here" card and the "who did you meet?" picker.
+// GET /api/places/:placeId/people — a place's people. Used by PlaceDetail's
+// "People here" card and the "who did you meet?" picker.
 router.get('/places/:placeId/people', async (req, res, next) => {
   try {
     const people = await knex('people')
       .where({ place_id: req.params.placeId })
-      .orderBy('is_primary', 'desc')
       .orderBy('name', 'asc');
-    res.json(people.map(decorate));
+    res.json(people);
   } catch (err) {
     next(err);
   }
@@ -170,27 +158,23 @@ router.post('/people', async (req, res, next) => {
 
     const payload = { place_id: placeId, name: String(name).trim() };
     for (const f of EDITABLE) if (f !== 'name' && req.body[f] !== undefined) payload[f] = req.body[f];
-    if (!placeId) payload.is_primary = false; // "primary at a place" needs a place
 
     const validationError = validate(payload);
     if (validationError) return res.status(400).json({ error: validationError });
 
     const person = await knex.transaction(async (trx) => {
       const [inserted] = await trx('people').insert(payload).returning('id');
-      // better-sqlite3's returning() gives back an id-only row on some Knex
-      // versions; Postgres gives the full row. Normalize to just the id here.
-      const id = inserted && inserted.id ? inserted.id : inserted;
-      if (payload.is_primary && placeId) await unsetOtherPrimaries(trx, placeId, id);
+      const id = knex.extractId(inserted);
       return trx('people').where({ id }).first();
     });
 
-    res.status(201).json(decorate(person));
+    res.status(201).json(person);
   } catch (err) {
     next(err);
   }
 });
 
-// PATCH /api/people/:id — update any field (role, temperature, departed, etc.).
+// PATCH /api/people/:id — update any editable field.
 router.patch('/people/:id', async (req, res, next) => {
   try {
     const existing = await knex('people').where({ id: req.params.id }).first();
@@ -205,7 +189,6 @@ router.patch('/people/:id', async (req, res, next) => {
     if (req.body.place_id !== undefined) {
       if (req.body.place_id === null || req.body.place_id === '') {
         update.place_id = null;
-        update.is_primary = false; // "primary at a place" is meaningless once unassigned
       } else {
         const place = await knex('places').where({ id: req.body.place_id }).first();
         if (!place) return res.status(400).json({ error: 'place not found' });
@@ -218,20 +201,16 @@ router.patch('/people/:id', async (req, res, next) => {
 
     const person = await knex.transaction(async (trx) => {
       await trx('people').where({ id: req.params.id }).update(update);
-      const effectivePlaceId = update.place_id !== undefined ? update.place_id : existing.place_id;
-      if (update.is_primary && effectivePlaceId) await unsetOtherPrimaries(trx, effectivePlaceId, req.params.id);
       return trx('people').where({ id: req.params.id }).first();
     });
 
-    res.json(decorate(person));
+    res.json(person);
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE /api/people/:id — permanently remove a person record. (Note: for
-// someone who's simply left their job, prefer PATCHing departed=true instead —
-// that keeps their visit history intact and flags the relationship for rebuilding.)
+// DELETE /api/people/:id — permanently remove a person record.
 router.delete('/people/:id', async (req, res, next) => {
   try {
     const count = await knex('people').where({ id: req.params.id }).del();

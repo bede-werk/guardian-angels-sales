@@ -8,7 +8,7 @@ import PlaceModal from './PlaceModal';
 
 // Searchable / filterable place directory with last-visit + contact info.
 // Clicking any row opens that place's full detail (PlaceDetail.jsx).
-export default function Places() {
+export default function Places({ userId }) {
   const [filters, setFilters] = useState({ categories: [], cities: [], zips: [], tiers: [] }); // dropdown options, loaded once
   const [q, setQ] = useState({ search: '', category: '', tier: '', city: '', zip: '', neverVisited: '', needsAttention: '' }); // current filter values
   const [rows, setRows] = useState([]); // the filtered place list from the API
@@ -152,7 +152,7 @@ export default function Places() {
       </div>
 
       {selected && (
-        <PlaceDetail placeId={selected} onClose={() => setSelected(null)} onChanged={load} onDeleted={load} />
+        <PlaceDetail placeId={selected} userId={userId} onClose={() => setSelected(null)} onChanged={load} onDeleted={load} />
       )}
 
       {adding && (

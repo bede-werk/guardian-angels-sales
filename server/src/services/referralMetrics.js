@@ -105,7 +105,6 @@ function summarizeReferralDates(dates, now = new Date()) {
 }
 
 module.exports = {
-  RECENT_WINDOW_DAYS,
   EMPTY_METRICS,
   recentWindowCutoff,
   referralMetricsByPersonId,

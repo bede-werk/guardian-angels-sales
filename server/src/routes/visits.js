@@ -61,8 +61,13 @@ router.post('/', async (req, res, next) => {
     const phoneError = validatePhone(payload.person_phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
 
+    // Same rule as PATCH below: a visit created already-completed (e.g. an
+    // ad-hoc "log a spontaneous visit" save) gets its completed_at stamped
+    // immediately, not left null.
+    if (payload.status === 'completed') payload.completed_at = knex.fn.now();
+
     const [inserted] = await knex('visits').insert(payload).returning('id');
-    const id = inserted && inserted.id ? inserted.id : inserted;
+    const id = knex.extractId(inserted);
     res.status(201).json(await fetchVisit(id));
   } catch (err) {
     next(err);

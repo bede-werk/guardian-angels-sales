@@ -190,7 +190,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 /* Category chips: generated blue/teal tint ramp, mauve deliberately excluded */
 .cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 
-/* Attention flag (overdue / departed / never-visited) — a mauve left border,
+/* Attention flag (overdue / cooling / never-visited) — a mauve left border,
    applied to rows in Dashboard's "Needs attention" list and never-visited
    stops on Today's Route. Mauve is used sparingly on purpose (see :root above). */
 .attention-flag { border-left: 3px solid var(--mauve); }
@@ -250,8 +250,6 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 /* Small general-purpose utility classes used all over the JSX */
 .muted { color: var(--muted); }
 .tiny { font-size: 12px; }
-.right { text-align: right; }
-.spacer { flex: 1; } /* pushes flex siblings apart, e.g. in a flex row's empty middle */
 .stack { display: flex; flex-direction: column; gap: 4px; } /* vertical stack of small pieces of text */
 .tag-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } /* row of chips/badges */
 
@@ -260,8 +258,6 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .empty-state { padding: 36px 24px; text-align: center; color: var(--muted); }
 .empty-state .empty-icon { width: 56px; height: auto; opacity: 0.35; margin-bottom: 12px; }
 .empty-state .empty-message { font-size: 13px; max-width: 360px; margin: 0 auto 14px; line-height: 1.5; }
-/* Legacy alias so any un-migrated call site still renders sanely */
-.empty { padding: 24px; text-align: center; color: var(--muted); }
 
 /* Modal / slide-up sheet — the dark overlay + centered white box pattern used
    by every *Modal.jsx component (VisitLogModal, PersonModal, PlaceDetail,
@@ -334,12 +330,3 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .progress-bar { height: 8px; border-radius: 999px; background: var(--blue-tint-1); overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--blue); border-radius: 999px; transition: width 0.3s ease; }
 .progress-label { font-size: 12px; color: var(--muted); margin-top: 6px; }
-
-/* Contact cards (People here) — the grid of ContactCard components on
-   PlaceDetail.jsx; .departed tints the card mauve for someone who's left their job. */
-.contact-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
-.contact-card.departed { border-color: var(--mauve-tint-3); background: var(--mauve-tint-1); }
-.contact-card .contact-name { font-weight: 700; }
-.contact-card .contact-role { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
-.contact-card .contact-actions { display: flex; gap: 8px; margin-top: 4px; }
-.contact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }

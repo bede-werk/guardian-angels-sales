@@ -12,11 +12,32 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [unassigned, setUnassigned] = useState([]);
+  const [loadingUnassigned, setLoadingUnassigned] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState(null);
 
-  // Debounced search, same 200ms pattern used elsewhere (Places.jsx, People.jsx).
+  // Default view: everyone with no place yet, so there's something to pick
+  // from before typing a single character.
   useEffect(() => {
+    let cancelled = false;
+    setLoadingUnassigned(true);
+    (async () => {
+      try {
+        const rows = await api.people.list({});
+        if (!cancelled) setUnassigned(rows.filter((p) => !p.place_id));
+      } finally {
+        if (!cancelled) setLoadingUnassigned(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Debounced search, same 200ms pattern used elsewhere (Places.jsx, People.jsx).
+  // Searches everyone on file, not just the unassigned — a person already at
+  // another place can still be reassigned here.
+  useEffect(() => {
+    if (!q.trim()) { setResults([]); return; }
     setLoading(true);
     const t = setTimeout(async () => {
       try {
@@ -29,6 +50,10 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
     }, 200);
     return () => clearTimeout(t);
   }, [q, placeId]);
+
+  const searching = q.trim().length > 0;
+  const list = searching ? results : unassigned;
+  const listLoading = searching ? loading : loadingUnassigned;
 
   async function assign(person) {
     setBusyId(person.id);
@@ -53,13 +78,16 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
           <input placeholder="Search by name or title…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
-          {loading ? (
-            <div className="loading">Searching…</div>
-          ) : results.length === 0 ? (
-            <EmptyState message={q.trim() ? 'No matching people.' : 'Type a name to search everyone on file.'} />
+          {!searching && (
+            <div className="tiny muted" style={{ marginTop: 10 }}>Unassigned people</div>
+          )}
+          {listLoading ? (
+            <div className="loading">{searching ? 'Searching…' : 'Loading…'}</div>
+          ) : list.length === 0 ? (
+            <EmptyState message={searching ? 'No matching people.' : 'No unassigned people on file.'} />
           ) : (
             <ul className="list">
-              {results.map((p) => (
+              {list.map((p) => (
                 <li key={p.id} className="stack" style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
                   <div className="row" style={{ alignItems: 'center' }}>
                     <div>
