@@ -265,10 +265,14 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
    @media rule further down turns this into a bottom slide-up sheet instead. */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); display: grid; place-items: center; padding: 20px; z-index: 50; }
 .modal { background: #fff; border-radius: var(--radius-lg); width: 100%; max-width: 560px; max-height: 90vh; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
-.modal .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: #fff; }
+/* z-index: 1 (rather than the default auto) is required so these sticky bars reliably
+   paint above scrolled-past body content — anything in the body with its own stacking
+   context (e.g. EmptyState's icon, which has opacity < 1) would otherwise win on DOM
+   order alone and show through the header/footer while scrolling. */
+.modal .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: #fff; z-index: 1; }
 .modal .modal-head h2 { margin: 0; font-size: 17px; }
 .modal .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-.modal .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: #fff; }
+.modal .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: #fff; z-index: 1; }
 .close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--muted); line-height: 1; }
 /* The big tap-chip outcome picker in VisitLogModal (Interested / Not ready / etc). */
 .outcome-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
