@@ -87,8 +87,9 @@ Snyder Physical Therapy, same plaza, 70th & Van Dorn; Bryan Medical Center
 East / Butherus-Maser & Love, nearby east Lincoln; Fire Station 11 / St.
 Andrew Dung-Lac, cross-town NW-to-NE) — cross-town estimate went from 45 min
 (flat 25mph) to 32 min (banded speeds), still probably a bit high versus a
-real routing API but a real improvement, and further tuning is just a config
-edit now.
+real routing API but a real improvement. (Update 2026-07-14: rather than
+keep tuning the approximation further, Bede has decided to replace it with
+an actual routing API — see phase 5 below.)
 
 ## Done, uncommitted (phase 4)
 
@@ -145,11 +146,12 @@ the draft, ~210-230 minutes used per day (9-30 min slack) — looked right.
 
 ## Explicitly NOT built yet
 
-Draft/commit lifecycle + multi-user collision handling, the live-edit
-recalculation loop (see the never-drop/flag-only packing function noted
-below — still not built), pre-qual capture (visit-logging UI +
-relationship-confirm/promotion prompts), and all frontend work. None of this
-exists yet, even as stubs.
+Real routing API integration and stop-sequencing/route optimization (see
+phase 5 below — decided 2026-07-14, not started), draft/commit lifecycle +
+multi-user collision handling, the live-edit recalculation loop (see the
+never-drop/flag-only packing function noted below — still not built),
+pre-qual capture (visit-logging UI + relationship-confirm/promotion
+prompts), and all frontend work. None of this exists yet, even as stubs.
 
 ## Open questions / notes for later
 
@@ -165,7 +167,70 @@ exists yet, even as stubs.
   `config/scheduling.js` for now specifically so a future settings-table
   phase can lift them out without touching the engine itself.
 
-## Next step: phase 5 — draft/commit lifecycle, collision, and the live-edit loop
+## Next step: phase 5 — real routing API + stop-sequencing optimization
+
+Decided 2026-07-14, not started. Two changes, both to how a day's route is
+computed, ahead of the draft/commit lifecycle work below (now bumped to
+phase 6):
+
+**1. Replace the haversine + distance-banded-speed estimate in
+`driveTime.js`'s `estimateDriveMinutes()` with a real routing API call**
+(actual road distance/duration, not an approximation). Provider not yet
+chosen (Google Maps Directions, Mapbox Directions, OSRM self-hosted, etc.) —
+that's an open decision for next session, along with API-key/cost/rate-limit
+handling. This was anticipated by design: `driveTime.js`'s module comment
+has said since phase 3 that "swapping in a real routing API later only
+means rewriting estimateDriveMinutes(); packTimeBlock() doesn't change" —
+still true in spirit, but see the architectural wrinkle below.
+
+**Architectural wrinkle to resolve before writing code:** every pure module
+built so far (`schedulingEngine.js`, `driveTime.js`, `scheduleGenerator.js`)
+has been synchronous, no I/O, by deliberate discipline. A real routing API
+call is inherently async (network) and should be batched/cached rather than
+called pairwise-per-stop-per-day (a 5-day draft with 5 stops/day is ~25
+sequential drive-time lookups today; a real API wants a distance-matrix
+call per day's candidate set, not 25 round-trips). This means
+`estimateDriveMinutes` can no longer stay a synchronous drop-in — either
+`packTimeBlock`/`generateDraft` become async and take a pre-fetched distance
+matrix instead of calling `estimateDriveMinutes` inline, or a caching layer
+sits in front of the API so the pure functions keep calling something
+synchronous that's backed by a pre-warmed cache. Decide this shape before
+touching `packTimeBlock`'s internals — it's a bigger change than "swap one
+function's implementation."
+
+**2. Add a stop-sequencing/route-optimization function** that reorders a
+day's stops for a genuinely efficient route, replacing the current
+"four-tier rank order = visit order" behavior (an explicit phase-4
+simplification — see the "No within-day proximity resequencing" decision
+above, which this work directly reverses). **Algorithm not yet decided** —
+Bede hasn't settled on an approach yet. Options to weigh next session, not
+a decision made now: a nearest-neighbor greedy heuristic (simple, fast,
+good-enough for ~5-8 stops/day), a 2-opt improvement pass on top of
+nearest-neighbor (better tours, still cheap at this scale), a small exact
+TSP solver (feasible only because day-sized stop counts are tiny), or
+leaning on the routing API's own waypoint-optimization feature if the
+chosen provider has one (e.g. Google's `optimizeWaypoints`) — which would
+also fold decision 1 and 2 into a single API call. That last option is
+worth evaluating first once a provider is picked, since it could mean not
+writing a TSP-style algorithm at all.
+
+**Open question this raises for ranking:** today, four-tier rank order
+*is* visit order (highest-priority stop first). If stops get reordered for
+route efficiency, does rank order still decide *which* stops make the cut
+when the day is over budget (packing), while optimization only decides the
+*sequence* of whichever stops got picked — or does optimization get a say
+in which stops are chosen too (e.g. dropping the priority order slightly
+if it makes the whole day's route meaningfully shorter)? Needs a decision
+before implementation; leaning toward "rank order picks the stops,
+optimization only sequences them" to keep the four-tier model's guarantees
+intact, but confirm with Bede before building.
+
+Same checkpoint discipline as phases 1-4: pure/tested where possible (the
+sequencing algorithm itself can and should stay a pure function even if
+distance lookups become async/cached), tests via the scoped glob, stop for
+review once tests pass and a sample draft looks right.
+
+## Next step: phase 6 — draft/commit lifecycle, collision, and the live-edit loop
 
 The target interaction model (from a separate conversation Bede had about
 what this should feel like, worth preserving verbatim-ish so it isn't
