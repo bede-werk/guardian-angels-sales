@@ -90,12 +90,66 @@ Andrew Dung-Lac, cross-town NW-to-NE) — cross-town estimate went from 45 min
 real routing API but a real improvement, and further tuning is just a config
 edit now.
 
+## Done, uncommitted (phase 4)
+
+Multi-day draft schedule generator, pure/tested, no DB wiring beyond one
+sanity-check readout (not committed — see below). 69 tests passing
+(`npm test` from `server/`).
+
+- **Prerequisite folded in first**: `driveTime.js`'s `timeBlockMinutes`/
+  `packTimeBlock` now add `PREP_MINUTES`/`DATA_ENTRY_MINUTES` (3/5 min,
+  `config/visitTypes.js`) on top of drive+visit time — these had been added
+  to config in phase 3 but never wired into the actual math until now.
+- `server/src/services/scheduleGenerator.js` — `workingDays()` (hand-rolled
+  UTC-safe date math, no dayjs, same convention as `schedulingEngine.js`'s
+  `daysSince()`), `toPackableStop()`, `fillDayFromZone()`, and the
+  orchestrator `generateDraft()`.
+- `server/src/services/scheduleGenerator.test.js` — 27 tests.
+
+**Key design decisions (confirmed with Bede, don't re-derive):**
+- **Zone = the existing `places.region` field.** No new schema/concept —
+  reuses the "side of town" bucket already derived by
+  `services/priority.js`'s `regionForPlace()` and already used by the
+  single-day `scheduler.js` for clustering.
+- **Default zone per day = the region of the single top-ranked eligible
+  candidate remaining** in the pool (mirrors `scheduler.js`'s existing
+  seed-then-cluster precedent). Overridable per day via `zoneOverrides`.
+- **Eligibility/urgency are re-ranked once per day, against that day's own
+  calendar date** — not ranked once up front against today. A place whose
+  hard floor lapses by day 3, or a commitment that becomes due by day 4, is
+  correctly reflected starting that day. This was an explicit choice over
+  the simpler "rank once" alternative — confirmed with Bede specifically
+  because a 5-day-out draft should reflect each day arriving, not "if you
+  did all this today."
+- **No within-day proximity resequencing.** Stops fill in four-tier rank
+  order; `packTimeBlock`'s existing trim-to-budget (truncating) behavior is
+  reused as-is for this one-time generation fill — the separate never-drop/
+  flag-only function for the live-edit loop (see below) is still a later
+  slice, not this one.
+- **Multi-day dedupe**: once a candidate is actually packed into a day, it's
+  removed from the pool for every later day; candidates merely considered
+  (wrong zone that day, or excluded by budget) remain available later.
+- **`homeBase: {lat, lng}`** (each day's drive-time origin) is an explicit
+  generator input, not sourced from anywhere — no user/rep location field
+  exists anywhere in the schema yet (confirmed absent from `users` and
+  every config file; `HANDOFF.md`/`NOTES.md` already flagged this as a known
+  gap). A real value has to come from a future settings/profile phase.
+- **"Days ahead" = N working days**, transparently skipping weekends and
+  `exceptionDates`, always producing exactly N day-entries.
+
+Sanity-checked with a throwaway (uncommitted, deleted after use) script
+pulling all 255 geocoded places plus real visit history from the dev DB:
+5 working days, 4-hour budget, 5 zones in a row (Southeast → South → East →
+Northeast → Southeast again), 25 real stops packed, zero duplicates across
+the draft, ~210-230 minutes used per day (9-30 min slack) — looked right.
+
 ## Explicitly NOT built yet
 
-Multi-day generator (zone assignment + day filling + proximity sequencing),
-draft/commit lifecycle + multi-user collision handling, pre-qual capture
-(visit-logging UI + relationship-confirm/promotion prompts), and all
-frontend work. None of this exists yet, even as stubs.
+Draft/commit lifecycle + multi-user collision handling, the live-edit
+recalculation loop (see the never-drop/flag-only packing function noted
+below — still not built), pre-qual capture (visit-logging UI +
+relationship-confirm/promotion prompts), and all frontend work. None of this
+exists yet, even as stubs.
 
 ## Open questions / notes for later
 
@@ -111,7 +165,7 @@ frontend work. None of this exists yet, even as stubs.
   `config/scheduling.js` for now specifically so a future settings-table
   phase can lift them out without touching the engine itself.
 
-## Next step: phase 4 — the generator
+## Next step: phase 5 — draft/commit lifecycle, collision, and the live-edit loop
 
 The target interaction model (from a separate conversation Bede had about
 what this should feel like, worth preserving verbatim-ish so it isn't
@@ -130,28 +184,30 @@ re-derived from scratch):
 > time math current and flagging over/under; all actual add/remove/reshuffle
 > decisions stay with the user. No second generation round-trip.
 
-**Key implication for phase 4, decided but not yet built:** `packTimeBlock`
-(existing) is the right shape for the generator's one-time initial fill —
+**Key implication, decided but not yet built:** `packTimeBlock` (phase 3) is
+the right shape for `generateDraft`'s (phase 4) one-time initial fill —
 given a ranked candidate pool and a budget, decide how many fit, dropping
 the rest. It is the *wrong* shape for the live-edit loop, because it
 silently truncates (via `break`) anything past the budget rather than
 returning it — which would make a user's own already-placed stops vanish
-instead of getting flagged. Phase 4 needs a **second, sibling pure
+instead of getting flagged. Phase 5 needs a **second, sibling pure
 function** (tentatively `evaluateDayTimeBlock` or similar) that shares
 `packTimeBlock`'s math (same drive-chaining, same visit-type resolution) but
 never drops a stop — it returns every stop given to it, annotated with its
 running total and an `overBudget` flag, plus the day's overall over/under
-amount. `packTimeBlock` stays as-is for the generator; the new function
-serves recalculation after edits. Decided 2026-07-13, deliberately deferred
-out of phase 3 to fold into phase 4's design rather than bolt on early.
+amount. `packTimeBlock`/`generateDraft` stay as-is for initial generation;
+the new function serves recalculation after edits.
 
-Also still needed for phase 4: zone assignment, day filling, proximity
-sequencing, and (per the interaction model above) the "nearby eligible
-stop" suggestion — which can reuse `schedulingEngine.js`'s
-`eligibility()`/`rankCandidates()` plus `driveTime.js`'s distance functions,
-so that part is mostly wiring, not new logic.
+Also needed for phase 5: the "nearby eligible stop" suggestion when a day is
+under budget (per the interaction model above) — can reuse
+`schedulingEngine.js`'s `eligibility()`/`rankCandidates()` plus
+`driveTime.js`'s distance functions, so that part is mostly wiring, not new
+logic — plus the actual persistence (draft rows written to `visits` as
+`planned`?) and multi-user collision handling (`lockedElsewhere`, already a
+first-class input throughout the pure layer, just never wired to a real
+query yet).
 
-Same checkpoint discipline as phases 1-3: pure/tested where possible, tests
+Same checkpoint discipline as phases 1-4: pure/tested where possible, tests
 via the scoped glob (not bare `node --test src` — that executes every `.js`
 file it finds, including `index.js`, which starts a real server on :4000).
 Stop for review once tests pass.
