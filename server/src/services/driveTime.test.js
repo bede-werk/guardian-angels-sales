@@ -113,6 +113,14 @@ describe('timeBlockMinutes', () => {
   test('is drive time plus visit time', () => {
     assert.equal(timeBlockMinutes({ driveMinutes: 12, visitMinutes: 30 }), 42);
   });
+
+  test('sums all four components when prep and data-entry are given', () => {
+    assert.equal(timeBlockMinutes({ driveMinutes: 12, visitMinutes: 30, prepMinutes: 3, dataEntryMinutes: 5 }), 50);
+  });
+
+  test('defaults prepMinutes/dataEntryMinutes to 0 so old call sites still work', () => {
+    assert.equal(timeBlockMinutes({ driveMinutes: 12, visitMinutes: 30 }), 42);
+  });
 });
 
 describe('resolveVisitType / visitDurationMinutes', () => {
@@ -152,7 +160,12 @@ describe('packTimeBlock', () => {
 
   test('stops packing once the next stop would exceed the budget, rather than skipping ahead', () => {
     const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN), stop('c', EAST_LINCOLN)];
-    const tightBudget = timeBlockMinutes({ driveMinutes: estimateDriveMinutes(DOWNTOWN, EAST_LINCOLN, {}), visitMinutes: visitTypesConfig.VISIT_TYPES.standard.minutes });
+    const tightBudget = timeBlockMinutes({
+      driveMinutes: estimateDriveMinutes(DOWNTOWN, EAST_LINCOLN, {}),
+      visitMinutes: visitTypesConfig.VISIT_TYPES.standard.minutes,
+      prepMinutes: visitTypesConfig.PREP_MINUTES,
+      dataEntryMinutes: visitTypesConfig.DATA_ENTRY_MINUTES,
+    });
 
     const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: tightBudget, defaultVisitType: 'standard' });
 
@@ -191,6 +204,25 @@ describe('packTimeBlock', () => {
     assert.equal(result.totalMinutes, result.stops.reduce((sum, s) => sum + s.blockMinutes, 0));
   });
 
+  test('reports prepMinutes and dataEntryMinutes on each packed stop', () => {
+    const stops = [stop('a', EAST_LINCOLN)];
+    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000 });
+    assert.equal(result.stops[0].prepMinutes, visitTypesConfig.PREP_MINUTES);
+    assert.equal(result.stops[0].dataEntryMinutes, visitTypesConfig.DATA_ENTRY_MINUTES);
+  });
+
+  test('a visitTypesConfig override of PREP_MINUTES/DATA_ENTRY_MINUTES changes totals', () => {
+    const stops = [stop('a', EAST_LINCOLN, { visitType: 'standard' })];
+    const withDefaults = packTimeBlock(stops, { start: EAST_LINCOLN, budgetMinutes: 1000 });
+    const withOverride = packTimeBlock(stops, {
+      start: EAST_LINCOLN,
+      budgetMinutes: 1000,
+      visitTypesConfig: { PREP_MINUTES: 20, DATA_ENTRY_MINUTES: 20 },
+    });
+    const expectedDelta = (20 - visitTypesConfig.PREP_MINUTES) + (20 - visitTypesConfig.DATA_ENTRY_MINUTES);
+    assert.equal(withOverride.totalMinutes, withDefaults.totalMinutes + expectedDelta);
+  });
+
   test('mixed visit-type durations in a single day pack correctly', () => {
     // A realistic day: a quick drop-in, a standard visit, and an in-service
     // presentation, all near each other so drive time doesn't dominate the
@@ -209,13 +241,15 @@ describe('packTimeBlock', () => {
 
     // Every stop here is EAST_LINCOLN itself, so drive time between them is
     // just the MIN_DRIVE_MINUTES floor (same-point distance) — the only
-    // thing that varies stop-to-stop is the visit duration.
+    // thing that varies stop-to-stop is the visit duration. Prep/data-entry
+    // are flat per stop, same as drive time in this fixture.
     const driveMinutes = result.stops[0].driveMinutes;
+    const prep = visitTypesConfig.PREP_MINUTES;
+    const dataEntry = visitTypesConfig.DATA_ENTRY_MINUTES;
     const expectedTotal =
-      driveMinutes +
-      visitTypesConfig.VISIT_TYPES.drop_in.minutes +
-      (driveMinutes + visitTypesConfig.VISIT_TYPES.standard.minutes) +
-      (driveMinutes + visitTypesConfig.VISIT_TYPES.presentation.minutes);
+      (driveMinutes + prep + visitTypesConfig.VISIT_TYPES.drop_in.minutes + dataEntry) +
+      (driveMinutes + prep + visitTypesConfig.VISIT_TYPES.standard.minutes + dataEntry) +
+      (driveMinutes + prep + visitTypesConfig.VISIT_TYPES.presentation.minutes + dataEntry);
     assert.equal(result.totalMinutes, expectedTotal);
   });
 
@@ -224,7 +258,7 @@ describe('packTimeBlock', () => {
     const standards = [stop('a', EAST_LINCOLN, { visitType: 'standard' }), stop('b', EAST_LINCOLN, { visitType: 'standard' }), stop('c', EAST_LINCOLN, { visitType: 'standard' })];
 
     const driveMinutes = estimateDriveMinutes(EAST_LINCOLN, EAST_LINCOLN, {});
-    const budgetMinutes = 3 * (driveMinutes + visitTypesConfig.VISIT_TYPES.drop_in.minutes);
+    const budgetMinutes = 3 * (driveMinutes + visitTypesConfig.PREP_MINUTES + visitTypesConfig.VISIT_TYPES.drop_in.minutes + visitTypesConfig.DATA_ENTRY_MINUTES);
 
     const dropInResult = packTimeBlock(dropIns, { start: EAST_LINCOLN, budgetMinutes });
     const standardResult = packTimeBlock(standards, { start: EAST_LINCOLN, budgetMinutes });

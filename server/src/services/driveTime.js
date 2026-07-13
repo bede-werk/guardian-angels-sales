@@ -57,10 +57,12 @@ function estimateDriveMinutes(a, b, config = {}) {
   return Math.max(cfg.MIN_DRIVE_MINUTES, Math.round(minutes));
 }
 
-// Total time a stop consumes in a route: the drive time to reach it plus the
-// visit itself.
-function timeBlockMinutes({ driveMinutes, visitMinutes }) {
-  return driveMinutes + visitMinutes;
+// Total time a stop consumes in a route: drive time, prep (reviewing notes
+// on the way in), the visit itself, and data-entry (logging the outcome on
+// the way out). prepMinutes/dataEntryMinutes default to 0 so call sites that
+// predate them still work unchanged.
+function timeBlockMinutes({ driveMinutes, visitMinutes, prepMinutes = 0, dataEntryMinutes = 0 }) {
+  return driveMinutes + visitMinutes + prepMinutes + dataEntryMinutes;
 }
 
 // Falls back to DEFAULT_VISIT_TYPE when no type is given — a visit or place
@@ -93,6 +95,9 @@ function visitDurationMinutes(visitType, config = {}) {
 // place's default_visit_type, or a visit's explicit choice), falling back to
 // `defaultVisitType` for the whole pack, then to
 // config/visitTypes.js's DEFAULT_VISIT_TYPE — never a flat assumption.
+// Prep and data-entry time (config/visitTypes.js's PREP_MINUTES/
+// DATA_ENTRY_MINUTES) are flat per-stop overhead, same for every visit type,
+// unlike the visit duration itself.
 //
 // Stops missing lat/lng (a geocoding gap) are skipped entirely — there's no
 // honest drive-time estimate to/from an unknown location.
@@ -100,6 +105,8 @@ function packTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveCon
   const packed = [];
   let totalMinutes = 0;
   let from = start;
+  const prepMinutes = visitTypesConfig?.PREP_MINUTES ?? defaultVisitTypesConfig.PREP_MINUTES;
+  const dataEntryMinutes = visitTypesConfig?.DATA_ENTRY_MINUTES ?? defaultVisitTypesConfig.DATA_ENTRY_MINUTES;
 
   for (const stop of stops) {
     if (stop.lat == null || stop.lng == null) continue;
@@ -107,12 +114,12 @@ function packTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveCon
     const driveMinutes = estimateDriveMinutes(from, stop, driveConfig);
     const visitType = resolveVisitType(stop.visitType ?? defaultVisitType, visitTypesConfig);
     const visitMinutes = visitDurationMinutes(visitType, visitTypesConfig);
-    const blockMinutes = timeBlockMinutes({ driveMinutes, visitMinutes });
+    const blockMinutes = timeBlockMinutes({ driveMinutes, visitMinutes, prepMinutes, dataEntryMinutes });
 
     if (totalMinutes + blockMinutes > budgetMinutes) break;
 
     totalMinutes += blockMinutes;
-    packed.push({ ...stop, visitType, driveMinutes, visitMinutes, blockMinutes, runningTotalMinutes: totalMinutes });
+    packed.push({ ...stop, visitType, driveMinutes, prepMinutes, visitMinutes, dataEntryMinutes, blockMinutes, runningTotalMinutes: totalMinutes });
     from = stop;
   }
 

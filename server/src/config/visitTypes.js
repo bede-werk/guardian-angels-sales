@@ -26,4 +26,11 @@ module.exports = {
 
   // Used when neither a visit nor its place specifies a type.
   DEFAULT_VISIT_TYPE: 'standard',
+
+  // Flat per-stop overhead that isn't drive time and isn't the visit itself:
+  // reviewing notes/history on the way in, logging the outcome on the way
+  // out. Same for every visit type — unlike VISIT_TYPES, these don't vary by
+  // what kind of visit it is.
+  PREP_MINUTES: 3,
+  DATA_ENTRY_MINUTES: 5,
 };
