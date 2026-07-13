@@ -18,14 +18,15 @@
 // phase can lift them out without touching the packing logic.
 module.exports = {
   VISIT_TYPES: {
-    drop_in: { label: 'Drop-in', minutes: 10 },
-    standard: { label: 'Standard', minutes: 25 },
-    presentation: { label: 'Presentation / in-service', minutes: 45 },
-    pre_qualification: { label: 'Pre-qualification', minutes: 20 },
+    drop_in: { label: 'Drop-in', minutes: 7 },
+    check_in: { label: 'Check-in', minutes: 18 }, // short relationship touch with one contact
+    working_visit: { label: 'Working visit', minutes: 30 }, // longer sit-down meeting; replaces the old "standard" type
+    presentation: { label: 'Presentation / in-service', minutes: 60 },
+    pre_qualification: { label: 'Pre-qualification', minutes: 15 },
   },
 
   // Used when neither a visit nor its place specifies a type.
-  DEFAULT_VISIT_TYPE: 'standard',
+  DEFAULT_VISIT_TYPE: 'working_visit',
 
   // Flat per-stop overhead that isn't drive time and isn't the visit itself:
   // reviewing notes/history on the way in, logging the outcome on the way

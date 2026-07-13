@@ -221,8 +221,9 @@ describe('generateDraft', () => {
   test('mixed visit-type budgeting within a single day reuses default_visit_type end-to-end', () => {
     const candidates = [
       candidate(place(1, { default_visit_type: 'drop_in' })),
-      candidate(place(2, { default_visit_type: 'standard' })),
-      candidate(place(3, { default_visit_type: 'presentation' })),
+      candidate(place(2, { default_visit_type: 'check_in' })),
+      candidate(place(3, { default_visit_type: 'working_visit' })),
+      candidate(place(4, { default_visit_type: 'presentation' })),
     ];
     const result = generateDraft({
       candidates, today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
@@ -231,8 +232,9 @@ describe('generateDraft', () => {
 
     const stopsById = Object.fromEntries(result.days[0].stops.map((s) => [s.place_id, s]));
     assert.equal(stopsById[1].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.drop_in.minutes);
-    assert.equal(stopsById[2].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.standard.minutes);
-    assert.equal(stopsById[3].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.presentation.minutes);
+    assert.equal(stopsById[2].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.check_in.minutes);
+    assert.equal(stopsById[3].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.working_visit.minutes);
+    assert.equal(stopsById[4].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.presentation.minutes);
   });
 
   test('empty-pool day entries (zone: null) once the whole pool is exhausted', () => {
@@ -309,11 +311,11 @@ describe('generateDraft', () => {
   });
 
   test('config.visitTypes override changes visitMinutes', () => {
-    const candidates = [candidate(place(1, { default_visit_type: 'standard' }))];
+    const candidates = [candidate(place(1, { default_visit_type: 'working_visit' }))];
     const result = generateDraft({
       candidates, today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
       hoursPerDay: 20, homeBase: DOWNTOWN, // generous enough to still fit the inflated 999-minute visit
-      config: { visitTypes: { VISIT_TYPES: { ...defaultVisitTypesConfig.VISIT_TYPES, standard: { label: 'Standard', minutes: 999 } } } },
+      config: { visitTypes: { VISIT_TYPES: { ...defaultVisitTypesConfig.VISIT_TYPES, working_visit: { label: 'Working visit', minutes: 999 } } } },
     });
 
     assert.equal(result.days[0].stops[0].visitMinutes, 999);

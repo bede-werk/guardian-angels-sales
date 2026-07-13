@@ -134,7 +134,8 @@ describe('resolveVisitType / visitDurationMinutes', () => {
 
   test('returns each configured type\'s minutes', () => {
     assert.equal(visitDurationMinutes('drop_in', {}), visitTypesConfig.VISIT_TYPES.drop_in.minutes);
-    assert.equal(visitDurationMinutes('standard', {}), visitTypesConfig.VISIT_TYPES.standard.minutes);
+    assert.equal(visitDurationMinutes('check_in', {}), visitTypesConfig.VISIT_TYPES.check_in.minutes);
+    assert.equal(visitDurationMinutes('working_visit', {}), visitTypesConfig.VISIT_TYPES.working_visit.minutes);
     assert.equal(visitDurationMinutes('presentation', {}), visitTypesConfig.VISIT_TYPES.presentation.minutes);
     assert.equal(visitDurationMinutes('pre_qualification', {}), visitTypesConfig.VISIT_TYPES.pre_qualification.minutes);
   });
@@ -151,7 +152,7 @@ describe('packTimeBlock', () => {
 
   test('chains drive time stop-to-stop, not always from the start point', () => {
     const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN)];
-    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'standard' });
+    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
 
     assert.equal(result.stops.length, 2);
     assert.equal(result.stops[0].driveMinutes, estimateDriveMinutes(DOWNTOWN, EAST_LINCOLN, {}));
@@ -162,12 +163,12 @@ describe('packTimeBlock', () => {
     const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN), stop('c', EAST_LINCOLN)];
     const tightBudget = timeBlockMinutes({
       driveMinutes: estimateDriveMinutes(DOWNTOWN, EAST_LINCOLN, {}),
-      visitMinutes: visitTypesConfig.VISIT_TYPES.standard.minutes,
+      visitMinutes: visitTypesConfig.VISIT_TYPES.working_visit.minutes,
       prepMinutes: visitTypesConfig.PREP_MINUTES,
       dataEntryMinutes: visitTypesConfig.DATA_ENTRY_MINUTES,
     });
 
-    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: tightBudget, defaultVisitType: 'standard' });
+    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: tightBudget, defaultVisitType: 'working_visit' });
 
     assert.equal(result.stops.length, 1);
     assert.equal(result.stops[0].id, 'a');
@@ -176,7 +177,7 @@ describe('packTimeBlock', () => {
 
   test('skips stops missing lat/lng rather than guessing', () => {
     const stops = [stop('geocoded-a', EAST_LINCOLN), stop('ungeocoded', { lat: null, lng: null }), stop('geocoded-b', SOUTHWEST_LINCOLN)];
-    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'standard' });
+    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
 
     assert.equal(result.stops.length, 2);
     assert.ok(result.stops.every((s) => s.id !== 'ungeocoded'));
@@ -184,7 +185,7 @@ describe('packTimeBlock', () => {
 
   test('per-stop visitType overrides the pack default', () => {
     const stops = [stop('a', EAST_LINCOLN, { visitType: 'presentation' })];
-    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'standard' });
+    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
     assert.equal(result.stops[0].visitType, 'presentation');
     assert.equal(result.stops[0].visitMinutes, visitTypesConfig.VISIT_TYPES.presentation.minutes);
   });
@@ -199,7 +200,7 @@ describe('packTimeBlock', () => {
   test('totalMinutes and remainingMinutes stay consistent with the budget', () => {
     const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN)];
     const budgetMinutes = 240;
-    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes, defaultVisitType: 'standard' });
+    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes, defaultVisitType: 'working_visit' });
     assert.equal(result.totalMinutes + result.remainingMinutes, budgetMinutes);
     assert.equal(result.totalMinutes, result.stops.reduce((sum, s) => sum + s.blockMinutes, 0));
   });
@@ -212,7 +213,7 @@ describe('packTimeBlock', () => {
   });
 
   test('a visitTypesConfig override of PREP_MINUTES/DATA_ENTRY_MINUTES changes totals', () => {
-    const stops = [stop('a', EAST_LINCOLN, { visitType: 'standard' })];
+    const stops = [stop('a', EAST_LINCOLN, { visitType: 'working_visit' })];
     const withDefaults = packTimeBlock(stops, { start: EAST_LINCOLN, budgetMinutes: 1000 });
     const withOverride = packTimeBlock(stops, {
       start: EAST_LINCOLN,
@@ -224,19 +225,19 @@ describe('packTimeBlock', () => {
   });
 
   test('mixed visit-type durations in a single day pack correctly', () => {
-    // A realistic day: a quick drop-in, a standard visit, and an in-service
+    // A realistic day: a quick drop-in, a working visit, and an in-service
     // presentation, all near each other so drive time doesn't dominate the
     // math — this isolates that per-stop durations are actually being used.
     const dropIn = stop('drop-in', EAST_LINCOLN, { visitType: 'drop_in' });
-    const standard = stop('standard', EAST_LINCOLN, { visitType: 'standard' });
+    const workingVisit = stop('working-visit', EAST_LINCOLN, { visitType: 'working_visit' });
     const presentation = stop('presentation', EAST_LINCOLN, { visitType: 'presentation' });
-    const stops = [dropIn, standard, presentation];
+    const stops = [dropIn, workingVisit, presentation];
 
     const result = packTimeBlock(stops, { start: EAST_LINCOLN, budgetMinutes: 1000 });
 
     assert.equal(result.stops.length, 3);
     assert.equal(result.stops[0].visitMinutes, visitTypesConfig.VISIT_TYPES.drop_in.minutes);
-    assert.equal(result.stops[1].visitMinutes, visitTypesConfig.VISIT_TYPES.standard.minutes);
+    assert.equal(result.stops[1].visitMinutes, visitTypesConfig.VISIT_TYPES.working_visit.minutes);
     assert.equal(result.stops[2].visitMinutes, visitTypesConfig.VISIT_TYPES.presentation.minutes);
 
     // Every stop here is EAST_LINCOLN itself, so drive time between them is
@@ -248,22 +249,22 @@ describe('packTimeBlock', () => {
     const dataEntry = visitTypesConfig.DATA_ENTRY_MINUTES;
     const expectedTotal =
       (driveMinutes + prep + visitTypesConfig.VISIT_TYPES.drop_in.minutes + dataEntry) +
-      (driveMinutes + prep + visitTypesConfig.VISIT_TYPES.standard.minutes + dataEntry) +
+      (driveMinutes + prep + visitTypesConfig.VISIT_TYPES.working_visit.minutes + dataEntry) +
       (driveMinutes + prep + visitTypesConfig.VISIT_TYPES.presentation.minutes + dataEntry);
     assert.equal(result.totalMinutes, expectedTotal);
   });
 
-  test('a tight budget fits more short drop-ins than it would standard visits', () => {
+  test('a tight budget fits more short drop-ins than it would working visits', () => {
     const dropIns = [stop('a', EAST_LINCOLN, { visitType: 'drop_in' }), stop('b', EAST_LINCOLN, { visitType: 'drop_in' }), stop('c', EAST_LINCOLN, { visitType: 'drop_in' })];
-    const standards = [stop('a', EAST_LINCOLN, { visitType: 'standard' }), stop('b', EAST_LINCOLN, { visitType: 'standard' }), stop('c', EAST_LINCOLN, { visitType: 'standard' })];
+    const workingVisits = [stop('a', EAST_LINCOLN, { visitType: 'working_visit' }), stop('b', EAST_LINCOLN, { visitType: 'working_visit' }), stop('c', EAST_LINCOLN, { visitType: 'working_visit' })];
 
     const driveMinutes = estimateDriveMinutes(EAST_LINCOLN, EAST_LINCOLN, {});
     const budgetMinutes = 3 * (driveMinutes + visitTypesConfig.PREP_MINUTES + visitTypesConfig.VISIT_TYPES.drop_in.minutes + visitTypesConfig.DATA_ENTRY_MINUTES);
 
     const dropInResult = packTimeBlock(dropIns, { start: EAST_LINCOLN, budgetMinutes });
-    const standardResult = packTimeBlock(standards, { start: EAST_LINCOLN, budgetMinutes });
+    const workingVisitResult = packTimeBlock(workingVisits, { start: EAST_LINCOLN, budgetMinutes });
 
     assert.equal(dropInResult.stops.length, 3, 'all three drop-ins should fit in a budget sized exactly for three drop-ins');
-    assert.ok(standardResult.stops.length < 3, 'the same budget should not fit three longer standard visits');
+    assert.ok(workingVisitResult.stops.length < 3, 'the same budget should not fit three longer working visits');
   });
 });
