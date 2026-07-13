@@ -659,6 +659,18 @@ correctly for places/visits (just not for people→referrals, per #1 above).
 
 ## 14B. Route-planner readiness (2026-07-10 assessment)
 
+**Stale as of 2026-07-14 — the route planner is now under active development on branch
+`bede-routeplanner`.** Everything below this point describes the *pre-build* state (nothing
+existed yet). For current status, don't trust this section — read `ROUTEPLANNER_PROGRESS.md`
+at the repo root instead, which is kept up to date phase-by-phase. Short version: the four-tier
+scoring engine, a haversine + distance-banded-speed drive-time estimator, visit-type durations,
+and a multi-day draft generator are all built and tested (not yet committed to `main`/no
+frontend/DB-persistence yet). Item 2 below ("no distance/duration math anywhere") and item 3
+("no visit-duration... data") are both now done, differently than either originally assumed.
+Next up (decided 2026-07-14, not started): replacing the haversine estimate with a real routing
+API, and adding a stop-sequencing/route-optimization pass — see `ROUTEPLANNER_PROGRESS.md`'s
+"phase 5" section for the current thinking on both.
+
 Bede's next planned feature is a real route planner (plan a day's driving route between
 places). Assessed what's actually ready vs. missing:
 

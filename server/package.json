@@ -12,7 +12,8 @@
     "seed": "npm run migrate && npm run import && npm run import:notes",
     "reset": "knex migrate:rollback --all && npm run seed",
     "dev": "node --watch src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node --test \"src/**/*.test.js\""
   },
   "keywords": [],
   "author": "",
