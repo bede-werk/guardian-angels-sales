@@ -3,18 +3,20 @@ import { api } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 
-// Search across every person already on file and assign one of them to this
-// place. Reassigns them (place_id -> this place) if they're currently
-// elsewhere, same as PersonDetail's own "Assign to a place" picker — this is
-// just the mirror image, initiated from the place's side. The counterpart to
-// PlaceDetail's "Create person" button, which makes a brand-new record instead.
+// Search across every person already on file and assign one or more of them
+// to this place at once. Reassigns them (place_id -> this place) if they're
+// currently elsewhere, same as PersonDetail's own "Assign to a place" picker
+// — this is just the mirror image, initiated from the place's side. The
+// counterpart to PlaceDetail's "Create person" button, which makes a
+// brand-new record instead.
 export default function AssignPersonModal({ placeId, placeName, onClose, onAssigned }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [unassigned, setUnassigned] = useState([]);
   const [loadingUnassigned, setLoadingUnassigned] = useState(true);
-  const [busyId, setBusyId] = useState(null);
+  const [selected, setSelected] = useState(() => new Set()); // ids picked for the batch assign
+  const [assigning, setAssigning] = useState(false);
   const [error, setError] = useState(null);
 
   // Default view: everyone with no place yet, so there's something to pick
@@ -55,16 +57,25 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
   const list = searching ? results : unassigned;
   const listLoading = searching ? loading : loadingUnassigned;
 
-  async function assign(person) {
-    setBusyId(person.id);
+  function toggle(personId) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(personId)) next.delete(personId);
+      else next.add(personId);
+      return next;
+    });
+  }
+
+  async function assignSelected() {
+    setAssigning(true);
     setError(null);
     try {
-      await api.people.update(person.id, { place_id: placeId });
+      await Promise.all([...selected].map((id) => api.people.update(id, { place_id: placeId })));
       onAssigned?.();
       onClose();
     } catch (e) {
       setError(e.message);
-      setBusyId(null);
+      setAssigning(false);
     }
   }
 
@@ -72,7 +83,7 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Assign a person{placeName ? ` to ${placeName}` : ''}</h2>
+          <h2>Assign people{placeName ? ` to ${placeName}` : ''}</h2>
           <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
@@ -89,29 +100,31 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
             <ul className="list">
               {list.map((p) => (
                 <li key={p.id} className="stack" style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
-                  <div className="row" style={{ alignItems: 'center' }}>
+                  <label className="row" style={{ alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      style={{ width: 'auto', flex: 'unset' }}
+                      checked={selected.has(p.id)}
+                      onChange={() => toggle(p.id)}
+                      disabled={assigning}
+                      title={`Link ${p.name} to ${placeName || 'this place'}${p.place_name ? ` (moves them from ${p.place_name})` : ''}`}
+                    />
                     <div>
                       <strong>{p.name}</strong>
                       {p.title && <span className="tiny muted"> · {p.title}</span>}
                       <div className="tiny muted">{p.place_name ? `Currently at ${p.place_name}` : 'Unassigned'}</div>
                     </div>
-                    <Button
-                      size="small"
-                      style={{ flex: 'unset' }}
-                      title={`Link ${p.name} to ${placeName || 'this place'}${p.place_name ? ` (moves them from ${p.place_name})` : ''}`}
-                      onClick={() => assign(p)}
-                      disabled={busyId === p.id}
-                    >
-                      {busyId === p.id ? 'Assigning…' : 'Assign here'}
-                    </Button>
-                  </div>
+                  </label>
                 </li>
               ))}
             </ul>
           )}
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <Button variant="secondary" onClick={onClose} disabled={assigning}>Cancel</Button>
+          <Button onClick={assignSelected} disabled={selected.size === 0 || assigning}>
+            {assigning ? 'Assigning…' : `Assign ${selected.size} ${selected.size === 1 ? 'person' : 'people'}`}
+          </Button>
         </div>
       </div>
     </div>

@@ -59,11 +59,11 @@ function decorate(p) {
 }
 
 // GET /api/places — searchable / filterable list with last-visit + contact info.
-// Query params: search, category, tier, city, zip, neverVisited=1,
+// Query params: search, category, tier, region, neverVisited=1,
 // needsAttention=1 (referred before but nothing in the last 90 days).
 router.get('/', async (req, res, next) => {
   try {
-    const { search, category, tier, city, zip, neverVisited, needsAttention } = req.query;
+    const { search, category, tier, region, neverVisited, needsAttention } = req.query;
 
     // Subquery: last *completed* visit per place. A visit that's only planned
     // (on today's route but not yet done) must not count as a real visit.
@@ -94,8 +94,7 @@ router.get('/', async (req, res, next) => {
     }
     if (category) query.where('p.category', category);
     if (tier) query.where('p.tier', Number(tier));
-    if (city) query.where('p.city', city);
-    if (zip) query.where('p.zip', zip);
+    if (region) query.where('p.region', region);
     if (neverVisited === '1' || neverVisited === 'true') query.whereNull('lv.last_visit_date');
 
     query.orderBy('p.priority_score', 'desc').orderBy('p.name', 'asc');
@@ -138,15 +137,14 @@ router.get('/', async (req, res, next) => {
 });
 
 // GET /api/places/meta/filters — distinct values for the search screen's
-// filter dropdowns (category/city/zip). Tiers are always just 1/2/3.
+// filter dropdowns (category/region). Tiers are always just 1/2/3.
 router.get('/meta/filters', async (req, res, next) => {
   try {
-    const [categories, cities, zips] = await Promise.all([
+    const [categories, regions] = await Promise.all([
       knex('places').distinct('category').whereNotNull('category').orderBy('category').pluck('category'),
-      knex('places').distinct('city').whereNotNull('city').orderBy('city').pluck('city'),
-      knex('places').distinct('zip').whereNotNull('zip').orderBy('zip').pluck('zip'),
+      knex('places').distinct('region').whereNotNull('region').orderBy('region').pluck('region'),
     ]);
-    res.json({ categories, cities, zips, tiers: [1, 2, 3] });
+    res.json({ categories, regions, tiers: [1, 2, 3] });
   } catch (err) {
     next(err);
   }

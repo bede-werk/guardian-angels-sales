@@ -9,8 +9,8 @@ import PlaceModal from './PlaceModal';
 // Searchable / filterable place directory with last-visit + contact info.
 // Clicking any row opens that place's full detail (PlaceDetail.jsx).
 export default function Places({ userId }) {
-  const [filters, setFilters] = useState({ categories: [], cities: [], zips: [], tiers: [] }); // dropdown options, loaded once
-  const [q, setQ] = useState({ search: '', category: '', tier: '', city: '', zip: '', neverVisited: '', needsAttention: '' }); // current filter values
+  const [filters, setFilters] = useState({ categories: [], regions: [], tiers: [] }); // dropdown options, loaded once
+  const [q, setQ] = useState({ search: '', category: '', tier: '', region: '', neverVisited: '', needsAttention: '' }); // current filter values
   const [rows, setRows] = useState([]); // the filtered place list from the API
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null); // place id whose detail modal is open, if any
@@ -66,17 +66,10 @@ export default function Places({ userId }) {
               </select>
             </div>
             <div>
-              <label className="field">City</label>
-              <select value={q.city} onChange={set('city')}>
+              <label className="field">Region</label>
+              <select value={q.region} onChange={set('region')}>
                 <option value="">All</option>
-                {filters.cities.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="field">Zip</label>
-              <select value={q.zip} onChange={set('zip')}>
-                <option value="">All</option>
-                {filters.zips.map((z) => <option key={z} value={z}>{z}</option>)}
+                {filters.regions.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div style={{ flex: 'unset' }}>
