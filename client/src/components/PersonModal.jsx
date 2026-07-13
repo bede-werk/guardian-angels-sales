@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { api, ROLE_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
+import DuplicateWarning from './ui/DuplicateWarning';
+import useDuplicateMatches from '../hooks/useDuplicateMatches';
 
 // Create or edit a person. `person` present = editing (form is pre-filled from
 // it); absent = creating a brand-new one from a blank form.
@@ -25,6 +27,13 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
   const [error, setError] = useState(null);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value })); // wires a text input/select to `form`
+
+  // Only warn on create — editing an existing person will always "match" itself.
+  const duplicateMatches = useDuplicateMatches(
+    form.name,
+    (q) => api.people.list({ search: q }),
+    { enabled: !person }
+  );
 
   // PATCH if editing an existing person, POST if creating a new one.
   async function save() {
@@ -79,6 +88,12 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
               <input value={form.title} onChange={set('title')} />
             </div>
           </div>
+
+          <DuplicateWarning
+            matches={duplicateMatches}
+            label="Similar person"
+            renderMatch={(p) => `${p.name}${p.title ? ` — ${p.title}` : ''}${p.place_name ? ` at ${p.place_name}` : ' · unassigned'}`}
+          />
 
           <div className="row">
             <div>

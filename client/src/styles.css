@@ -302,6 +302,8 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .tab:not(.active) .count { background: var(--grey-tint-2); color: var(--text); }
 
 .error-banner { background: var(--mauve-tint-1); color: var(--mauve); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
+.warning-banner { background: var(--mauve-tint-1); color: var(--text); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
+.warning-banner strong { color: var(--mauve); }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
 
 /* Auth landing page — Login.jsx, the pick-a-name-then-password screen */

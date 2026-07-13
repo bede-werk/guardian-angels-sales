@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, formatDate } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import DuplicateWarning from './ui/DuplicateWarning';
+import useDuplicateMatches from '../hooks/useDuplicateMatches';
 
 // Searchable place picker used inside a referrer's card: type a few
 // characters, pick a matching place from the dropdown, calls onPick(place).
@@ -61,6 +63,8 @@ function CreatePlaceModal({ referrer, categories, onClose, onCreate }) {
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const duplicateMatches = useDuplicateMatches(form.name, (q) => api.places({ search: q }));
+
   async function save() {
     setSaving(true);
     try {
@@ -83,6 +87,13 @@ function CreatePlaceModal({ referrer, categories, onClose, onCreate }) {
             <label className="field">Name</label>
             <input value={form.name} onChange={set('name')} />
           </div>
+
+          <DuplicateWarning
+            matches={duplicateMatches}
+            label="Similar place"
+            renderMatch={(p) => `${p.name}${p.city ? ` — ${p.city}${p.zip ? ` ${p.zip}` : ''}` : ''}${p.category ? ` · ${p.category}` : ''}`}
+          />
+
           <div className="row">
             <div>
               <label className="field">Category</label>

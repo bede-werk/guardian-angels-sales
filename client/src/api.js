@@ -60,7 +60,7 @@ export const api = {
     return request(`/places${q ? `?${q}` : ''}`);
   },
   place: (id) => request(`/places/${id}`),
-  filters: () => request('/places/meta/filters'), // distinct categories/cities/zips for the filter dropdowns
+  filters: () => request('/places/meta/filters'), // distinct categories/regions for the filter dropdowns
   createPlace: (body) => request('/places', { method: 'POST', body }),
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
