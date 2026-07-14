@@ -2,7 +2,7 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const config = require('../config/driveTime');
 const visitTypesConfig = require('../config/visitTypes');
-const { haversineMiles, speedForRoadMiles, estimateDriveMinutes, timeBlockMinutes, resolveVisitType, visitDurationMinutes, packTimeBlock } = require('./driveTime');
+const { haversineMiles, speedForRoadMiles, estimateDriveMinutes, timeBlockMinutes, resolveVisitType, visitDurationMinutes, packTimeBlock, packOptimizedTimeBlock } = require('./driveTime');
 
 // Lincoln, NE reference points, roughly downtown / east / southwest, for
 // tests that want "real-shaped" coordinates rather than synthetic ones.
@@ -266,5 +266,48 @@ describe('packTimeBlock', () => {
 
     assert.equal(dropInResult.stops.length, 3, 'all three drop-ins should fit in a budget sized exactly for three drop-ins');
     assert.ok(workingVisitResult.stops.length < 3, 'the same budget should not fit three longer working visits');
+  });
+});
+
+describe('packOptimizedTimeBlock', () => {
+  function stop(id, coords, overrides = {}) {
+    return { id, ...coords, ...overrides };
+  }
+
+  test('uses legMinutes by position instead of estimating drive time', () => {
+    const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN)];
+    const result = packOptimizedTimeBlock(stops, [11, 22], { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
+
+    assert.equal(result.stops[0].driveMinutes, 11, 'first leg is start -> stops[0]');
+    assert.equal(result.stops[1].driveMinutes, 22, 'second leg is stops[0] -> stops[1]');
+  });
+
+  test('stops packing once the next stop would exceed the budget, same trim rule as packTimeBlock', () => {
+    const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN)];
+    const firstBlock = timeBlockMinutes({
+      driveMinutes: 10,
+      visitMinutes: visitTypesConfig.VISIT_TYPES.working_visit.minutes,
+      prepMinutes: visitTypesConfig.PREP_MINUTES,
+      dataEntryMinutes: visitTypesConfig.DATA_ENTRY_MINUTES,
+    });
+
+    const result = packOptimizedTimeBlock(stops, [10, 500], { start: DOWNTOWN, budgetMinutes: firstBlock, defaultVisitType: 'working_visit' });
+
+    assert.equal(result.stops.length, 1);
+    assert.equal(result.stops[0].id, 'a');
+  });
+
+  test('does not drop stops missing lat/lng — assumes the caller already filtered before optimizing', () => {
+    const stops = [stop('a', { lat: null, lng: null })];
+    const result = packOptimizedTimeBlock(stops, [10], { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
+    assert.equal(result.stops.length, 1, 'unlike packTimeBlock, this function trusts its input is already geocoded');
+  });
+
+  test('shares visit-type/prep/data-entry handling with packTimeBlock', () => {
+    const stops = [stop('a', EAST_LINCOLN, { visitType: 'presentation' })];
+    const result = packOptimizedTimeBlock(stops, [10], { start: DOWNTOWN, budgetMinutes: 1000 });
+    assert.equal(result.stops[0].visitMinutes, visitTypesConfig.VISIT_TYPES.presentation.minutes);
+    assert.equal(result.stops[0].prepMinutes, visitTypesConfig.PREP_MINUTES);
+    assert.equal(result.stops[0].dataEntryMinutes, visitTypesConfig.DATA_ENTRY_MINUTES);
   });
 });

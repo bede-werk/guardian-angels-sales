@@ -82,14 +82,15 @@ function visitDurationMinutes(visitType, config = {}) {
   return entry.minutes;
 }
 
-// Greedily packs already-ordered stops into a fixed time budget. This does
-// not reorder or choose stops — that's the future day generator's job (zone
-// assignment + proximity sequencing); this function only answers "given this
-// sequence, how many fit and what does the day look like." Drive time is
-// chained stop-to-stop (each stop's origin is the previous stop, or `start`
-// for the first one), and packing stops at the first stop that would blow
-// the budget rather than skipping ahead to a shorter one later, since
-// skipping would break the caller's intended sequencing.
+// Shared packing loop behind packTimeBlock and packOptimizedTimeBlock: walks
+// `stops` in the given order, accumulating each one's time block until the
+// budget would be exceeded — breaking at that first stop rather than
+// skipping ahead to a shorter one later, since skipping would break the
+// caller's intended sequencing. `getDriveMinutes(from, stop, index)`
+// abstracts over the only real difference between the two callers (a live
+// haversine estimate vs. a precomputed real-routing leg time); everything
+// else — visit-type resolution, prep/data-entry overhead, budget trimming —
+// is identical between them.
 //
 // Each stop's visit duration comes from its own visitType if set (e.g. a
 // place's default_visit_type, or a visit's explicit choice), falling back to
@@ -98,20 +99,16 @@ function visitDurationMinutes(visitType, config = {}) {
 // Prep and data-entry time (config/visitTypes.js's PREP_MINUTES/
 // DATA_ENTRY_MINUTES) are flat per-stop overhead, same for every visit type,
 // unlike the visit duration itself.
-//
-// Stops missing lat/lng (a geocoding gap) are skipped entirely — there's no
-// honest drive-time estimate to/from an unknown location.
-function packTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveConfig, visitTypesConfig } = {}) {
+function packStops(stops, getDriveMinutes, { start, budgetMinutes, defaultVisitType, visitTypesConfig } = {}) {
   const packed = [];
   let totalMinutes = 0;
   let from = start;
   const prepMinutes = visitTypesConfig?.PREP_MINUTES ?? defaultVisitTypesConfig.PREP_MINUTES;
   const dataEntryMinutes = visitTypesConfig?.DATA_ENTRY_MINUTES ?? defaultVisitTypesConfig.DATA_ENTRY_MINUTES;
 
-  for (const stop of stops) {
-    if (stop.lat == null || stop.lng == null) continue;
-
-    const driveMinutes = estimateDriveMinutes(from, stop, driveConfig);
+  for (let i = 0; i < stops.length; i++) {
+    const stop = stops[i];
+    const driveMinutes = getDriveMinutes(from, stop, i);
     const visitType = resolveVisitType(stop.visitType ?? defaultVisitType, visitTypesConfig);
     const visitMinutes = visitDurationMinutes(visitType, visitTypesConfig);
     const blockMinutes = timeBlockMinutes({ driveMinutes, visitMinutes, prepMinutes, dataEntryMinutes });
@@ -126,6 +123,45 @@ function packTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveCon
   return { stops: packed, totalMinutes, remainingMinutes: budgetMinutes - totalMinutes };
 }
 
+// Greedily packs already-ordered stops into a fixed time budget using the
+// haversine drive-time estimate. This does not reorder or choose stops —
+// that's the caller's job (zone assignment + rank order, or
+// services/routeOptimizer.js for a real-routing order); this function only
+// answers "given this sequence, how many fit and what does the day look
+// like." This is also the offline fallback when routeOptimizer.js's OSRM
+// call fails or times out — see scheduleGenerator.js's fillDayFromZone.
+//
+// A stop with no lat/lng is a geocoding gap — there's no honest drive-time
+// estimate to/from an unknown location. Exported so every caller that needs
+// to pre-filter a candidate pool (e.g. scheduleGenerator.js, before handing
+// stops to services/routeOptimizer.js) shares this exact definition instead
+// of each re-deriving it inline.
+function isGeocoded(stop) {
+  return stop.lat != null && stop.lng != null;
+}
+
+// Stops missing lat/lng (a geocoding gap) are dropped before packing — see
+// isGeocoded().
+function packTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveConfig, visitTypesConfig } = {}) {
+  const geocoded = stops.filter(isGeocoded);
+  return packStops(geocoded, (from, stop) => estimateDriveMinutes(from, stop, driveConfig), {
+    start,
+    budgetMinutes,
+    defaultVisitType,
+    visitTypesConfig,
+  });
+}
+
+// Packs stops already ordered and timed by services/routeOptimizer.js's
+// optimizeRoute(): legMinutes[i] is the real OSRM drive time from stops[i-1]
+// (or `start` for i=0) to stops[i]. Same budget-trim semantics as
+// packTimeBlock — only the drive-time source differs. Stops here are assumed
+// already geocoded, since they had to have lat/lng to reach the optimizer in
+// the first place.
+function packOptimizedTimeBlock(stops, legMinutes, { start, budgetMinutes, defaultVisitType, visitTypesConfig } = {}) {
+  return packStops(stops, (_from, _stop, i) => legMinutes[i], { start, budgetMinutes, defaultVisitType, visitTypesConfig });
+}
+
 module.exports = {
   haversineMiles,
   speedForRoadMiles,
@@ -133,5 +169,7 @@ module.exports = {
   timeBlockMinutes,
   resolveVisitType,
   visitDurationMinutes,
+  isGeocoded,
   packTimeBlock,
+  packOptimizedTimeBlock,
 };
