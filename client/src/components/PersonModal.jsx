@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { api, ROLE_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
-import DuplicateWarning from './ui/DuplicateWarning';
-import useDuplicateMatches from '../hooks/useDuplicateMatches';
+import ConfirmDialog from './ui/ConfirmDialog';
 
 // Create or edit a person. `person` present = editing (form is pre-filled from
 // it); absent = creating a brand-new one from a blank form.
@@ -25,22 +24,39 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null — see ConfirmDialog
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value })); // wires a text input/select to `form`
 
-  // Only warn on create — editing an existing person will always "match" itself.
-  const duplicateMatches = useDuplicateMatches(
-    form.name,
-    (q) => api.people.list({ search: q }),
-    { enabled: !person }
-  );
-
-  // PATCH if editing an existing person, POST if creating a new one.
+  // The duplicate-name warning is fetched fresh right here (never from a
+  // debounced background hook, which could still be mid-flight and stale at
+  // the moment of clicking) and pops up when Save is actually clicked, not
+  // while the rep is still typing. Only warn on create — editing an existing
+  // person will always "match" itself.
   async function save() {
     if (!isCompletePhone(form.phone)) {
       setError('Phone must be a complete number, e.g. (402) 555-1234');
       return;
     }
+    if (!person && form.name.trim().length >= 3) {
+      setSaving(true);
+      const matches = await api.people.list({ search: form.name.trim() });
+      setSaving(false);
+      if (matches.length > 0) {
+        const names = matches.slice(0, 5).map((m) => m.name).join(', ');
+        setConfirmPrompt({
+          issues: [{ title: 'Possible duplicate', detail: `A similar person may already be on file: ${names}.` }],
+          onConfirm: () => { setConfirmPrompt(null); finishSave(); },
+        });
+        return;
+      }
+    }
+    finishSave();
+  }
+
+  // PATCH if editing an existing person, POST if creating a new one. Runs
+  // after the duplicate-name check (if any) has already been cleared.
+  async function finishSave() {
     setSaving(true);
     setError(null);
     try {
@@ -89,12 +105,6 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
             </div>
           </div>
 
-          <DuplicateWarning
-            matches={duplicateMatches}
-            label="Similar person"
-            renderMatch={(p) => `${p.name}${p.title ? ` — ${p.title}` : ''}${p.place_name ? ` at ${p.place_name}` : ' · unassigned'}`}
-          />
-
           <div className="row">
             <div>
               <label className="field">Role</label>
@@ -140,6 +150,13 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
             {saving ? 'Saving…' : person ? 'Save changes' : 'Add person'}
           </Button>
         </div>
+        {confirmPrompt && (
+          <ConfirmDialog
+            issues={confirmPrompt.issues}
+            onConfirm={confirmPrompt.onConfirm}
+            onCancel={() => setConfirmPrompt(null)}
+          />
+        )}
       </div>
     </div>
   );
