@@ -187,8 +187,8 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.o-no_answer { background: var(--grey-tint-1); color: var(--muted); }
 .badge.o-left_materials { background: var(--grey-tint-1); color: var(--grey-dark); }
 
-/* Category chips: generated blue/teal tint ramp, mauve deliberately excluded */
-.cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+/* Category chips: flat neutral style, same for every category */
+.cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--grey-tint-1); color: var(--grey-dark); }
 
 /* Attention flag (overdue / cooling / never-visited) — a mauve left border,
    applied to rows in Dashboard's "Needs attention" list and never-visited
