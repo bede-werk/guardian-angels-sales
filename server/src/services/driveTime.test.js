@@ -2,7 +2,7 @@ const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const config = require('../config/driveTime');
 const visitTypesConfig = require('../config/visitTypes');
-const { haversineMiles, speedForRoadMiles, estimateDriveMinutes, timeBlockMinutes, resolveVisitType, visitDurationMinutes, packTimeBlock, packOptimizedTimeBlock } = require('./driveTime');
+const { haversineMiles, speedForRoadMiles, estimateDriveMinutes, timeBlockMinutes, resolveVisitType, visitDurationMinutes, packTimeBlock, packOptimizedTimeBlock, evaluateTimeBlock, evaluateOptimizedTimeBlock } = require('./driveTime');
 
 // Lincoln, NE reference points, roughly downtown / east / southwest, for
 // tests that want "real-shaped" coordinates rather than synthetic ones.
@@ -309,5 +309,91 @@ describe('packOptimizedTimeBlock', () => {
     assert.equal(result.stops[0].visitMinutes, visitTypesConfig.VISIT_TYPES.presentation.minutes);
     assert.equal(result.stops[0].prepMinutes, visitTypesConfig.PREP_MINUTES);
     assert.equal(result.stops[0].dataEntryMinutes, visitTypesConfig.DATA_ENTRY_MINUTES);
+  });
+});
+
+describe('evaluateTimeBlock', () => {
+  function stop(id, coords, overrides = {}) {
+    return { id, ...coords, ...overrides };
+  }
+
+  test('never drops a stop, even one that busts the budget — unlike packTimeBlock', () => {
+    const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN), stop('c', EAST_LINCOLN)];
+    const tightBudget = timeBlockMinutes({
+      driveMinutes: estimateDriveMinutes(DOWNTOWN, EAST_LINCOLN, {}),
+      visitMinutes: visitTypesConfig.VISIT_TYPES.working_visit.minutes,
+      prepMinutes: visitTypesConfig.PREP_MINUTES,
+      dataEntryMinutes: visitTypesConfig.DATA_ENTRY_MINUTES,
+    });
+
+    const packed = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: tightBudget, defaultVisitType: 'working_visit' });
+    const evaluated = evaluateTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: tightBudget, defaultVisitType: 'working_visit' });
+
+    assert.equal(packed.stops.length, 1, 'sanity check: this budget really does trim packTimeBlock down to 1');
+    assert.equal(evaluated.stops.length, 3, 'evaluateTimeBlock keeps every stop instead of trimming');
+  });
+
+  test('flags overBudget only once the running total actually exceeds the budget', () => {
+    const stops = [stop('a', EAST_LINCOLN), stop('b', EAST_LINCOLN), stop('c', EAST_LINCOLN)];
+    const oneBlock = timeBlockMinutes({
+      driveMinutes: estimateDriveMinutes(EAST_LINCOLN, EAST_LINCOLN, {}),
+      visitMinutes: visitTypesConfig.VISIT_TYPES.working_visit.minutes,
+      prepMinutes: visitTypesConfig.PREP_MINUTES,
+      dataEntryMinutes: visitTypesConfig.DATA_ENTRY_MINUTES,
+    });
+
+    const result = evaluateTimeBlock(stops, { start: EAST_LINCOLN, budgetMinutes: oneBlock * 2, defaultVisitType: 'working_visit' });
+
+    assert.equal(result.stops[0].overBudget, false);
+    assert.equal(result.stops[1].overBudget, false, 'exactly at budget is not over budget');
+    assert.equal(result.stops[2].overBudget, true, 'the third block pushes the running total past the budget');
+  });
+
+  test('remainingMinutes goes negative to report real overage instead of floor(0) hiding it', () => {
+    const stops = [stop('a', EAST_LINCOLN)];
+    const tinyBudget = 1; // guaranteed to be blown by any real stop
+    const result = evaluateTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: tinyBudget, defaultVisitType: 'working_visit' });
+
+    assert.ok(result.remainingMinutes < 0, `expected negative remainingMinutes to signal overage, got ${result.remainingMinutes}`);
+    assert.equal(result.remainingMinutes, tinyBudget - result.totalMinutes);
+    assert.equal(result.stops[0].overBudget, true);
+  });
+
+  test('packTimeBlock/packOptimizedTimeBlock output is unaffected — no overBudget field, still trims', () => {
+    const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN)];
+    const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
+    assert.equal(result.stops[0].overBudget, undefined);
+  });
+
+  test('skips stops missing lat/lng, same as packTimeBlock', () => {
+    const stops = [stop('geocoded', EAST_LINCOLN), stop('ungeocoded', { lat: null, lng: null })];
+    const result = evaluateTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
+    assert.equal(result.stops.length, 1);
+    assert.equal(result.stops[0].id, 'geocoded');
+  });
+});
+
+describe('evaluateOptimizedTimeBlock', () => {
+  function stop(id, coords, overrides = {}) {
+    return { id, ...coords, ...overrides };
+  }
+
+  test('uses legMinutes by position, never drops a stop', () => {
+    const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN), stop('c', EAST_LINCOLN)];
+    const result = evaluateOptimizedTimeBlock(stops, [10, 10, 500], { start: DOWNTOWN, budgetMinutes: 60, defaultVisitType: 'working_visit' });
+
+    assert.equal(result.stops.length, 3);
+    assert.equal(result.stops[0].driveMinutes, 10);
+    assert.equal(result.stops[1].driveMinutes, 10);
+    assert.equal(result.stops[2].driveMinutes, 500);
+    assert.equal(result.stops[2].overBudget, true);
+  });
+
+  test('respects the exact given order (no resequencing) — legMinutes maps 1:1 to input position', () => {
+    const stops = [stop('first', EAST_LINCOLN), stop('second', SOUTHWEST_LINCOLN)];
+    const result = evaluateOptimizedTimeBlock(stops, [5, 40], { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
+
+    assert.equal(result.stops[0].id, 'first');
+    assert.equal(result.stops[1].id, 'second');
   });
 });

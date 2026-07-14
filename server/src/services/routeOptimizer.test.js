@@ -1,7 +1,7 @@
 const { test, describe, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const driveTimeConfig = require('../config/driveTime');
-const { optimizeRoute } = require('./routeOptimizer');
+const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 
 const DOWNTOWN = { lat: 40.8136, lng: -96.7026 };
 const EAST_LINCOLN = { lat: 40.8140, lng: -96.6200 };
@@ -145,5 +145,110 @@ describe('optimizeRoute', () => {
     );
 
     assert.equal(result.legMinutes[0], 15, 'a configured MIN_DRIVE_MINUTES override should reach the optimized path, not just the haversine fallback');
+  });
+});
+
+describe('getRouteLegMinutes', () => {
+  test('short-circuits on an empty stop list without calling fetch', async () => {
+    let called = false;
+    global.fetch = async () => { called = true; return okResponse({}); };
+
+    const result = await getRouteLegMinutes({ start: DOWNTOWN, stops: [] });
+
+    assert.deepEqual(result, { legMinutes: [] });
+    assert.equal(called, false);
+  });
+
+  test('chains leg minutes in the exact given order — no resequencing', async () => {
+    const stopA = { place_id: 'a', ...EAST_LINCOLN };
+    const stopB = { place_id: 'b', ...SOUTHWEST_LINCOLN };
+
+    global.fetch = async () => okResponse({
+      code: 'Ok',
+      routes: [{ legs: [{ duration: 600 }, { duration: 300 }] }], // start->a: 10min, a->b: 5min
+    });
+
+    const result = await getRouteLegMinutes({ start: DOWNTOWN, stops: [stopA, stopB] });
+
+    assert.deepEqual(result.legMinutes, [10, 5]);
+  });
+
+  test('floors leg minutes at MIN_DRIVE_MINUTES, same as optimizeRoute', async () => {
+    global.fetch = async () => okResponse({
+      code: 'Ok',
+      routes: [{ legs: [{ duration: 1 }] }], // ~0.02min, effectively colocated
+    });
+
+    const result = await getRouteLegMinutes({ start: DOWNTOWN, stops: [{ place_id: 'a', ...EAST_LINCOLN }] });
+
+    assert.equal(result.legMinutes[0], driveTimeConfig.MIN_DRIVE_MINUTES);
+  });
+
+  test('returns null on a non-ok HTTP response', async () => {
+    global.fetch = async () => ({ ok: false, json: async () => ({}) });
+    const result = await getRouteLegMinutes({ start: DOWNTOWN, stops: [{ place_id: 'a', ...EAST_LINCOLN }] });
+    assert.equal(result, null);
+  });
+
+  test('returns null when OSRM reports a non-Ok code', async () => {
+    global.fetch = async () => okResponse({ code: 'NoRoute' });
+    const result = await getRouteLegMinutes({ start: DOWNTOWN, stops: [{ place_id: 'a', ...EAST_LINCOLN }] });
+    assert.equal(result, null);
+  });
+
+  test('returns null rather than throwing on a network error', async () => {
+    global.fetch = async () => { throw new Error('network unreachable'); };
+    const result = await getRouteLegMinutes({ start: DOWNTOWN, stops: [{ place_id: 'a', ...EAST_LINCOLN }] });
+    assert.equal(result, null);
+  });
+
+  test('returns null rather than hanging when the request exceeds TIMEOUT_MS', async () => {
+    global.fetch = (url, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('aborted')));
+    });
+
+    const result = await getRouteLegMinutes(
+      { start: DOWNTOWN, stops: [{ place_id: 'a', ...EAST_LINCOLN }] },
+      { TIMEOUT_MS: 10 }
+    );
+
+    assert.equal(result, null);
+  });
+
+  test('returns null rather than trusting a legs array shorter than the requested stop count', async () => {
+    global.fetch = async () => okResponse({
+      code: 'Ok',
+      routes: [{ legs: [{ duration: 300 }] }], // only 1 leg for 2 requested stops
+    });
+
+    const result = await getRouteLegMinutes({ start: DOWNTOWN, stops: [{ place_id: 'a', ...EAST_LINCOLN }, { place_id: 'b', ...SOUTHWEST_LINCOLN }] });
+
+    assert.equal(result, null);
+  });
+
+  test('returns null rather than propagating a non-numeric leg duration', async () => {
+    global.fetch = async () => okResponse({
+      code: 'Ok',
+      routes: [{ legs: [{ duration: null }] }],
+    });
+
+    const result = await getRouteLegMinutes({ start: DOWNTOWN, stops: [{ place_id: 'a', ...EAST_LINCOLN }] });
+
+    assert.equal(result, null, 'a non-numeric duration must not silently become NaN in legMinutes');
+  });
+
+  test('honors a driveConfig override for MIN_DRIVE_MINUTES', async () => {
+    global.fetch = async () => okResponse({
+      code: 'Ok',
+      routes: [{ legs: [{ duration: 1 }] }],
+    });
+
+    const result = await getRouteLegMinutes(
+      { start: DOWNTOWN, stops: [{ place_id: 'a', ...EAST_LINCOLN }] },
+      {},
+      { MIN_DRIVE_MINUTES: 15 }
+    );
+
+    assert.equal(result.legMinutes[0], 15);
   });
 });

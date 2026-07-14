@@ -81,4 +81,49 @@ async function optimizeRoute({ start, stops }, config = {}, driveConfig = {}) {
   }
 }
 
-module.exports = { optimizeRoute };
+// Real per-leg drive minutes for `stops` in the EXACT order given — unlike
+// optimizeRoute() above, this never resequences. Built for the phase 6
+// live-edit recalculation loop (driveTime.js's evaluateOptimizedTimeBlock):
+// once a user has reordered/edited a draft day, recalculating its time
+// budget must respect whatever order they just set, never silently
+// reshuffle it back to "optimal" — that would be exactly the auto-reshuffle
+// behavior the interaction model forbids. Calls OSRM's /route endpoint
+// (fixed-order multi-waypoint routing), not /trip (which solves an ordering
+// problem we don't want solved here).
+//
+// Returns { legMinutes } — legMinutes[0] is start -> stops[0], legMinutes[i]
+// is stops[i-1] -> stops[i] — or null on any failure (network, timeout,
+// malformed response), same never-throws/fall-back-to-haversine discipline
+// as optimizeRoute().
+async function getRouteLegMinutes({ start, stops }, config = {}, driveConfig = {}) {
+  if (stops.length === 0) return { legMinutes: [] };
+
+  const cfg = { ...defaultConfig, ...config };
+  const drive = { ...defaultDriveConfig, ...driveConfig };
+  const points = [start, ...stops];
+  const coordinates = points.map((p) => `${p.lng},${p.lat}`).join(';');
+  const url = `${cfg.OSRM_BASE_URL}/route/v1/driving/${coordinates}?overview=false&steps=false`;
+
+  try {
+    const res = await fetchWithTimeout(url, { timeoutMs: cfg.TIMEOUT_MS });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (data.code !== 'Ok' || !data.routes?.[0]?.legs) return null;
+
+    const legs = data.routes[0].legs;
+    // Same malformed-but-200-OK guard as optimizeRoute() — a legs array of
+    // the wrong length, or any non-finite duration, must never silently
+    // propagate NaN into the budget math downstream.
+    if (legs.length !== stops.length) return null;
+    if (legs.some((leg) => !Number.isFinite(leg.duration))) return null;
+
+    const legMinutes = legs.map((leg) => Math.max(drive.MIN_DRIVE_MINUTES, Math.round(leg.duration / 60)));
+    return { legMinutes };
+  } catch (err) {
+    console.error('routeOptimizer.getRouteLegMinutes failed, falling back to the haversine estimate —', err.message);
+    return null;
+  }
+}
+
+module.exports = { optimizeRoute, getRouteLegMinutes };

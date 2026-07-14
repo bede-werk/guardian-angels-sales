@@ -82,15 +82,25 @@ function visitDurationMinutes(visitType, config = {}) {
   return entry.minutes;
 }
 
-// Shared packing loop behind packTimeBlock and packOptimizedTimeBlock: walks
-// `stops` in the given order, accumulating each one's time block until the
-// budget would be exceeded — breaking at that first stop rather than
-// skipping ahead to a shorter one later, since skipping would break the
-// caller's intended sequencing. `getDriveMinutes(from, stop, index)`
-// abstracts over the only real difference between the two callers (a live
+// Shared packing loop behind packTimeBlock/packOptimizedTimeBlock (trim-to-
+// budget) and evaluateTimeBlock/evaluateOptimizedTimeBlock (never-drop, for
+// the live-edit recalculation loop — see phase 6 in ROUTEPLANNER_PROGRESS.md):
+// walks `stops` in the given order, accumulating each one's time block.
+// `getDriveMinutes(from, stop, index)` abstracts over the only real
+// difference between the trim/never-drop pairs' own two callers each (a live
 // haversine estimate vs. a precomputed real-routing leg time); everything
-// else — visit-type resolution, prep/data-entry overhead, budget trimming —
-// is identical between them.
+// else — visit-type resolution, prep/data-entry overhead — is identical
+// across all four exported functions.
+//
+// `neverDrop: false` (the default — packTimeBlock/packOptimizedTimeBlock)
+// breaks at the first budget-busting stop rather than skipping ahead to a
+// shorter one later, since skipping would break the caller's intended
+// sequencing. `neverDrop: true` (evaluateTimeBlock/evaluateOptimizedTimeBlock)
+// never breaks — every stop given is returned, tagged with
+// `overBudget: totalMinutes > budgetMinutes`, and `remainingMinutes` can go
+// negative to represent real overage. This is what lets a live-edit
+// recalculation flag an over-budget day without silently vanishing whichever
+// stop the user's own edit pushed past the limit.
 //
 // Each stop's visit duration comes from its own visitType if set (e.g. a
 // place's default_visit_type, or a visit's explicit choice), falling back to
@@ -99,7 +109,7 @@ function visitDurationMinutes(visitType, config = {}) {
 // Prep and data-entry time (config/visitTypes.js's PREP_MINUTES/
 // DATA_ENTRY_MINUTES) are flat per-stop overhead, same for every visit type,
 // unlike the visit duration itself.
-function packStops(stops, getDriveMinutes, { start, budgetMinutes, defaultVisitType, visitTypesConfig } = {}) {
+function packStops(stops, getDriveMinutes, { start, budgetMinutes, defaultVisitType, visitTypesConfig, neverDrop = false } = {}) {
   const packed = [];
   let totalMinutes = 0;
   let from = start;
@@ -113,10 +123,12 @@ function packStops(stops, getDriveMinutes, { start, budgetMinutes, defaultVisitT
     const visitMinutes = visitDurationMinutes(visitType, visitTypesConfig);
     const blockMinutes = timeBlockMinutes({ driveMinutes, visitMinutes, prepMinutes, dataEntryMinutes });
 
-    if (totalMinutes + blockMinutes > budgetMinutes) break;
+    if (totalMinutes + blockMinutes > budgetMinutes && !neverDrop) break;
 
     totalMinutes += blockMinutes;
-    packed.push({ ...stop, visitType, driveMinutes, prepMinutes, visitMinutes, dataEntryMinutes, blockMinutes, runningTotalMinutes: totalMinutes });
+    const packedStop = { ...stop, visitType, driveMinutes, prepMinutes, visitMinutes, dataEntryMinutes, blockMinutes, runningTotalMinutes: totalMinutes };
+    if (neverDrop) packedStop.overBudget = totalMinutes > budgetMinutes;
+    packed.push(packedStop);
     from = stop;
   }
 
@@ -162,6 +174,34 @@ function packOptimizedTimeBlock(stops, legMinutes, { start, budgetMinutes, defau
   return packStops(stops, (_from, _stop, i) => legMinutes[i], { start, budgetMinutes, defaultVisitType, visitTypesConfig });
 }
 
+// Never-drop sibling of packTimeBlock, for the live-edit recalculation loop
+// (phase 6): given a day's stops in whatever order the user currently has
+// them, returns every one of them — annotated with its running total and an
+// `overBudget` flag — instead of truncating at the budget. Uses the same
+// haversine estimate as packTimeBlock (the fallback when a real per-leg
+// lookup isn't available). Stops missing lat/lng are dropped first, same as
+// packTimeBlock — there's no honest drive-time estimate to/from an unknown
+// location either way.
+function evaluateTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveConfig, visitTypesConfig } = {}) {
+  const geocoded = stops.filter(isGeocoded);
+  return packStops(geocoded, (from, stop) => estimateDriveMinutes(from, stop, driveConfig), {
+    start,
+    budgetMinutes,
+    defaultVisitType,
+    visitTypesConfig,
+    neverDrop: true,
+  });
+}
+
+// Never-drop sibling of packOptimizedTimeBlock: same idea as
+// evaluateTimeBlock, but legMinutes[i] is a precomputed real per-leg drive
+// time (e.g. from services/routeOptimizer.js's getRouteLegMinutes(), which
+// respects the stops' given order rather than resequencing them — exactly
+// what a live-edit recalculation needs).
+function evaluateOptimizedTimeBlock(stops, legMinutes, { start, budgetMinutes, defaultVisitType, visitTypesConfig } = {}) {
+  return packStops(stops, (_from, _stop, i) => legMinutes[i], { start, budgetMinutes, defaultVisitType, visitTypesConfig, neverDrop: true });
+}
+
 module.exports = {
   haversineMiles,
   speedForRoadMiles,
@@ -172,4 +212,6 @@ module.exports = {
   isGeocoded,
   packTimeBlock,
   packOptimizedTimeBlock,
+  evaluateTimeBlock,
+  evaluateOptimizedTimeBlock,
 };
