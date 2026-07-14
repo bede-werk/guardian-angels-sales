@@ -32,6 +32,7 @@ export default function Schedule({ date, userId }) {
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const dragIndexRef = useRef(null);
+  const [pendingVisitId, setPendingVisitId] = useState(null); // stop currently being skipped/removed (disables its row's actions)
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,12 +100,28 @@ export default function Schedule({ date, userId }) {
   }
 
   async function skip(v) {
-    await api.skipVisit(v.visit_id);
-    load();
+    if (!window.confirm(`Skip ${v.name}? It'll stay on the route, marked as skipped.`)) return;
+    setPendingVisitId(v.visit_id);
+    try {
+      await api.skipVisit(v.visit_id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPendingVisitId(null);
+    }
   }
   async function remove(v) {
-    await api.deleteVisit(v.visit_id);
-    load();
+    if (!window.confirm(`Remove ${v.name} from today's route? This can't be undone.`)) return;
+    setPendingVisitId(v.visit_id);
+    try {
+      await api.deleteVisit(v.visit_id);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPendingVisitId(null);
+    }
   }
 
   // Progress bar math: skipped stops don't count toward "active" totals, and
@@ -213,9 +230,9 @@ export default function Schedule({ date, userId }) {
                     </div>
                     <div className="actions">
                       {v.status !== 'skipped' && (
-                        <Button variant="secondary" size="small" onClick={() => skip(v)}>Skip</Button>
+                        <Button variant="secondary" size="small" onClick={() => skip(v)} disabled={pendingVisitId === v.visit_id}>Skip</Button>
                       )}
-                      <Button variant="danger" size="small" onClick={() => remove(v)} title="Remove from route">✕</Button>
+                      <Button variant="danger" size="small" onClick={() => remove(v)} disabled={pendingVisitId === v.visit_id} title="Remove from route">✕</Button>
                     </div>
                   </li>
                 ))}

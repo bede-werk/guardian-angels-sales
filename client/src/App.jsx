@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api, today, formatDate, getToken, clearToken } from './api';
 import Dashboard from './components/Dashboard';
 import Schedule from './components/Schedule';
+import PlanVisits from './components/PlanVisits';
 import Places from './components/Places';
 import People from './components/People';
 import NeedsMapping from './components/NeedsMapping';
@@ -16,6 +17,7 @@ import Button from './components/ui/Button';
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'schedule', label: "Today's Route" },
+  { id: 'planner', label: 'Plan My Visits' },
   { id: 'places', label: 'Places' },
   { id: 'people', label: 'People' },
   { id: 'mapping', label: 'Needs Mapping' },
@@ -107,6 +109,7 @@ export default function App() {
         <Dashboard date={date} userId={authUser.id} onGoToSchedule={() => setTab('schedule')} />
       )}
       {tab === 'schedule' && <Schedule date={date} userId={authUser.id} />}
+      {tab === 'planner' && <PlanVisits />}
       {tab === 'places' && <Places userId={authUser.id} />}
       {tab === 'people' && <People userId={authUser.id} />}
       {tab === 'mapping' && <NeedsMapping onChanged={refreshMappingCount} />}

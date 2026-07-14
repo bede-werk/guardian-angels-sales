@@ -13,11 +13,13 @@ const { importNotes } = require('./scripts/import-notes');
 const places = require('./routes/places');
 const visits = require('./routes/visits');
 const schedule = require('./routes/schedule');
+const scheduleDrafts = require('./routes/scheduleDrafts');
 const dashboard = require('./routes/dashboard');
 const users = require('./routes/users');
 const notesReview = require('./routes/notesReview');
 const people = require('./routes/people');
 const referrals = require('./routes/referrals');
+const geocode = require('./routes/geocode');
 const auth = require('./routes/auth');
 const requireAuth = require('./middleware/requireAuth'); // blocks a request unless it has a valid login token
 
@@ -32,17 +34,26 @@ app.get('/api/health', (req, res) => res.json({ ok: true, service: 'ga-sales-api
 // hit /api/auth/login before you have a token to prove who you are.
 app.use('/api/auth', auth);
 
-// Every other route below requires a valid login token (see middleware/requireAuth.js).
-app.use('/api/places', requireAuth, places);
-app.use('/api/visits', requireAuth, visits);
-app.use('/api/schedule', requireAuth, schedule);
-app.use('/api/dashboard', requireAuth, dashboard);
-app.use('/api/users', requireAuth, users);
-app.use('/api/notes-review', requireAuth, notesReview);
+// Every other route below requires a valid login token (see
+// middleware/requireAuth.js) — applied once here, globally, rather than
+// repeated on each individual mount below. Repeating it per-mount used to run
+// it TWICE for any request that falls through one router into another (e.g.
+// people.js's bare '/api' mount catching what places.js's '/api/places'
+// mount didn't match) — a harmless extra DB lookup, but still wasteful.
+app.use('/api', requireAuth);
+
+app.use('/api/places', places);
+app.use('/api/visits', visits);
+app.use('/api/schedule', schedule);
+app.use('/api/schedule-drafts', scheduleDrafts);
+app.use('/api/dashboard', dashboard);
+app.use('/api/users', users);
+app.use('/api/notes-review', notesReview);
 // people.js defines its own full paths (/places/:id/people, /people, /people/:id),
 // so it's mounted at the bare '/api' prefix rather than a single resource prefix.
-app.use('/api', requireAuth, people);
-app.use('/api/referrals', requireAuth, referrals);
+app.use('/api', people);
+app.use('/api/referrals', referrals);
+app.use('/api/geocode', geocode);
 
 // In production, serve the built React app so a single service can host both.
 if (process.env.NODE_ENV === 'production') {

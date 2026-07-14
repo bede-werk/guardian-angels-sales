@@ -7,8 +7,18 @@ const { priorityLabel, priorityScore, regionForPlace } = require('../services/pr
 const { geocodeAddress } = require('../services/geocoding');
 const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, referralMetricsByPlaceId, metricsFor, EMPTY_METRICS } = require('../services/referralMetrics');
+const CATEGORIES = require('../config/categories');
 
 const router = express.Router();
+
+// category is a fixed enum (config/categories.js), not free text — empty/null
+// is allowed (a place can go uncategorized), but anything provided must match
+// exactly one of the canonical values.
+function categoryError(category) {
+  if (category === undefined || category === null || category === '') return null;
+  if (!CATEGORIES.includes(category)) return `category must be one of the existing options`;
+  return null;
+}
 
 // Fields a client is allowed to set on an existing place via PATCH. (POST
 // below has its own inline handling since it also derives priority_score/region.)
@@ -22,6 +32,8 @@ router.post('/', async (req, res, next) => {
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
     const phoneError = validatePhone(phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
+    const catError = categoryError(category);
+    if (catError) return res.status(400).json({ error: catError });
     const t = Number(tier) || 3;
     const pri = !!is_priority;
     const payload = {
@@ -137,14 +149,19 @@ router.get('/', async (req, res, next) => {
 });
 
 // GET /api/places/meta/filters — distinct values for the search screen's
-// filter dropdowns (category/region). Tiers are always just 1/2/3.
+// filter dropdowns (category/region), plus the full canonical category enum
+// (allCategories, config/categories.js) for the create/edit form's picker —
+// deliberately not the same list: `categories` only shows values places
+// actually have today (so an empty filter option never appears), while
+// `allCategories` includes every valid choice even one with zero places on
+// it yet. Tiers are always just 1/2/3.
 router.get('/meta/filters', async (req, res, next) => {
   try {
     const [categories, regions] = await Promise.all([
       knex('places').distinct('category').whereNotNull('category').orderBy('category').pluck('category'),
       knex('places').distinct('region').whereNotNull('region').orderBy('region').pluck('region'),
     ]);
-    res.json({ categories, regions, tiers: [1, 2, 3] });
+    res.json({ categories, allCategories: CATEGORIES, regions, tiers: [1, 2, 3] });
   } catch (err) {
     next(err);
   }
@@ -225,6 +242,8 @@ router.patch('/:id', async (req, res, next) => {
 
     const phoneError = validatePhone(update.phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
+    const catError = categoryError(update.category);
+    if (catError) return res.status(400).json({ error: catError });
 
     // Tier/region/priority changes need the same derived fields kept in sync
     // as at creation time.

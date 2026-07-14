@@ -50,11 +50,12 @@ explicitly asking us back is exactly what the floor exists to protect
 against overriding) → otherwise the floor/snooze/locked-elsewhere guards
 apply normally.
 
-## Done, uncommitted (phase 3)
+## Done and committed (phase 3) — `bda0ee8`, `5a104a2`
 
 Drive-time estimator + time-block packing + visit types, pure/tested, no DB
 wiring beyond one migration and one sanity-check readout. 42 tests passing
-(`npm test` from `server/`).
+(`npm test` from `server/`) at the time this was written; see the visit-type
+duration update below and phase 5 for what changed since.
 
 - `server/src/config/driveTime.js` — distance-banded speed constants
   (`SHORT_BAND_MAX_MILES`/`MEDIUM_BAND_MAX_MILES` boundaries at 1/5 road
@@ -63,10 +64,16 @@ wiring beyond one migration and one sanity-check readout. 42 tests passing
   from 5 at Bede's request; note overhead alone already exceeds it under
   default config, so the floor can't currently bind — that's fine, overhead
   is doing that job now).
-- `server/src/config/visitTypes.js` — `drop_in` (10 min), `standard` (25),
-  `presentation` (45), `pre_qualification` (20). `pre_qualification` folds in
-  a concept that already existed (capacity fields captured "at pre-qual")
-  rather than becoming a second mechanism.
+- `server/src/config/visitTypes.js` — originally `drop_in` (10 min), `standard`
+  (25), `presentation` (45), `pre_qualification` (20); **updated `87024c0`
+  (2026-07-13)** to split `standard` into two real types once Bede wanted
+  that distinction: `drop_in` (7), `check_in` (18, a short single-contact
+  touch), `working_visit` (30, the new default, replaces `standard`),
+  `presentation` (60), `pre_qualification` (15) — current values, see
+  `client/src/api.js`'s `VISIT_TYPE_LABELS` for the frontend's copy of this
+  same list. `pre_qualification` folds in a concept that already existed
+  (capacity fields captured "at pre-qual") rather than becoming a second
+  mechanism.
 - `server/src/migrations/20260713000000_add_default_visit_type_to_places.js`
   — nullable `default_visit_type` on `places` (applied to dev DB, batch 12).
   Pre-fills the type choice when scheduling a visit there; always
@@ -91,10 +98,10 @@ real routing API but a real improvement. (Update 2026-07-14: rather than
 keep tuning the approximation further, Bede has decided to replace it with
 an actual routing API — see phase 5 below.)
 
-## Done, uncommitted (phase 4)
+## Done and committed (phase 4) — `1ac0776`
 
 Multi-day draft schedule generator, pure/tested, no DB wiring beyond one
-sanity-check readout (not committed — see below). 69 tests passing
+sanity-check readout. 69 tests passing
 (`npm test` from `server/`).
 
 - **Prerequisite folded in first**: `driveTime.js`'s `timeBlockMinutes`/
@@ -144,14 +151,18 @@ pulling all 255 geocoded places plus real visit history from the dev DB:
 Northeast → Southeast again), 25 real stops packed, zero duplicates across
 the draft, ~210-230 minutes used per day (9-30 min slack) — looked right.
 
-## Explicitly NOT built yet
+## Status update (2026-07-14) — phases 5 and 6 are done
 
-Real routing API integration and stop-sequencing/route optimization (see
-phase 5 below — decided 2026-07-14, not started), draft/commit lifecycle +
-multi-user collision handling, the live-edit recalculation loop (see the
-never-drop/flag-only packing function noted below — still not built),
-pre-qual capture (visit-logging UI + relationship-confirm/promotion
-prompts), and all frontend work. None of this exists yet, even as stubs.
+Everything phase 4 flagged as "explicitly not built yet" (real routing API,
+stop-sequencing, draft/commit lifecycle, collision handling, the live-edit
+recalculation loop) **has since been built** — see the phase 5/6 sections
+below, which used to describe these as future plans and now describe what
+was actually shipped, plus two frontend sub-slices on top of the phase 6
+API. Still genuinely not built: pre-qual capture (visit-logging UI/
+relationship-confirm prompts), suggestions + commit in the UI (frontend
+sub-slice 3, next up), and retiring the old `services/scheduler.js`/
+`routes/schedule.js`/`Schedule.jsx` "Today's Route" screen (deliberately
+still running in parallel — see the frontend sections below).
 
 ## Open questions / notes for later
 
@@ -167,11 +178,42 @@ prompts), and all frontend work. None of this exists yet, even as stubs.
   `config/scheduling.js` for now specifically so a future settings-table
   phase can lift them out without touching the engine itself.
 
-## Next step: phase 5 — real routing API + stop-sequencing optimization
+## Phase 5 — real routing API + stop-sequencing optimization (DONE, committed `84d32bf`)
 
-Decided 2026-07-14, not started. Two changes, both to how a day's route is
-computed, ahead of the draft/commit lifecycle work below (now bumped to
-phase 6):
+Below is the original design-decision writeup from when this was still a
+plan; kept as-is since the reasoning is still exactly why it's built this
+way. **What actually shipped, 2026-07-14:** provider is **OSRM's public demo
+server** (`/trip` endpoint — does distance-matrix and waypoint-sequencing in
+one call, no API key/signup, matching `geocoding.js`'s existing free-provider
+precedent). New `server/src/config/routeOptimizer.js`
+(`MAX_OPTIMIZE_STOPS: 18`, `MAX_TOPUP_STOPS: 30`, `MIN_TOPUP_MINUTES: 18`,
+5s timeout) and `server/src/services/routeOptimizer.js`
+(`optimizeRoute`/`getRouteLegMinutes`) — the one deliberately I/O-having
+module in the whole route-planner stack; everything else stays pure/no-I/O.
+`driveTime.js` gained `packOptimizedTimeBlock` (real per-leg OSRM minutes)
+alongside the original haversine `packTimeBlock`, which stays in the codebase
+permanently as the offline fallback when OSRM is unreachable — `optimizeRoute`
+returns `null` on any failure (bad response, network error, timeout) and
+callers always fall back, never throw/block. `scheduleGenerator.js`'s
+`fillDayFromZone`/`generateDraft` became async, cap the per-zone candidate
+pool at `MAX_OPTIMIZE_STOPS` before calling the optimizer, and run a
+**top-up pass** after the initial pack/trim (batches next-best unpacked
+candidates per re-optimize call rather than one network round-trip per
+candidate — Bede's own idea, refined during code review). **Rank order still
+picks which stops are candidates; the optimizer only sequences them** — the
+four-tier priority model's guarantee is preserved at the "who's a candidate"
+level only, an explicit accepted tradeoff (a closer-but-lower-ranked stop can
+sequence before a farther-but-higher-ranked one within the capped pool).
+A same-day `/code-review high` pass found and fixed 5 real issues before this
+was committed (NaN propagating through a malformed-but-200-OK OSRM response,
+a `MIN_DRIVE_MINUTES` override silently not reaching the optimized path, a
+swallowed error that made "OSRM down" indistinguishable from "response
+parsing bug" forever, commitments silently droppable with no visibility, and
+the topup redesign above) — 110 tests passing at commit time (139 as of
+phase 6, below). Not committed to `main` — sits on `bede-routeplanner` only,
+1 commit ahead of `origin/bede-routeplanner` as of this writing.
+
+Original design-decision writeup follows, for the reasoning:
 
 **1. Replace the haversine + distance-banded-speed estimate in
 `driveTime.js`'s `estimateDriveMinutes()` with a real routing API call**
@@ -230,11 +272,59 @@ sequencing algorithm itself can and should stay a pure function even if
 distance lookups become async/cached), tests via the scoped glob, stop for
 review once tests pass and a sample draft looks right.
 
-## Next step: phase 6 — draft/commit lifecycle, collision, and the live-edit loop
+## Phase 6 — draft/commit lifecycle, collision, backend+API (DONE, committed `95049c7`)
 
-The target interaction model (from a separate conversation Bede had about
-what this should feel like, worth preserving verbatim-ish so it isn't
-re-derived from scratch):
+Bede's scoping decisions going in: the new engine fully replaces the old
+single-day scheduler *eventually*, but this pass was backend/API only —
+`services/scheduler.js`/`routes/schedule.js`/`Schedule.jsx`/dashboard's
+`loadRoute` were deliberately left untouched and re-verified still working,
+since deleting them with no new UI yet would leave the app with no working
+route-planning screen at all. Drafts got **dedicated new tables**, not
+reused `visits` rows: `schedule_drafts` (one-active-per-user, enforced in
+app code) + `schedule_draft_stops` (a stop's presence in the table IS the
+draft — no soft-delete status, no stored running-totals; those are
+recomputed live on every read, same "no manual fields" convention as
+referral metrics). Also added `visits.visit_type` (a draft's visit-type
+choice had nowhere to land at commit otherwise).
+
+**New pure functions** (`driveTime.js`): `evaluateTimeBlock`/
+`evaluateOptimizedTimeBlock` — the never-drop sibling to
+`packTimeBlock`/`packOptimizedTimeBlock` this section originally flagged as
+needed (see "Key implication" below, still accurate). (`routeOptimizer.js`):
+`getRouteLegMinutes` — calls OSRM's `/route` (not `/trip`) so it respects
+the caller's exact stop order instead of resequencing, since live-edit
+recalculation must never silently reshuffle a user's own reorder back to
+"optimal." 139 tests passing (up from 110 pre-phase-6).
+
+**New DB orchestration layer**: `server/src/services/scheduleDraft.js`
+(candidate-pool building, draft CRUD, `loadDraftView`/`loadDraftDayView` —
+live recalc on every read, real-OSRM-first with haversine fallback, never
+resequences) + `server/src/routes/scheduleDrafts.js` mounted at
+`/api/schedule-drafts` (generate/active/reorder/add-stop/remove-stop/
+set-visit-type/suggestions/commit-one-day/commit-all). Every route acts on
+`req.user` from the bearer token, not a client-supplied `userId` — stricter
+than the old scheduler's routes, deliberately, since this is exactly the
+double-booking surface phase 6 exists to close.
+
+**Known, accepted simplification:** `lockedElsewhere` at draft-generation
+time is computed once against the generation date, not re-checked per future
+day within the multi-day run. Conservative-not-risky by design; the live
+per-day `addStop`/suggestions endpoints re-check fresh per specific date.
+
+**Real bug found and fixed by the required two-user smoke test** (this is
+why Bede insisted on it rather than a happy-path-only check): the initial
+`commitDay` used the same `lockedElsewherePlaceIds` (visits + OTHER USERS'
+draft stops) that generation/addStop correctly use — at commit time this
+deadlocked, since two reps who both independently had the same place in
+their still-open drafts for the same date each saw the OTHER's uncommitted
+draft as a lock, so neither could ever commit it. Fixed with a narrower
+`committedElsewherePlaceIds` (real `visits` rows only — an uncommitted draft
+is a proposal, not a claim) used specifically by `commitDay`.
+
+The target interaction model this was built against (from a separate
+conversation Bede had about what it should feel like, worth preserving
+verbatim-ish so it isn't re-derived from scratch — this is now implemented,
+not aspirational):
 
 > The draft schedule is a live, interactive workspace — not a static
 > proposal that requires regeneration to change. The generator runs once to
@@ -249,7 +339,7 @@ re-derived from scratch):
 > time math current and flagging over/under; all actual add/remove/reshuffle
 > decisions stay with the user. No second generation round-trip.
 
-**Key implication, decided but not yet built:** `packTimeBlock` (phase 3) is
+**Key implication (built as described):** `packTimeBlock` (phase 3) is
 the right shape for `generateDraft`'s (phase 4) one-time initial fill —
 given a ranked candidate pool and a budget, decide how many fit, dropping
 the rest. It is the *wrong* shape for the live-edit loop, because it
@@ -263,22 +353,118 @@ running total and an `overBudget` flag, plus the day's overall over/under
 amount. `packTimeBlock`/`generateDraft` stay as-is for initial generation;
 the new function serves recalculation after edits.
 
-Also needed for phase 5: the "nearby eligible stop" suggestion when a day is
-under budget (per the interaction model above) — can reuse
-`schedulingEngine.js`'s `eligibility()`/`rankCandidates()` plus
-`driveTime.js`'s distance functions, so that part is mostly wiring, not new
-logic — plus the actual persistence (draft rows written to `visits` as
-`planned`?) and multi-user collision handling (`lockedElsewhere`, already a
-first-class input throughout the pure layer, just never wired to a real
-query yet).
+The "nearby eligible stop" suggestion when a day is under budget (per the
+interaction model above) reused `schedulingEngine.js`'s
+`eligibility()`/`rankCandidates()` plus `driveTime.js`'s distance functions
+as planned — `getSuggestions` in `scheduleDraft.js`. Persistence landed as
+the dedicated `schedule_drafts`/`schedule_draft_stops` tables described
+above (not `visits` rows with a `planned` status, which is what this
+paragraph originally floated); multi-user collision handling is
+`lockedElsewherePlaceIds`/`committedElsewherePlaceIds`, also above.
 
-Same checkpoint discipline as phases 1-4: pure/tested where possible, tests
-via the scoped glob (not bare `node --test src` — that executes every `.js`
-file it finds, including `index.js`, which starts a real server on :4000).
-Stop for review once tests pass.
+**Smoke-tested via Lisa Marks (id 5) + a throwaway `__SMOKETEST_Rep2` user**
+(created, used, then fully deleted — including nulling Lisa's temp
+`auth_token` back out), per this repo's smoke-test safety rules. All test
+`visits`/`schedule_drafts`/`schedule_draft_stops` rows cleaned up after. Old
+scheduler re-verified working unchanged after the build.
+
+## Phase 6 frontend, sub-slice 1 — generate + read-only view (DONE, committed `ce2f41f`)
+
+First of a 3-sub-slice frontend build Bede asked to be split up and reviewed
+one at a time (matches this whole project's "stop for review" discipline):
+(1) generate-inputs + read-only multi-day view, (2) live editing, (3)
+suggestions + commit. This section covers (1).
+
+No `guardian-angels-ui-spec.md` exists anywhere (repo or filesystem) despite
+being the first place this was expected to be documented — confirmed with
+Bede at the start of this slice to treat `client/src/styles.css` (design
+tokens + component CSS, already heavily self-documented) and
+`client/src/components/ui/*` (Button, Chip, EmptyState, Header, Logo) as the
+real design-system source of truth instead. If that spec file ever turns up
+or gets written, reconcile against it — for now these are the two places
+that actually define the brand system in code.
+
+**Built:** a new "Plan My Visits" tab in `App.jsx`, placed right after
+"Today's Route" (which stays fully working, untouched — retiring the old
+scheduler is still explicitly a later step, not this one). New
+`client/src/components/PlanVisits.jsx`: a generate form (days ahead,
+hours/day) plus a read-only render of `GET /api/schedule-drafts/active`'s
+per-day stops/running totals/over-budget flags. `client/src/api.js` gained
+`api.scheduleDrafts.{generate,active}`, `api.geocode`, `VISIT_TYPE_LABELS`.
+
+**homeBase decision:** no rep/user location field exists in the schema
+(flagged as a gap back in phase 4) — resolved for the UI by capturing it
+fresh at generate time via `navigator.geolocation` ("Use my current
+location"), falling back to a manual street/city/state/zip form when
+denied/unavailable. The manual path needed a real geocoding endpoint, so
+added `server/src/routes/geocode.js` (`POST /api/geocode`, thin wrapper
+around the existing `services/geocoding.js#geocodeAddress`, previously only
+ever called internally from `routes/places.js`) — mounted behind the same
+global `requireAuth` as everything else.
+
+**Verified live**, not just typechecked: no `chromium-cli` available in this
+environment, so Playwright was installed temporarily into a scratch
+directory (not committed) and used to drive real headless Chromium against
+the actual dev server — logged in as Lisa Marks (id 5, temp `auth_token`
+only, cleared after), granted mock geolocation, opened the new tab,
+generated a real 5-day draft against live dev-DB places (real
+OSRM-derived routing, correct zones, correct running totals/budget math),
+confirmed no console errors and correct brand rendering. Cleaned up fully
+after: deleted the smoke-test `schedule_drafts`/`schedule_draft_stops` rows,
+cleared Lisa's `auth_token`, confirmed zero stray `visits` rows.
+
+## Phase 6 frontend, sub-slice 2 — live editing (DONE, committed alongside this doc update)
+
+Reorder (drag + up/down arrow fallback, same pattern as the old
+`Schedule.jsx`), remove, ad-hoc add (via a place-search picker), and
+visit-type change — each calls its `/api/schedule-drafts/:id/days/:date/...`
+endpoint and replaces only that day's slice of client state from the
+response (`loadDraftDayView`'s shape), never touching any other day or
+re-deriving anything client-side. The server always recalculates running
+totals/`overBudget` flags fresh on every mutation, so the live time math and
+over/under-budget flagging fall out of that for free — nothing is ever
+auto-dropped or auto-reshuffled beyond exactly what the user just did,
+matching the interaction model above.
+
+**Reused rather than duplicated:** the searchable place-picker autocomplete
+(debounced search, click-outside-to-close) already existed as a private
+component inside `NeedsMapping.jsx` for assigning a note to a place. Rather
+than copy ~40 lines of identical logic for the new "+ Add a stop" flow, it
+was extracted to `client/src/components/ui/PlacePicker.jsx` (took a
+`placeholder` prop to support both call sites' different copy) and
+`NeedsMapping.jsx` now imports it instead of defining it locally — a real
+second-use case, not speculative reuse.
+
+Reorder is optimistic (shows the new order immediately, same UX pattern
+`Schedule.jsx` already uses) but with stale running totals until the
+server's authoritative recalculation lands and replaces it a moment later —
+totals depend on real drive time between stops, so they can't be computed
+correctly client-side. A failed reorder falls back to a full reload of the
+active draft rather than trying to hand-roll a rollback.
+
+**Verified live** the same way as sub-slice 1 (fresh temp token on Lisa
+Marks, cleaned up after): generated a small 2-day draft, changed a stop's
+visit type and watched its running total recalculate (50m → 1h 20m,
+matching the presentation type's longer duration), reordered two stops with
+the move-down arrow and confirmed the order actually swapped, removed a stop
+and watched the day's stop count and totals update, added a stop via the
+picker and watched it land as a new last stop with a correct running total.
+Over/under-budget flagging (day-level badge + per-stop flag + red border)
+kept working correctly through all of these edits. No console errors. Also
+re-verified `NeedsMapping.jsx` still renders with no errors after the
+`PlacePicker` extraction. All smoke-test rows/tokens cleaned up after.
+
+**Next:** sub-slice 3 — suggestions (the "nearby eligible stop" prompt on
+under-budget days, wired to the already-built `getSuggestions` endpoint) and
+commit (per-day and full), same one-slice-at-a-time review discipline. After
+that, retiring the old scheduler becomes possible for the first time.
 
 ## Running things
 
 - Tests: `nvm use 24` then `npm test` from `server/` (runs
   `node --test "src/**/*.test.js"`).
-- Resume the branch: `git checkout bede-routeplanner`.
+- Client dev server: `cd client && npm run dev` (or `./dev.sh` from the repo
+  root runs both); client build: `npm run build` from `client/`.
+- Resume the branch: `git checkout bede-routeplanner` — as of this writing,
+  ahead of `origin/bede-routeplanner` and not merged into `main`; push/PR
+  only when Bede asks.

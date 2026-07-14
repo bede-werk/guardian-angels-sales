@@ -6,10 +6,15 @@ const knex = require('../db/knex');
 
 const router = express.Router();
 
+// Columns safe to send to the browser — never password_hash or auth_token.
+// Mirrors routes/auth.js's publicUser (kept separate since this list also
+// includes email, which the login picker doesn't need).
+const SAFE_COLUMNS = ['id', 'name', 'email'];
+
 // GET /api/users — list team members, alphabetically.
 router.get('/', async (req, res, next) => {
   try {
-    const users = await knex('users').orderBy('name');
+    const users = await knex('users').select(SAFE_COLUMNS).orderBy('name');
     res.json(users);
   } catch (err) {
     next(err);
@@ -22,9 +27,9 @@ router.post('/', async (req, res, next) => {
   try {
     const { name, email } = req.body;
     if (!name) return res.status(400).json({ error: 'name is required' });
-    const [row] = await knex('users').insert({ name, email }).returning('*');
-    // better-sqlite3 returning() may yield an id only; re-fetch for consistency.
-    const user = row && row.name ? row : await knex('users').where({ id: row.id || row }).first();
+    const [row] = await knex('users').insert({ name, email }).returning('id');
+    const id = row && row.id ? row.id : row;
+    const user = await knex('users').select(SAFE_COLUMNS).where({ id }).first();
     res.status(201).json(user);
   } catch (err) {
     next(err);
