@@ -99,22 +99,18 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
           ) : (
             <ul className="list">
               {list.map((p) => (
-                <li key={p.id} className="stack" style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
-                  <label className="row" style={{ alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      style={{ width: 'auto', flex: 'unset' }}
-                      checked={selected.has(p.id)}
-                      onChange={() => toggle(p.id)}
-                      disabled={assigning}
-                      title={`Link ${p.name} to ${placeName || 'this place'}${p.place_name ? ` (moves them from ${p.place_name})` : ''}`}
-                    />
-                    <div>
-                      <strong>{p.name}</strong>
-                      {p.title && <span className="tiny muted"> · {p.title}</span>}
-                      <div className="tiny muted">{p.place_name ? `Currently at ${p.place_name}` : 'Unassigned'}</div>
-                    </div>
-                  </label>
+                <li
+                  key={p.id}
+                  className={`stack hover-row ${selected.has(p.id) ? 'selected' : ''}`}
+                  style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}
+                  onClick={() => !assigning && toggle(p.id)}
+                  title={`Link ${p.name} to ${placeName || 'this place'}${p.place_name ? ` (moves them from ${p.place_name})` : ''}`}
+                >
+                  <div>
+                    <strong>{p.name}</strong>
+                    {p.title && <span className="tiny muted"> · {p.title}</span>}
+                  </div>
+                  <div className="tiny muted">{p.place_name ? `Currently at ${p.place_name}` : 'Unassigned'}</div>
                 </li>
               ))}
             </ul>

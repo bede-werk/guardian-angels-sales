@@ -240,6 +240,10 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    more specific target than the row itself — drop the row's own highlight so
    only the button appears selected, instead of both lighting up at once. */
 .hover-row:has(.btn:hover) { background: none; }
+/* Persistent version of the above for rows that stay picked after the click
+   (e.g. AssignPersonModal's person list) — a stronger tint so it still reads
+   as "on" once the mouse moves away. */
+.hover-row.selected { background: var(--blue-tint-2); }
 
 /* Data tables — Places directory and Dashboard's "never visited" list */
 table { width: 100%; border-collapse: collapse; }
