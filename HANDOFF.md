@@ -548,6 +548,18 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 ## 13. Current state (as of this handoff)
 
+- **2026-07-14 addendum (branch `basil`):** a small header + AssignPersonModal polish
+  session — see `NOTES.md`'s 2026-07-14 entry for the full write-up. Two commits,
+  `1dd7ec0` (header: dropped the "Change password" button/one-line Date/Signed-in-as/Log
+  out layout) and `b755edf` (AssignPersonModal: checkbox multi-select replaced with
+  click-to-highlight rows). **Not yet pushed** to `origin/basil-working`. Two things to
+  know before touching this area again: (1) **"Change password" has no UI trigger right
+  now** — it was removed from the header and needs a new home before anyone can use it
+  again; (2) an **open, unresolved product question** was raised — this app may eventually
+  be sold to other companies, not just used internally, and the current login (a dropdown
+  of every employee's name, no company/tenant concept in `server/src/routes/auth.js`)
+  won't scale to that. Nothing was built for it — flag it before investing further in
+  login/auth work.
 - **Auth shipped:** the "add authentication before sharing the URL" item from the previous
   handoff is done — bearer-token login is live and required on all `/api` routes except the
   login flow itself.
