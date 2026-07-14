@@ -45,8 +45,15 @@ function daysSince(dateStr, today) {
 // shortest cadence (biggest gap between potential and reality = biggest
 // opportunity); low-capacity + strong-relationship gets the longest (already
 // maxed out).
+// Falls back to 'medium'/'weak' — the same defaults the
+// 20260712000000_add_scheduling_fields.js migration itself uses (capacity
+// backfill's own documented fallback, and relationship_level's column
+// default) — for a place with a null/unrecognized capacity_level or
+// relationship_level, e.g. one created after that migration ran without
+// either field ever being set by a route.
 function targetCadenceDays(capacityLevel, relationshipLevel, config) {
-  return config.CADENCE_DAYS[capacityLevel][relationshipLevel];
+  const byCapacity = config.CADENCE_DAYS[capacityLevel] || config.CADENCE_DAYS.medium;
+  return byCapacity[relationshipLevel] ?? byCapacity.weak;
 }
 
 // How overdue a place is, as a ratio of its target cadence. Never-visited is

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, formatDate } from '../api';
 import { TierChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
@@ -9,12 +9,17 @@ import PlaceModal from './PlaceModal';
 // Searchable / filterable place directory with last-visit + contact info.
 // Clicking any row opens that place's full detail (PlaceDetail.jsx).
 export default function Places({ userId }) {
-  const [filters, setFilters] = useState({ categories: [], regions: [], tiers: [] }); // dropdown options, loaded once
+  const [filters, setFilters] = useState({ categories: [], allCategories: [], regions: [], tiers: [] }); // dropdown options, loaded once
   const [q, setQ] = useState({ search: '', category: '', tier: '', region: '', neverVisited: '', needsAttention: '' }); // current filter values
   const [rows, setRows] = useState([]); // the filtered place list from the API
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null); // place id whose detail modal is open, if any
   const [adding, setAdding] = useState(false); // whether the Add Place modal is open
+  // Bumped on every load() call; a response only gets applied if it's still
+  // the most recent request when it resolves — guards against a slower
+  // earlier keystroke's response overwriting a faster later one.
+  const requestIdRef = useRef(0);
 
   // Load the filter dropdown options (distinct categories/cities/zips) once on mount.
   useEffect(() => {
@@ -22,11 +27,16 @@ export default function Places({ userId }) {
   }, []);
 
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
+    setError(null);
     try {
-      setRows(await api.places(q));
+      const data = await api.places(q);
+      if (requestIdRef.current === requestId) setRows(data);
+    } catch (e) {
+      if (requestIdRef.current === requestId) setError(e.message);
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
   }, [q]);
 
@@ -42,6 +52,8 @@ export default function Places({ userId }) {
 
   return (
     <div className="grid" style={{ gap: 16 }}>
+      {error && <div className="error-banner">{error}</div>}
+
       {/* Filter bar: search box + category/tier/city/zip dropdowns + a
           "Never visited" toggle button. */}
       <div className="card">
@@ -150,7 +162,7 @@ export default function Places({ userId }) {
 
       {adding && (
         <PlaceModal
-          categories={filters.categories}
+          categories={filters.allCategories}
           onClose={() => setAdding(false)}
           onSaved={load}
         />

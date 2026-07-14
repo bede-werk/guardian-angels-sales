@@ -15,6 +15,7 @@ import VisitDetailModal from './VisitDetailModal';
 // (clicking any place-linked row/card).
 export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDeleted }) {
   const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + people)
+  const [loadError, setLoadError] = useState(null);
   const [categories, setCategories] = useState([]); // known category names, for PlaceModal's autocomplete
   const [editing, setEditing] = useState(false); // whether the Edit place modal is open
   const [logging, setLogging] = useState(false); // whether the Log Visit modal is open
@@ -37,13 +38,18 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [removingNotes, setRemovingNotes] = useState(false);
 
   async function load() {
-    setData(await api.place(placeId));
+    try {
+      setLoadError(null);
+      setData(await api.place(placeId));
+    } catch (e) {
+      setLoadError(e.message);
+    }
   }
   useEffect(() => {
     load();
   }, [placeId]);
   useEffect(() => {
-    api.filters().then((f) => setCategories(f.categories)).catch(() => {});
+    api.filters().then((f) => setCategories(f.allCategories)).catch(() => {});
   }, []);
 
   // Permanently removes only the place itself. People who were here are
@@ -130,7 +136,14 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     return (
       <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="loading">Loading…</div>
+          {loadError ? (
+            <div className="stack" style={{ padding: 20 }}>
+              <div className="error-banner">{loadError}</div>
+              <Button variant="secondary" onClick={onClose}>Close</Button>
+            </div>
+          ) : (
+            <div className="loading">Loading…</div>
+          )}
         </div>
       </div>
     );
@@ -172,6 +185,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
+          {loadError && <div className="error-banner">{loadError}</div>}
           <div className="stack" style={{ background: 'var(--bg)', borderRadius: 'var(--radius-md)', padding: '12px 16px' }}>
             <div className="tiny">
               {data.address && <div>{data.address}</div>}

@@ -5,6 +5,7 @@
 // or dismiss it. Resolving a note converts it into a real completed visit.
 const express = require('express');
 const knex = require('../db/knex');
+const { priorityScore, regionForPlace } = require('../services/priority');
 
 const router = express.Router();
 
@@ -107,7 +108,6 @@ router.post('/:id/create-place', async (req, res, next) => {
     const review = await knex('notes_review').where({ id: req.params.id }).first();
     if (!review) return res.status(404).json({ error: 'Review item not found' });
 
-    const { priorityScore, regionForPlace } = require('../services/priority');
     const { name, category, tier, is_priority, city, zip, address, applyToReferrer } = req.body;
     const placeName = (name || review.referrer_raw).trim(); // default to the raw referrer text
     const t = Number(tier) || 3;

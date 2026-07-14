@@ -89,6 +89,28 @@ describe('workingDays', () => {
     const result = workingDays({ today: TODAY, daysAhead: 2, workingWeekdays: [0, 6], exceptionDates: [] });
     assert.deepEqual(result, ['2026-07-18', '2026-07-19']);
   });
+
+  test('throws instead of looping forever when workingWeekdays is empty', () => {
+    assert.throws(
+      () => workingDays({ today: TODAY, daysAhead: 3, workingWeekdays: [], exceptionDates: [] }),
+      /no working day found/
+    );
+  });
+
+  test('throws instead of looping forever when exceptionDates covers every remaining candidate day', () => {
+    // Every Mon-Fri date within the scan window is excepted, so no amount of
+    // scanning will ever find daysAhead working days.
+    const exceptionDates = [];
+    let cursor = '2026-07-13';
+    for (let i = 0; i < 60; i++) {
+      cursor = new Date(new Date(cursor + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10);
+      exceptionDates.push(cursor);
+    }
+    assert.throws(
+      () => workingDays({ today: TODAY, daysAhead: 3, workingWeekdays: MON_FRI, exceptionDates }),
+      /no working day found/
+    );
+  });
 });
 
 describe('fillDayFromZone', () => {

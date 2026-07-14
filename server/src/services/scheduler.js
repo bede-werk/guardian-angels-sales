@@ -77,8 +77,13 @@ async function generateSchedule({ date, userId, hours, visitMinutes, travelMinut
 
     // Candidates = places never completed AND not already on *any* rep's route for
     // this date (so two team members can't be sent to the same place on the same day).
-    const completed = trx('visits').where({ status: 'completed' }).select('place_id');
-    const plannedThisDate = trx('visits').where({ scheduled_date: date }).select('place_id');
+    // whereNotNull is required here, not just tidiness: visits.place_id is nullable
+    // (detach-not-delete sets it NULL when a place is removed), and SQL's
+    // `x NOT IN (subquery)` evaluates to NULL — never true — for every row the
+    // instant the subquery returns even one NULL, which would silently empty out
+    // every future candidate list once any place had ever been deleted.
+    const completed = trx('visits').where({ status: 'completed' }).whereNotNull('place_id').select('place_id');
+    const plannedThisDate = trx('visits').where({ scheduled_date: date }).whereNotNull('place_id').select('place_id');
     const candidates = await trx('places')
       .whereNotIn('id', completed)
       .whereNotIn('id', plannedThisDate)

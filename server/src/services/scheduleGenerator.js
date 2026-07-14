@@ -46,11 +46,19 @@ function weekdayOf(dateStr) {
 // Returns exactly `daysAhead` 'YYYY-MM-DD' strings, in order, starting the
 // day AFTER `today` (today itself is never included), skipping any weekday
 // not in `workingWeekdays` (0=Sun..6=Sat) and any date in `exceptionDates`.
+// Scan cap so a bad input (e.g. an empty workingWeekdays, or exceptionDates
+// covering every upcoming date) throws instead of spinning forever — 14x
+// daysAhead is generous even for a lopsided one-day-a-week schedule.
 function workingDays({ today, daysAhead, workingWeekdays, exceptionDates = [] }) {
   const exceptionSet = new Set(exceptionDates);
+  const maxScanDays = daysAhead * 14;
   const days = [];
   let cursor = addUTCDays(today, 1);
+  let scanned = 0;
   while (days.length < daysAhead) {
+    if (scanned++ > maxScanDays) {
+      throw new Error(`workingDays: no working day found in ${maxScanDays} days — check workingWeekdays/exceptionDates`);
+    }
     if (workingWeekdays.includes(weekdayOf(cursor)) && !exceptionSet.has(cursor)) {
       days.push(cursor);
     }

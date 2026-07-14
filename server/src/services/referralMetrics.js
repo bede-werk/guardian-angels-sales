@@ -23,10 +23,12 @@ const EMPTY_METRICS = {
 // 'YYYY-MM-DD' cutoff for the recent window, RECENT_WINDOW_DAYS back from
 // `now`. referral_date is stored as a plain YYYY-MM-DD string, so a string
 // comparison against this cutoff is all a "recent" check needs.
+// UTC throughout (not .getDate()/.setDate(), which read/write the host's
+// LOCAL calendar day) so the cutoff can't shift by a day depending on the
+// server's timezone — same convention schedulingEngine.js's daysSince() uses.
 function recentWindowCutoff(now = new Date()) {
-  const d = new Date(now);
-  d.setDate(d.getDate() - RECENT_WINDOW_DAYS);
-  return d.toISOString().slice(0, 10);
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(todayUTC - RECENT_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
 }
 
 // Turns aggregate query rows (see the two batch functions below) into a

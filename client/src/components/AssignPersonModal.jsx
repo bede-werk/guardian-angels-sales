@@ -28,6 +28,8 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
       try {
         const rows = await api.people.list({});
         if (!cancelled) setUnassigned(rows.filter((p) => !p.place_id));
+      } catch (e) {
+        if (!cancelled) setError(e.message);
       } finally {
         if (!cancelled) setLoadingUnassigned(false);
       }
@@ -40,17 +42,20 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
   // another place can still be reassigned here.
   useEffect(() => {
     if (!q.trim()) { setResults([]); return; }
+    let cancelled = false;
     setLoading(true);
     const t = setTimeout(async () => {
       try {
         const rows = await api.people.list({ search: q });
         // Already here? Nothing to do — leave them out of their own pick list.
-        setResults(rows.filter((p) => String(p.place_id) !== String(placeId)).slice(0, 20));
+        if (!cancelled) setResults(rows.filter((p) => String(p.place_id) !== String(placeId)).slice(0, 20));
+      } catch (e) {
+        if (!cancelled) setError(e.message);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }, 200);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [q, placeId]);
 
   const searching = q.trim().length > 0;
