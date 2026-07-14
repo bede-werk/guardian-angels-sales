@@ -325,8 +325,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .splash .tagline { font-family: var(--font-serif); font-size: 16px; color: #fff; opacity: 0.92; max-width: 320px; }
 
 /* Signed-in-as chip in the header (App.jsx's right-side header controls) */
-.user-menu { display: flex; flex-direction: column; }
-.user-menu .tag-list { font-size: 13px; font-weight: 600; }
+.user-menu { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
 
 /* Static (read-only) date display in the header — there's no date picker,
    today's date is just shown as text (App.jsx) */

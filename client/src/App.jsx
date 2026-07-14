@@ -75,17 +75,10 @@ export default function App() {
   return (
     <div className="app">
       <Header tagline="Sales Visit CRM · Lincoln, NE">
-        <div>
-          <label className="field">Date</label>
-          <div className="static-date">{formatDate(date)}</div>
-        </div>
+        <div className="static-date"><span className="muted">Date</span> {formatDate(date)}</div>
         <div className="user-menu">
-          <label className="field">Signed in as</label>
-          <div className="tag-list">
-            <span>{authUser.name}</span>
-            <Button variant="ghost" size="small" onClick={() => setShowChangePassword(true)}>Change password</Button>
-            <Button variant="ghost" size="small" onClick={logout}>Log out</Button>
-          </div>
+          <span className="muted">Signed in as</span> {authUser.name}
+          <Button variant="ghost" onClick={logout}>Log out</Button>
         </div>
       </Header>
 
