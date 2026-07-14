@@ -1,6 +1,6 @@
 # Guardian Angels Sales Scheduler — Project Handoff
 
-_Last updated: 2026-07-09_
+_Last updated: 2026-07-14_
 
 This document is a self-contained context dump so work can resume in a new session.
 It summarizes what was built, key decisions, how to run it, the Railway deploy saga,
@@ -48,6 +48,28 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   see §9A/§13, now corrected).
 - Don't start new feature work without first asking Bede whether to commit pending
   changes — he explicitly only wants commits when asked for.
+- **2026-07-10's audit findings were fixed the same day** (`dc5d940`) — despite the
+  "not yet fixed" wording that used to follow this bullet. Both data-integrity bugs (referral
+  orphaning on person delete; visit-edit lockout when the linked person is deleted) are
+  resolved. See the corrected §14A.
+- **2026-07-11 through 2026-07-13:** route planner phases 1-4 built on branch
+  `bede-routeplanner` — a four-tier scoring engine, a drive-time estimator + visit-type
+  durations, and a multi-day draft generator (haversine-based, no real routing API yet at this
+  point). Also dropped the unused `departed`/`is_primary` flags on people. 69 tests by the end
+  of phase 4. Full detail in `ROUTEPLANNER_PROGRESS.md`, not here.
+- **2026-07-14 was the biggest single day on this project so far:** phase 5 (real routing API
+  via OSRM + stop-sequencing optimization, `84d32bf`); a full codebase audit at Bede's request
+  that found and fixed **a real security leak** (`GET/POST /api/users` used to leak every
+  user's password hash and live session token to any logged-in user) and **a live-breaking
+  bug** in the scheduler actually in production use (a SQL `NOT IN` against a subquery that
+  could contain NULL silently zeroed out route generation for everyone, forever, the first
+  time any place was ever deleted) — `c408809`; phase 6's draft/commit lifecycle backend + API
+  (`95049c7`); and the first two sub-slices of phase 6's frontend — a new "Plan My Visits" tab
+  with generate + read-only view (`ce2f41f`), then live editing (reorder/add/remove/visit-type
+  changes with in-place time recalculation and over-budget flagging). 139 tests. The old
+  scheduler/"Today's Route" screen is still fully working and untouched throughout — it stays
+  that way until the new workspace's frontend is complete enough to replace it. Full detail in
+  `ROUTEPLANNER_PROGRESS.md` and `NOTES.md`'s 2026-07-14 entry, not here.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
@@ -86,12 +108,13 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
    If you touch this, keep that contract.
 
 **Natural next steps Bede has flagged but not yet asked for** (don't just do these — check
-first): fixing the two known-issue bugs in §14A before anything else touches this data, a
-map view / real route-planner logic now that lat/lng actually exists for 255/262 places
-(§9A, §14B), extending "needs attention" coverage to Today's Route, feeding referral metrics
-into priority scoring (the natural successor to the old "Phase 2 relationship-temp" idea),
-finishing the remaining Needs Mapping referrers, the 7 places whose addresses didn't geocode
-(§9A) need manual review.
+first): sub-slice 3 of the route-planner frontend (suggestions + commit — see
+`ROUTEPLANNER_PROGRESS.md`), retiring the old scheduler/"Today's Route" screen once that
+ships, extending "needs attention" coverage to Today's Route (or its replacement), feeding
+referral metrics into priority scoring (the natural successor to the old "Phase 2
+relationship-temp" idea), finishing the remaining Needs Mapping referrers, fixing the
+Needs-Mapping geocoding gap (§14A), the 7 places whose addresses didn't geocode (§9A) need
+manual review.
 
 **If something in this note contradicts the actual code** (a file's gone, a function's
 renamed), trust the code — this note is a snapshot from one point in time, not a live source
@@ -146,16 +169,31 @@ guardian-angels-sales/
 │       ├── middleware/               # requireAuth (bearer token)
 │       ├── migrations/               # init, notes_import, add_auth, places_and_people,
 │       │                             # rename_partners_to_places, people_and_place_notes,
-│       │                             # detach_instead_of_cascade, drop_relationship_temp
+│       │                             # detach_instead_of_cascade, drop_relationship_temp,
+│       │                             # drop_departed_and_is_primary, add_scheduling_fields,
+│       │                             # add_default_visit_type_to_places,
+│       │                             # add_schedule_drafts (+ _stops), index_notes_review_author
+│       ├── config/                   # route-planner tuning constants (plain modules, no
+│       │                             # settings table — see ROUTEPLANNER_PROGRESS.md):
+│       │                             # scheduling.js, driveTime.js, visitTypes.js,
+│       │                             # routeOptimizer.js, categories.js (places.category enum)
 │       ├── services/
 │       │   ├── priority.js           # priority score + region ("side of town") helpers
-│       │   ├── scheduler.js          # daily route generator
+│       │   ├── scheduler.js          # OLD daily route generator (still what Schedule.jsx/
+│       │   │                         # dashboard use — not yet retired, see ROUTEPLANNER_PROGRESS.md)
+│       │   ├── schedulingEngine.js   # NEW route planner: four-tier scoring/eligibility
+│       │   ├── driveTime.js          # haversine estimate + real-OSRM-backed time-block packing
+│       │   ├── scheduleGenerator.js  # multi-day draft generator (generateDraft())
+│       │   ├── routeOptimizer.js     # OSRM /trip + /route calls (the one I/O-having pure-ish module)
+│       │   ├── scheduleDraft.js      # draft CRUD, live recalc, commit — the DB orchestration layer
 │       │   ├── auth.js               # password hashing / token helpers
 │       │   ├── phone.js              # phone validation + (402) 555-1234 normalization
 │       │   ├── referralMetrics.js    # lifetime/last/90-day referral metrics + needs_attention
-│       │   └── geocoding.js          # geocodeAddress() — address -> {lat, lng} via US Census
+│       │   ├── geocoding.js          # geocodeAddress() — address -> {lat, lng} via US Census
+│       │   └── fetchWithTimeout.js   # shared AbortController+setTimeout wrapper (OSRM, geocoding)
 │       ├── routes/                   # auth, places, people, referrals, visits, schedule,
-│       │                             # dashboard, users, notesReview
+│       │                             # scheduleDrafts (new route planner), geocode, dashboard,
+│       │                             # users, notesReview
 │       └── scripts/
 │           ├── import-excel.js       # importPlaces() — place list
 │           ├── import-notes.js       # importNotes() — historical notes
@@ -163,17 +201,19 @@ guardian-angels-sales/
 └── client/
     ├── vite.config.js                # dev proxy /api -> :4000
     └── src/
-        ├── App.jsx                   # tabs: Dashboard, Today's Route, Places, People, Needs Mapping
+        ├── App.jsx                   # tabs: Dashboard, Today's Route, Plan My Visits, Places,
+        │                             # People, Needs Mapping
         ├── api.js                    # incl. formatDate() — YYYY-MM-DD -> M/D/YYYY for display
         ├── styles.css
         └── components/
             ├── Login.jsx, ChangePassword.jsx
-            ├── Dashboard.jsx, Schedule.jsx
+            ├── Dashboard.jsx, Schedule.jsx          # OLD "Today's Route" — still working, not retired
+            ├── PlanVisits.jsx                       # NEW route-planner workspace ("Plan My Visits")
             ├── Places.jsx, PlaceDetail.jsx, PlaceModal.jsx      # PlaceModal: create AND edit
             ├── People.jsx, PersonDetail.jsx, PersonModal.jsx, AssignPersonModal.jsx
             ├── ReferralModal.jsx, ReferralDetailModal.jsx
             ├── VisitLogModal.jsx, VisitDetailModal.jsx, NeedsMapping.jsx
-            └── ui/                    # Button, Chip, EmptyState, PhoneInput, ...
+            └── ui/                    # Button, Chip, EmptyState, PhoneInput, PlacePicker, ...
 ```
 
 ---
@@ -184,14 +224,24 @@ guardian-angels-sales/
   Fulton, Nikki Shasserre, Lisa Marks, Basil Fulton**. Auth is a simple bearer token stored
   directly on the user row (`server/src/routes/auth.js` + `services/auth.js`).
 - **places** — referral organizations (`name, category, tier 1/2/3, is_priority,
-  priority_score, address, city, state, zip, region, phone, notes`). Originally imported from
-  Excel (261 rows), now a full CRUD directory — add/edit/delete from the UI. Deleting a place
+  priority_score, address, city, state, zip, region, phone, notes`, plus route-planner fields
+  added 2026-07-10/13: `capacity_level`/`capacity_monthly_referrals`/`capacity_status`/
+  `current_agency_used`/`has_inhouse_service`/`relationship_level`/`snooze_until`/
+  `do_not_visit`/`default_visit_type`). `category` is now a locked enum
+  (`config/categories.js`), not free text (2026-07-14). Originally imported from Excel
+  (261 rows), now a full CRUD directory — add/edit/delete from the UI. Deleting a place
   deletes only that row; see section 8 for what happens to its people/visits.
 - **people** — individual contacts (`place_id` nullable, `name, title, role_type, email,
-  phone, preferences, notes, birthday, departed, is_primary`). Renamed from "contacts" the
-  session before last. A person doesn't have to belong to a place, mirroring how a place
-  doesn't need a person on file. (No `relationship_temp` column — dropped by
-  `20260710000000_drop_relationship_temp.js`; see §9.)
+  phone, preferences, notes, birthday`). Renamed from "contacts" the session before last. A
+  person doesn't have to belong to a place, mirroring how a place doesn't need a person on
+  file. (No `relationship_temp` column — dropped by `20260710000000_drop_relationship_temp.js`;
+  see §9. No `departed`/`is_primary` either — dropped 2026-07-11, neither was ever really used.)
+- **schedule_drafts** / **schedule_draft_stops** — the new route planner's draft/commit
+  lifecycle (added 2026-07-14). A stop's presence in `schedule_draft_stops` IS the draft — no
+  soft-delete status, no stored running-totals (recomputed live on every read, same convention
+  as referral metrics). `visits` also gained a nullable `visit_type` the same day, so a draft's
+  visit-type choice has somewhere to land at commit. See `ROUTEPLANNER_PROGRESS.md` for the
+  full schema/design — not duplicated here.
 - **visits** — one planned/completed/skipped touchpoint by a user on a place for a date.
   Fields: `status, sort_order, outcome, notes, next_visit_date, source, completed_at`, plus
   **snapshot fields** (`place_name`, `person_name/title/email/phone`) captured at creation time
@@ -216,9 +266,17 @@ guardian-angels-sales/
   `/api` routes except the login flow require `requireAuth`.
 - **Import places** from Excel (idempotent upsert). Normalizes category typos
   (`Legal and Trust`→`Legal & Trust`, `Senior Adisors`→`Senior Advisors`).
-- **Daily schedule generator** — fills ~4 hrs (30 min visit + 15 min travel ≈ 5 stops),
-  seeds on highest-priority place, clusters by region/zip, orders by priority. Manual
-  reorder (drag-and-drop + up/down arrows), skip, remove.
+- **Daily schedule generator ("Today's Route" tab)** — fills ~4 hrs (30 min visit + 15 min
+  travel ≈ 5 stops), seeds on highest-priority place, clusters by region/zip, orders by
+  priority. Manual reorder (drag-and-drop + up/down arrows), skip, remove. This is the OLD
+  engine — still fully working, not yet retired.
+- **Route planner ("Plan My Visits" tab, added 2026-07-14)** — the new engine replacing the
+  above: four-tier priority scoring (commitments > endangered/rescue > exploration >
+  maintenance), real drive-time via OSRM with stop-sequencing optimization, a multi-day draft
+  you generate once and then edit live (reorder/add/remove/change visit type, with in-place
+  time recalculation and over-budget flagging — nothing auto-drops or auto-reshuffles). Commit
+  turns draft stops into real `visits` rows. Suggestions + commit aren't in the UI yet
+  (backend is ready) — see `ROUTEPLANNER_PROGRESS.md` for the full build.
 - **Visit logging** — outcome (interested / not_ready / follow_up / no_answer), notes,
   key contact (name/title/email/phone), next visit date. Phone numbers are normalized to
   `(402) 555-1234` at every entry point (`services/phone.js` + `ui/PhoneInput.jsx`).
@@ -551,20 +609,29 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 - **Auth shipped:** the "add authentication before sharing the URL" item from the previous
   handoff is done — bearer-token login is live and required on all `/api` routes except the
   login flow itself.
-- **Git:** current branch `bede-working` (tracking `origin/bede-working`), history through
-  `cb706a8` ("more cosmetics and funcitonality"). The full 2026-07-08 CRM buildout (sections
-  4–10's people/place rework, detach semantics, referrals, phone formatting, relationship-temp
-  removal / referral metrics) is committed and merged — landed in `95b484b`/`2547bfb`/`10cebf2`.
-  **2026-07-09's polish session is also fully committed** (`74ca2a1`…`cb706a8`): place editing,
-  the visit detail popup, PersonDetail's click-to-edit notes/preferences/birthday, `M/D/YYYY`
-  date display, and geocoding — see §5/§9A and `NOTES.md`'s 2026-07-09 entry for the blow-by-
-  blow. **2026-07-10's session (delete buttons on the visit/referral popups, the standardized
-  inline-editor button layout, mutual-exclusion between in-progress field edits, the
-  AssignPersonModal unassigned-list restore, and the audit in §14A/§14B) is UNCOMMITTED** —
-  check `git status` before starting new work and ask Bede before committing, same as always.
-- **Geocoding backfill has been run against real data** (corrected 2026-07-10 — earlier
-  revisions of this doc said it hadn't been): 255 of 262 places have `lat`/`lng`; 7 are
-  stamped `geocoded_at` but unmatched and need manual address review. See §9A.
+- **Git:** current branch `bede-routeplanner` (tracking `origin/bede-routeplanner`, ahead of
+  it, not pushed; not merged into `main`). The full 2026-07-08 CRM buildout and 2026-07-09's
+  polish session are committed and merged to `main`. **2026-07-10's audit-fix session
+  (`848b246`/`dc5d940`) is committed** — both data-integrity bugs from that day's audit are
+  fixed, contrary to older wording in this doc. **2026-07-11 through 2026-07-14's route
+  planner work (phases 1-6 backend+API, a full codebase audit, and phase 6 frontend
+  sub-slices 1-2) is all committed** on `bede-routeplanner` — see the 2026-07-14 bullet in §0
+  and `ROUTEPLANNER_PROGRESS.md` for the full detail. Always check `git status` before
+  starting new work and ask Bede before committing, same as always.
+- **Geocoding backfill has been run against real data:** 255 of 262 places have `lat`/`lng`;
+  7 are stamped `geocoded_at` but unmatched and still need manual address review. See §9A.
+  One known gap: places created via the Needs Mapping "create place" flow
+  (`routes/notesReview.js`) still skip geocoding entirely (§14A) — this only affects places
+  created that way, not the backfill itself.
+- **`places.category` is now a locked enum**, not free text (`server/src/config/categories.js`,
+  fixed in the 2026-07-14 audit, `c408809`) — `POST`/`PATCH /api/places` reject any
+  non-matching value.
+- **The route planner is real and partially in the UI.** Backend/API (phases 1-6) is fully
+  built, tested (139 tests), and committed. A new "Plan My Visits" tab exists alongside the
+  still-fully-working "Today's Route" tab, with generate + read-only view + live editing
+  (reorder/add/remove/visit-type). Suggestions + commit (sub-slice 3) is the next piece;
+  until that ships, drafts can be built and edited but not yet committed to real visits from
+  the new UI. See `ROUTEPLANNER_PROGRESS.md` for the whole build.
 - **Live deploy:** the Railway deployment was taken down after an earlier handoff to avoid
   ongoing cost while still building — all dev happens locally via `./dev.sh` or the two
   npm-run-dev terminals. Redeploying later is still ~5 min (New → GitHub Repo → add Postgres
@@ -574,22 +641,28 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 ## 14. Next steps / ideas (not yet done)
 
-- **Fix the two known-issue bugs in §14A first** — before building the route planner or
-  anything else that leans on visits/referrals data, since both bugs can silently corrupt
-  that data.
-- **Manually review the 7 places whose addresses didn't geocode** (§9A/§14B) before any
-  routing logic trusts every place having coordinates.
-- **Build the route planner** — see §14B for exactly what's ready vs. missing and a suggested
-  build order.
-- **"Needs attention" coverage on Today's Route:** referral metrics are wired into the
-  People tab, Places tab, both detail pages, and the Dashboard, but not Today's Route's stop
-  cards — a natural follow-up if wanted there too.
+- **Build sub-slice 3 of the route-planner frontend** — suggestions (the "nearby eligible
+  stop" prompt on under-budget days) + per-day/full commit. The backend
+  (`getSuggestions`/`commitDay`/`commitAll`) already exists; see `ROUTEPLANNER_PROGRESS.md`.
+- **Retire the old scheduler** (`services/scheduler.js`/`routes/schedule.js`'s
+  generate+reorder, `Schedule.jsx`'s "Today's Route" tab, dashboard's `loadRoute` read) once
+  sub-slice 3 ships and the new workspace can fully replace it — not before, per Bede's
+  explicit "keep a working route UI throughout" instruction.
+- **Manually review the 7 places whose addresses didn't geocode** (§9A) before any routing
+  logic trusts every place having coordinates.
+- **Fix the Needs Mapping geocoding gap** (§14A) — its create-place path still skips
+  `geocodeAddress()`.
+- **"Needs attention" coverage on Today's Route (or its eventual replacement):** referral
+  metrics are wired into the People tab, Places tab, both detail pages, and the Dashboard,
+  but not the route-planning screen's stop cards.
 - **Feed referral metrics into priority scoring:** `services/priority.js` still only scores
   off tier + the manual priority star; folding in a place's `referral_metrics` (e.g. boost
   the ones with high recent referral activity, or resurface ones that are `needs_attention`)
   is the natural successor to the old "Phase 2 relationship-temp" idea now that there's an
   objective activity signal to use instead.
 - **Finish mapping** the remaining unmatched referrers in the Needs Mapping tab.
+- `NEGLECT_MULTIPLIER`/`CADENCE_DAYS` (route-planner scoring config) are meant to become
+  user-editable settings eventually, not stay hardcoded.
 - **Postgres backups** once real data accumulates (Railway backups or `pg_dump`), if/when
   redeployed.
 - **Dev workflow:** consider working on branches and only merging to `main` when you want the
@@ -599,77 +672,77 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 ---
 
-## 14A. Known issues (found in the 2026-07-10 audit — not yet fixed)
+## 14A. Known issues (found in the 2026-07-10 audit; two critical ones fixed same day)
 
 Bede asked for a full read through the People/Places tabs and everything they touch before
 starting the route planner. Ran a 4-agent audit (People flow, Places flow, shared
-visit/referral machinery, route-planner readiness). Two findings are real data-integrity bugs
-that contradict this app's own detach-not-delete convention (§8) — fix these before anything
-else builds on top of this data:
+visit/referral machinery, route-planner readiness). Two findings were real data-integrity bugs
+that contradicted this app's own detach-not-delete convention (§8):
 
-1. **Deleting a person orphans their referrals — no snapshot, unlike visits.**
-   `DELETE /api/people/:id` (`server/src/routes/people.js`) hard-deletes the person row.
-   `referrals.person_id` goes `null` via `ON DELETE SET NULL`, same as `visits.person_id`
-   does — but `visits` has snapshot columns (`person_name`, `person_title`, `person_email`,
-   `person_phone`) captured at creation time specifically so history survives detachment, and
-   `referrals` has no equivalent. Once `person_id` nulls out, that referral becomes
-   permanently unattributed and silently disappears from every referral-metrics rollup
-   (`referralMetricsByPersonId`/`referralMetricsByPlaceId` in `services/referralMetrics.js`
-   both key/join on `person_id`) — forever, with no UI path to see it again. The delete
-   confirmation dialog (`PersonDetail.jsx`) only warns "This can't be undone," not that
-   referral history specifically disappears. **Likely fix shape:** add name-snapshot columns
-   to `referrals` (mirroring `visits`) via the `rebuildSqliteTable` migration pattern (§ mental
-   model point 4), or reconsider whether `DELETE /api/people/:id` should detach-not-delete the
-   same way places do instead of hard-deleting.
-2. **Editing a visit becomes permanently blocked once its linked person is deleted.**
-   `VisitLogModal.jsx`'s `canSave` requires a *currently-assigned* `person_id`
-   (`form.person_id`), initialized straight from `visit.person_id`. If that person is later
-   deleted, `visits.person_id` nulls out (the `person_name`/etc. snapshot survives, by design)
-   — so the edit form's person dropdown resets to empty and Save stays disabled until someone
-   picks a *different, currently-assigned* person, which would silently reattribute that
-   visit's history to them. Net effect: you can no longer fix even a typo in an old visit's
-   notes without corrupting who it's attributed to. **Likely fix shape:** let `canSave` accept
-   the visit's existing snapshot (no live person required) when only editing fields other than
-   the person, or show the snapshotted name as read-only text instead of a live-people
-   dropdown when the original person is gone.
+1. **FIXED (`dc5d940`, 2026-07-10). Deleting a person used to orphan their referrals — no
+   snapshot, unlike visits.** `DELETE /api/people/:id` hard-deleted the person row;
+   `referrals.person_id` went `null` via `ON DELETE SET NULL` with no snapshot columns
+   (unlike `visits`), so the referral became permanently unattributed and silently vanished
+   from every referral-metrics rollup. **Fixed** by deleting a person's referrals in the same
+   transaction instead of orphaning them.
+2. **FIXED (`dc5d940`, 2026-07-10). Editing a visit used to become permanently blocked once
+   its linked person was deleted.** `VisitLogModal.jsx`'s `canSave` required a
+   *currently-assigned* `person_id`, so once the linked person was deleted the edit form's
+   person dropdown reset to empty and Save stayed disabled until a *different* live person
+   was picked — silently reattributing that visit's history. **Fixed:** the picker now locks
+   to the preserved name snapshot instead of requiring a live person when the original is gone.
 
-Lower-priority findings from the same audit, worth a pass but not blocking:
-- `People.jsx`, `Places.jsx`, and `AssignPersonModal.jsx`'s search/list loads swallow fetch
-  errors (`try { ... } finally { setLoading(false) }`, no `catch`) — a failed request just
-  leaves stale results on screen with no error shown. Same three spots have no stale-response
-  guard on their 200ms-debounced search, so out-of-order responses can overwrite newer results.
-- The People directory list never shows "Departed" status (PlaceDetail's roster does) and
-  there's no filter to exclude departed people.
-- Places created via the Needs Mapping "create place" flow (`server/src/routes/notesReview.js`)
-  skip geocoding entirely — a second, hand-rolled insert path that duplicates
-  `POST /api/places` but forgot the `geocodeAddress(...)` call.
-- `Schedule.jsx`'s remove/skip-stop actions have no confirm dialog, no error handling, and no
-  disabled-state, unlike the identical `removeVisit()` in `PersonDetail.jsx`/`PlaceDetail.jsx`.
-- `places.category` is free text with no `.trim()`/normalization (unlike `name`), so stray
-  whitespace or casing differences silently fragment the Category filter dropdown.
-- Filter dropdown options (category/city/zip) are fetched once per mount and don't refresh
-  when a new value is added elsewhere in the same session.
+Lower-priority findings from the same audit — status as of the 2026-07-14 follow-up audit
+(`c408809`), which fixed most of these:
+- **FIXED.** `People.jsx`, `Places.jsx`, and `AssignPersonModal.jsx`'s search/list loads now
+  have error banners and a stale-response guard on their debounced search (a slower earlier
+  response can no longer overwrite a faster later one).
+- **Moot.** The People directory's missing "Departed" status is moot — the `departed` field
+  was dropped from the schema entirely on 2026-07-11 (nobody was using it).
+- **Still open.** Places created via the Needs Mapping "create place" flow
+  (`server/src/routes/notesReview.js`) still skip geocoding entirely — a second, hand-rolled
+  insert path that duplicates `POST /api/places` but never calls `geocodeAddress(...)`.
+- **FIXED.** `Schedule.jsx`'s remove/skip-stop actions now confirm, error-handle, and disable
+  the row while in flight, matching `removeVisit()` elsewhere.
+- **FIXED.** `places.category` is now a locked enum (`server/src/config/categories.js`), not
+  free text — `POST`/`PATCH /api/places` reject any non-matching value. Bede deliberately
+  deferred building an "add a category" admin UI until it's actually needed.
+- **Still open.** Filter dropdown options (category/city/zip) are fetched once per mount and
+  don't refresh when a new value is added elsewhere in the same session.
+
+**New findings from the 2026-07-14 full-codebase audit (`c408809`), both fixed same day:**
+- **Critical, was live in production:** `GET`/`POST /api/users` returned full user rows
+  including `password_hash` and the live `auth_token` with no column filtering — any
+  authenticated user could grab another user's session token and impersonate them. Fixed with
+  a `SAFE_COLUMNS` select, matching `routes/auth.js`'s existing `publicUser` pattern.
+- **Live-breaking bug in the scheduler actually in production use:**
+  `services/scheduler.js`'s `generateSchedule()` used `.whereNotIn('id', subquery)` where the
+  subquery could return a NULL `place_id` (an expected state under detach-not-delete) — SQL's
+  `NOT IN` against any NULL evaluates to NULL for every row, so once any place had ever been
+  deleted, route generation would silently return zero candidates forever, for every user.
+  Fixed with `.whereNotNull('place_id')` on both subqueries.
 
 What's confirmed solid (don't second-guess these without new evidence): referral-metrics
 rollups are correctly live-computed from each entity's *current* state, never stale/stored;
-`needs_attention`/`never_visited` are computed live on every read; detach-not-delete works
-correctly for places/visits (just not for people→referrals, per #1 above).
+`needs_attention`/`never_visited` are computed live on every read; detach-not-delete now works
+correctly everywhere, including people→referrals.
 
 ---
 
 ## 14B. Route-planner readiness (2026-07-10 assessment)
 
-**Stale as of 2026-07-14 — the route planner is now under active development on branch
-`bede-routeplanner`.** Everything below this point describes the *pre-build* state (nothing
-existed yet). For current status, don't trust this section — read `ROUTEPLANNER_PROGRESS.md`
-at the repo root instead, which is kept up to date phase-by-phase. Short version: the four-tier
-scoring engine, a haversine + distance-banded-speed drive-time estimator, visit-type durations,
-and a multi-day draft generator are all built and tested (not yet committed to `main`/no
-frontend/DB-persistence yet). Item 2 below ("no distance/duration math anywhere") and item 3
-("no visit-duration... data") are both now done, differently than either originally assumed.
-Next up (decided 2026-07-14, not started): replacing the haversine estimate with a real routing
-API, and adding a stop-sequencing/route-optimization pass — see `ROUTEPLANNER_PROGRESS.md`'s
-"phase 5" section for the current thinking on both.
+**Very stale as of 2026-07-14 — the route planner is essentially done on the backend/API side
+and partially in the UI, on branch `bede-routeplanner` (not yet merged to `main`).** Everything
+below this point describes the *pre-build* state (nothing existed yet) and should not be
+trusted for current status — read `ROUTEPLANNER_PROGRESS.md` at the repo root instead, kept
+up to date phase-by-phase. Short version: phases 1-6 are all built, tested (139 tests), and
+committed — four-tier scoring engine, drive-time via a real routing API (OSRM) with
+stop-sequencing optimization, visit-type durations, a multi-day draft generator, and a full
+draft/commit lifecycle with multi-user collision handling. On top of that, two frontend
+sub-slices are built and verified live: a "Plan My Visits" tab with generate + read-only view,
+then live editing (reorder/add/remove/visit-type, in-place time recalculation, over-budget
+flagging). Next: sub-slice 3 (suggestions + commit UI), then retiring the old scheduler this
+whole section originally assumed would still be the app's only option.
 
 Bede's next planned feature is a real route planner (plan a day's driving route between
 places). Assessed what's actually ready vs. missing:
@@ -720,8 +793,10 @@ wire that into `scheduler.js`'s ordering in place of/alongside `clusterSort`, (d
 
 1. Open the folder: `code ~/guardian-angels-sales`
 2. Ensure Node: `nvm use 24` (or rely on `./dev.sh`)
-3. Start it: `cd ~/guardian-angels-sales && ./dev.sh` → open http://localhost:5173
-4. Check `git status` — this session's work is uncommitted; decide whether to commit before
-   starting anything new.
-5. Read §14A before touching People/Places/visits/referrals data — two real bugs there, not
-   yet fixed. Read §14B before starting the route planner specifically.
+3. `git checkout bede-routeplanner` — that's where all route-planner work lives, not `main`.
+4. Start it: `cd ~/guardian-angels-sales && ./dev.sh` → open http://localhost:5173
+5. Check `git status` before starting anything new — ask Bede before committing, always.
+6. Read `ROUTEPLANNER_PROGRESS.md` before touching the route planner — it's the up-to-date
+   source of truth, phase-by-phase, including exactly what sub-slice 3 (suggestions + commit
+   UI) needs next.
+7. §14A's two critical bugs are fixed — no need to fix them again, just don't reintroduce them.

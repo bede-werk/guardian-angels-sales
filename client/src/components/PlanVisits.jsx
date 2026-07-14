@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
 import { TierChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import PlacePicker from './ui/PlacePicker';
 
 const HOURS_OPTIONS = [2, 3, 4, 5, 6];
 
@@ -19,10 +20,192 @@ function formatMinutes(minutes) {
   return m === 0 ? `${sign}${h}h` : `${sign}${h}h ${m}m`;
 }
 
-// Phase 6 frontend, sub-slice 1: generate-inputs + a read-only render of the
-// active multi-day draft (server/src/routes/scheduleDrafts.js). Editing
-// (reorder/add/remove/visit-type), suggestions, and commit are later slices —
-// this screen only generates and displays.
+// One day's card: stop list with reorder (drag + arrow fallback), remove,
+// visit-type change, and ad-hoc add. Every mutation calls its endpoint and
+// replaces this day's slice from the response (loadDraftDayView's return) —
+// the server always recalculates running totals/overBudget fresh, so the
+// live time math and over-budget flagging just fall out of that, per the
+// interaction model: edits recalculate in place, nothing is ever auto-
+// dropped or auto-reshuffled beyond what the user themselves just did.
+function DraftDay({ day, draftId, onDayUpdated, onError, reload }) {
+  const [busy, setBusy] = useState(false); // a reorder/add/remove request is in flight for this day
+  const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
+  const [addingOpen, setAddingOpen] = useState(false);
+
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
+  const dragIndexRef = useRef(null);
+
+  const budgetMinutes = day.totalMinutes + day.remainingMinutes;
+  const usedPct = budgetMinutes > 0 ? Math.min(100, Math.round((day.totalMinutes / budgetMinutes) * 100)) : 0;
+
+  // Optimistically shows the new order right away (stale running totals until
+  // the server responds, since those depend on real drive time between
+  // stops) — same pattern Schedule.jsx uses for its own reordering. Rolls
+  // back via a full reload if the server rejects it.
+  function persistReorder(nextStops) {
+    onError(null);
+    onDayUpdated({ ...day, stops: nextStops });
+    setBusy(true);
+    api.scheduleDrafts.reorderDay(draftId, day.date, nextStops.map((s) => s.place_id))
+      .then(onDayUpdated)
+      .catch((e) => { onError(e.message); reload(); })
+      .finally(() => setBusy(false));
+  }
+
+  function move(index, dir) {
+    const target = index + dir;
+    if (target < 0 || target >= day.stops.length) return;
+    const next = [...day.stops];
+    [next[index], next[target]] = [next[target], next[index]];
+    persistReorder(next);
+  }
+
+  function onDrop(targetIndex) {
+    const from = dragIndexRef.current;
+    dragIndexRef.current = null;
+    setDragIndex(null);
+    setOverIndex(null);
+    if (from === null || from === targetIndex) return;
+    const next = [...day.stops];
+    const [moved] = next.splice(from, 1);
+    next.splice(targetIndex, 0, moved);
+    persistReorder(next);
+  }
+
+  async function removeStop(stop) {
+    onError(null);
+    setPendingPlaceId(stop.place_id);
+    try {
+      onDayUpdated(await api.scheduleDrafts.removeStop(draftId, day.date, stop.place_id));
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setPendingPlaceId(null);
+    }
+  }
+
+  async function changeVisitType(stop, visitType) {
+    onError(null);
+    setPendingPlaceId(stop.place_id);
+    try {
+      onDayUpdated(await api.scheduleDrafts.setVisitType(draftId, day.date, stop.place_id, visitType));
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setPendingPlaceId(null);
+    }
+  }
+
+  async function addStop(place) {
+    onError(null);
+    setBusy(true);
+    try {
+      onDayUpdated(await api.scheduleDrafts.addStop(draftId, day.date, place.id));
+      setAddingOpen(false);
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>{formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}</h2>
+        {day.overBudget && <span className="badge attention">Over budget</span>}
+      </div>
+      <div className="card-body">
+        <div style={{ marginBottom: 14 }}>
+          <div className="progress-bar">
+            <div className="fill" style={{ width: `${usedPct}%` }} />
+          </div>
+          <div className="progress-label">
+            {day.stops.length} stop{day.stops.length === 1 ? '' : 's'} · {formatMinutes(day.totalMinutes)} of {formatMinutes(budgetMinutes)}
+            {day.overBudget
+              ? ` · ${formatMinutes(-day.remainingMinutes)} over`
+              : day.remainingMinutes > 0
+                ? ` · ${formatMinutes(day.remainingMinutes)} free`
+                : ''}
+          </div>
+        </div>
+
+        {day.stops.length === 0 ? (
+          <EmptyState message="Nothing planned for this day." />
+        ) : (
+          <ul className="list">
+            {day.stops.map((stop, i) => {
+              const rowBusy = busy || pendingPlaceId === stop.place_id;
+              return (
+                <li
+                  key={stop.place_id}
+                  className={`stop ${stop.overBudget ? 'attention-flag' : ''} ${overIndex === i ? 'drag-over' : ''} ${dragIndex === i ? 'dragging' : ''}`}
+                  draggable={!rowBusy}
+                  onDragStart={() => { dragIndexRef.current = i; setDragIndex(i); }}
+                  onDragOver={(e) => { e.preventDefault(); setOverIndex(i); }}
+                  onDragLeave={() => setOverIndex((o) => (o === i ? null : o))}
+                  onDrop={() => onDrop(i)}
+                  onDragEnd={() => { dragIndexRef.current = null; setDragIndex(null); setOverIndex(null); }}
+                >
+                  <div className="reorder">
+                    <span className="drag-handle" title="Drag to reorder">⠿</span>
+                    <button onClick={() => move(i, -1)} disabled={rowBusy || i === 0} title="Move up">▲</button>
+                    <button onClick={() => move(i, 1)} disabled={rowBusy || i === day.stops.length - 1} title="Move down">▼</button>
+                  </div>
+                  <div className="order">{i + 1}</div>
+                  <div className="main">
+                    <div className="name">{stop.place_name}</div>
+                    <div className="meta">
+                      {stop.address ? `${stop.address}, ` : ''}{stop.city} {stop.zip}
+                    </div>
+                    <div className="tag-list" style={{ marginTop: 6 }}>
+                      <CategoryChip category={stop.category} />
+                      <TierChip tier={stop.tier} />
+                      <select
+                        value={stop.visitType}
+                        onChange={(e) => changeVisitType(stop, e.target.value)}
+                        disabled={rowBusy}
+                        style={{ width: 'auto' }}
+                      >
+                        {Object.entries(VISIT_TYPE_LABELS).map(([key, label]) => (
+                          <option key={key} value={key}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="actions" style={{ alignItems: 'center' }}>
+                    <div className="tiny muted" style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                      {formatMinutes(stop.runningTotalMinutes)}
+                      {stop.overBudget && <div style={{ color: 'var(--mauve)', fontWeight: 600 }}>Over budget</div>}
+                    </div>
+                    <Button variant="danger" size="small" onClick={() => removeStop(stop)} disabled={rowBusy} title="Remove from this day">✕</Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <div style={{ marginTop: 14 }}>
+          {addingOpen ? (
+            <div className="row" style={{ alignItems: 'center' }}>
+              <PlacePicker placeholder="Add a stop to this day…" onPick={addStop} />
+              <Button variant="ghost" size="small" onClick={() => setAddingOpen(false)}>Cancel</Button>
+            </div>
+          ) : (
+            <Button variant="secondary" size="small" onClick={() => setAddingOpen(true)}>+ Add a stop</Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Phase 6 frontend, sub-slice 2: live editing on top of sub-slice 1's
+// generate + read-only view — reorder, add/remove, and visit-type changes,
+// each recalculating that day's running totals/over-budget flags in place.
+// Suggestions (the "nearby eligible stop" prompt) and commit are sub-slice 3.
 export default function PlanVisits() {
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -56,6 +239,13 @@ export default function PlanVisits() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Replaces one day's slice of the draft with a freshly recalculated day
+  // view (the shape every mutation endpoint returns) — never touches any
+  // other day, and never re-derives anything client-side.
+  function updateDay(dayView) {
+    setDraft((prev) => ({ ...prev, days: prev.days.map((d) => (d.date === dayView.date ? dayView : d)) }));
+  }
 
   function useCurrentLocation() {
     setLocating(true);
@@ -199,59 +389,16 @@ export default function PlanVisits() {
       ) : !draft ? (
         <EmptyState message="No visits planned yet. Let's map out your days." />
       ) : (
-        draft.days.map((day) => {
-          const budgetMinutes = day.totalMinutes + day.remainingMinutes;
-          const usedPct = budgetMinutes > 0 ? Math.min(100, Math.round((day.totalMinutes / budgetMinutes) * 100)) : 0;
-          return (
-            <div className="card" key={day.date}>
-              <div className="card-head">
-                <h2>{formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}</h2>
-                {day.overBudget && <span className="badge attention">Over budget</span>}
-              </div>
-              <div className="card-body">
-                <div style={{ marginBottom: 14 }}>
-                  <div className="progress-bar">
-                    <div className="fill" style={{ width: `${usedPct}%` }} />
-                  </div>
-                  <div className="progress-label">
-                    {day.stops.length} stop{day.stops.length === 1 ? '' : 's'} · {formatMinutes(day.totalMinutes)} of {formatMinutes(budgetMinutes)}
-                    {day.overBudget
-                      ? ` · ${formatMinutes(-day.remainingMinutes)} over`
-                      : day.remainingMinutes > 0
-                        ? ` · ${formatMinutes(day.remainingMinutes)} free`
-                        : ''}
-                  </div>
-                </div>
-                {day.stops.length === 0 ? (
-                  <EmptyState message="Nothing planned for this day." />
-                ) : (
-                  <ul className="list">
-                    {day.stops.map((stop, i) => (
-                      <li key={stop.place_id} className={`stop ${stop.overBudget ? 'attention-flag' : ''}`}>
-                        <div className="order">{i + 1}</div>
-                        <div className="main">
-                          <div className="name">{stop.place_name}</div>
-                          <div className="meta">
-                            {stop.address ? `${stop.address}, ` : ''}{stop.city} {stop.zip}
-                          </div>
-                          <div className="tag-list" style={{ marginTop: 6 }}>
-                            <CategoryChip category={stop.category} />
-                            <TierChip tier={stop.tier} />
-                            <span className="badge role">{VISIT_TYPE_LABELS[stop.visitType] || stop.visitType}</span>
-                          </div>
-                        </div>
-                        <div className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
-                          {formatMinutes(stop.runningTotalMinutes)}
-                          {stop.overBudget && <div style={{ color: 'var(--mauve)', fontWeight: 600 }}>Over budget</div>}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          );
-        })
+        draft.days.map((day) => (
+          <DraftDay
+            key={day.date}
+            day={day}
+            draftId={draft.id}
+            onDayUpdated={updateDay}
+            onError={setError}
+            reload={load}
+          />
+        ))
       )}
     </div>
   );
