@@ -16,9 +16,72 @@
 const knex = require('../db/knex');
 const defaultSchedulingConfig = require('../config/scheduling');
 const { rankCandidates } = require('./schedulingEngine');
-const { generateDraft, workingDays } = require('./scheduleGenerator');
+const { generateDraft } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
+
+// Calendar-driven planning: the user hand-picks which dates to plan (and how
+// many hours on each) rather than the old "N days ahead" auto-window, so
+// these are UI-facing bounds on that selection rather than generator config.
+const MAX_PLAN_DATES = 10;
+
+// Validates + normalizes the `days` the client sent for /generate: every
+// entry must be a real future date with a positive hoursPerDay, no date can
+// be picked twice, and — the actual fix for "I can still plan a day I
+// already committed" — no date already carrying a committed visit for this
+// user is allowed through. Pure (no knex) so it's directly unit-testable;
+// `committedDates` is a Set the caller already queried fresh.
+function validateDays(rawDays, { today, committedDates }) {
+  if (!Array.isArray(rawDays) || rawDays.length === 0) {
+    const err = new Error('Pick at least one date to plan for');
+    err.status = 400;
+    throw err;
+  }
+  if (rawDays.length > MAX_PLAN_DATES) {
+    const err = new Error(`Cannot plan more than ${MAX_PLAN_DATES} dates at once`);
+    err.status = 400;
+    throw err;
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  for (const entry of rawDays) {
+    const date = entry?.date;
+    const hoursPerDay = Number(entry?.hoursPerDay);
+
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      const err = new Error(`Invalid date: ${date}`);
+      err.status = 400;
+      throw err;
+    }
+    if (date <= today) {
+      const err = new Error(`${date} is in the past — pick a future date`);
+      err.status = 400;
+      throw err;
+    }
+    if (!(hoursPerDay > 0)) {
+      const err = new Error(`Invalid hours for ${date}`);
+      err.status = 400;
+      throw err;
+    }
+    if (seen.has(date)) {
+      const err = new Error(`${date} was selected twice`);
+      err.status = 400;
+      throw err;
+    }
+    seen.add(date);
+    if (committedDates.has(date)) {
+      const err = new Error(`${date} already has committed visits — pick a different date`);
+      err.status = 409;
+      throw err;
+    }
+    normalized.push({ date, hoursPerDay });
+  }
+
+  normalized.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return normalized;
+}
+
 
 // -- Pure: collision + commit-eligibility -----------------------------------
 
@@ -156,6 +219,31 @@ async function ownDraftPlaceIds(db, draftId) {
   return new Set(rows.map((r) => r.place_id));
 }
 
+// Every date this user already has a real `visits` row on — from committing
+// a previous draft, or logged directly outside the planner. Once a date is
+// in here, the calendar disables it and /generate rejects it (see
+// validateDays) — a committed day is done, not something a future plan
+// should ever touch again. Scoped to today-or-later: a past committed date
+// can never be selected anyway (validateDays rejects any date <= today on
+// its own), so there's no reason to drag the user's full visit history
+// through this query as it grows over time.
+async function committedDateSummaries(db, userId, { today } = {}) {
+  const cutoff = today || todayUTC();
+  const rows = await db('visits')
+    .where({ user_id: userId })
+    .andWhere('scheduled_date', '>=', cutoff)
+    .groupBy('scheduled_date')
+    .orderBy('scheduled_date')
+    .select('scheduled_date as date')
+    .count('* as count');
+  return rows.map((r) => ({ date: r.date, count: Number(r.count) }));
+}
+
+async function committedDatesForUser(db, userId, { today } = {}) {
+  const summaries = await committedDateSummaries(db, userId, { today });
+  return new Set(summaries.map((s) => s.date));
+}
+
 async function getActiveDraft(db, userId) {
   return db('schedule_drafts').where({ user_id: userId }).orderBy('id', 'desc').first();
 }
@@ -203,30 +291,25 @@ async function assertOwnsDraft(db, draftId, userId) {
 // genuinely free that day.
 async function generateAndPersistDraft({ userId, params, regenerate = false }) {
   const today = params.today || todayUTC();
-  const fullParams = {
-    daysAhead: params.daysAhead ?? 5,
-    workingWeekdays: params.workingWeekdays ?? [1, 2, 3, 4, 5],
-    exceptionDates: params.exceptionDates ?? [],
-    hoursPerDay: params.hoursPerDay ?? 4,
-    homeBase: params.homeBase,
-    zoneOverrides: params.zoneOverrides ?? {},
-    today,
-  };
 
   const existing = await getActiveDraft(knex, userId);
   if (existing && !regenerate) return loadDraftView(knex, existing.id);
+
+  const committedDates = await committedDatesForUser(knex, userId, { today });
+  const days = validateDays(params.days, { today, committedDates });
+  const fullParams = {
+    days,
+    homeBase: params.homeBase,
+    zoneOverrides: params.zoneOverrides ?? {},
+  };
 
   const basePool = await buildCandidatePool(knex, { today });
   const locked = await lockedElsewherePlaceIds(knex, { date: today, userId });
   const candidates = basePool.map((c) => ({ ...c, lockedElsewhere: locked.has(c.place.id) }));
 
-  const { days } = await generateDraft({
+  const { days: generatedDays } = await generateDraft({
     candidates,
-    today,
-    daysAhead: fullParams.daysAhead,
-    workingWeekdays: fullParams.workingWeekdays,
-    exceptionDates: fullParams.exceptionDates,
-    hoursPerDay: fullParams.hoursPerDay,
+    days: fullParams.days,
     homeBase: fullParams.homeBase,
     zoneOverrides: fullParams.zoneOverrides,
     optimizeRoute, // real OSRM-backed optimizer, finally wired in (phase 5 left it opt-in)
@@ -242,7 +325,7 @@ async function generateAndPersistDraft({ userId, params, regenerate = false }) {
     const draftId = await createDraft(trx, { userId, params: fullParams });
 
     const rows = [];
-    for (const day of days) {
+    for (const day of generatedDays) {
       day.stops.forEach((stop, i) => {
         rows.push({ draft_id: draftId, date: day.date, place_id: stop.place_id, visit_type: stop.visitType || null, sort_order: i });
       });
@@ -321,9 +404,9 @@ async function evaluateDay(stops, { homeBase, budgetMinutes }) {
 // here is cached: every call re-derives running totals/overBudget flags from
 // the currently-persisted stops, matching this app's existing "no manual
 // fields that need upkeep" convention (referralMetrics.js works the same
-// way). Days with zero stops still appear (reconstructed via
-// scheduleGenerator's workingDays(), the same helper generateDraft() uses
-// internally) rather than silently vanishing.
+// way). Days with zero stops still appear (one per params.days entry — the
+// exact dates the user picked at generate time) rather than silently
+// vanishing.
 async function loadDraftView(db, draftId) {
   const draft = await db('schedule_drafts').where({ id: draftId }).first();
   if (!draft) return null;
@@ -341,13 +424,8 @@ async function loadDraftView(db, draftId) {
     (byDate[row.date] ||= []).push(row);
   }
 
-  const dates = workingDays({
-    today: params.today,
-    daysAhead: params.daysAhead,
-    workingWeekdays: params.workingWeekdays,
-    exceptionDates: params.exceptionDates,
-  });
-  const budgetMinutes = params.hoursPerDay * 60;
+  const dates = params.days.map((d) => d.date);
+  const hoursPerDayByDate = Object.fromEntries(params.days.map((d) => [d.date, d.hoursPerDay]));
 
   // One query for the whole window's committed visits, grouped by date in
   // JS — same "reduce multiple rows to one-per-key in JS rather than N
@@ -361,6 +439,7 @@ async function loadDraftView(db, draftId) {
   for (const date of dates) {
     const rows = byDate[date] || [];
     const stops = rows.map(toDraftStopShape);
+    const budgetMinutes = hoursPerDayByDate[date] * 60;
     const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
     days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedByDate[date] || [], ...evaluated });
   }
@@ -383,7 +462,8 @@ async function loadDraftDayView(db, draftId, date) {
     .select('s.id as stop_id', 's.visit_type', 'p.*');
 
   const stops = rows.map(toDraftStopShape);
-  const budgetMinutes = params.hoursPerDay * 60;
+  const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
+  const budgetMinutes = hoursPerDay * 60;
   const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
   const committed = await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date);
 
@@ -434,6 +514,37 @@ async function removeStop({ draftId, userId, date, placeId }) {
     await assertOwnsDraft(trx, draftId, userId);
     await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: placeId }).del();
     return loadDraftDayView(trx, draftId, date);
+  });
+}
+
+// Discards just one day's still-open proposal, as if that date had never
+// been picked at generate time: its stops are deleted AND the date itself is
+// dropped from params.days, so it stops being a day this draft has an
+// opinion about at all (unlike every other per-day mutation here, which
+// keeps every date in params.days fixed — see loadDraftView). The rest of
+// the draft (its other days) is untouched, and so is anything already
+// accepted for THIS day (a prior partial commit's visits rows live in
+// `visits`, not `schedule_draft_stops`, so this can never touch them). If
+// this was the last remaining date, the whole draft is deleted rather than
+// left behind as an empty, dateless husk — returns null in that case (same
+// "no active draft" shape getActiveDraft/loadDraftView return), otherwise
+// the full recalculated draft view (there's no single "day view" to hand
+// back once the day itself no longer exists).
+async function discardDay({ draftId, userId, date }) {
+  return knex.transaction(async (trx) => {
+    const draft = await assertOwnsDraft(trx, draftId, userId);
+    await trx('schedule_draft_stops').where({ draft_id: draftId, date }).del();
+
+    const params = JSON.parse(draft.params_json);
+    const remainingDays = params.days.filter((d) => d.date !== date);
+
+    if (remainingDays.length === 0) {
+      await deleteDraft(trx, draftId);
+      return null;
+    }
+
+    await trx('schedule_drafts').where({ id: draftId }).update({ params_json: JSON.stringify({ ...params, days: remainingDays }) });
+    return loadDraftView(trx, draftId);
   });
 }
 
@@ -598,11 +709,15 @@ async function commitAll({ draftId, userId }) {
 }
 
 module.exports = {
+  MAX_PLAN_DATES,
+  validateDays,
   mergeLockedElsewhereIds,
   partitionCommittableStops,
   buildCandidatePool,
   lockedElsewherePlaceIds,
   committedElsewherePlaceIds,
+  committedDatesForUser,
+  committedDateSummaries,
   ownDraftPlaceIds,
   getActiveDraft,
   createDraft,
@@ -612,6 +727,7 @@ module.exports = {
   loadDraftDayView,
   addStop,
   removeStop,
+  discardDay,
   deleteActiveDraft,
   reorderDay,
   setVisitType,

@@ -120,7 +120,9 @@ export const api = {
   scheduleDrafts: {
     generate: (body) => request('/schedule-drafts/generate', { method: 'POST', body }),
     active: () => request('/schedule-drafts/active'),
+    committedDates: () => request('/schedule-drafts/committed-dates'),
     discard: (draftId) => request(`/schedule-drafts/${draftId}`, { method: 'DELETE' }),
+    discardDay: (draftId, date) => request(`/schedule-drafts/${draftId}/days/${date}`, { method: 'DELETE' }),
     reorderDay: (draftId, date, placeIds) =>
       request(`/schedule-drafts/${draftId}/days/${date}/reorder`, { method: 'PATCH', body: { placeIds } }),
     addStop: (draftId, date, placeId, visitType) =>

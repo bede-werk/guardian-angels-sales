@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { mergeLockedElsewhereIds, partitionCommittableStops } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, MAX_PLAN_DATES } = require('./scheduleDraft');
 
 describe('mergeLockedElsewhereIds', () => {
   test('unions committed and other-draft rows', () => {
@@ -72,5 +72,55 @@ describe('partitionCommittableStops', () => {
     const stops = [{ place_id: 1, visit_type: 'drop_in', sort_order: 0 }];
     const { committable } = partitionCommittableStops(stops, new Set());
     assert.deepEqual(committable[0], stops[0]);
+  });
+});
+
+describe('validateDays', () => {
+  const TODAY = '2026-07-13';
+  const noCommitted = new Set();
+
+  test('normalizes and sorts a valid selection', () => {
+    const result = validateDays(
+      [{ date: '2026-07-16', hoursPerDay: 4 }, { date: '2026-07-14', hoursPerDay: 6 }],
+      { today: TODAY, committedDates: noCommitted }
+    );
+    assert.deepEqual(result, [{ date: '2026-07-14', hoursPerDay: 6 }, { date: '2026-07-16', hoursPerDay: 4 }]);
+  });
+
+  test('rejects an empty selection', () => {
+    assert.throws(() => validateDays([], { today: TODAY, committedDates: noCommitted }), /at least one date/);
+  });
+
+  test(`rejects more than ${MAX_PLAN_DATES} dates`, () => {
+    const many = Array.from({ length: MAX_PLAN_DATES + 1 }, (_, i) => ({ date: `2026-08-${String(i + 1).padStart(2, '0')}`, hoursPerDay: 4 }));
+    assert.throws(() => validateDays(many, { today: TODAY, committedDates: noCommitted }), /cannot plan more than/i);
+  });
+
+  test('rejects a date that is today or earlier', () => {
+    assert.throws(
+      () => validateDays([{ date: TODAY, hoursPerDay: 4 }], { today: TODAY, committedDates: noCommitted }),
+      /in the past/
+    );
+  });
+
+  test('rejects an invalid hoursPerDay', () => {
+    assert.throws(
+      () => validateDays([{ date: '2026-07-14', hoursPerDay: 0 }], { today: TODAY, committedDates: noCommitted }),
+      /invalid hours/i
+    );
+  });
+
+  test('rejects a date selected twice', () => {
+    assert.throws(
+      () => validateDays([{ date: '2026-07-14', hoursPerDay: 4 }, { date: '2026-07-14', hoursPerDay: 5 }], { today: TODAY, committedDates: noCommitted }),
+      /selected twice/
+    );
+  });
+
+  test('rejects a date that already has a committed visit', () => {
+    assert.throws(
+      () => validateDays([{ date: '2026-07-14', hoursPerDay: 4 }], { today: TODAY, committedDates: new Set(['2026-07-14']) }),
+      /already has committed visits/
+    );
   });
 });

@@ -1,11 +1,27 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
 import { TierChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PlacePicker from './ui/PlacePicker';
+import Calendar from './ui/Calendar';
 
 const HOURS_OPTIONS = [2, 3, 4, 5, 6];
+const DEFAULT_HOURS_PER_DAY = 4;
+const MAX_PLAN_DATES = 10; // mirrors scheduleDraft.js's MAX_PLAN_DATES
+
+// 'YYYY-MM-DD' for tomorrow in the browser's local timezone — the earliest
+// selectable calendar date. Today itself is never selectable, same
+// convention the old daysAhead window used (today's own day is basically
+// over by the time a rep is planning ahead).
+function tomorrowISO() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 // Turns a minute count into "1h 45m" / "45m" / "2h".
 function formatMinutes(minutes) {
@@ -24,7 +40,7 @@ function formatMinutes(minutes) {
 // live time math and over-budget flagging just fall out of that, per the
 // interaction model: edits recalculate in place, nothing is ever auto-
 // dropped or auto-reshuffled beyond what the user themselves just did.
-function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted }) {
+function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded }) {
   const [busy, setBusy] = useState(false); // a reorder/add/remove request is in flight for this day
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
@@ -175,7 +191,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
 
   async function commitThisDay() {
     if (day.stops.length === 0) return;
-    if (!window.confirm(`Commit ${day.stops.length} visit${day.stops.length === 1 ? '' : 's'} for ${formatDate(day.date)}? This creates real scheduled visits.`)) return;
+    if (!window.confirm(`Accept the proposal for ${formatDate(day.date)}? This turns ${day.stops.length} visit${day.stops.length === 1 ? '' : 's'} into real scheduled visits.`)) return;
     onError(null);
     setBusy(true);
     try {
@@ -183,6 +199,27 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
     } catch (e) {
       onError(e.message);
     } finally {
+      setBusy(false);
+    }
+  }
+
+  // Discards just THIS day's still-open proposal, as if the date had never
+  // been picked at all — every other day (and anything already accepted for
+  // this day) is untouched, unlike the page-level "Discard all proposals"
+  // button. Unlike every other mutation here, the response isn't a day view
+  // (the day itself no longer exists once its date drops out of the draft —
+  // see scheduleDraft.js's discardDay) so this goes through onDayDiscarded,
+  // not onDayUpdated: the parent removes the whole card and de-selects the
+  // date on the calendar, rather than patching this day's slice in place.
+  async function discardThisDay() {
+    if (day.stops.length === 0) return;
+    if (!window.confirm(`Discard the proposal for ${formatDate(day.date)}? ${day.stops.length} still-open visit${day.stops.length === 1 ? '' : 's'} will be removed — this can't be undone.`)) return;
+    onError(null);
+    setBusy(true);
+    try {
+      onDayDiscarded(day.date, await api.scheduleDrafts.discardDay(draftId, day.date));
+    } catch (e) {
+      onError(e.message);
       setBusy(false);
     }
   }
@@ -212,8 +249,8 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
       <div className="card-head">
         <h2>{formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}</h2>
         <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
-          {day.committed.length > 0 && <span className="badge committed">✓ {day.committed.length} committed</span>}
-          {day.overBudget && <span className="badge attention">Over budget</span>}
+          {day.committed.length > 0 && <span className="badge committed" style={{ flex: 'none', minWidth: 0 }}>✓ {day.committed.length} planned</span>}
+          {day.overBudget && <span className="badge attention" style={{ flex: 'none', minWidth: 0 }}>Over budget</span>}
           {everEdited && day.stops.length >= 2 && (
             <Button
               size="small"
@@ -225,8 +262,18 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
               Re-optimize
             </Button>
           )}
-          <Button size="small" onClick={commitThisDay} disabled={busy || day.stops.length === 0} title="Turn this day's stops into real scheduled visits">
-            Commit day
+          <Button
+            size="small"
+            variant="danger"
+            onClick={discardThisDay}
+            disabled={busy || day.stops.length === 0}
+            title="Remove this day's still-open proposal (anything already accepted for this day is untouched)"
+            style={{ flex: 'none', minWidth: 0 }}
+          >
+            Discard proposal
+          </Button>
+          <Button size="small" onClick={commitThisDay} disabled={busy || day.stops.length === 0} title="Turn this day's proposed visits into real scheduled visits" style={{ flex: 'none', minWidth: 0 }}>
+            Accept proposal
           </Button>
         </div>
       </div>
@@ -248,7 +295,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
         {day.committed.length > 0 && (
           <div style={{ marginBottom: day.stops.length > 0 ? 16 : 0 }}>
             <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 4 }}>
-              Committed
+              Planned
             </div>
             <ul className="list">
               {day.committed.map((v) => (
@@ -265,7 +312,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
                     </div>
                   </div>
                   <div className="tiny muted" style={{ whiteSpace: 'nowrap', color: 'var(--teal-dark)', fontWeight: 600 }}>
-                    ✓ Committed
+                    ✓ Planned
                   </div>
                 </li>
               ))}
@@ -275,7 +322,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
 
         {day.stops.length > 0 && day.committed.length > 0 && (
           <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 4 }}>
-            Still planning
+            Proposed
           </div>
         )}
 
@@ -387,8 +434,9 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
 
 // Phase 6 frontend, sub-slice 3: suggestions (the "nearby eligible stop"
 // prompt on under-budget days, per DraftDay above) and commit — per-day
-// (DraftDay's "Commit day" button) and all-remaining-days (this component's
-// "Commit all" button). Built on top of sub-slice 2's live editing.
+// (DraftDay's "Accept proposal" button) and all-remaining-days (this
+// component's "Accept all proposals" button). Built on top of sub-slice 2's
+// live editing.
 export default function PlanVisits() {
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -398,8 +446,21 @@ export default function PlanVisits() {
   const [committingAll, setCommittingAll] = useState(false);
   const [discarding, setDiscarding] = useState(false);
 
-  const [daysAhead, setDaysAhead] = useState(5);
-  const [hoursPerDay, setHoursPerDay] = useState(4);
+  // The dates the rep has picked on the calendar to plan for, each with its
+  // own hours budget — [{ date, hoursPerDay }], sorted by date. Seeded from
+  // the active draft's own params once (see the effect below) so "Plan
+  // again" starts from whatever's already generated; committedDates pulls
+  // any date that gets committed back out (see the other effect below) so a
+  // day can never be re-selected once it's done — the actual fix for the
+  // "still able to plan more visits for an already-committed day" bug.
+  const [selectedDays, setSelectedDays] = useState([]);
+  // Raw [{ date, count }] from the server — committedDates below is just the
+  // date Set derived from it (what the calendar/selection-pruning need);
+  // committedSummaries itself is what the "Already committed" snapshot list
+  // renders, since it also wants the per-day visit count.
+  const [committedSummaries, setCommittedSummaries] = useState([]);
+  const committedDates = useMemo(() => new Set(committedSummaries.map((s) => s.date)), [committedSummaries]);
+  const seededFromDraft = useRef(false);
 
   // homeBase capture: browser geolocation, or a manually entered address —
   // no rep/user location field exists in the schema yet, so this is asked
@@ -413,6 +474,10 @@ export default function PlanVisits() {
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
   const [manualAddress, setManualAddress] = useState({ address: '', city: '', state: '', zip: '' });
   const [geocoding, setGeocoding] = useState(false);
+
+  const refreshCommittedDates = useCallback(async () => {
+    setCommittedSummaries(await api.scheduleDrafts.committedDates());
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -428,7 +493,28 @@ export default function PlanVisits() {
 
   useEffect(() => {
     load();
-  }, [load]);
+    refreshCommittedDates();
+  }, [load, refreshCommittedDates]);
+
+  // Seeds the calendar from the active draft's own selection exactly once
+  // (on first load, if there's already a draft) — every later change to
+  // `selectedDays` is either the user editing the calendar directly, or an
+  // explicit set after a successful generate/regenerate (see generate()
+  // below), never an overwrite triggered by an unrelated draft refresh.
+  useEffect(() => {
+    if (draft && !seededFromDraft.current) {
+      seededFromDraft.current = true;
+      setSelectedDays(draft.params.days);
+    }
+  }, [draft]);
+
+  // A date that gains a committed visit (from committing a day, here or in
+  // another tab) can never be planned again — see scheduleDraft.js's
+  // validateDays, which enforces the same rule server-side. Dropping it here
+  // too means a stale selection can't even be submitted to hit that 409.
+  useEffect(() => {
+    setSelectedDays((prev) => prev.filter((d) => !committedDates.has(d.date)));
+  }, [committedDates]);
 
   // Replaces one day's slice of the draft with a freshly recalculated day
   // view (the shape every mutation endpoint returns) — never touches any
@@ -444,29 +530,44 @@ export default function PlanVisits() {
   function handleDayCommitted(date, result) {
     const parts = [];
     if (result.committed.length > 0) {
-      parts.push(`Committed ${result.committed.length} visit${result.committed.length === 1 ? '' : 's'} for ${formatDate(date)}.`);
+      parts.push(`Planned ${result.committed.length} visit${result.committed.length === 1 ? '' : 's'} for ${formatDate(date)}.`);
     }
     if (result.skippedCollisions.length > 0) {
       parts.push(`Skipped ${result.skippedCollisions.length} (already booked elsewhere by then): ${result.skippedCollisions.map((c) => c.place_name).join(', ')}.`);
     }
-    if (parts.length === 0) parts.push(`Nothing to commit for ${formatDate(date)}.`);
+    if (parts.length === 0) parts.push(`Nothing to accept for ${formatDate(date)}.`);
     setNotice(parts.join(' '));
     load();
+    refreshCommittedDates();
+  }
+
+  // discardDay's response is the full recalculated draft (its days list just
+  // shrank by one) or null if that was the last date — either way, set it
+  // directly rather than patching a slice, same as generate()'s result.
+  // Also drops the date from selectedDays so the calendar shows it
+  // unselected again — the whole point being that discarding a day's
+  // proposal leaves things exactly as if that date had never been picked (no
+  // notice banner either — the card vanishing and the calendar deselecting
+  // are already the confirmation).
+  function handleDayDiscarded(date, result) {
+    setDraft(result);
+    setSelectedDays((prev) => prev.filter((d) => d.date !== date));
   }
 
   async function commitAllDays() {
     if (!draft) return;
     const totalStops = draft.days.reduce((n, d) => n + d.stops.length, 0);
-    if (totalStops === 0) { setError('Nothing to commit yet.'); return; }
-    if (!window.confirm(`Commit every remaining planned visit across all days? This creates real scheduled visits.`)) return;
+    if (totalStops === 0) { setError('Nothing to accept yet.'); return; }
+    if (!window.confirm(`Accept every remaining proposed visit across all days? This creates real scheduled visits.`)) return;
     setError(null);
     setCommittingAll(true);
     try {
       const results = await api.scheduleDrafts.commitAll(draft.id);
       const committed = results.reduce((n, r) => n + r.committed.length, 0);
       const skipped = results.reduce((n, r) => n + r.skippedCollisions.length, 0);
-      setNotice(`Committed ${committed} visit${committed === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} (already booked elsewhere)` : ''}.`);
+      setNotice(`Planned ${committed} visit${committed === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} (already booked elsewhere)` : ''}.`);
       await load();
+      await refreshCommittedDates();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -477,13 +578,16 @@ export default function PlanVisits() {
   // Discards the whole proposal — every day, not just one. Any day already
   // committed is unaffected (its stops left the draft the moment they
   // became real visits), so this only throws away still-uncommitted work.
-  // homeBase is deliberately left as-is so a fresh "Plan my visits" doesn't
-  // force re-entering a start location.
+  // Clears selectedDays too — same "as if it had never been picked" goal as
+  // the per-day "Discard proposal" button — so the calendar shows every
+  // date unselected again, not just the draft gone. homeBase is deliberately
+  // left as-is so a fresh "Plan my visits" doesn't force re-entering a start
+  // location.
   async function discardDraft() {
     if (!draft) return;
     const totalStops = draft.days.reduce((n, d) => n + d.stops.length, 0);
     const warning = totalStops > 0
-      ? `Discard this entire proposal? ${totalStops} planned visit${totalStops === 1 ? '' : 's'} across every day will be lost — this can't be undone.`
+      ? `Discard this entire proposal? ${totalStops} proposed visit${totalStops === 1 ? '' : 's'} across every day will be lost — this can't be undone.`
       : 'Discard this proposal and start over?';
     if (!window.confirm(warning)) return;
     setError(null);
@@ -491,6 +595,7 @@ export default function PlanVisits() {
     try {
       await api.scheduleDrafts.discard(draft.id);
       setDraft(null);
+      setSelectedDays([]);
       setNotice(null);
     } catch (e) {
       setError(e.message);
@@ -545,12 +650,12 @@ export default function PlanVisits() {
     setGenerating(true);
     try {
       const next = await api.scheduleDrafts.generate({
-        daysAhead: Number(daysAhead),
-        hoursPerDay: Number(hoursPerDay),
+        days: selectedDays.map(({ date, hoursPerDay }) => ({ date, hoursPerDay })),
         homeBase: { lat: homeBase.lat, lng: homeBase.lng },
         regenerate,
       });
       setDraft(next);
+      setSelectedDays(next.params.days); // server-normalized (sorted) version of what we just sent
     } catch (e) {
       setError(e.message);
     } finally {
@@ -558,7 +663,23 @@ export default function PlanVisits() {
     }
   }
 
-  const canGenerate = !!homeBase && !generating;
+  function toggleDate(iso) {
+    setSelectedDays((prev) => {
+      if (prev.some((d) => d.date === iso)) return prev.filter((d) => d.date !== iso);
+      if (prev.length >= MAX_PLAN_DATES) return prev; // Calendar already disables this case; guard anyway
+      return [...prev, { date: iso, hoursPerDay: DEFAULT_HOURS_PER_DAY }].sort((a, b) => (a.date < b.date ? -1 : 1));
+    });
+  }
+
+  function setHoursForDate(iso, hours) {
+    setSelectedDays((prev) => prev.map((d) => (d.date === iso ? { ...d, hoursPerDay: Number(hours) } : d)));
+  }
+
+  function removeDate(iso) {
+    setSelectedDays((prev) => prev.filter((d) => d.date !== iso));
+  }
+
+  const canGenerate = !!homeBase && !generating && selectedDays.length > 0;
 
   return (
     <div className="grid" style={{ gap: 16 }}>
@@ -569,37 +690,18 @@ export default function PlanVisits() {
         <div className="card-head">
           <h2>Plan My Visits</h2>
           <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
-            <div style={{ minWidth: 90 }}>
-              <label className="field">Days</label>
-              <input
-                type="number"
-                min={1}
-                max={10}
-                value={daysAhead}
-                onChange={(e) => setDaysAhead(e.target.value)}
-                style={{ width: 70 }}
-              />
-            </div>
-            <div style={{ minWidth: 90 }}>
-              <label className="field">Hours/day</label>
-              <select value={hoursPerDay} onChange={(e) => setHoursPerDay(e.target.value)}>
-                {HOURS_OPTIONS.map((h) => (
-                  <option key={h} value={h}>{h} hrs</option>
-                ))}
-              </select>
-            </div>
             {draft ? (
               <>
-                <Button variant="danger" onClick={discardDraft} disabled={discarding || committingAll}>
-                  {discarding ? 'Discarding…' : 'Discard plan'}
+                <Button variant="danger" onClick={discardDraft} disabled={discarding || committingAll} style={{ flex: 'none', minWidth: 0 }}>
+                  {discarding ? 'Discarding…' : 'Discard all proposals'}
                 </Button>
-                <Button variant="secondary" onClick={() => generate(true)} disabled={!canGenerate}>Plan again</Button>
-                <Button onClick={commitAllDays} disabled={committingAll}>
-                  {committingAll ? 'Committing…' : 'Commit all'}
+                <Button variant="secondary" onClick={() => generate(true)} disabled={!canGenerate} style={{ flex: 'none', minWidth: 0 }}>Create another proposal</Button>
+                <Button onClick={commitAllDays} disabled={committingAll} style={{ flex: 'none', minWidth: 0 }}>
+                  {committingAll ? 'Accepting…' : 'Accept all proposals'}
                 </Button>
               </>
             ) : (
-              <Button onClick={() => generate(false)} disabled={!canGenerate}>Plan my visits</Button>
+              <Button onClick={() => generate(false)} disabled={!canGenerate} style={{ flex: 'none', minWidth: 0 }}>Create proposal</Button>
             )}
           </div>
         </div>
@@ -646,13 +748,68 @@ export default function PlanVisits() {
               )}
             </div>
           )}
+
+          <div style={{ marginTop: 18 }}>
+            <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 8 }}>
+              Plan for these dates{selectedDays.length > 0 ? ` (${selectedDays.length})` : ''}
+            </div>
+            <div className="row" style={{ alignItems: 'flex-start', gap: 20 }}>
+              <div style={{ flex: 'none', minWidth: 0 }}>
+                <Calendar
+                  selected={new Set(selectedDays.map((d) => d.date))}
+                  committed={committedDates}
+                  minDate={tomorrowISO()}
+                  maxSelected={MAX_PLAN_DATES}
+                  onToggle={toggleDate}
+                />
+              </div>
+              <div className="selected-days-list" style={{ flex: 'none', minWidth: 0 }}>
+                {selectedDays.length > 0 && (
+                  selectedDays.map((d) => (
+                    <div key={d.date} className="selected-days-row">
+                      <span className="date-label">{formatDate(d.date)}</span>
+                      <select value={d.hoursPerDay} onChange={(e) => setHoursForDate(d.date, e.target.value)} style={{ width: 'auto' }}>
+                        {HOURS_OPTIONS.map((h) => (
+                          <option key={h} value={h}>{h} hrs</option>
+                        ))}
+                      </select>
+                      <Button variant="ghost" size="small" onClick={() => removeDate(d.date)} title="Remove this date">✕</Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
+      {committedSummaries.length > 0 && (
+        <div className="card">
+          <div className="card-head">
+            <h2>Already Planned</h2>
+          </div>
+          <div className="card-body">
+            <ul className="list">
+              {committedSummaries.map((s) => (
+                <li key={s.date} className="stop">
+                  <div className="main">
+                    <div className="name">{formatDate(s.date)}</div>
+                    <div className="meta">{s.count} visit{s.count === 1 ? '' : 's'} planned</div>
+                  </div>
+                  <span className="badge committed" style={{ flex: 'none', minWidth: 0 }}>✓ Planned</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="loading">Loading…</div>
       ) : !draft ? (
-        <EmptyState message="No visits planned yet. Let's map out your days." />
+        committedSummaries.length === 0 && (
+          <EmptyState message="No visits planned yet. Let's map out your days." />
+        )
       ) : (
         draft.days.map((day) => (
           <DraftDay
@@ -661,6 +818,7 @@ export default function PlanVisits() {
             draftId={draft.id}
             onDayUpdated={updateDay}
             onDayCommitted={handleDayCommitted}
+            onDayDiscarded={handleDayDiscarded}
             onError={setError}
             reload={load}
           />

@@ -23,50 +23,6 @@ const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { rankCandidates, TIERS } = require('./schedulingEngine');
 const { packTimeBlock, packOptimizedTimeBlock, isGeocoded, resolveVisitType, visitDurationMinutes } = require('./driveTime');
 
-// -- Date helpers: hand-rolled UTC-safe math, same convention as
-// schedulingEngine.js's daysSince() — deliberately no dayjs in the pure
-// service layer, even though dayjs is used elsewhere in routes/dashboard.js.
-
-function addUTCDays(dateStr, n) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() + n);
-  return dt.toISOString().slice(0, 10);
-}
-
-// 0 (Sunday) .. 6 (Saturday) — JS-native Date.getUTCDay() convention. No ISO
-// 1-7 remap: workingWeekdays is a generator input, not a public contract, so
-// there's no reason to add a translation step for a value this only needs to
-// compare against getUTCDay()'s own output.
-function weekdayOf(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-}
-
-// Returns exactly `daysAhead` 'YYYY-MM-DD' strings, in order, starting the
-// day AFTER `today` (today itself is never included), skipping any weekday
-// not in `workingWeekdays` (0=Sun..6=Sat) and any date in `exceptionDates`.
-// Scan cap so a bad input (e.g. an empty workingWeekdays, or exceptionDates
-// covering every upcoming date) throws instead of spinning forever — 14x
-// daysAhead is generous even for a lopsided one-day-a-week schedule.
-function workingDays({ today, daysAhead, workingWeekdays, exceptionDates = [] }) {
-  const exceptionSet = new Set(exceptionDates);
-  const maxScanDays = daysAhead * 14;
-  const days = [];
-  let cursor = addUTCDays(today, 1);
-  let scanned = 0;
-  while (days.length < daysAhead) {
-    if (scanned++ > maxScanDays) {
-      throw new Error(`workingDays: no working day found in ${maxScanDays} days — check workingWeekdays/exceptionDates`);
-    }
-    if (workingWeekdays.includes(weekdayOf(cursor)) && !exceptionSet.has(cursor)) {
-      days.push(cursor);
-    }
-    cursor = addUTCDays(cursor, 1);
-  }
-  return days;
-}
-
 // Shapes a ranked candidate into packTimeBlock's stop input. Keeps the
 // fields needed to read/identify the draft; packTimeBlock spreads these
 // through untouched into its output.
@@ -205,37 +161,42 @@ async function topUpDay(packed, geocodedPool, { homeBase, budgetMinutes, optimiz
   return { stops, totalMinutes, remainingMinutes };
 }
 
-// Top-level orchestrator. For each of `daysAhead` working days: re-ranks the
-// remaining pool against THAT DAY'S OWN DATE (not once against `today`) — a
-// place whose hard floor lapses by day 3, or a commitment that becomes due
-// by day 4, is picked up correctly rather than frozen at today's view of the
-// world. Picks a zone (zoneOverrides[date] if given, else the region of the
-// top-ranked remaining candidate), packs it via fillDayFromZone, then
-// removes every PACKED place from the pool before the next day — candidates
-// merely considered (wrong zone, or excluded by budget truncation) remain
-// available for a later day.
+// Top-level orchestrator. `days` is the caller's explicit, already-validated
+// list of `{ date, hoursPerDay }` pairs (picked by hand on the "Plan My
+// Visits" calendar — see scheduleDraft.js's validateDays) rather than a
+// daysAhead/workingWeekdays/exceptionDates window this module used to
+// compute itself; a caller-chosen date list means an already-committed date
+// simply never gets handed in, instead of this module needing to know
+// anything about commit state. For each day: re-ranks the remaining pool
+// against THAT DAY'S OWN DATE (not once against `today`) — a place whose
+// hard floor lapses by day 3, or a commitment that becomes due by day 4, is
+// picked up correctly rather than frozen at today's view of the world.
+// Picks a zone (zoneOverrides[date] if given, else the region of the
+// top-ranked remaining candidate), packs it via fillDayFromZone (using that
+// day's own hoursPerDay budget), then removes every PACKED place from the
+// pool before the next day — candidates merely considered (wrong zone, or
+// excluded by budget truncation) remain available for a later day.
 //
 // A plain for-of loop, not .map(): each day's ranking depends on `remaining`
 // as left by the previous day, and fillDayFromZone is async since phase 5 —
 // .map()'s callback would fire for every date before any single await
 // resolved, running every day against the SAME stale `remaining` pool
 // instead of each day seeing the previous day's dedupe.
-async function generateDraft({ candidates, today, daysAhead, workingWeekdays, exceptionDates, hoursPerDay, homeBase, zoneOverrides = {}, config = {}, optimizeRoute }) {
+async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, config = {}, optimizeRoute }) {
   const schedulingConfig = { ...defaultSchedulingConfig, ...(config.scheduling ?? {}) };
   const driveConfig = { ...defaultDriveConfig, ...(config.drive ?? {}) };
   const visitTypesConfig = { ...defaultVisitTypesConfig, ...(config.visitTypes ?? {}) };
   const routeOptimizerConfig = { ...defaultRouteOptimizerConfig, ...(config.routeOptimizer ?? {}) };
-  const budgetMinutes = hoursPerDay * 60;
 
-  const dates = workingDays({ today, daysAhead, workingWeekdays, exceptionDates });
   let remaining = candidates; // raw pool; shrinks as places get packed across days
 
-  const days = [];
-  for (const date of dates) {
+  const result = [];
+  for (const { date, hoursPerDay } of days) {
+    const budgetMinutes = hoursPerDay * 60;
     const ranked = rankCandidates(remaining, { today: date, config: schedulingConfig });
 
     if (ranked.length === 0) {
-      days.push({ date, zone: null, stops: [], totalMinutes: 0, remainingMinutes: budgetMinutes, droppedCommitments: [] });
+      result.push({ date, zone: null, stops: [], totalMinutes: 0, remainingMinutes: budgetMinutes, droppedCommitments: [] });
       continue;
     }
 
@@ -254,14 +215,13 @@ async function generateDraft({ candidates, today, daysAhead, workingWeekdays, ex
     const packedIds = new Set(stops.map((s) => s.place_id));
     remaining = remaining.filter((c) => !packedIds.has(c.place.id));
 
-    days.push({ date, zone, stops, totalMinutes, remainingMinutes, droppedCommitments });
+    result.push({ date, zone, stops, totalMinutes, remainingMinutes, droppedCommitments });
   }
 
-  return { days };
+  return { days: result };
 }
 
 module.exports = {
-  workingDays,
   toPackableStop,
   fillDayFromZone,
   generateDraft,

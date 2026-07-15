@@ -27,9 +27,13 @@ function handle(fn) {
 }
 
 // POST /api/schedule-drafts/generate
-// Body: { daysAhead?, workingWeekdays?, exceptionDates?, hoursPerDay?, homeBase, zoneOverrides?, regenerate? }
-// If an active draft already exists and regenerate isn't set, just returns
-// it (recalculated) instead of duplicating — same convention as the old
+// Body: { days: [{ date, hoursPerDay }], homeBase, zoneOverrides?, regenerate? }
+// `days` is the exact set of calendar dates the user picked (up to
+// scheduleDraft.MAX_PLAN_DATES), each with its own hours budget — validated
+// (future dates only, no dupes, no date that's already committed — see
+// scheduleDraft.validateDays) before anything is generated. If an active
+// draft already exists and regenerate isn't set, just returns it
+// (recalculated) instead of duplicating — same convention as the old
 // scheduler's POST /generate.
 router.post('/generate', handle(async (req, res) => {
   const { homeBase, regenerate } = req.body;
@@ -50,6 +54,28 @@ router.get('/active', handle(async (req, res) => {
   const existing = await scheduleDraft.getActiveDraft(knex, req.user.id);
   if (!existing) return res.json(null);
   res.json(await scheduleDraft.loadDraftView(knex, existing.id));
+}));
+
+// GET /api/schedule-drafts/committed-dates — every today-or-later date this
+// user already has real visits scheduled on, with a count each:
+// [{ date, count }]. The "Plan My Visits" calendar disables these dates (a
+// day that's already been committed can never be selected for another round
+// of planning) and the page also renders them as a plain "already committed"
+// snapshot list.
+router.get('/committed-dates', handle(async (req, res) => {
+  const summaries = await scheduleDraft.committedDateSummaries(knex, req.user.id);
+  res.json(summaries);
+}));
+
+// DELETE /api/schedule-drafts/:id/days/:date — discard just this day's
+// still-open proposal, as if that date had never been picked at all (every
+// other day, and anything already accepted for THIS day, is untouched — see
+// scheduleDraft.js's discardDay). Returns the full recalculated draft view
+// (its days list just shrank by one), or null if that was the last date and
+// the whole draft is gone now.
+router.delete('/:id/days/:date', handle(async (req, res) => {
+  const result = await scheduleDraft.discardDay({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date });
+  res.json(result);
 }));
 
 // PATCH /api/schedule-drafts/:id/days/:date/reorder

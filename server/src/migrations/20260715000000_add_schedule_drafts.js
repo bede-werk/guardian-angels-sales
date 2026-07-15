@@ -11,10 +11,9 @@ exports.up = async function up(knex) {
     t.increments('id').primary();
     t.integer('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
 
-    // The generateDraft() inputs that produced this draft (daysAhead,
-    // workingWeekdays, exceptionDates, hoursPerDay, homeBase, zoneOverrides)
-    // — kept so a day can be regenerated/extended later without the caller
-    // re-supplying everything.
+    // The generateDraft() inputs that produced this draft (days: [{ date,
+    // hoursPerDay }], homeBase, zoneOverrides) — kept so a day can be
+    // regenerated/extended later without the caller re-supplying everything.
     t.text('params_json').notNullable();
 
     t.timestamp('created_at').defaultTo(knex.fn.now());

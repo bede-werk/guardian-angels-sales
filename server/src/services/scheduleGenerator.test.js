@@ -4,7 +4,7 @@ const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { estimateDriveMinutes } = require('./driveTime');
 const { TIERS } = require('./schedulingEngine');
-const { workingDays, fillDayFromZone, generateDraft } = require('./scheduleGenerator');
+const { fillDayFromZone, generateDraft } = require('./scheduleGenerator');
 
 // 2026-07-13 is a Monday (independently verified via day-of-year math).
 const TODAY = '2026-07-13';
@@ -13,7 +13,24 @@ const DOWNTOWN = { lat: 40.8136, lng: -96.7026 };
 const EAST_LINCOLN = { lat: 40.8140, lng: -96.6200 };
 const SOUTHWEST_LINCOLN = { lat: 40.7550, lng: -96.7700 };
 
-const MON_FRI = [1, 2, 3, 4, 5];
+// Test-only helper: builds `n` explicit { date, hoursPerDay } entries for
+// generateDraft, one per weekday starting the day after `from` — mirrors the
+// date list a caller (scheduleDraft.js) would hand in after the user picks
+// weekday dates on the calendar. Weekday-only (not calendar-day) so existing
+// test assertions about specific resulting dates stay valid; generateDraft
+// itself no longer knows or cares about weekdays vs weekends.
+function mkDays(n, hoursPerDay, { from = TODAY } = {}) {
+  const days = [];
+  let cursor = from;
+  while (days.length < n) {
+    const [y, m, d] = cursor.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    cursor = dt.toISOString().slice(0, 10);
+    if (dt.getUTCDay() >= 1 && dt.getUTCDay() <= 5) days.push({ date: cursor, hoursPerDay });
+  }
+  return days;
+}
 
 function place(id, overrides = {}) {
   return {
@@ -53,65 +70,6 @@ function reversingOptimizer(legMinutes = 10) {
     legMinutes: stops.map(() => legMinutes),
   });
 }
-
-describe('workingDays', () => {
-  test('skips weekends, producing exactly daysAhead entries', () => {
-    const result = workingDays({ today: TODAY, daysAhead: 5, workingWeekdays: MON_FRI, exceptionDates: [] });
-    assert.deepEqual(result, ['2026-07-14', '2026-07-15', '2026-07-16', '2026-07-17', '2026-07-20']);
-  });
-
-  test("today itself is never included even though it's a working weekday", () => {
-    const result = workingDays({ today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [] });
-    assert.deepEqual(result, ['2026-07-14']);
-  });
-
-  test('also skips explicit exception dates', () => {
-    const result = workingDays({ today: TODAY, daysAhead: 4, workingWeekdays: MON_FRI, exceptionDates: ['2026-07-16'] });
-    assert.deepEqual(result, ['2026-07-14', '2026-07-15', '2026-07-17', '2026-07-20']);
-  });
-
-  test('boundary: an exception date that would otherwise have been the Nth working day rolls the window forward', () => {
-    const result = workingDays({ today: TODAY, daysAhead: 4, workingWeekdays: MON_FRI, exceptionDates: ['2026-07-17'] });
-    assert.deepEqual(result, ['2026-07-14', '2026-07-15', '2026-07-16', '2026-07-20']);
-  });
-
-  test('produces exactly daysAhead entries even when many exceptions force a long window', () => {
-    const exceptionDates = ['2026-07-14', '2026-07-15', '2026-07-16', '2026-07-17', '2026-07-20', '2026-07-21'];
-    const result = workingDays({ today: TODAY, daysAhead: 10, workingWeekdays: MON_FRI, exceptionDates });
-    assert.equal(result.length, 10);
-    for (const d of result) {
-      assert.ok(!exceptionDates.includes(d), `${d} should have been excluded`);
-      assert.ok(MON_FRI.includes(new Date(d + 'T00:00:00Z').getUTCDay()), `${d} should be a weekday`);
-    }
-  });
-
-  test('honors a non-Mon-Fri workingWeekdays set (0=Sun..6=Sat convention)', () => {
-    const result = workingDays({ today: TODAY, daysAhead: 2, workingWeekdays: [0, 6], exceptionDates: [] });
-    assert.deepEqual(result, ['2026-07-18', '2026-07-19']);
-  });
-
-  test('throws instead of looping forever when workingWeekdays is empty', () => {
-    assert.throws(
-      () => workingDays({ today: TODAY, daysAhead: 3, workingWeekdays: [], exceptionDates: [] }),
-      /no working day found/
-    );
-  });
-
-  test('throws instead of looping forever when exceptionDates covers every remaining candidate day', () => {
-    // Every Mon-Fri date within the scan window is excepted, so no amount of
-    // scanning will ever find daysAhead working days.
-    const exceptionDates = [];
-    let cursor = '2026-07-13';
-    for (let i = 0; i < 60; i++) {
-      cursor = new Date(new Date(cursor + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10);
-      exceptionDates.push(cursor);
-    }
-    assert.throws(
-      () => workingDays({ today: TODAY, daysAhead: 3, workingWeekdays: MON_FRI, exceptionDates }),
-      /no working day found/
-    );
-  });
-});
 
 describe('fillDayFromZone', () => {
   test('packs only in-zone candidates, preserving rank order', async () => {
@@ -448,11 +406,10 @@ describe('fillDayFromZone', () => {
 });
 
 describe('generateDraft', () => {
-  test('produces exactly daysAhead day entries in date order', async () => {
+  test('produces exactly one day entry per requested date, in date order', async () => {
     const candidates = [candidate(place(1))];
     const result = await generateDraft({
-      candidates, today: TODAY, daysAhead: 3, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 4, homeBase: DOWNTOWN,
+      candidates, days: mkDays(3, 4), homeBase: DOWNTOWN,
     });
     assert.deepEqual(result.days.map((d) => d.date), ['2026-07-14', '2026-07-15', '2026-07-16']);
   });
@@ -469,8 +426,7 @@ describe('generateDraft', () => {
 
     const result = await generateDraft({
       candidates: [eastTop, eastSecond, southwestTop],
-      today: TODAY, daysAhead: 2, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 1, // tight: fits exactly one ~38min stop, not two
+      days: mkDays(2, 1), // tight: fits exactly one ~38min stop, not two
       homeBase: DOWNTOWN,
     });
 
@@ -488,8 +444,7 @@ describe('generateDraft', () => {
 
     const result = await generateDraft({
       candidates: [eastTop, southwestPlace],
-      today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 4, homeBase: DOWNTOWN,
+      days: mkDays(1, 4), homeBase: DOWNTOWN,
       zoneOverrides: { '2026-07-14': 'Southwest Lincoln' },
     });
 
@@ -504,8 +459,7 @@ describe('generateDraft', () => {
       candidate(place(3, { capacity_level: 'low' })),
     ];
     const result = await generateDraft({
-      candidates, today: TODAY, daysAhead: 3, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 1, // fits exactly one stop per day
+      candidates, days: mkDays(3, 1), // fits exactly one stop per day
       homeBase: DOWNTOWN,
     });
 
@@ -520,8 +474,7 @@ describe('generateDraft', () => {
       candidate(place(2, { capacity_level: 'medium' })),
     ];
     const result = await generateDraft({
-      candidates, today: TODAY, daysAhead: 2, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 1, homeBase: DOWNTOWN,
+      candidates, days: mkDays(2, 1), homeBase: DOWNTOWN,
     });
 
     assert.deepEqual(result.days[0].stops.map((s) => s.place_id), [1]);
@@ -536,8 +489,7 @@ describe('generateDraft', () => {
 
     const result = await generateDraft({
       candidates: [blocked, snoozed, tooRecent, eligible],
-      today: TODAY, daysAhead: 5, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 8, homeBase: DOWNTOWN,
+      days: mkDays(5, 8), homeBase: DOWNTOWN,
     });
 
     const allPackedIds = new Set(result.days.flatMap((d) => d.stops.map((s) => s.place_id)));
@@ -554,8 +506,7 @@ describe('generateDraft', () => {
       candidate(place(4, { default_visit_type: 'presentation' })),
     ];
     const result = await generateDraft({
-      candidates, today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 8, homeBase: DOWNTOWN,
+      candidates, days: mkDays(1, 8), homeBase: DOWNTOWN,
     });
 
     const stopsById = Object.fromEntries(result.days[0].stops.map((s) => [s.place_id, s]));
@@ -568,8 +519,7 @@ describe('generateDraft', () => {
   test('empty-pool day entries (zone: null) once the whole pool is exhausted', async () => {
     const candidates = [candidate(place(1)), candidate(place(2))];
     const result = await generateDraft({
-      candidates, today: TODAY, daysAhead: 4, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 8, homeBase: DOWNTOWN, // generous enough to pack both on day 1
+      candidates, days: mkDays(4, 8), homeBase: DOWNTOWN, // generous enough to pack both on day 1
     });
 
     assert.equal(result.days[0].stops.length, 2);
@@ -586,8 +536,7 @@ describe('generateDraft', () => {
     // day3 (07-16) daysSince=5 -> eligible (>= floor).
     const candidates = [candidate(place(1, { capacity_status: 'verified' }), { lastVisitDate: '2026-07-11' })];
     const result = await generateDraft({
-      candidates, today: TODAY, daysAhead: 3, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 8, homeBase: DOWNTOWN,
+      candidates, days: mkDays(3, 8), homeBase: DOWNTOWN,
     });
 
     assert.equal(result.days[0].stops.length, 0, 'day 1: still under the hard floor');
@@ -610,12 +559,10 @@ describe('generateDraft', () => {
     const estimated = candidate(place(2, { capacity_status: 'estimated', capacity_level: 'high', region: 'East Lincoln' }));
 
     const withDefault = await generateDraft({
-      candidates: [verified, estimated], today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 1, homeBase: DOWNTOWN,
+      candidates: [verified, estimated], days: mkDays(1, 1), homeBase: DOWNTOWN,
     });
     const withOverride = await generateDraft({
-      candidates: [verified, estimated], today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 1, homeBase: DOWNTOWN,
+      candidates: [verified, estimated], days: mkDays(1, 1), homeBase: DOWNTOWN,
       config: { scheduling: { NEGLECT_MULTIPLIER: 1.01 } },
     });
 
@@ -626,12 +573,10 @@ describe('generateDraft', () => {
   test('config.drive override changes driveMinutes', async () => {
     const candidates = [candidate(place(1, { lat: EAST_LINCOLN.lat, lng: EAST_LINCOLN.lng }))];
     const withDefault = await generateDraft({
-      candidates, today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 8, homeBase: DOWNTOWN,
+      candidates, days: mkDays(1, 8), homeBase: DOWNTOWN,
     });
     const withOverride = await generateDraft({
-      candidates, today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 8, homeBase: DOWNTOWN,
+      candidates, days: mkDays(1, 8), homeBase: DOWNTOWN,
       config: { drive: { SPEED_MPH_SHORT: 1, SPEED_MPH_MEDIUM: 1, SPEED_MPH_LONG: 1 } },
     });
 
@@ -641,8 +586,7 @@ describe('generateDraft', () => {
   test('config.visitTypes override changes visitMinutes', async () => {
     const candidates = [candidate(place(1, { default_visit_type: 'working_visit' }))];
     const result = await generateDraft({
-      candidates, today: TODAY, daysAhead: 1, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 20, homeBase: DOWNTOWN, // generous enough to still fit the inflated 999-minute visit
+      candidates, days: mkDays(1, 20), homeBase: DOWNTOWN, // generous enough to still fit the inflated 999-minute visit
       config: { visitTypes: { VISIT_TYPES: { ...defaultVisitTypesConfig.VISIT_TYPES, working_visit: { label: 'Working visit', minutes: 999 } } } },
     });
 
@@ -657,8 +601,7 @@ describe('generateDraft', () => {
 
     const result = await generateDraft({
       candidates: [...eastPlaces, ...southwestPlaces],
-      today: TODAY, daysAhead: 3, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 4, homeBase: DOWNTOWN,
+      days: mkDays(3, 4), homeBase: DOWNTOWN,
     });
 
     assert.equal(result.days.length, 3);
@@ -678,8 +621,7 @@ describe('generateDraft', () => {
     ];
 
     const result = await generateDraft({
-      candidates, today: TODAY, daysAhead: 2, workingWeekdays: MON_FRI, exceptionDates: [],
-      hoursPerDay: 0.5, homeBase: DOWNTOWN, // 30min budget: fits exactly one 20min drop_in block (5 drive + 7 visit + 3 prep + 5 data-entry), not two
+      candidates, days: mkDays(2, 0.5), homeBase: DOWNTOWN, // 30min budget: fits exactly one 20min drop_in block (5 drive + 7 visit + 3 prep + 5 data-entry), not two
       optimizeRoute: reversingOptimizer(5),
     });
 
