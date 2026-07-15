@@ -212,6 +212,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
       <div className="card-head">
         <h2>{formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}</h2>
         <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
+          {day.committed.length > 0 && <span className="badge committed">✓ {day.committed.length} committed</span>}
           {day.overBudget && <span className="badge attention">Over budget</span>}
           {everEdited && day.stops.length >= 2 && (
             <Button
@@ -244,8 +245,42 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
           </div>
         </div>
 
+        {day.committed.length > 0 && (
+          <div style={{ marginBottom: day.stops.length > 0 ? 16 : 0 }}>
+            <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 4 }}>
+              Committed
+            </div>
+            <ul className="list">
+              {day.committed.map((v) => (
+                <li key={v.visit_id} className="stop">
+                  <div className="main">
+                    <div className="name">{v.place_name}</div>
+                    <div className="meta">
+                      {v.address ? `${v.address}, ` : ''}{v.city} {v.zip}
+                    </div>
+                    <div className="tag-list" style={{ marginTop: 6 }}>
+                      {v.category && <CategoryChip category={v.category} />}
+                      {v.tier && <TierChip tier={v.tier} />}
+                      <span className="tiny muted">{VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}</span>
+                    </div>
+                  </div>
+                  <div className="tiny muted" style={{ whiteSpace: 'nowrap', color: 'var(--teal-dark)', fontWeight: 600 }}>
+                    ✓ Committed
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {day.stops.length > 0 && day.committed.length > 0 && (
+          <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 4 }}>
+            Still planning
+          </div>
+        )}
+
         {day.stops.length === 0 ? (
-          <EmptyState message="Nothing planned for this day." />
+          day.committed.length === 0 && <EmptyState message="Nothing planned for this day." />
         ) : (
           <ul className="list">
             {day.stops.map((stop, i) => {
@@ -366,12 +401,16 @@ export default function PlanVisits() {
   const [daysAhead, setDaysAhead] = useState(5);
   const [hoursPerDay, setHoursPerDay] = useState(4);
 
-  // homeBase capture: browser geolocation first, manual address as fallback
-  // (see conversation decision — no rep/user location field exists in the
-  // schema yet, so this is asked for at generate time instead).
+  // homeBase capture: browser geolocation, or a manually entered address —
+  // no rep/user location field exists in the schema yet, so this is asked
+  // for at generate time instead. Manual entry is offered as an equal
+  // option alongside "Use my current location" (toggled open by its own
+  // button), not just shown after geolocation fails — `locationError` still
+  // auto-opens it too, since at that point it's the only option left.
   const [homeBase, setHomeBase] = useState(null); // { lat, lng, label }
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
+  const [manualEntryOpen, setManualEntryOpen] = useState(false);
   const [manualAddress, setManualAddress] = useState({ address: '', city: '', state: '', zip: '' });
   const [geocoding, setGeocoding] = useState(false);
 
@@ -528,7 +567,7 @@ export default function PlanVisits() {
 
       <div className="card">
         <div className="card-head">
-          <h2>Plan my visits</h2>
+          <h2>Plan My Visits</h2>
           <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
             <div style={{ minWidth: 90 }}>
               <label className="field">Days</label>
@@ -569,38 +608,41 @@ export default function PlanVisits() {
           {homeBase ? (
             <div className="row" style={{ alignItems: 'center' }}>
               <span className="tiny muted">Starting from <strong>{homeBase.label}</strong></span>
-              <Button variant="ghost" size="small" onClick={() => { setHomeBase(null); setLocationError(null); }}>Change</Button>
+              <Button variant="ghost" size="small" onClick={() => { setHomeBase(null); setLocationError(null); setManualEntryOpen(false); }}>Change</Button>
             </div>
           ) : (
             <div className="stack" style={{ gap: 10 }}>
-              <Button variant="secondary" onClick={useCurrentLocation} disabled={locating}>
-                {locating ? 'Finding you…' : 'Use my current location'}
-              </Button>
-              {locationError && (
-                <>
-                  <div className="tiny muted">{locationError}</div>
-                  <div className="row">
-                    <div>
-                      <label className="field">Street address</label>
-                      <input value={manualAddress.address} onChange={(e) => setManualAddress({ ...manualAddress, address: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="field">City</label>
-                      <input value={manualAddress.city} onChange={(e) => setManualAddress({ ...manualAddress, city: e.target.value })} />
-                    </div>
-                    <div style={{ minWidth: 70 }}>
-                      <label className="field">State</label>
-                      <input value={manualAddress.state} onChange={(e) => setManualAddress({ ...manualAddress, state: e.target.value })} />
-                    </div>
-                    <div style={{ minWidth: 90 }}>
-                      <label className="field">Zip</label>
-                      <input value={manualAddress.zip} onChange={(e) => setManualAddress({ ...manualAddress, zip: e.target.value })} />
-                    </div>
-                    <Button size="small" onClick={lookUpManualAddress} disabled={geocoding}>
-                      {geocoding ? 'Looking up…' : 'Use this address'}
-                    </Button>
+              <div className="row" style={{ alignItems: 'center' }}>
+                <Button variant="secondary" onClick={useCurrentLocation} disabled={locating}>
+                  {locating ? 'Finding you…' : 'Use my current location'}
+                </Button>
+                <Button variant="ghost" size="small" onClick={() => setManualEntryOpen((o) => !o)}>
+                  {manualEntryOpen ? 'Hide manual entry' : 'Enter address manually'}
+                </Button>
+              </div>
+              {locationError && <div className="tiny muted">{locationError}</div>}
+              {(manualEntryOpen || locationError) && (
+                <div className="row">
+                  <div>
+                    <label className="field">Street address</label>
+                    <input value={manualAddress.address} onChange={(e) => setManualAddress({ ...manualAddress, address: e.target.value })} />
                   </div>
-                </>
+                  <div>
+                    <label className="field">City</label>
+                    <input value={manualAddress.city} onChange={(e) => setManualAddress({ ...manualAddress, city: e.target.value })} />
+                  </div>
+                  <div style={{ minWidth: 70 }}>
+                    <label className="field">State</label>
+                    <input value={manualAddress.state} onChange={(e) => setManualAddress({ ...manualAddress, state: e.target.value })} />
+                  </div>
+                  <div style={{ minWidth: 90 }}>
+                    <label className="field">Zip</label>
+                    <input value={manualAddress.zip} onChange={(e) => setManualAddress({ ...manualAddress, zip: e.target.value })} />
+                  </div>
+                  <Button size="small" onClick={lookUpManualAddress} disabled={geocoding}>
+                    {geocoding ? 'Looking up…' : 'Use this address'}
+                  </Button>
+                </div>
               )}
             </div>
           )}

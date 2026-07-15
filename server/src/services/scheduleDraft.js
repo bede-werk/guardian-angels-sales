@@ -270,6 +270,37 @@ function toDraftStopShape(row) {
   };
 }
 
+// Real `visits` rows already committed for this user — shown ALONGSIDE
+// (never instead of) whatever's still left in the draft for that date,
+// since a partial commit (some stops hit a same-day collision and stayed in
+// the draft — see commitDay's skippedCollisions) can leave both non-empty
+// for the same day. Read-only here: editing an already-committed visit goes
+// through the normal visit-log flow elsewhere in the app (PersonDetail/
+// PlaceDetail), not this draft UI. `place_id` can be null (detach-not-
+// delete) — the left join and the `place_name` snapshot column both exist
+// specifically to survive that.
+function committedVisitsQuery(db, { userId }) {
+  return db('visits as v')
+    .leftJoin('places as p', 'p.id', 'v.place_id')
+    .where({ 'v.user_id': userId })
+    .orderBy('v.sort_order')
+    .select(
+      'v.id as visit_id',
+      'v.place_id',
+      'v.place_name',
+      'v.visit_type',
+      'v.status',
+      'v.outcome',
+      'v.scheduled_date',
+      'v.sort_order',
+      'p.category',
+      'p.tier',
+      'p.address',
+      'p.city',
+      'p.zip'
+    );
+}
+
 // Real-first, haversine-fallback time evaluation for a day's stops IN THEIR
 // CURRENT ORDER — never resequences (see routeOptimizer.js's
 // getRouteLegMinutes header for why that matters for live-edit recalc).
@@ -318,12 +349,20 @@ async function loadDraftView(db, draftId) {
   });
   const budgetMinutes = params.hoursPerDay * 60;
 
+  // One query for the whole window's committed visits, grouped by date in
+  // JS — same "reduce multiple rows to one-per-key in JS rather than N
+  // queries in a loop" precedent this codebase already uses (see
+  // buildCandidatePool/dashboard.js), instead of a query per day.
+  const committedRows = await committedVisitsQuery(db, { userId: draft.user_id }).whereIn('v.scheduled_date', dates);
+  const committedByDate = {};
+  for (const row of committedRows) (committedByDate[row.scheduled_date] ||= []).push(row);
+
   const days = [];
   for (const date of dates) {
     const rows = byDate[date] || [];
     const stops = rows.map(toDraftStopShape);
     const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
-    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, ...evaluated });
+    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedByDate[date] || [], ...evaluated });
   }
 
   return { id: draft.id, userId: draft.user_id, params, days };
@@ -346,8 +385,9 @@ async function loadDraftDayView(db, draftId, date) {
   const stops = rows.map(toDraftStopShape);
   const budgetMinutes = params.hoursPerDay * 60;
   const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
+  const committed = await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date);
 
-  return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, ...evaluated };
+  return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, ...evaluated };
 }
 
 // Adds a stop (from a suggestion, or ad hoc) to one day of a draft.

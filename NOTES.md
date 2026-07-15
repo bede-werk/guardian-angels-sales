@@ -420,9 +420,29 @@ All three verified live via Playwright (Lisa Marks id 5, cleaned up after each r
 walking the Re-optimize button through all 6 expected visibility/enabled state transitions.
 139 backend tests pass, client build stays clean throughout.
 
+## 2026-07-15 (continued) — manual address entry + a "Committed" day view
+
+Two more live-feedback rounds the same day. (1) The start-location picker's manual address
+form used to only appear as a fallback after geolocation failed — Bede wanted it available
+proactively, so an "Enter address manually" button now sits next to "Use my current location"
+and opens the same form immediately either way. (2) A committed day used to just look empty —
+no sign anything happened. `loadDraftView`/`loadDraftDayView` now also return each day's real
+committed `visits` rows, and the UI shows a "✓ N committed" badge plus a read-only list of
+those stops; a day with leftover draft stops alongside committed ones (a partial commit) shows
+both, labeled separately.
+
+Verified live — and the committed-view test incidentally caught a real cross-user collision
+against Bede's own already-committed schedule (confirmed his data was untouched): 4 of 5
+stops committed, 1 correctly skipped and reported, exactly as designed. 139 tests pass, build
+clean. **Committed, pushed, and opened as a PR against `main`** this session, per Bede's ask —
+see GitHub for the PR.
+
 ## Current state
-- Working on branch `bede-routeplanner` — ahead of `origin/bede-routeplanner`, not merged
-  into `main`, not pushed. Push/PR only when Bede asks.
+- Working on branch `bede-routeplanner`, pushed and merged into `main` via PR as of
+  2026-07-15 (Bede explicitly asked for this so his coworkers could access the code) — check
+  `git log main` / GitHub for the exact merge commit rather than trusting a hardcoded hash
+  here. Keep working on `bede-routeplanner` for anything further unless told otherwise; always
+  check `git status` before starting new work and only push/merge again when asked.
 - Route planner: phases 1-6 (scoring engine, drive-time, visit types, multi-day generator,
   real routing API + optimization, draft/commit lifecycle) are all built, tested, and
   committed on the backend/API side. **All three frontend sub-slices are built and verified

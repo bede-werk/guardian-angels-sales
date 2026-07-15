@@ -596,6 +596,43 @@ hardcoded here to avoid a doc referencing its own not-yet-existing commit). Not 
 live feedback; expect more of this same pattern (small, targeted UX asks) before this is
 considered done-done. No open technical debt from this pass.
 
+## Two more live-feedback additions, same day (2026-07-15)
+
+**Manual address entry, always available.** The generate form's start-location picker used to
+only show the manual street/city/state/zip form as a fallback after "Use my current location"
+failed or was denied. Bede wanted it available proactively instead. Added a new
+`manualEntryOpen` toggle (`PlanVisits.jsx`) — an "Enter address manually" button next to "Use
+my current location" opens the same form immediately, no geolocation attempt required. The
+old auto-open-on-failure behavior (`locationError`) still works unchanged; the form now opens
+on `manualEntryOpen || locationError`, either condition. No backend change — reuses the
+existing `/api/geocode` endpoint.
+
+**Read-only "Committed" section per day.** After a day's stops get committed, they used to
+just vanish from the draft view — a fully-committed day looked identical to an empty one, with
+no indication anything happened. `loadDraftView`/`loadDraftDayView` (`scheduleDraft.js`) now
+also return a `committed` array — real `visits` rows for that user+date, via a new
+`committedVisitsQuery` helper (one query for the whole window in `loadDraftView`, grouped by
+date in JS per this codebase's existing "N rows collapsed in JS, not N queries" convention;
+one direct query for the single date in `loadDraftDayView`). The frontend shows a green
+"✓ N committed" badge in the day's header plus a read-only "Committed" list (name/address/
+category/tier/visit-type per stop) — deliberately not editable here; editing an already-
+committed visit still goes through the normal visit-log flow elsewhere in the app. If a day
+has BOTH committed stops and leftover draft stops (e.g. one stop hit a same-day collision and
+stayed in the draft while the rest committed), both sections show, with a "Still planning"
+label distinguishing them.
+
+**Verified live** — both features worked as designed; the committed-view test also incidentally
+caught a **real** cross-user collision against Bede's own already-committed schedule (his real
+usage data, confirmed untouched afterward): 4 of 5 stops committed, 1 correctly skipped and
+reported in the notice banner, and the day's badge/section correctly showed "✓ 4 committed"
+with the 5th nowhere to be found in either the committed list or the leftover draft — exactly
+right, not a bug. 139 backend tests pass, client build clean throughout.
+
+**This batch (Re-optimize/Discard/time-display + these two) is being committed, pushed, and
+opened as a PR against `main` this session** — see `git log`/GitHub for the final commit hash
+and PR number; not hardcoded here to avoid this doc referencing state that doesn't exist yet
+at write-time.
+
 ## Running things
 
 - Tests: `nvm use 24` then `npm test` from `server/` (runs

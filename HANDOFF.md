@@ -90,7 +90,11 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   Bede's own live correction to get right — see `NOTES.md`/`ROUTEPLANNER_PROGRESS.md`), a
   "Discard plan" button (ownership-checked `DELETE /api/schedule-drafts/:id`, cascades
   cleanly), and moving each stop's individual time + the day's running total to be much more
-  visually prominent. Expect this live-feedback pattern to continue in future sessions.
+  visually prominent. Two more rounds followed the same session: manual address entry made
+  available up front (not just as a geolocation-failure fallback), and a read-only "Committed"
+  section per day so a committed day doesn't just look empty. **Bede then explicitly asked to
+  commit, push, and merge the whole batch into `main` via a PR** so his coworkers could access
+  it — done same session. Expect this live-feedback pattern to continue in future sessions.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
@@ -625,17 +629,19 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 - **Auth shipped:** the "add authentication before sharing the URL" item from the previous
   handoff is done — bearer-token login is live and required on all `/api` routes except the
   login flow itself.
-- **Git:** current branch `bede-routeplanner` (tracking `origin/bede-routeplanner`, ahead of
-  it, not pushed; not merged into `main`). The full 2026-07-08 CRM buildout and 2026-07-09's
-  polish session are committed and merged to `main`. **2026-07-10's audit-fix session
-  (`848b246`/`dc5d940`) is committed** — both data-integrity bugs from that day's audit are
-  fixed, contrary to older wording in this doc. **2026-07-11 through 2026-07-14's route
-  planner work (phases 1-6 backend+API, a full codebase audit, and phase 6 frontend
-  sub-slices 1-2) is all committed** on `bede-routeplanner` — see the 2026-07-14 bullet in §0
-  and `ROUTEPLANNER_PROGRESS.md` for the full detail. **2026-07-15's phase 6 frontend
-  sub-slice 3 (suggestions + commit) AND the old-scheduler retirement are both built/verified
-  live, not yet committed** — check `git status`. Always check `git status` before starting
-  new work and ask Bede before committing, same as always.
+- **Git:** working branch `bede-routeplanner`. The full 2026-07-08 CRM buildout and
+  2026-07-09's polish session are committed and merged to `main`. **2026-07-10's audit-fix
+  session (`848b246`/`dc5d940`) is committed** — both data-integrity bugs from that day's audit
+  are fixed, contrary to older wording in this doc. **2026-07-11 through 2026-07-15's entire
+  route planner build (phases 1-6 backend+API, a full codebase audit, all three phase 6
+  frontend sub-slices, the old-scheduler retirement, and a round of live UX-feedback
+  refinements) is committed on `bede-routeplanner` and, as of 2026-07-15, pushed and merged
+  into `main` via a GitHub PR** at Bede's explicit request so his coworkers can access it —
+  check `git log main`/GitHub for the exact merge commit rather than trusting a hardcoded hash
+  here. See the 2026-07-14/07-15 bullets in §0 and `ROUTEPLANNER_PROGRESS.md`/`NOTES.md` for
+  the full detail. Always check `git status` before starting new work and ask Bede before
+  committing/pushing/merging, same as always — this was a one-time explicit exception, not a
+  standing instruction to keep doing it automatically.
 - **Geocoding backfill has been run against real data:** 255 of 262 places have `lat`/`lng`;
   7 are stamped `geocoded_at` but unmatched and still need manual address review. See §9A.
   One known gap: places created via the Needs Mapping "create place" flow
@@ -652,8 +658,8 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   rows entirely from the new UI. **The old scheduler is fully deleted** (same day, at Bede's
   request) — `services/scheduler.js`, `routes/schedule.js`, `Schedule.jsx`, the "Today's
   Route" tab, and the Dashboard's old route card are all gone; see §0's 2026-07-15 bullet.
-  Not yet committed to git as of this writing. See `ROUTEPLANNER_PROGRESS.md` for the whole
-  build.
+  Committed and merged into `main` as of 2026-07-15. See `ROUTEPLANNER_PROGRESS.md` for the
+  whole build.
 - **Live deploy:** the Railway deployment was taken down after an earlier handoff to avoid
   ongoing cost while still building — all dev happens locally via `./dev.sh` or the two
   npm-run-dev terminals. Redeploying later is still ~5 min (New → GitHub Repo → add Postgres

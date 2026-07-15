@@ -175,6 +175,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.star { background: var(--mauve-tint-1); color: var(--mauve); } /* ⭐ Priority flag */
 .badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* "Cooling — needs attention": referred before, quiet the last 90 days */
 .badge.role { background: var(--blue-tint-1); color: var(--blue); } /* Person's role_type (decision maker/gatekeeper/champion/other) — distinct from their job title */
+.badge.committed { background: var(--teal-tint-2); color: var(--teal-dark); } /* Plan My Visits: stops already committed to real visits for this day */
 .badge.o-interested { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.o-follow_up { background: var(--blue-tint-1); color: var(--blue); }
 .badge.o-not_ready { background: var(--mauve-tint-1); color: var(--warn); }
