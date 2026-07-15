@@ -84,6 +84,13 @@ router.patch('/:id/days/:date/stops/:placeId', handle(async (req, res) => {
   res.json(day);
 }));
 
+// POST /api/schedule-drafts/:id/days/:date/reoptimize — re-sequence a day's
+// current stops via a real OSRM call (does not add/remove any stop).
+router.post('/:id/days/:date/reoptimize', handle(async (req, res) => {
+  const day = await scheduleDraft.reoptimizeDay({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date });
+  res.json(day);
+}));
+
 // GET /api/schedule-drafts/:id/days/:date/suggestions — top nearby eligible
 // candidates not already in the draft, for the "day is under budget" prompt.
 router.get('/:id/days/:date/suggestions', handle(async (req, res) => {
@@ -101,6 +108,14 @@ router.post('/:id/days/:date/commit', handle(async (req, res) => {
 router.post('/:id/commit', handle(async (req, res) => {
   const results = await scheduleDraft.commitAll({ draftId: Number(req.params.id), userId: req.user.id });
   res.json(results);
+}));
+
+// DELETE /api/schedule-drafts/:id — discard the whole proposal (every day),
+// not just one day's stops. No replacement is generated — the caller goes
+// back to having no active draft.
+router.delete('/:id', handle(async (req, res) => {
+  await scheduleDraft.deleteActiveDraft({ draftId: Number(req.params.id), userId: req.user.id });
+  res.status(204).end();
 }));
 
 module.exports = router;

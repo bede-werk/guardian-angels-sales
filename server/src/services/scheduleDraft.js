@@ -18,7 +18,7 @@ const defaultSchedulingConfig = require('../config/scheduling');
 const { rankCandidates } = require('./schedulingEngine');
 const { generateDraft, workingDays } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
-const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType } = require('./driveTime');
+const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 
 // -- Pure: collision + commit-eligibility -----------------------------------
 
@@ -397,6 +397,19 @@ async function removeStop({ draftId, userId, date, placeId }) {
   });
 }
 
+// Discards the whole proposal — every day, not just one. Unlike
+// generate({ regenerate: true }), this doesn't build a replacement; the
+// caller goes back to having no active draft at all. Ownership-checked
+// (unlike the bare deleteDraft() above, which trusts its caller already did
+// that — this is the one entry point meant to be reachable directly from a
+// route). Nothing to return: once it's gone, there's no draft left to load.
+async function deleteActiveDraft({ draftId, userId }) {
+  return knex.transaction(async (trx) => {
+    await assertOwnsDraft(trx, draftId, userId);
+    await deleteDraft(trx, draftId);
+  });
+}
+
 async function reorderDay({ draftId, userId, date, placeIds }) {
   return knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
@@ -411,6 +424,48 @@ async function setVisitType({ draftId, userId, date, placeId, visitType }) {
   return knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
     await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: placeId }).update({ visit_type: visitType || null });
+    return loadDraftDayView(trx, draftId, date);
+  });
+}
+
+// Re-sequences a day's stops via a real OSRM /trip call — the ONE mutation
+// that's allowed to resequence, since a user clicking "Re-optimize" is
+// explicitly asking for that. Every other mutation above deliberately
+// preserves whatever order the stops are already in (see
+// routeOptimizer.js's getRouteLegMinutes header for why that matters for
+// the rest of the live-edit loop). Only reorders stops with coordinates —
+// an ungeocoded stop (rare; see driveTime.js's isGeocoded) has no honest
+// route to compute, so it's left at the end in its current relative order
+// rather than dropped. Falls back to leaving the whole day's order
+// untouched if OSRM is unreachable/times out (optimizeRoute returns null) —
+// this never drops a stop, only fails to reorder it.
+async function reoptimizeDay({ draftId, userId, date }) {
+  return knex.transaction(async (trx) => {
+    await assertOwnsDraft(trx, draftId, userId);
+
+    const draft = await trx('schedule_drafts').where({ id: draftId }).first();
+    const params = JSON.parse(draft.params_json);
+
+    const rows = await trx('schedule_draft_stops as s')
+      .join('places as p', 'p.id', 's.place_id')
+      .where({ 's.draft_id': draftId, 's.date': date })
+      .orderBy('s.sort_order')
+      .select('s.id as stop_id', 's.visit_type', 'p.*');
+
+    const stops = rows.map(toDraftStopShape);
+    const routable = stops.filter(isGeocoded);
+    const unroutable = stops.filter((s) => !isGeocoded(s));
+
+    if (routable.length < 2) return loadDraftDayView(trx, draftId, date); // nothing worth reordering
+
+    const result = await optimizeRoute({ start: params.homeBase, stops: routable });
+    if (!result) return loadDraftDayView(trx, draftId, date); // OSRM unreachable — order stays as-is
+
+    const newOrder = [...result.orderedStops, ...unroutable];
+    for (let i = 0; i < newOrder.length; i++) {
+      await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: newOrder[i].place_id }).update({ sort_order: i });
+    }
+
     return loadDraftDayView(trx, draftId, date);
   });
 }
@@ -517,8 +572,10 @@ module.exports = {
   loadDraftDayView,
   addStop,
   removeStop,
+  deleteActiveDraft,
   reorderDay,
   setVisitType,
+  reoptimizeDay,
   getSuggestions,
   commitDay,
   commitAll,

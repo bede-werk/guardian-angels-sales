@@ -29,6 +29,29 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
 
+  // Two-part gate for the Re-optimize button below, both set by anything
+  // that changes which stops are in the day or their order (add/remove/
+  // reorder) — NOT by a visit-type change, since that only changes a
+  // stop's duration, never which order is fastest to drive:
+  //  - everEdited: whether this day has been touched at all since it was
+  //    generated (already real-OSRM-optimized at that point). Once true,
+  //    stays true — controls whether the button appears at all.
+  //  - needsReoptimize: whether it's been touched since the LAST optimize
+  //    (generation, or a prior Re-optimize click). Toggles back to false
+  //    right after a successful Re-optimize — controls whether the
+  //    (still-visible) button is enabled or disabled.
+  // Deliberately session-only, client-side state rather than a persisted
+  // field: there's nothing to keep in sync, it just needs a safe default
+  // (hidden/"already optimal") on every fresh load, same "no manual field
+  // that needs upkeep" spirit as the rest of this app's computed-not-stored
+  // data.
+  const [everEdited, setEverEdited] = useState(false);
+  const [needsReoptimize, setNeedsReoptimize] = useState(false);
+  function markEdited() {
+    setEverEdited(true);
+    setNeedsReoptimize(true);
+  }
+
   // Suggestions: nearby eligible places not already in this draft, offered
   // when the day still has budget to spare. Fetched on demand rather than
   // eagerly for every day, since it's a real API call per day.
@@ -51,6 +74,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
   function persistReorder(nextStops) {
     onError(null);
     onDayUpdated({ ...day, stops: nextStops });
+    markEdited();
     setBusy(true);
     api.scheduleDrafts.reorderDay(draftId, day.date, nextStops.map((s) => s.place_id))
       .then(onDayUpdated)
@@ -83,6 +107,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
     setPendingPlaceId(stop.place_id);
     try {
       onDayUpdated(await api.scheduleDrafts.removeStop(draftId, day.date, stop.place_id));
+      markEdited();
     } catch (e) {
       onError(e.message);
     } finally {
@@ -108,6 +133,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
     try {
       onDayUpdated(await api.scheduleDrafts.addStop(draftId, day.date, place.id));
       setAddingOpen(false);
+      markEdited();
     } catch (e) {
       onError(e.message);
     } finally {
@@ -139,6 +165,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
     try {
       onDayUpdated(await api.scheduleDrafts.addStop(draftId, day.date, s.place_id));
       setSuggestions((prev) => prev.filter((x) => x.place_id !== s.place_id));
+      markEdited();
     } catch (e) {
       onError(e.message);
     } finally {
@@ -160,12 +187,43 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
     }
   }
 
+  // Re-sequences this day's stops via a real routing call — the only action
+  // in this screen that's allowed to resequence (every other edit
+  // deliberately preserves whatever order the stops are already in). The
+  // button (see render below) only appears once this day's been edited at
+  // all, and is only enabled while needsReoptimize is true — there's
+  // nothing to gain from re-clicking this until the stop list or order has
+  // changed again since the last time it ran.
+  async function reoptimize() {
+    onError(null);
+    setBusy(true);
+    try {
+      onDayUpdated(await api.scheduleDrafts.reoptimizeDay(draftId, day.date));
+      setNeedsReoptimize(false);
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="card">
       <div className="card-head">
         <h2>{formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}</h2>
         <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
           {day.overBudget && <span className="badge attention">Over budget</span>}
+          {everEdited && day.stops.length >= 2 && (
+            <Button
+              size="small"
+              variant="secondary"
+              onClick={reoptimize}
+              disabled={busy || !needsReoptimize}
+              title={needsReoptimize ? "Re-sequence this day's stops for the shortest real drive route" : 'Already optimized — edit the day to re-enable'}
+            >
+              Re-optimize
+            </Button>
+          )}
           <Button size="small" onClick={commitThisDay} disabled={busy || day.stops.length === 0} title="Turn this day's stops into real scheduled visits">
             Commit day
           </Button>
@@ -173,16 +231,16 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
       </div>
       <div className="card-body">
         <div style={{ marginBottom: 14 }}>
+          <div className="progress-total">
+            {formatMinutes(day.totalMinutes)} <span className="muted" style={{ fontWeight: 400 }}>of {formatMinutes(budgetMinutes)}</span>
+            {day.overBudget && <span style={{ color: 'var(--mauve)' }}> · {formatMinutes(-day.remainingMinutes)} over</span>}
+          </div>
           <div className="progress-bar">
             <div className="fill" style={{ width: `${usedPct}%` }} />
           </div>
           <div className="progress-label">
-            {day.stops.length} stop{day.stops.length === 1 ? '' : 's'} · {formatMinutes(day.totalMinutes)} of {formatMinutes(budgetMinutes)}
-            {day.overBudget
-              ? ` · ${formatMinutes(-day.remainingMinutes)} over`
-              : day.remainingMinutes > 0
-                ? ` · ${formatMinutes(day.remainingMinutes)} free`
-                : ''}
+            {day.stops.length} stop{day.stops.length === 1 ? '' : 's'}
+            {!day.overBudget && day.remainingMinutes > 0 ? ` · ${formatMinutes(day.remainingMinutes)} free` : ''}
           </div>
         </div>
 
@@ -230,8 +288,12 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted 
                     </div>
                   </div>
                   <div className="actions" style={{ alignItems: 'center' }}>
-                    <div className="tiny muted" style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                      {formatMinutes(stop.runningTotalMinutes)}
+                    <div
+                      className="tiny muted"
+                      style={{ whiteSpace: 'nowrap', textAlign: 'right' }}
+                      title={`Drive ${stop.driveMinutes}m + visit ${stop.visitMinutes}m + prep ${stop.prepMinutes}m + data entry ${stop.dataEntryMinutes}m`}
+                    >
+                      {formatMinutes(stop.blockMinutes)}
                       {stop.overBudget && <div style={{ color: 'var(--mauve)', fontWeight: 600 }}>Over budget</div>}
                     </div>
                     <Button variant="danger" size="small" onClick={() => removeStop(stop)} disabled={rowBusy} title="Remove from this day">✕</Button>
@@ -299,6 +361,7 @@ export default function PlanVisits() {
   const [notice, setNotice] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [committingAll, setCommittingAll] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
 
   const [daysAhead, setDaysAhead] = useState(5);
   const [hoursPerDay, setHoursPerDay] = useState(4);
@@ -369,6 +432,31 @@ export default function PlanVisits() {
       setError(e.message);
     } finally {
       setCommittingAll(false);
+    }
+  }
+
+  // Discards the whole proposal — every day, not just one. Any day already
+  // committed is unaffected (its stops left the draft the moment they
+  // became real visits), so this only throws away still-uncommitted work.
+  // homeBase is deliberately left as-is so a fresh "Plan my visits" doesn't
+  // force re-entering a start location.
+  async function discardDraft() {
+    if (!draft) return;
+    const totalStops = draft.days.reduce((n, d) => n + d.stops.length, 0);
+    const warning = totalStops > 0
+      ? `Discard this entire proposal? ${totalStops} planned visit${totalStops === 1 ? '' : 's'} across every day will be lost — this can't be undone.`
+      : 'Discard this proposal and start over?';
+    if (!window.confirm(warning)) return;
+    setError(null);
+    setDiscarding(true);
+    try {
+      await api.scheduleDrafts.discard(draft.id);
+      setDraft(null);
+      setNotice(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDiscarding(false);
     }
   }
 
@@ -463,6 +551,9 @@ export default function PlanVisits() {
             </div>
             {draft ? (
               <>
+                <Button variant="danger" onClick={discardDraft} disabled={discarding || committingAll}>
+                  {discarding ? 'Discarding…' : 'Discard plan'}
+                </Button>
                 <Button variant="secondary" onClick={() => generate(true)} disabled={!canGenerate}>Plan again</Button>
                 <Button onClick={commitAllDays} disabled={committingAll}>
                   {committingAll ? 'Committing…' : 'Commit all'}

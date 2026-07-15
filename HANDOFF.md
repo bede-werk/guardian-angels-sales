@@ -84,6 +84,13 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   existed to support it. 139 tests still pass, client build succeeds, verified live with zero
   console errors. Full detail in `ROUTEPLANNER_PROGRESS.md` and `NOTES.md`'s 2026-07-15
   entries, not here.
+- **Also 2026-07-15, same session:** with the workspace feature-complete, Bede started
+  live-testing it and requesting real UX refinements as he went — a "Re-optimize" button per
+  day (real-OSRM resequencing, gated by session-only client state that took two rounds of
+  Bede's own live correction to get right — see `NOTES.md`/`ROUTEPLANNER_PROGRESS.md`), a
+  "Discard plan" button (ownership-checked `DELETE /api/schedule-drafts/:id`, cascades
+  cleanly), and moving each stop's individual time + the day's running total to be much more
+  visually prominent. Expect this live-feedback pattern to continue in future sessions.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing

@@ -391,7 +391,34 @@ empty gap where the removed card was, `Plan My Visits` still works, `GET /api/sc
 404s, and `GET /api/dashboard` no longer returns a `today` key — with zero console/page errors
 throughout.
 
-**Not yet committed** — per house rule, only when Bede asks.
+**Committed** same session as `6213fcc` alongside sub-slice 3, per Bede's explicit ask.
+
+## 2026-07-15 — Route planner UX feedback pass (Re-optimize, Discard plan, time display)
+
+Once the workspace was feature-complete and retired the old scheduler, Bede started actually
+using it live and walked through the UI asking questions and requesting changes in real time.
+Three real features came out of that, all `PlanVisits.jsx` + supporting backend — full
+technical detail in `ROUTEPLANNER_PROGRESS.md`'s same-titled section, this is the summary:
+
+1. **"Re-optimize" per day** — new `POST /api/schedule-drafts/:id/days/:date/reoptimize`,
+   the first live-edit mutation allowed to resequence a day's stops (every other edit
+   deliberately preserves order). Button visibility/enabled state went through two rounds of
+   Bede's own live correction: first "only show once edited, hide after clicking," then
+   corrected to "stay visible but disabled after clicking, only re-enable on the next edit."
+   Visit-type changes deliberately don't trigger it (they can't affect drive order); add/
+   remove/reorder do.
+2. **"Discard plan"** — new `DELETE /api/schedule-drafts/:id`, ownership-checked, discards
+   the whole multi-day proposal at once (not just one day), cascades cleanly through the
+   existing FK. Distinct from "Plan again" (discard + immediately regenerate in one click) —
+   this just goes back to empty.
+3. **Per-stop time + day-total prominence** — each stop now shows its own time contribution
+   (drive+visit+prep+data-entry, with a hover tooltip breaking it down) instead of a running
+   cumulative total; the day's total moved into a new large, bold `.progress-total` line
+   above the progress bar instead of buried in the small caption.
+
+All three verified live via Playwright (Lisa Marks id 5, cleaned up after each run), including
+walking the Re-optimize button through all 6 expected visibility/enabled state transitions.
+139 backend tests pass, client build stays clean throughout.
 
 ## Current state
 - Working on branch `bede-routeplanner` — ahead of `origin/bede-routeplanner`, not merged
@@ -404,6 +431,10 @@ throughout.
   route-planning surface in the app — **the old single-day scheduler is fully removed**
   (`services/scheduler.js`/`routes/schedule.js`/`Schedule.jsx`/"Today's Route" tab all
   deleted, along with the Dashboard's old route card).
+- **Bede is now live-testing the workspace and requesting real UX refinements as he goes**
+  (Re-optimize per day, Discard plan, clearer time display — see the 2026-07-15 "UX feedback
+  pass" entry above). Expect this pattern to continue in future sessions: small, targeted
+  live-feedback requests rather than a fixed backlog.
 - **The two 2026-07-10 data-integrity bugs are fixed** (`dc5d940`, same day) — don't warn
   about them as open issues anymore.
 - **`places.category` is now a locked enum**, not free text (`c408809`) — see
@@ -430,10 +461,8 @@ throughout.
   routing logic assumes every place has coordinates.
 - **Fix the Needs Mapping geocoding gap** — places created via
   `routes/notesReview.js`'s create-place flow still skip `geocodeAddress()`.
-- Referral metrics still aren't shown on Today's Route's stop cards — only
-  the People tab, Places tab, both detail pages, and the Dashboard. Consider
-  whether this is even still worth doing once the new workspace replaces
-  Today's Route, vs. building it there instead.
+- Referral metrics still aren't shown on Plan My Visits' stop cards — only
+  the People tab, Places tab, both detail pages, and the Dashboard.
 - Feeding referral metrics back into place priority scoring is still an open
   idea, now with an objective signal to use.
 - `NEGLECT_MULTIPLIER`/`CADENCE_DAYS` (route-planner scoring config) are meant

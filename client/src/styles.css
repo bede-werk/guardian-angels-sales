@@ -320,7 +320,10 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
    today's date is just shown as text (App.jsx) */
 .static-date { padding: 8px 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
 
-/* Progress bar — "N stops · Xh Ym of Zh used", see PlanVisits.jsx */
+/* Progress bar — a day's running total in Plan My Visits. .progress-total is
+   the prominent "Xh Ym of Zh" readout above the bar; .progress-label is the
+   smaller "N stops · Xh Ym free" caption below it. */
+.progress-total { font-family: var(--font-serif); font-size: 20px; font-weight: 700; color: var(--blue-dark); margin-bottom: 6px; }
 .progress-bar { height: 8px; border-radius: 999px; background: var(--blue-tint-1); overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--blue); border-radius: 999px; transition: width 0.3s ease; }
 .progress-label { font-size: 12px; color: var(--muted); margin-top: 6px; }

@@ -533,6 +533,69 @@ throughout.
 **The route planner is now the only route-planning surface in the app.** There is no
 old-system fallback left to fall back to.
 
+## Post-retirement UX feedback pass (2026-07-15)
+
+With the workspace feature-complete, Bede started actually using it and walked through the
+UI live, asking questions and requesting changes as he went. Three real features came out of
+that session, all in `PlanVisits.jsx` + supporting backend:
+
+**1. Manual "Re-optimize" per day.** New `POST /api/schedule-drafts/:id/days/:date/reoptimize`
+(`scheduleDraft.js`'s `reoptimizeDay`) — the first live-edit mutation allowed to resequence a
+day's stops, using the same real-OSRM `optimizeRoute()` generation already uses internally.
+Every other mutation (add/remove/reorder/visit-type) deliberately preserves whatever order the
+stops are already in (see `getRouteLegMinutes`'s header comment) — this is the one exception,
+and only because the user explicitly asked for it via the button. Falls back to leaving the
+order untouched if OSRM is unreachable; never drops a stop, even an ungeocoded one (routed
+stops get resequenced, ungeocoded ones are appended after, in their prior relative order).
+
+**Button gating went through two rounds of refinement, both driven by Bede's own follow-up
+corrections** (session-only client state in `PlanVisits.jsx`, not persisted — no schema
+change):
+- Round 1: show it only once a day has been edited (add/remove/reorder), hide it again once
+  clicked. Visit-type changes deliberately don't count — they only change a stop's duration,
+  never which order is fastest to drive.
+- Round 2 (Bede's correction): don't hide the button after clicking — keep it visible but
+  **disabled**, and only re-enable (not re-show) it once the day is edited again. Two booleans
+  now: `everEdited` (sticky true, controls visibility) and `needsReoptimize` (toggles,
+  controls enabled/disabled). Verified all 6 state transitions live (generate → hidden;
+  visit-type change → still hidden; reorder → visible+enabled; click → visible+disabled;
+  another visit-type change → unchanged; remove → visible+enabled again).
+
+**2. "Discard plan" button.** New `DELETE /api/schedule-drafts/:id` (`deleteActiveDraft` —
+ownership-checked wrapper around the pre-existing internal `deleteDraft`, which the regenerate
+path already used but which was never safe to expose directly to a route). Discards the
+*whole* multi-day proposal at once, not one day — cascades through the existing FK
+(`schedule_draft_stops.draft_id ON DELETE CASCADE`, enforced even on SQLite via
+`PRAGMA foreign_keys = ON` in `knexfile.js`) so nothing's left orphaned. Already-committed days
+are unaffected (their stops left the draft the moment they became real `visits` rows).
+`homeBase` is deliberately left set client-side afterward so a fresh generate doesn't force
+re-entering a start location. Distinct from "Plan again" (discard + immediately regenerate in
+one click) — Discard just goes back to the empty state, no replacement.
+
+**3. Per-stop time + day-total prominence.** Each stop's own row (next to its remove button)
+now shows `stop.blockMinutes` (drive + visit + prep + data entry — its own contribution to the
+day) instead of `stop.runningTotalMinutes` (cumulative up to that point) — Bede specifically
+wanted "the amount of time each visit is expected to take," not a running tally, per-row.
+Added a hover tooltip breaking the number down into its four components. Separately, the
+day-level total moved out of the small `.progress-label` caption into a new prominent
+`.progress-total` line (bold, 20px, serif, blue-dark) above the progress bar — "3h 43m of 4h"
+now reads as the headline, with "5 stops · 17m free" as a smaller caption underneath.
+
+**Verified live** for all three (Playwright, Lisa Marks id 5 temp token, cleaned up after each
+run): Re-optimize actually resequenced a shuffled day via a real OSRM call; the gating state
+machine matched all 6 expected transitions exactly; Discard collapsed a 6-card draft down to
+the empty state and left zero orphaned DB rows; per-stop times summed exactly to the
+prominent day total (50+48+43+41+41 = 223min = "3h 43m", confirmed via screenshot). 139
+backend tests pass throughout, client build stays clean (59 modules).
+
+**Committed 2026-07-15** on `bede-routeplanner` (`git log` for the exact hash — not
+hardcoded here to avoid a doc referencing its own not-yet-existing commit). Not yet pushed to
+`origin/bede-routeplanner`.
+
+**Next**: nothing specific queued — Bede is still walking through the workspace and giving
+live feedback; expect more of this same pattern (small, targeted UX asks) before this is
+considered done-done. No open technical debt from this pass.
+
 ## Running things
 
 - Tests: `nvm use 24` then `npm test` from `server/` (runs
