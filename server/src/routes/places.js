@@ -28,7 +28,7 @@ const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 
 // or manually from the UI).
 router.post('/', async (req, res, next) => {
   try {
-    const { name, category, tier, is_priority, address, city, state, zip, phone } = req.body;
+    const { name, category, tier, is_priority, address, city, state, zip, phone, confirm_address } = req.body;
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
     const phoneError = validatePhone(phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
@@ -51,6 +51,12 @@ router.post('/', async (req, res, next) => {
     };
     if (address || city || zip) {
       const coords = await geocodeAddress({ address, city, state: payload.state, zip });
+      if (!coords && !confirm_address) {
+        return res.status(422).json({
+          error: "Address not recognized — double-check it, or save anyway if you're sure.",
+          code: 'ADDRESS_UNRECOGNIZED',
+        });
+      }
       payload.lat = coords ? coords.lat : null;
       payload.lng = coords ? coords.lng : null;
       payload.geocoded_at = knex.fn.now();
@@ -148,6 +154,22 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /api/places/check-address — dry-run geocode check, no write. Lets the
+// client find out *before* save whether an address looks bad, so it can be
+// flagged in the same confirmation pop-up as a duplicate-name warning
+// instead of only surfacing after the save attempt (see POST/PATCH below,
+// which still re-check on write as a safety net).
+router.get('/check-address', async (req, res, next) => {
+  try {
+    const { address, city, state, zip } = req.query;
+    if (!address && !city && !zip) return res.json({ recognized: true });
+    const coords = await geocodeAddress({ address, city, state: state || 'NE', zip });
+    res.json({ recognized: !!coords });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/places/meta/filters — distinct values for the search screen's
 // filter dropdowns (category/region), plus the full canonical category enum
 // (allCategories, config/categories.js) for the create/edit form's picker —
@@ -237,6 +259,7 @@ router.patch('/:id', async (req, res, next) => {
     const existing = await knex('places').where({ id: req.params.id }).first();
     if (!existing) return res.status(404).json({ error: 'Place not found' });
 
+    const { confirm_address } = req.body;
     const update = { updated_at: knex.fn.now() };
     for (const f of EDITABLE) if (req.body[f] !== undefined) update[f] = req.body[f];
 
@@ -270,6 +293,12 @@ router.patch('/:id', async (req, res, next) => {
         state: update.state !== undefined ? update.state : existing.state,
         zip: update.zip !== undefined ? update.zip : existing.zip,
       });
+      if (!coords && !confirm_address) {
+        return res.status(422).json({
+          error: "Address not recognized — double-check it, or save anyway if you're sure.",
+          code: 'ADDRESS_UNRECOGNIZED',
+        });
+      }
       update.lat = coords ? coords.lat : null;
       update.lng = coords ? coords.lng : null;
       update.geocoded_at = knex.fn.now();

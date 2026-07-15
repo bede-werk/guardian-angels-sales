@@ -29,9 +29,11 @@ async function request(path, options = {}) {
     // Try to pull the backend's { error: "..." } message out of the response;
     // fall back to the plain HTTP status text if the body isn't JSON.
     let msg = res.statusText;
+    let code;
     try {
       const j = await res.json();
       msg = j.error || msg;
+      code = j.code;
     } catch (_) {
       /* ignore */
     }
@@ -41,7 +43,9 @@ async function request(path, options = {}) {
       clearToken();
       window.dispatchEvent(new Event('ga:unauthorized'));
     }
-    throw new Error(msg);
+    const err = new Error(msg);
+    if (code) err.code = code;
+    throw err;
   }
   if (res.status === 204) return null; // no body (e.g. a successful DELETE)
   return res.json();
@@ -61,6 +65,12 @@ export const api = {
   },
   place: (id) => request(`/places/${id}`),
   filters: () => request('/places/meta/filters'), // distinct categories/regions for the filter dropdowns
+  checkAddress: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== '' && v != null)
+    ).toString();
+    return request(`/places/check-address${q ? `?${q}` : ''}`);
+  },
   createPlace: (body) => request('/places', { method: 'POST', body }),
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),

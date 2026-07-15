@@ -249,6 +249,46 @@ Headlines:
   actions missing confirm/error-handling that the equivalent action has elsewhere, unnormalized
   category free text) — see HANDOFF §14A for the complete list.
 
+## 2026-07-14
+
+Small polish session on the header and the AssignPersonModal person-picker, plus one
+open product question surfaced (not acted on yet). Two commits, both on branch `basil`.
+
+### 1. Header cleanup
+- Removed the "Change password" button/trigger from the header (`App.jsx`) — the
+  `ChangePassword` modal component and its `showChangePassword` state are still wired up
+  and rendered, there's just no button left to open it. **It needs a new home somewhere
+  else in the UI** — until then, nobody can change their password from the app.
+- Flattened Date / Signed in as / Log out from a two-line (label-over-value) layout onto
+  one line (`.user-menu` is no longer `flex-direction: column`).
+- "Date" and "Signed in as" labels now use the existing `.muted` grey utility class
+  (previously same color/weight as the value next to them). Log out button moved off
+  `size="small"` to the default button size, per request ("a little bigger").
+- Commit: `1dd7ec0` — "Simplify header: drop Change password button, one-line layout".
+
+### 2. AssignPersonModal: checkboxes → click-to-highlight
+- Replaced the per-row checkbox in the "Assign people" modal's person list with
+  click-anywhere-on-the-row selection: clicking toggles a persistent highlight
+  (new `.hover-row.selected` CSS rule, `var(--blue-tint-2)`) instead of checking a box.
+  Underlying logic unchanged — still the same `Set` of selected ids and "Assign N people"
+  button as before.
+- Along the way, fixed a layout bug the refactor itself introduced: making the `<li>` a
+  flex-column (`.stack`) broke the person's name and title (previously inline, e.g. "Angela
+  Reyes · Activities Director") onto separate lines, since each direct child of a `.stack`
+  becomes its own row. Fixed by nesting name+title back into their own inline `<div>`,
+  matching the row pattern already used in PersonDetail/PlaceDetail. Verified by rendering
+  the real component markup against the app's actual stylesheet in a throwaway Playwright
+  screenshot (not committed, scratch-only) before and after the fix.
+- Commit: `b755edf` — "Replace AssignPersonModal checkboxes with click-to-highlight rows".
+
+### 3. Open question, not acted on: multi-tenant / sell-to-other-companies
+Came up discussing the login page: this app may eventually be sold to other companies, not
+just used internally by Guardian Angels. Flagged (but did not change) that the current login
+flow — a dropdown listing every employee's name, then a password — won't scale to that: it
+publicly exposes one company's full staff roster, and there's no company/tenant concept
+anywhere in the auth model (`server/src/routes/auth.js` is a flat user list scoped to one
+org). **No code was written for this** — it's an open design question to revisit before
+investing further in login/auth polish, not a confirmed roadmap item.
 ## 2026-07-11 to 2026-07-13 — Route planner phases 1-4
 
 Started the route planner in earnest on branch `bede-routeplanner`. Dropped the unused
@@ -475,8 +515,28 @@ see GitHub for the PR.
   manual address review (still open, see below).
 - See `HANDOFF.md` §13 for the authoritative, more detailed current-state
   snapshot — this section is a summary, that one's the source of truth.
+- **2026-07-14's header/AssignPersonModal work (above) is committed** on branch `basil`
+  (`1dd7ec0`, `b755edf`) but **not yet pushed** — `basil` is currently 2 commits ahead of
+  its remote counterpart `origin/basil-working` beyond what was already unpushed before
+  today. Working tree is otherwise clean.
+- **"Change password" is currently unreachable in the UI** — the button was removed from
+  the header today and hasn't been given a new home yet. The modal/logic itself still
+  works fine if wired to a new trigger.
 
 ## Next steps / ideas not yet done
+- **Give "Change password" a new home in the UI** — removed from the header 2026-07-14,
+  not yet placed anywhere else.
+- **Decide on multi-tenancy before more login/auth work** — see the 2026-07-14 entry
+  above. Open question, nothing built.
+- **Fix the two known bugs in `HANDOFF.md` §14A first** — before building the
+  route planner or anything else that leans on visits/referrals data.
+- **Manually review the 7 places with unmatched addresses** (see above) before
+  any routing logic assumes every place has coordinates.
+- **Build the route planner** — see `HANDOFF.md` §14B for what's ready vs.
+  missing and a suggested build order (short version: no distance/duration math
+  or mapping library exists yet, and there's no visit-duration/time-window/
+  driver-start-location data in the schema).
+- Referral metrics still aren't shown on Today's Route's stop cards — only
 - **Manually review the 7 places with unmatched addresses** before any
   routing logic assumes every place has coordinates.
 - **Fix the Needs Mapping geocoding gap** — places created via
