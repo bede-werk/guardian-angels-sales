@@ -176,7 +176,7 @@ router.get('/:id', async (req, res, next) => {
     if (!place) return res.status(404).json({ error: 'Place not found' });
 
     // Visit history is for what actually happened — a still-planned or
-    // skipped stop from Today's Route doesn't belong here.
+    // skipped visit doesn't belong here.
     const visits = await knex('visits as v')
       .leftJoin('users as u', 'u.id', 'v.user_id')
       .where('v.place_id', place.id)

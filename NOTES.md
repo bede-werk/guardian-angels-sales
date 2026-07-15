@@ -328,16 +328,133 @@ Full technical detail for all of the above (the actual design decisions, code sh
 what was verified how) lives in `ROUTEPLANNER_PROGRESS.md` — treat that as the primary source,
 this is a summary for the day's log.
 
+## 2026-07-15 — Route planner frontend sub-slice 3 (suggestions + commit)
+
+Last slice of the phase 6 frontend build. Added to `PlanVisits.jsx`:
+- **Suggestions**: a "Suggest a stop" button on any day that isn't over budget and has free
+  minutes, wired to the already-built `GET .../suggestions` endpoint. Shows nearby eligible
+  candidates (name/category/city/zone); "Add" reuses the same add-stop endpoint the ad-hoc
+  picker uses — a suggestion is just a pre-filtered candidate, not a different kind of add.
+- **Commit**: a per-day "Commit day" button (in each day's card header) and a top-level
+  "Commit all" button (next to "Plan again"), both behind a confirm dialog (matches
+  `Schedule.jsx`'s existing confirm-before-destructive-action pattern). `commitDay`'s response
+  isn't a day view — the committed stops just became real `visits` rows and vanished from the
+  draft — so this is the one mutation in the screen that triggers a full draft reload rather
+  than patching one day's slice. A new blue `.notice-banner` style (alongside the existing red
+  `.error-banner`) reports what got committed, and separately calls out any stops skipped for
+  a same-day collision with someone else's committed visit (`skippedCollisions`).
+
+**Verified live** (Playwright against the real dev server, Lisa Marks id 5 temp token, per the
+usual smoke-test discipline): generated a 5-day draft, opened suggestions on an under-budget
+day (5 real nearby candidates returned, correctly zone-filtered to "South Lincoln"), added one
+via the suggestion panel (5→6 stops, budget correctly flipped to "20m over" — the never-drop
+evaluator working as designed, not a bug), committed that day (6 real `visits` rows created,
+notice banner correct), then committed all remaining days (20 more `visits` rows, notice banner
+correct). Confirmed directly in the DB: 26 total `visits` rows in the right shape
+(`visit_type` resolved, not null), 0 leftover `schedule_draft_stops`. Fully cleaned up after:
+deleted all 26 test `visits` rows and the test draft, cleared Lisa's temp `auth_token` back to
+null.
+
+**This means old-scheduler retirement is now unblocked** (see Next steps) — sub-slice 3 was
+the last thing gating it.
+
+## 2026-07-15 — Old scheduler retired
+
+Removed the old single-day scheduler now that the route planner's "Plan My Visits" workspace
+is functionally complete end-to-end. Deleted outright: `server/src/services/scheduler.js`,
+`server/src/routes/schedule.js` (the `/api/schedule` prefix, `GET /`/`POST /generate`/`PATCH
+/reorder`), `client/src/components/Schedule.jsx`, and the "Today's Route" nav tab. Also
+removed everything that only existed to support it: `client/src/api.js`'s `schedule`/
+`generateSchedule`/`reorder` methods, `StatusChip` (`ui/Chip.jsx`) and its `.badge.status-*`
+CSS (no other consumer left), and dead `.stop.done`/`.stop.skipped`/`.stop-contact`/
+`.stop-note-preview`/`.stop-buttons`/`.grid.cols2` CSS rules.
+
+**One deliberate call on Bede's instruction ("remove all of that... very clean"):** the
+Dashboard's "Today's Route" card (stat tile + stop list + "Open route" button) also depended
+on the old scheduler's `loadRoute()` query. Rather than keep a slimmed read-only version of
+it, the whole card was removed — Dashboard now shows 2 stat tiles (was 3) and the "Completed
+this week" card as a standalone full-width card instead of a two-column layout paired with
+the removed route card.
+
+Went through every file the old scheduler touched and updated stale comments referencing it
+(`scheduleDraft.js`, `scheduleDrafts.js`, `visits.js`, `places.js`, `people.js`,
+`PlanVisits.jsx`, `PersonDetail.jsx`, `PlaceDetail.jsx`, `VisitLogModal.jsx`) rather than
+leaving dangling references to a deleted file. Also caught the API docs table in `README.md`,
+which still listed the deleted `/api/schedule*` endpoints and had never been updated with the
+route planner's actual `/api/schedule-drafts/*`/`/api/geocode` endpoints — added those, plus
+rewrote the stale "Daily schedule generator" and "Dashboard — today's route" feature bullets.
+
+**Verified**: 139 backend tests still pass, client build succeeds (59 modules, down from 60),
+and a live Playwright pass (Lisa Marks id 5 temp token, cleaned up after) confirmed the nav
+bar now shows exactly 5 tabs with no "Today's Route", the Dashboard renders cleanly with no
+empty gap where the removed card was, `Plan My Visits` still works, `GET /api/schedule` now
+404s, and `GET /api/dashboard` no longer returns a `today` key — with zero console/page errors
+throughout.
+
+**Committed** same session as `6213fcc` alongside sub-slice 3, per Bede's explicit ask.
+
+## 2026-07-15 — Route planner UX feedback pass (Re-optimize, Discard plan, time display)
+
+Once the workspace was feature-complete and retired the old scheduler, Bede started actually
+using it live and walked through the UI asking questions and requesting changes in real time.
+Three real features came out of that, all `PlanVisits.jsx` + supporting backend — full
+technical detail in `ROUTEPLANNER_PROGRESS.md`'s same-titled section, this is the summary:
+
+1. **"Re-optimize" per day** — new `POST /api/schedule-drafts/:id/days/:date/reoptimize`,
+   the first live-edit mutation allowed to resequence a day's stops (every other edit
+   deliberately preserves order). Button visibility/enabled state went through two rounds of
+   Bede's own live correction: first "only show once edited, hide after clicking," then
+   corrected to "stay visible but disabled after clicking, only re-enable on the next edit."
+   Visit-type changes deliberately don't trigger it (they can't affect drive order); add/
+   remove/reorder do.
+2. **"Discard plan"** — new `DELETE /api/schedule-drafts/:id`, ownership-checked, discards
+   the whole multi-day proposal at once (not just one day), cascades cleanly through the
+   existing FK. Distinct from "Plan again" (discard + immediately regenerate in one click) —
+   this just goes back to empty.
+3. **Per-stop time + day-total prominence** — each stop now shows its own time contribution
+   (drive+visit+prep+data-entry, with a hover tooltip breaking it down) instead of a running
+   cumulative total; the day's total moved into a new large, bold `.progress-total` line
+   above the progress bar instead of buried in the small caption.
+
+All three verified live via Playwright (Lisa Marks id 5, cleaned up after each run), including
+walking the Re-optimize button through all 6 expected visibility/enabled state transitions.
+139 backend tests pass, client build stays clean throughout.
+
+## 2026-07-15 (continued) — manual address entry + a "Committed" day view
+
+Two more live-feedback rounds the same day. (1) The start-location picker's manual address
+form used to only appear as a fallback after geolocation failed — Bede wanted it available
+proactively, so an "Enter address manually" button now sits next to "Use my current location"
+and opens the same form immediately either way. (2) A committed day used to just look empty —
+no sign anything happened. `loadDraftView`/`loadDraftDayView` now also return each day's real
+committed `visits` rows, and the UI shows a "✓ N committed" badge plus a read-only list of
+those stops; a day with leftover draft stops alongside committed ones (a partial commit) shows
+both, labeled separately.
+
+Verified live — and the committed-view test incidentally caught a real cross-user collision
+against Bede's own already-committed schedule (confirmed his data was untouched): 4 of 5
+stops committed, 1 correctly skipped and reported, exactly as designed. 139 tests pass, build
+clean. **Committed, pushed, and opened as a PR against `main`** this session, per Bede's ask —
+see GitHub for the PR.
+
 ## Current state
-- Working on branch `bede-routeplanner` — ahead of `origin/bede-routeplanner`, not merged
-  into `main`, not pushed. Push/PR only when Bede asks.
+- Working on branch `bede-routeplanner`, pushed and merged into `main` via PR as of
+  2026-07-15 (Bede explicitly asked for this so his coworkers could access the code) — check
+  `git log main` / GitHub for the exact merge commit rather than trusting a hardcoded hash
+  here. Keep working on `bede-routeplanner` for anything further unless told otherwise; always
+  check `git status` before starting new work and only push/merge again when asked.
 - Route planner: phases 1-6 (scoring engine, drive-time, visit types, multi-day generator,
   real routing API + optimization, draft/commit lifecycle) are all built, tested, and
-  committed on the backend/API side. Frontend sub-slices 1 (generate + read-only view) and 2
-  (live editing) are built and verified live; sub-slice 3 (suggestions + commit UI) is next.
-  The old single-day scheduler (`services/scheduler.js`/`routes/schedule.js`/`Schedule.jsx`,
-  "Today's Route" tab) is still fully functional and untouched — retiring it only becomes
-  possible once sub-slice 3 ships.
+  committed on the backend/API side. **All three frontend sub-slices are built and verified
+  live**: 1 (generate + read-only view), 2 (live editing), 3 (suggestions + commit). The
+  "Plan My Visits" workspace is functionally complete end-to-end and is now the **only**
+  route-planning surface in the app — **the old single-day scheduler is fully removed**
+  (`services/scheduler.js`/`routes/schedule.js`/`Schedule.jsx`/"Today's Route" tab all
+  deleted, along with the Dashboard's old route card).
+- **Bede is now live-testing the workspace and requesting real UX refinements as he goes**
+  (Re-optimize per day, Discard plan, clearer time display — see the 2026-07-15 "UX feedback
+  pass" entry above). Expect this pattern to continue in future sessions: small, targeted
+  live-feedback requests rather than a fixed backlog.
 - **The two 2026-07-10 data-integrity bugs are fixed** (`dc5d940`, same day) — don't warn
   about them as open issues anymore.
 - **`places.category` is now a locked enum**, not free text (`c408809`) — see
@@ -360,22 +477,12 @@ this is a summary for the day's log.
   snapshot — this section is a summary, that one's the source of truth.
 
 ## Next steps / ideas not yet done
-- **Build sub-slice 3 of the route-planner frontend** — suggestions (the
-  "nearby eligible stop" prompt on under-budget days) + per-day/full commit.
-  The backend (`getSuggestions`, `commitDay`, `commitAll`) is already built;
-  this is wiring + UI.
-- **Retire the old scheduler** (`services/scheduler.js`/`routes/schedule.js`'s
-  generate+reorder, `Schedule.jsx`'s "Today's Route" tab, dashboard's
-  `loadRoute` read) once sub-slice 3 ships and the new workspace can fully
-  replace it.
 - **Manually review the 7 places with unmatched addresses** before any
   routing logic assumes every place has coordinates.
 - **Fix the Needs Mapping geocoding gap** — places created via
   `routes/notesReview.js`'s create-place flow still skip `geocodeAddress()`.
-- Referral metrics still aren't shown on Today's Route's stop cards — only
-  the People tab, Places tab, both detail pages, and the Dashboard. Consider
-  whether this is even still worth doing once the new workspace replaces
-  Today's Route, vs. building it there instead.
+- Referral metrics still aren't shown on Plan My Visits' stop cards — only
+  the People tab, Places tab, both detail pages, and the Dashboard.
 - Feeding referral metrics back into place priority scoring is still an open
   idea, now with an objective signal to use.
 - `NEGLECT_MULTIPLIER`/`CADENCE_DAYS` (route-planner scoring config) are meant

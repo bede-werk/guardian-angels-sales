@@ -445,8 +445,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         />
       )}
 
-      {/* VisitLogModal expects `visit_id` (it doubles as Schedule.jsx's stop
-          editor, where visits come shaped that way) — map our row's `id` to
+      {/* VisitLogModal expects `visit_id`, not `id` — map our row's `id` to
           it here so editing an existing visit PATCHes instead of creating a
           new one. */}
       {editingVisit && (

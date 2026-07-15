@@ -65,13 +65,6 @@ export const api = {
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
 
-  // Today's Route — server/src/routes/schedule.js
-  schedule: (date, userId) =>
-    request(`/schedule?date=${date}${userId ? `&userId=${userId}` : ''}`),
-  generateSchedule: (body) => request('/schedule/generate', { method: 'POST', body }),
-  reorder: (orderedVisitIds) =>
-    request('/schedule/reorder', { method: 'PATCH', body: { orderedVisitIds } }),
-
   // Visits (logging a call) — server/src/routes/visits.js
   createVisit: (body) => request('/visits', { method: 'POST', body }),
   updateVisit: (id, body) => request(`/visits/${id}`, { method: 'PATCH', body }),
@@ -117,6 +110,7 @@ export const api = {
   scheduleDrafts: {
     generate: (body) => request('/schedule-drafts/generate', { method: 'POST', body }),
     active: () => request('/schedule-drafts/active'),
+    discard: (draftId) => request(`/schedule-drafts/${draftId}`, { method: 'DELETE' }),
     reorderDay: (draftId, date, placeIds) =>
       request(`/schedule-drafts/${draftId}/days/${date}/reorder`, { method: 'PATCH', body: { placeIds } }),
     addStop: (draftId, date, placeId, visitType) =>
@@ -125,6 +119,14 @@ export const api = {
       request(`/schedule-drafts/${draftId}/days/${date}/stops/${placeId}`, { method: 'DELETE' }),
     setVisitType: (draftId, date, placeId, visitType) =>
       request(`/schedule-drafts/${draftId}/days/${date}/stops/${placeId}`, { method: 'PATCH', body: { visitType } }),
+    reoptimizeDay: (draftId, date) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/reoptimize`, { method: 'POST' }),
+    getSuggestions: (draftId, date) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/suggestions`),
+    commitDay: (draftId, date) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/commit`, { method: 'POST' }),
+    commitAll: (draftId) =>
+      request(`/schedule-drafts/${draftId}/commit`, { method: 'POST' }),
   },
 
   // Address -> coordinates, for the route planner's manual-location fallback

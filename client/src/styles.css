@@ -122,12 +122,9 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 
 /* Cards / grid — .card is the white rounded box used everywhere (see
    ui/Card.jsx, though most screens still write these divs by hand). .grid.stats
-   is the Dashboard's 3-tile row (see ui/StatTile.jsx); .grid.cols2 is a
-   2-column layout that collapses to 1 column on narrower screens. */
+   is the Dashboard's stat-tile row (see ui/StatTile.jsx). */
 .grid { display: grid; gap: 16px; }
 .grid.stats { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.grid.cols2 { grid-template-columns: 1.4fr 1fr; align-items: start; }
-@media (max-width: 820px) { .grid.cols2 { grid-template-columns: 1fr; } }
 
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
 .card .card-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
@@ -169,7 +166,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1; min-width: 120px; }
 
-/* Chips / badges — small colored pills. See ui/Chip.jsx (TierChip/StatusChip/
+/* Chips / badges — small colored pills. See ui/Chip.jsx (TierChip/
    OutcomeChip) for which component renders which class below. */
 .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .badge.t1 { background: var(--blue-tint-1); color: var(--tier1); } /* Tier 1 */
@@ -178,9 +175,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.star { background: var(--mauve-tint-1); color: var(--mauve); } /* ⭐ Priority flag */
 .badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* "Cooling — needs attention": referred before, quiet the last 90 days */
 .badge.role { background: var(--blue-tint-1); color: var(--blue); } /* Person's role_type (decision maker/gatekeeper/champion/other) — distinct from their job title */
-.badge.status-planned { background: var(--blue-tint-1); color: var(--blue); }
-.badge.status-completed { background: var(--teal-tint-2); color: var(--teal-dark); }
-.badge.status-skipped { background: var(--grey-tint-1); color: var(--muted); }
+.badge.committed { background: var(--teal-tint-2); color: var(--teal-dark); } /* Plan My Visits: stops already committed to real visits for this day */
 .badge.o-interested { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.o-follow_up { background: var(--blue-tint-1); color: var(--blue); }
 .badge.o-not_ready { background: var(--mauve-tint-1); color: var(--warn); }
@@ -190,13 +185,13 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 /* Category chips: generated blue/teal tint ramp, mauve deliberately excluded */
 .cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 
-/* Attention flag (overdue / cooling / never-visited) — a mauve left border,
-   applied to rows in Dashboard's "Needs attention" list and never-visited
-   stops on Today's Route. Mauve is used sparingly on purpose (see :root above). */
+/* Attention flag — a mauve left border, applied to rows in Dashboard's
+   "Needs attention" list and over-budget stops in Plan My Visits. Mauve is
+   used sparingly on purpose (see :root above). */
 .attention-flag { border-left: 3px solid var(--mauve); }
 
 /* Lists / tables — .list/.stop is the vertical-timeline row style used by
-   Today's Route and the Dashboard's route/completed-this-week previews. */
+   Plan My Visits and the Dashboard's completed-this-week/needs-attention lists. */
 .list { list-style: none; margin: 0; padding: 0; }
 .stop {
   display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--border);
@@ -208,25 +203,18 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .stop .name { font-family: var(--font-serif); font-weight: 600; font-size: 15px; }
 .stop .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .stop .actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-.stop.done { opacity: 0.75; }
-.stop.skipped { opacity: 0.5; }
-.stop.dragging { opacity: 0.4; } /* the row currently being dragged, in Schedule.jsx */
+.stop.dragging { opacity: 0.4; } /* the row currently being dragged, in Plan My Visits */
 .stop.drag-over { box-shadow: inset 0 2px 0 var(--blue); } /* the row a drag is currently hovering over */
 .stop.attention-flag { padding-left: 10px; }
 .drag-handle { color: var(--muted); cursor: grab; font-size: 14px; text-align: center; user-select: none; line-height: 1; }
 .drag-handle:active { cursor: grabbing; }
 
-/* Up/down arrow buttons — the non-drag fallback for reordering a stop (Schedule.jsx) */
+/* Up/down arrow buttons — the non-drag fallback for reordering a stop (Plan My Visits) */
 .reorder { display: flex; flex-direction: column; gap: 2px; }
 .reorder button { border: 1px solid var(--border); background: #fff; border-radius: 6px; width: 24px; height: 20px;
   cursor: pointer; line-height: 1; padding: 0; color: var(--muted); }
 .reorder button:hover { color: var(--blue); border-color: var(--blue); }
 .reorder button:disabled { opacity: 0.3; cursor: not-allowed; }
-
-/* Stop-card contact preview + note preview (Today/Route) */
-.stop-contact { margin-top: 6px; }
-.stop-note-preview { margin-top: 4px; font-size: 12px; color: var(--muted); font-style: italic; }
-.stop-buttons { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
 /* Reusable hover highlight for clickable rows/blocks that aren't <button>s
    (e.g. click-to-edit notes, a person's place, a visit row) — same subtle
@@ -306,6 +294,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .tab:not(.active) .count { background: var(--grey-tint-2); color: var(--text); }
 
 .error-banner { background: var(--mauve-tint-1); color: var(--mauve); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
+.notice-banner { background: var(--blue-tint-1); color: var(--blue); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
 .warning-banner { background: var(--mauve-tint-1); color: var(--text); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
 .warning-banner strong { color: var(--mauve); }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
@@ -332,7 +321,10 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
    today's date is just shown as text (App.jsx) */
 .static-date { padding: 8px 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
 
-/* Progress bar (Today/Route) — "X of Y visits done · Zh Zm of Nh used", see Schedule.jsx */
+/* Progress bar — a day's running total in Plan My Visits. .progress-total is
+   the prominent "Xh Ym of Zh" readout above the bar; .progress-label is the
+   smaller "N stops · Xh Ym free" caption below it. */
+.progress-total { font-family: var(--font-serif); font-size: 20px; font-weight: 700; color: var(--blue-dark); margin-bottom: 6px; }
 .progress-bar { height: 8px; border-radius: 999px; background: var(--blue-tint-1); overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--blue); border-radius: 999px; transition: width 0.3s ease; }
 .progress-label { font-size: 12px; color: var(--muted); margin-top: 6px; }

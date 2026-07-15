@@ -157,12 +157,11 @@ Everything phase 4 flagged as "explicitly not built yet" (real routing API,
 stop-sequencing, draft/commit lifecycle, collision handling, the live-edit
 recalculation loop) **has since been built** — see the phase 5/6 sections
 below, which used to describe these as future plans and now describe what
-was actually shipped, plus two frontend sub-slices on top of the phase 6
-API. Still genuinely not built: pre-qual capture (visit-logging UI/
-relationship-confirm prompts), suggestions + commit in the UI (frontend
-sub-slice 3, next up), and retiring the old `services/scheduler.js`/
-`routes/schedule.js`/`Schedule.jsx` "Today's Route" screen (deliberately
-still running in parallel — see the frontend sections below).
+was actually shipped, including all three frontend sub-slices on top of the
+phase 6 API. The old single-day scheduler this whole document originally
+assumed would keep running in parallel is now fully removed (see "Old
+scheduler retired" below). Still genuinely not built: pre-qual capture
+(visit-logging UI/relationship-confirm prompts).
 
 ## Open questions / notes for later
 
@@ -454,10 +453,185 @@ kept working correctly through all of these edits. No console errors. Also
 re-verified `NeedsMapping.jsx` still renders with no errors after the
 `PlacePicker` extraction. All smoke-test rows/tokens cleaned up after.
 
-**Next:** sub-slice 3 — suggestions (the "nearby eligible stop" prompt on
-under-budget days, wired to the already-built `getSuggestions` endpoint) and
-commit (per-day and full), same one-slice-at-a-time review discipline. After
-that, retiring the old scheduler becomes possible for the first time.
+## Phase 6 frontend, sub-slice 3 — suggestions + commit (DONE, 2026-07-15)
+
+Last of the 3-sub-slice frontend plan. Both new pieces sit on top of sub-slice 2's
+`DraftDay` component, no new backend work needed — `getSuggestions`/`commitDay`/`commitAll`
+were already built and tested as part of phase 6's backend.
+
+**Suggestions:** a "Suggest a stop" button appears on a day's card whenever
+`!day.overBudget && day.remainingMinutes > 0` (next to "+ Add a stop"). Clicking it fetches
+`GET .../days/:date/suggestions` on demand (not eagerly for every day — a real API call) and
+renders each candidate's name/category/city/zone with an "Add" button. Adding a suggestion
+calls the exact same `addStop` endpoint the ad-hoc `PlacePicker` flow uses — a suggestion is
+just a pre-filtered candidate, not a different code path — and removes it from the local
+suggestions list on success (rather than an automatic re-fetch) so the panel doesn't need a
+second round trip just to stop offering something already added.
+
+**Commit:** `commitDay` (per-day, in each `DraftDay`'s card header) and `commitAll` (top-level,
+next to "Plan again"), both gated behind `window.confirm` — matches `Schedule.jsx`'s existing
+confirm-before-destructive-action convention. `commitDay`'s response shape (`{ date, committed,
+skippedCollisions }`) isn't a day view — the committed stops just became real `visits` rows and
+are gone from the draft — so this is the one mutation in `PlanVisits.jsx` that triggers a full
+`load()` (whole-draft reload) instead of patching one day's slice via `onDayUpdated`. A new
+`.notice-banner` CSS class (blue, alongside the existing red `.error-banner`) reports what got
+committed and separately surfaces any `skippedCollisions` (a stop that collided with a
+same-date `visits` row committed by someone else since it was added to this draft).
+
+**Verified live** the same way as sub-slices 1-2 (fresh temp token on Lisa Marks, cleaned up
+after): generated a 5-day draft, opened suggestions on the first (under-budget) day — 5 real
+nearby candidates came back, correctly zone-filtered to that day's zone ("South Lincoln") —
+added one via its "Add" button (5→6 stops, running total correctly flipped the day to "20m
+over," which is the never-drop evaluator working exactly as designed for a user-driven add, not
+a bug), committed that day (6 real `visits` rows landed, `visit_type` correctly resolved from
+draft override → place default, notice banner text correct), then committed all remaining days
+(20 more `visits` rows). Confirmed directly against the dev DB: 26 total `visits` rows in the
+right shape, 0 leftover `schedule_draft_stops`. No console errors. Fully cleaned up after:
+deleted all 26 test `visits` rows plus the test draft, cleared Lisa's temp `auth_token` back to
+null.
+
+**All three route-planner frontend sub-slices are now done.** The "Plan My Visits" workspace
+(generate → live-edit → suggest → commit) is functionally complete end-to-end.
+
+## Old scheduler retired (2026-07-15)
+
+Deleted outright: `server/src/services/scheduler.js`, `server/src/routes/schedule.js` (the
+whole `/api/schedule` prefix — `GET /`, `POST /generate`, `PATCH /reorder`),
+`client/src/components/Schedule.jsx`, and the "Today's Route" nav tab in `App.jsx`. Also
+removed everything that only existed to support it:
+- `client/src/api.js`'s `schedule`/`generateSchedule`/`reorder` methods (the new system's
+  `api.scheduleDrafts.*` namespace is untouched, no naming collisions).
+- `StatusChip` (`ui/Chip.jsx`) and its `.badge.status-*` CSS — no other consumer existed.
+- Dead CSS: `.stop.done`/`.stop.skipped`/`.stop-contact`/`.stop-note-preview`/
+  `.stop-buttons`/`.grid.cols2` (all Schedule.jsx-only). Shared classes reused by
+  `PlanVisits.jsx` (`.stop.dragging`/`.drag-over`, `.drag-handle`, `.reorder`,
+  `.progress-bar`/`.progress-label`) were kept — only their stale "Schedule.jsx" comments
+  were updated to point at `PlanVisits.jsx` instead.
+
+**Bede's explicit call on the one non-obvious tradeoff:** the Dashboard's "Today's Route" card
+(stat tile + stop list + "Open route" button) depended on the old scheduler's `loadRoute()`
+query — a read-only display, not generation logic, so it could technically have been kept by
+moving the query elsewhere. Asked Bede directly rather than assuming; he chose full removal
+("remove all of that... very clean") over keeping a slimmed read-only version. Dashboard now
+shows 2 stat tiles (was 3) and "Completed this week" as a standalone full-width card instead
+of a two-column layout paired with the removed route card.
+
+Every file that referenced the old scheduler in a comment (not just code) was updated rather
+than left dangling: `scheduleDraft.js`, `scheduleDrafts.js`, `visits.js`, `places.js`,
+`people.js`, `PlanVisits.jsx`, `PersonDetail.jsx`, `PlaceDetail.jsx`, `VisitLogModal.jsx`.
+`README.md`'s API table still listed the deleted `/api/schedule*` endpoints and had never
+been updated with the route planner's real endpoints — fixed, plus rewrote the stale "Daily
+schedule generator" and "Dashboard — today's route" feature-list bullets.
+
+**Verified**: 139 backend tests pass unchanged, client build succeeds (59 modules, down from
+60), and a live Playwright pass (Lisa Marks id 5 temp token, cleaned up after) confirmed: the
+nav bar shows exactly 5 tabs with no "Today's Route", the Dashboard renders cleanly with no
+layout gap where the old card was, `Plan My Visits` still works end-to-end, `GET /api/schedule`
+now 404s, `GET /api/dashboard` no longer returns a `today` key — zero console/page errors
+throughout.
+
+**The route planner is now the only route-planning surface in the app.** There is no
+old-system fallback left to fall back to.
+
+## Post-retirement UX feedback pass (2026-07-15)
+
+With the workspace feature-complete, Bede started actually using it and walked through the
+UI live, asking questions and requesting changes as he went. Three real features came out of
+that session, all in `PlanVisits.jsx` + supporting backend:
+
+**1. Manual "Re-optimize" per day.** New `POST /api/schedule-drafts/:id/days/:date/reoptimize`
+(`scheduleDraft.js`'s `reoptimizeDay`) — the first live-edit mutation allowed to resequence a
+day's stops, using the same real-OSRM `optimizeRoute()` generation already uses internally.
+Every other mutation (add/remove/reorder/visit-type) deliberately preserves whatever order the
+stops are already in (see `getRouteLegMinutes`'s header comment) — this is the one exception,
+and only because the user explicitly asked for it via the button. Falls back to leaving the
+order untouched if OSRM is unreachable; never drops a stop, even an ungeocoded one (routed
+stops get resequenced, ungeocoded ones are appended after, in their prior relative order).
+
+**Button gating went through two rounds of refinement, both driven by Bede's own follow-up
+corrections** (session-only client state in `PlanVisits.jsx`, not persisted — no schema
+change):
+- Round 1: show it only once a day has been edited (add/remove/reorder), hide it again once
+  clicked. Visit-type changes deliberately don't count — they only change a stop's duration,
+  never which order is fastest to drive.
+- Round 2 (Bede's correction): don't hide the button after clicking — keep it visible but
+  **disabled**, and only re-enable (not re-show) it once the day is edited again. Two booleans
+  now: `everEdited` (sticky true, controls visibility) and `needsReoptimize` (toggles,
+  controls enabled/disabled). Verified all 6 state transitions live (generate → hidden;
+  visit-type change → still hidden; reorder → visible+enabled; click → visible+disabled;
+  another visit-type change → unchanged; remove → visible+enabled again).
+
+**2. "Discard plan" button.** New `DELETE /api/schedule-drafts/:id` (`deleteActiveDraft` —
+ownership-checked wrapper around the pre-existing internal `deleteDraft`, which the regenerate
+path already used but which was never safe to expose directly to a route). Discards the
+*whole* multi-day proposal at once, not one day — cascades through the existing FK
+(`schedule_draft_stops.draft_id ON DELETE CASCADE`, enforced even on SQLite via
+`PRAGMA foreign_keys = ON` in `knexfile.js`) so nothing's left orphaned. Already-committed days
+are unaffected (their stops left the draft the moment they became real `visits` rows).
+`homeBase` is deliberately left set client-side afterward so a fresh generate doesn't force
+re-entering a start location. Distinct from "Plan again" (discard + immediately regenerate in
+one click) — Discard just goes back to the empty state, no replacement.
+
+**3. Per-stop time + day-total prominence.** Each stop's own row (next to its remove button)
+now shows `stop.blockMinutes` (drive + visit + prep + data entry — its own contribution to the
+day) instead of `stop.runningTotalMinutes` (cumulative up to that point) — Bede specifically
+wanted "the amount of time each visit is expected to take," not a running tally, per-row.
+Added a hover tooltip breaking the number down into its four components. Separately, the
+day-level total moved out of the small `.progress-label` caption into a new prominent
+`.progress-total` line (bold, 20px, serif, blue-dark) above the progress bar — "3h 43m of 4h"
+now reads as the headline, with "5 stops · 17m free" as a smaller caption underneath.
+
+**Verified live** for all three (Playwright, Lisa Marks id 5 temp token, cleaned up after each
+run): Re-optimize actually resequenced a shuffled day via a real OSRM call; the gating state
+machine matched all 6 expected transitions exactly; Discard collapsed a 6-card draft down to
+the empty state and left zero orphaned DB rows; per-stop times summed exactly to the
+prominent day total (50+48+43+41+41 = 223min = "3h 43m", confirmed via screenshot). 139
+backend tests pass throughout, client build stays clean (59 modules).
+
+**Committed 2026-07-15** on `bede-routeplanner` (`git log` for the exact hash — not
+hardcoded here to avoid a doc referencing its own not-yet-existing commit). Not yet pushed to
+`origin/bede-routeplanner`.
+
+**Next**: nothing specific queued — Bede is still walking through the workspace and giving
+live feedback; expect more of this same pattern (small, targeted UX asks) before this is
+considered done-done. No open technical debt from this pass.
+
+## Two more live-feedback additions, same day (2026-07-15)
+
+**Manual address entry, always available.** The generate form's start-location picker used to
+only show the manual street/city/state/zip form as a fallback after "Use my current location"
+failed or was denied. Bede wanted it available proactively instead. Added a new
+`manualEntryOpen` toggle (`PlanVisits.jsx`) — an "Enter address manually" button next to "Use
+my current location" opens the same form immediately, no geolocation attempt required. The
+old auto-open-on-failure behavior (`locationError`) still works unchanged; the form now opens
+on `manualEntryOpen || locationError`, either condition. No backend change — reuses the
+existing `/api/geocode` endpoint.
+
+**Read-only "Committed" section per day.** After a day's stops get committed, they used to
+just vanish from the draft view — a fully-committed day looked identical to an empty one, with
+no indication anything happened. `loadDraftView`/`loadDraftDayView` (`scheduleDraft.js`) now
+also return a `committed` array — real `visits` rows for that user+date, via a new
+`committedVisitsQuery` helper (one query for the whole window in `loadDraftView`, grouped by
+date in JS per this codebase's existing "N rows collapsed in JS, not N queries" convention;
+one direct query for the single date in `loadDraftDayView`). The frontend shows a green
+"✓ N committed" badge in the day's header plus a read-only "Committed" list (name/address/
+category/tier/visit-type per stop) — deliberately not editable here; editing an already-
+committed visit still goes through the normal visit-log flow elsewhere in the app. If a day
+has BOTH committed stops and leftover draft stops (e.g. one stop hit a same-day collision and
+stayed in the draft while the rest committed), both sections show, with a "Still planning"
+label distinguishing them.
+
+**Verified live** — both features worked as designed; the committed-view test also incidentally
+caught a **real** cross-user collision against Bede's own already-committed schedule (his real
+usage data, confirmed untouched afterward): 4 of 5 stops committed, 1 correctly skipped and
+reported in the notice banner, and the day's badge/section correctly showed "✓ 4 committed"
+with the 5th nowhere to be found in either the committed list or the leftover draft — exactly
+right, not a bug. 139 backend tests pass, client build clean throughout.
+
+**This batch (Re-optimize/Discard/time-display + these two) is being committed, pushed, and
+opened as a PR against `main` this session** — see `git log`/GitHub for the final commit hash
+and PR number; not hardcoded here to avoid this doc referencing state that doesn't exist yet
+at write-time.
 
 ## Running things
 

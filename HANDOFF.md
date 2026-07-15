@@ -1,6 +1,6 @@
 # Guardian Angels Sales Scheduler — Project Handoff
 
-_Last updated: 2026-07-14_
+_Last updated: 2026-07-15_
 
 This document is a self-contained context dump so work can resume in a new session.
 It summarizes what was built, key decisions, how to run it, the Railway deploy saga,
@@ -70,6 +70,31 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   scheduler/"Today's Route" screen is still fully working and untouched throughout — it stays
   that way until the new workspace's frontend is complete enough to replace it. Full detail in
   `ROUTEPLANNER_PROGRESS.md` and `NOTES.md`'s 2026-07-14 entry, not here.
+- **2026-07-15:** phase 6 frontend sub-slice 3 — suggestions (a "Suggest a stop" prompt on
+  under-budget days, wired to the already-built `getSuggestions` endpoint) and commit (per-day
+  and full, both confirm-gated, both wired to `commitDay`/`commitAll`). Verified live: a real
+  suggestion was added, a day was committed (6 real `visits` rows), then the remaining days
+  were committed (20 more) — 26 total, correctly shaped, 0 leftover draft stops. **This was the
+  last piece of the new route-planner frontend** — the "Plan My Visits" workspace is now
+  functionally complete end-to-end (generate → edit → suggest → commit). Same day, at Bede's
+  request ("I want this code to be very clean"), **the old scheduler was fully retired**:
+  `services/scheduler.js`, `routes/schedule.js`, `Schedule.jsx`, and the "Today's Route" tab
+  all deleted, plus the Dashboard's old route card (a deliberate choice — full removal, not a
+  slimmed-down read-only keep — confirmed with Bede) and every dead CSS rule/comment that only
+  existed to support it. 139 tests still pass, client build succeeds, verified live with zero
+  console errors. Full detail in `ROUTEPLANNER_PROGRESS.md` and `NOTES.md`'s 2026-07-15
+  entries, not here.
+- **Also 2026-07-15, same session:** with the workspace feature-complete, Bede started
+  live-testing it and requesting real UX refinements as he went — a "Re-optimize" button per
+  day (real-OSRM resequencing, gated by session-only client state that took two rounds of
+  Bede's own live correction to get right — see `NOTES.md`/`ROUTEPLANNER_PROGRESS.md`), a
+  "Discard plan" button (ownership-checked `DELETE /api/schedule-drafts/:id`, cascades
+  cleanly), and moving each stop's individual time + the day's running total to be much more
+  visually prominent. Two more rounds followed the same session: manual address entry made
+  available up front (not just as a geolocation-failure fallback), and a read-only "Committed"
+  section per day so a committed day doesn't just look empty. **Bede then explicitly asked to
+  commit, push, and merge the whole batch into `main` via a PR** so his coworkers could access
+  it — done same session. Expect this live-feedback pattern to continue in future sessions.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
@@ -108,10 +133,9 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
    If you touch this, keep that contract.
 
 **Natural next steps Bede has flagged but not yet asked for** (don't just do these — check
-first): sub-slice 3 of the route-planner frontend (suggestions + commit — see
-`ROUTEPLANNER_PROGRESS.md`), retiring the old scheduler/"Today's Route" screen once that
-ships, extending "needs attention" coverage to Today's Route (or its replacement), feeding
-referral metrics into priority scoring (the natural successor to the old "Phase 2
+first): extending "needs attention" coverage to the "Plan My Visits" workspace (the old
+scheduler's "Today's Route" screen is gone — this app now has one route-planning surface),
+feeding referral metrics into priority scoring (the natural successor to the old "Phase 2
 relationship-temp" idea), finishing the remaining Needs Mapping referrers, fixing the
 Needs-Mapping geocoding gap (§14A), the 7 places whose addresses didn't geocode (§9A) need
 manual review.
@@ -179,9 +203,7 @@ guardian-angels-sales/
 │       │                             # routeOptimizer.js, categories.js (places.category enum)
 │       ├── services/
 │       │   ├── priority.js           # priority score + region ("side of town") helpers
-│       │   ├── scheduler.js          # OLD daily route generator (still what Schedule.jsx/
-│       │   │                         # dashboard use — not yet retired, see ROUTEPLANNER_PROGRESS.md)
-│       │   ├── schedulingEngine.js   # NEW route planner: four-tier scoring/eligibility
+│       │   ├── schedulingEngine.js   # route planner: four-tier scoring/eligibility
 │       │   ├── driveTime.js          # haversine estimate + real-OSRM-backed time-block packing
 │       │   ├── scheduleGenerator.js  # multi-day draft generator (generateDraft())
 │       │   ├── routeOptimizer.js     # OSRM /trip + /route calls (the one I/O-having pure-ish module)
@@ -191,8 +213,8 @@ guardian-angels-sales/
 │       │   ├── referralMetrics.js    # lifetime/last/90-day referral metrics + needs_attention
 │       │   ├── geocoding.js          # geocodeAddress() — address -> {lat, lng} via US Census
 │       │   └── fetchWithTimeout.js   # shared AbortController+setTimeout wrapper (OSRM, geocoding)
-│       ├── routes/                   # auth, places, people, referrals, visits, schedule,
-│       │                             # scheduleDrafts (new route planner), geocode, dashboard,
+│       ├── routes/                   # auth, places, people, referrals, visits,
+│       │                             # scheduleDrafts (route planner), geocode, dashboard,
 │       │                             # users, notesReview
 │       └── scripts/
 │           ├── import-excel.js       # importPlaces() — place list
@@ -201,14 +223,14 @@ guardian-angels-sales/
 └── client/
     ├── vite.config.js                # dev proxy /api -> :4000
     └── src/
-        ├── App.jsx                   # tabs: Dashboard, Today's Route, Plan My Visits, Places,
-        │                             # People, Needs Mapping
+        ├── App.jsx                   # tabs: Dashboard, Plan My Visits, Places, People,
+        │                             # Needs Mapping
         ├── api.js                    # incl. formatDate() — YYYY-MM-DD -> M/D/YYYY for display
         ├── styles.css
         └── components/
             ├── Login.jsx, ChangePassword.jsx
-            ├── Dashboard.jsx, Schedule.jsx          # OLD "Today's Route" — still working, not retired
-            ├── PlanVisits.jsx                       # NEW route-planner workspace ("Plan My Visits")
+            ├── Dashboard.jsx
+            ├── PlanVisits.jsx                       # route-planner workspace ("Plan My Visits")
             ├── Places.jsx, PlaceDetail.jsx, PlaceModal.jsx      # PlaceModal: create AND edit
             ├── People.jsx, PersonDetail.jsx, PersonModal.jsx, AssignPersonModal.jsx
             ├── ReferralModal.jsx, ReferralDetailModal.jsx
@@ -266,17 +288,15 @@ guardian-angels-sales/
   `/api` routes except the login flow require `requireAuth`.
 - **Import places** from Excel (idempotent upsert). Normalizes category typos
   (`Legal and Trust`→`Legal & Trust`, `Senior Adisors`→`Senior Advisors`).
-- **Daily schedule generator ("Today's Route" tab)** — fills ~4 hrs (30 min visit + 15 min
-  travel ≈ 5 stops), seeds on highest-priority place, clusters by region/zip, orders by
-  priority. Manual reorder (drag-and-drop + up/down arrows), skip, remove. This is the OLD
-  engine — still fully working, not yet retired.
-- **Route planner ("Plan My Visits" tab, added 2026-07-14)** — the new engine replacing the
-  above: four-tier priority scoring (commitments > endangered/rescue > exploration >
-  maintenance), real drive-time via OSRM with stop-sequencing optimization, a multi-day draft
-  you generate once and then edit live (reorder/add/remove/change visit type, with in-place
-  time recalculation and over-budget flagging — nothing auto-drops or auto-reshuffles). Commit
-  turns draft stops into real `visits` rows. Suggestions + commit aren't in the UI yet
-  (backend is ready) — see `ROUTEPLANNER_PROGRESS.md` for the full build.
+- **Route planner ("Plan My Visits" tab)** — four-tier priority scoring (commitments >
+  endangered/rescue > exploration > maintenance), real drive-time via OSRM with
+  stop-sequencing optimization, a multi-day draft you generate once and then edit live
+  (reorder/add/remove/change visit type, with in-place time recalculation and over-budget
+  flagging — nothing auto-drops or auto-reshuffles), a "suggest a stop" prompt on
+  under-budget days, and commit (per-day or all) to turn draft stops into real `visits` rows
+  with multi-user collision protection. This is the app's only route-planning surface — the
+  old single-day scheduler ("Today's Route" tab) was retired 2026-07-15, see
+  `ROUTEPLANNER_PROGRESS.md` for the full build.
 - **Visit logging** — outcome (interested / not_ready / follow_up / no_answer), notes,
   key contact (name/title/email/phone), next visit date. Phone numbers are normalized to
   `(402) 555-1234` at every entry point (`services/phone.js` + `ui/PhoneInput.jsx`).
@@ -329,9 +349,9 @@ guardian-angels-sales/
   replaced the earlier manual relationship-temperature system.
 - **Geocoding** — see section 9A. Every place's address is auto-resolved to lat/lng on
   create/update via the free US Census geocoder; `npm run geocode` backfills existing rows.
-- **Dashboard** — today's route, visits completed this week, high-priority never-visited.
-- **Multi-user** — visits assigned to a team member; routes/dashboards are per-user;
-  scheduler avoids double-booking a place across reps on the same day.
+- **Dashboard** — visits completed this week, high-priority never-visited, needs-attention rollup.
+- **Multi-user** — visits assigned to a team member; the route planner avoids double-booking a
+  place across reps on the same day (see the collision handling in `scheduleDraft.js`).
 - **Historical notes import + "Needs Mapping" tab** — see section 7.
 - **Dates display as `M/D/YYYY`** everywhere in the UI (`formatDate()` in `client/src/api.js`,
   added 2026-07-09) — storage/query format is still `'YYYY-MM-DD'` throughout, this is
@@ -609,15 +629,19 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 - **Auth shipped:** the "add authentication before sharing the URL" item from the previous
   handoff is done — bearer-token login is live and required on all `/api` routes except the
   login flow itself.
-- **Git:** current branch `bede-routeplanner` (tracking `origin/bede-routeplanner`, ahead of
-  it, not pushed; not merged into `main`). The full 2026-07-08 CRM buildout and 2026-07-09's
-  polish session are committed and merged to `main`. **2026-07-10's audit-fix session
-  (`848b246`/`dc5d940`) is committed** — both data-integrity bugs from that day's audit are
-  fixed, contrary to older wording in this doc. **2026-07-11 through 2026-07-14's route
-  planner work (phases 1-6 backend+API, a full codebase audit, and phase 6 frontend
-  sub-slices 1-2) is all committed** on `bede-routeplanner` — see the 2026-07-14 bullet in §0
-  and `ROUTEPLANNER_PROGRESS.md` for the full detail. Always check `git status` before
-  starting new work and ask Bede before committing, same as always.
+- **Git:** working branch `bede-routeplanner`. The full 2026-07-08 CRM buildout and
+  2026-07-09's polish session are committed and merged to `main`. **2026-07-10's audit-fix
+  session (`848b246`/`dc5d940`) is committed** — both data-integrity bugs from that day's audit
+  are fixed, contrary to older wording in this doc. **2026-07-11 through 2026-07-15's entire
+  route planner build (phases 1-6 backend+API, a full codebase audit, all three phase 6
+  frontend sub-slices, the old-scheduler retirement, and a round of live UX-feedback
+  refinements) is committed on `bede-routeplanner` and, as of 2026-07-15, pushed and merged
+  into `main` via a GitHub PR** at Bede's explicit request so his coworkers can access it —
+  check `git log main`/GitHub for the exact merge commit rather than trusting a hardcoded hash
+  here. See the 2026-07-14/07-15 bullets in §0 and `ROUTEPLANNER_PROGRESS.md`/`NOTES.md` for
+  the full detail. Always check `git status` before starting new work and ask Bede before
+  committing/pushing/merging, same as always — this was a one-time explicit exception, not a
+  standing instruction to keep doing it automatically.
 - **Geocoding backfill has been run against real data:** 255 of 262 places have `lat`/`lng`;
   7 are stamped `geocoded_at` but unmatched and still need manual address review. See §9A.
   One known gap: places created via the Needs Mapping "create place" flow
@@ -626,12 +650,16 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 - **`places.category` is now a locked enum**, not free text (`server/src/config/categories.js`,
   fixed in the 2026-07-14 audit, `c408809`) — `POST`/`PATCH /api/places` reject any
   non-matching value.
-- **The route planner is real and partially in the UI.** Backend/API (phases 1-6) is fully
-  built, tested (139 tests), and committed. A new "Plan My Visits" tab exists alongside the
-  still-fully-working "Today's Route" tab, with generate + read-only view + live editing
-  (reorder/add/remove/visit-type). Suggestions + commit (sub-slice 3) is the next piece;
-  until that ships, drafts can be built and edited but not yet committed to real visits from
-  the new UI. See `ROUTEPLANNER_PROGRESS.md` for the whole build.
+- **The route planner is real and fully usable end-to-end in the UI — and is now the only
+  route-planning surface in the app.** Backend/API (phases 1-6) is fully built, tested
+  (139 tests), and committed. The "Plan My Visits" tab has generate, live editing
+  (reorder/add/remove/visit-type), suggestions, and commit (per-day and full) all built and
+  verified live (2026-07-15) — drafts can be built, edited, and committed to real `visits`
+  rows entirely from the new UI. **The old scheduler is fully deleted** (same day, at Bede's
+  request) — `services/scheduler.js`, `routes/schedule.js`, `Schedule.jsx`, the "Today's
+  Route" tab, and the Dashboard's old route card are all gone; see §0's 2026-07-15 bullet.
+  Committed and merged into `main` as of 2026-07-15. See `ROUTEPLANNER_PROGRESS.md` for the
+  whole build.
 - **Live deploy:** the Railway deployment was taken down after an earlier handoff to avoid
   ongoing cost while still building — all dev happens locally via `./dev.sh` or the two
   npm-run-dev terminals. Redeploying later is still ~5 min (New → GitHub Repo → add Postgres
@@ -641,20 +669,13 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 ## 14. Next steps / ideas (not yet done)
 
-- **Build sub-slice 3 of the route-planner frontend** — suggestions (the "nearby eligible
-  stop" prompt on under-budget days) + per-day/full commit. The backend
-  (`getSuggestions`/`commitDay`/`commitAll`) already exists; see `ROUTEPLANNER_PROGRESS.md`.
-- **Retire the old scheduler** (`services/scheduler.js`/`routes/schedule.js`'s
-  generate+reorder, `Schedule.jsx`'s "Today's Route" tab, dashboard's `loadRoute` read) once
-  sub-slice 3 ships and the new workspace can fully replace it — not before, per Bede's
-  explicit "keep a working route UI throughout" instruction.
 - **Manually review the 7 places whose addresses didn't geocode** (§9A) before any routing
   logic trusts every place having coordinates.
 - **Fix the Needs Mapping geocoding gap** (§14A) — its create-place path still skips
   `geocodeAddress()`.
-- **"Needs attention" coverage on Today's Route (or its eventual replacement):** referral
-  metrics are wired into the People tab, Places tab, both detail pages, and the Dashboard,
-  but not the route-planning screen's stop cards.
+- **"Needs attention" coverage on Plan My Visits:** referral metrics are wired into the
+  People tab, Places tab, both detail pages, and the Dashboard, but not the route-planning
+  screen's stop cards.
 - **Feed referral metrics into priority scoring:** `services/priority.js` still only scores
   off tier + the manual priority star; folding in a place's `referral_metrics` (e.g. boost
   the ones with high recent referral activity, or resurface ones that are `needs_attention`)
@@ -731,18 +752,19 @@ correctly everywhere, including people→referrals.
 
 ## 14B. Route-planner readiness (2026-07-10 assessment)
 
-**Very stale as of 2026-07-14 — the route planner is essentially done on the backend/API side
-and partially in the UI, on branch `bede-routeplanner` (not yet merged to `main`).** Everything
-below this point describes the *pre-build* state (nothing existed yet) and should not be
-trusted for current status — read `ROUTEPLANNER_PROGRESS.md` at the repo root instead, kept
-up to date phase-by-phase. Short version: phases 1-6 are all built, tested (139 tests), and
+**Very stale as of 2026-07-15 — the route planner is done on the backend/API side and now
+fully usable end-to-end in the UI, on branch `bede-routeplanner` (not yet merged to `main`).**
+Everything below this point describes the *pre-build* state (nothing existed yet) and should
+not be trusted for current status — read `ROUTEPLANNER_PROGRESS.md` at the repo root instead,
+kept up to date phase-by-phase. Short version: phases 1-6 are all built, tested (139 tests), and
 committed — four-tier scoring engine, drive-time via a real routing API (OSRM) with
 stop-sequencing optimization, visit-type durations, a multi-day draft generator, and a full
-draft/commit lifecycle with multi-user collision handling. On top of that, two frontend
-sub-slices are built and verified live: a "Plan My Visits" tab with generate + read-only view,
-then live editing (reorder/add/remove/visit-type, in-place time recalculation, over-budget
-flagging). Next: sub-slice 3 (suggestions + commit UI), then retiring the old scheduler this
-whole section originally assumed would still be the app's only option.
+draft/commit lifecycle with multi-user collision handling. On top of that, all three frontend
+sub-slices are built and verified live: a "Plan My Visits" tab with generate, live editing
+(reorder/add/remove/visit-type, in-place time recalculation, over-budget flagging),
+suggestions, and commit (per-day and full). The old scheduler this whole section originally
+assumed would still be the app's only option is now fully retired (2026-07-15) — the route
+planner is the only route-planning surface left in the app.
 
 Bede's next planned feature is a real route planner (plan a day's driving route between
 places). Assessed what's actually ready vs. missing:
@@ -797,6 +819,6 @@ wire that into `scheduler.js`'s ordering in place of/alongside `clusterSort`, (d
 4. Start it: `cd ~/guardian-angels-sales && ./dev.sh` → open http://localhost:5173
 5. Check `git status` before starting anything new — ask Bede before committing, always.
 6. Read `ROUTEPLANNER_PROGRESS.md` before touching the route planner — it's the up-to-date
-   source of truth, phase-by-phase, including exactly what sub-slice 3 (suggestions + commit
-   UI) needs next.
+   source of truth, phase-by-phase. All three frontend sub-slices are done and the old
+   scheduler is fully retired — the route planner is the app's only route-planning surface.
 7. §14A's two critical bugs are fixed — no need to fix them again, just don't reintroduce them.

@@ -10,7 +10,7 @@ A full-stack app for planning and logging referral-place sales visits around Lin
 
 - **Auth** — simple bearer-token login (pick your name, set a password on first use). All `/api` routes except login require it.
 - **Import** the Excel place list into the database (idempotent — safe to re-run).
-- **Daily schedule generator** — auto-picks ~4 hours of visits (30 min each + travel), clustered by side-of-town / zip and ordered by priority. Manually reorder, skip, or remove stops.
+- **Route planner ("Plan My Visits")** — generates a multi-day draft of visits from a four-tier priority model (commitments > endangered/overdue > exploration > maintenance), sequenced by real driving routes (OSRM) within a daily time budget. Live-editable (reorder, add, remove, change visit type) with in-place time/budget recalculation, plus a "suggest a stop" prompt on under-budget days. Commit a day (or everything remaining) to turn draft stops into real visits, with multi-user collision protection so two reps can't get double-booked into the same place on the same day.
 - **Places tab** — full CRUD directory (add/edit/delete places), search & filter by category, tier, city, zip; each row shows last (completed) visit, a preview contact, and the place's live referral tally.
 - **People tab** — a cross-place directory of every individual contact, independent of place assignment (a person doesn't need a place, and a place doesn't need a person). Search/filter by place, category, "needs attention" (referred before but quiet the last 90 days), or "never contacted."
 - **Place detail** — editable org-level fields (an **Edit** button opens the same form used to create places, pre-filled), org-level notes (click-to-edit, with Save/Cancel/**Delete**), a simple roster ("People here") with each person's own referral metrics (lifetime count, last referral date, last-90-days count) and a "cooling" flag for anyone who's gone quiet, an **Assign person** picker (attach someone who already exists — shows a default list of every currently-unassigned person, plus the existing search-everyone box) vs **New person** (create one from scratch), detach-without-deleting, and **Log a referral** / **Log a visit** actions. The place's own referral metrics (top of the card, and in the directory table) are always the live roll-up of its *currently assigned* people's own numbers.
@@ -23,7 +23,7 @@ A full-stack app for planning and logging referral-place sales visits around Lin
 - **Referrals** — every referral is logged against a specific person. A person's own metrics follow them if they move (or are removed from) a place; a place's numbers are always derived live from its current roster, so they drop immediately when someone's detached.
 - **Referral metrics — objective, no manual upkeep** — every person and place shows three numbers computed live from the referrals table: lifetime referral count, most recent referral date ("none yet" if there aren't any), and referrals in the last 90 days. A person or place with referrals in the past but nothing in the last 90 days is flagged **"needs attention" / "cooling"** — surfaced on the Dashboard, and filterable on both the People and Places tabs. There's no manual field to set or forget; see `server/src/services/referralMetrics.js`. (This replaced an earlier manual `hot/warm/cold/dormant` relationship-temperature field, removed because it required upkeep nobody kept up with.)
 - **Visit logging** — notes, key contact (name / title / email / phone), outcome (interested / not ready / follow up / no answer), and next visit date. Phone numbers are normalized to `(402) 555-1234` everywhere they're entered.
-- **Dashboard** — today's route, visits completed this week, and high-priority places never visited.
+- **Dashboard** — visits completed this week, high-priority places never visited, and a "needs attention" rollup (cooling relationships, overdue next-visit dates).
 - **Multi-user ready** — visits are assigned to a team member; the schema supports adding more reps later.
 - **Historical notes import** — loads 2 years of referrer notes (`ReferrerNotes.xlsx`) into
   place history. Notes whose referrer can't be auto-matched land in a **Needs Mapping**
@@ -127,9 +127,16 @@ All routes below require an `Authorization: Bearer <token>` header (obtained via
 | DELETE | `/api/people/:id` | Delete a person permanently (visits they were on stay, via snapshot fields) |
 | POST | `/api/referrals` | Log a referral against a person |
 | DELETE | `/api/referrals/:id` | Delete a referral |
-| GET | `/api/schedule?date=&userId=` | A day's route |
-| POST | `/api/schedule/generate` | Build a clustered, priority-ordered route |
-| PATCH | `/api/schedule/reorder` | Persist a manual reorder (`orderedVisitIds`) |
+| POST | `/api/schedule-drafts/generate` | Generate (or fetch, if one exists) a multi-day route-planner draft |
+| GET | `/api/schedule-drafts/active` | The caller's current draft, fully recalculated |
+| PATCH | `/api/schedule-drafts/:id/days/:date/reorder` | Reorder a day's draft stops |
+| POST | `/api/schedule-drafts/:id/days/:date/stops` | Add a stop to a day |
+| DELETE | `/api/schedule-drafts/:id/days/:date/stops/:placeId` | Remove a stop from a day |
+| PATCH | `/api/schedule-drafts/:id/days/:date/stops/:placeId` | Change a stop's visit type |
+| GET | `/api/schedule-drafts/:id/days/:date/suggestions` | Nearby eligible candidates for an under-budget day |
+| POST | `/api/schedule-drafts/:id/days/:date/commit` | Commit one day's draft stops into real visits |
+| POST | `/api/schedule-drafts/:id/commit` | Commit every remaining day |
+| POST | `/api/geocode` | Geocode an address to `{lat, lng}` (manual-entry fallback for the route planner's start location) |
 | POST | `/api/visits` | Create an ad-hoc visit |
 | PATCH | `/api/visits/:id` | Log/update a visit |
 | POST | `/api/visits/:id/skip` | Skip a stop |

@@ -1,6 +1,5 @@
 // Wires the pure route-planner engine (schedulingEngine.js/driveTime.js/
-// scheduleGenerator.js/routeOptimizer.js) to the database — the same role
-// services/scheduler.js plays for the old single-day scheduler. Owns the
+// scheduleGenerator.js/routeOptimizer.js) to the database. Owns the
 // draft/commit lifecycle: generating a multi-day draft into
 // schedule_drafts/schedule_draft_stops, live-recalculating a day on every
 // read (never cached — see loadDraftDayView), collision handling
@@ -10,17 +9,16 @@
 // (mergeLockedElsewhereIds, partitionCommittableStops) that take
 // already-fetched rows and return a decision — no knex, no async — so it's
 // directly unit-testable (see scheduleDraft.test.js) even though the
-// queries that feed it aren't. This is the most consequential new code in
-// the planner (it's what stops two reps double-booking the same place), so
-// it gets the same "query the DB, shape rows, call a pure function" split
-// the rest of this stack already uses, not left entirely untested like the
-// old scheduler.js/routes/schedule.js layer.
+// queries that feed it aren't. This is the most consequential code in the
+// planner (it's what stops two reps double-booking the same place), so it
+// gets the same "query the DB, shape rows, call a pure function" split the
+// rest of this stack uses.
 const knex = require('../db/knex');
 const defaultSchedulingConfig = require('../config/scheduling');
 const { rankCandidates } = require('./schedulingEngine');
 const { generateDraft, workingDays } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
-const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType } = require('./driveTime');
+const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 
 // -- Pure: collision + commit-eligibility -----------------------------------
 
@@ -70,9 +68,8 @@ function todayUTC() {
 // next_visit_date off the most recent visit (any status) that set one.
 // Shapes rows into rankCandidates' expected input, minus `lockedElsewhere`
 // (date-specific — attached separately, see generateAndPersistDraft/
-// getSuggestions). Follows loadRoute()'s (services/scheduler.js) existing
-// precedent of reducing multiple queries to one-row-per-place in JS rather
-// than correlated subqueries — more portable across SQLite/Postgres.
+// getSuggestions). Reduces multiple queries to one-row-per-place in JS
+// rather than correlated subqueries — more portable across SQLite/Postgres.
 async function buildCandidatePool(db, { today }) {
   const places = await db('places').select('*');
 
@@ -273,6 +270,37 @@ function toDraftStopShape(row) {
   };
 }
 
+// Real `visits` rows already committed for this user — shown ALONGSIDE
+// (never instead of) whatever's still left in the draft for that date,
+// since a partial commit (some stops hit a same-day collision and stayed in
+// the draft — see commitDay's skippedCollisions) can leave both non-empty
+// for the same day. Read-only here: editing an already-committed visit goes
+// through the normal visit-log flow elsewhere in the app (PersonDetail/
+// PlaceDetail), not this draft UI. `place_id` can be null (detach-not-
+// delete) — the left join and the `place_name` snapshot column both exist
+// specifically to survive that.
+function committedVisitsQuery(db, { userId }) {
+  return db('visits as v')
+    .leftJoin('places as p', 'p.id', 'v.place_id')
+    .where({ 'v.user_id': userId })
+    .orderBy('v.sort_order')
+    .select(
+      'v.id as visit_id',
+      'v.place_id',
+      'v.place_name',
+      'v.visit_type',
+      'v.status',
+      'v.outcome',
+      'v.scheduled_date',
+      'v.sort_order',
+      'p.category',
+      'p.tier',
+      'p.address',
+      'p.city',
+      'p.zip'
+    );
+}
+
 // Real-first, haversine-fallback time evaluation for a day's stops IN THEIR
 // CURRENT ORDER — never resequences (see routeOptimizer.js's
 // getRouteLegMinutes header for why that matters for live-edit recalc).
@@ -321,12 +349,20 @@ async function loadDraftView(db, draftId) {
   });
   const budgetMinutes = params.hoursPerDay * 60;
 
+  // One query for the whole window's committed visits, grouped by date in
+  // JS — same "reduce multiple rows to one-per-key in JS rather than N
+  // queries in a loop" precedent this codebase already uses (see
+  // buildCandidatePool/dashboard.js), instead of a query per day.
+  const committedRows = await committedVisitsQuery(db, { userId: draft.user_id }).whereIn('v.scheduled_date', dates);
+  const committedByDate = {};
+  for (const row of committedRows) (committedByDate[row.scheduled_date] ||= []).push(row);
+
   const days = [];
   for (const date of dates) {
     const rows = byDate[date] || [];
     const stops = rows.map(toDraftStopShape);
     const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
-    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, ...evaluated });
+    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedByDate[date] || [], ...evaluated });
   }
 
   return { id: draft.id, userId: draft.user_id, params, days };
@@ -349,8 +385,9 @@ async function loadDraftDayView(db, draftId, date) {
   const stops = rows.map(toDraftStopShape);
   const budgetMinutes = params.hoursPerDay * 60;
   const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
+  const committed = await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date);
 
-  return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, ...evaluated };
+  return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, ...evaluated };
 }
 
 // Adds a stop (from a suggestion, or ad hoc) to one day of a draft.
@@ -400,6 +437,19 @@ async function removeStop({ draftId, userId, date, placeId }) {
   });
 }
 
+// Discards the whole proposal — every day, not just one. Unlike
+// generate({ regenerate: true }), this doesn't build a replacement; the
+// caller goes back to having no active draft at all. Ownership-checked
+// (unlike the bare deleteDraft() above, which trusts its caller already did
+// that — this is the one entry point meant to be reachable directly from a
+// route). Nothing to return: once it's gone, there's no draft left to load.
+async function deleteActiveDraft({ draftId, userId }) {
+  return knex.transaction(async (trx) => {
+    await assertOwnsDraft(trx, draftId, userId);
+    await deleteDraft(trx, draftId);
+  });
+}
+
 async function reorderDay({ draftId, userId, date, placeIds }) {
   return knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
@@ -414,6 +464,48 @@ async function setVisitType({ draftId, userId, date, placeId, visitType }) {
   return knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
     await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: placeId }).update({ visit_type: visitType || null });
+    return loadDraftDayView(trx, draftId, date);
+  });
+}
+
+// Re-sequences a day's stops via a real OSRM /trip call — the ONE mutation
+// that's allowed to resequence, since a user clicking "Re-optimize" is
+// explicitly asking for that. Every other mutation above deliberately
+// preserves whatever order the stops are already in (see
+// routeOptimizer.js's getRouteLegMinutes header for why that matters for
+// the rest of the live-edit loop). Only reorders stops with coordinates —
+// an ungeocoded stop (rare; see driveTime.js's isGeocoded) has no honest
+// route to compute, so it's left at the end in its current relative order
+// rather than dropped. Falls back to leaving the whole day's order
+// untouched if OSRM is unreachable/times out (optimizeRoute returns null) —
+// this never drops a stop, only fails to reorder it.
+async function reoptimizeDay({ draftId, userId, date }) {
+  return knex.transaction(async (trx) => {
+    await assertOwnsDraft(trx, draftId, userId);
+
+    const draft = await trx('schedule_drafts').where({ id: draftId }).first();
+    const params = JSON.parse(draft.params_json);
+
+    const rows = await trx('schedule_draft_stops as s')
+      .join('places as p', 'p.id', 's.place_id')
+      .where({ 's.draft_id': draftId, 's.date': date })
+      .orderBy('s.sort_order')
+      .select('s.id as stop_id', 's.visit_type', 'p.*');
+
+    const stops = rows.map(toDraftStopShape);
+    const routable = stops.filter(isGeocoded);
+    const unroutable = stops.filter((s) => !isGeocoded(s));
+
+    if (routable.length < 2) return loadDraftDayView(trx, draftId, date); // nothing worth reordering
+
+    const result = await optimizeRoute({ start: params.homeBase, stops: routable });
+    if (!result) return loadDraftDayView(trx, draftId, date); // OSRM unreachable — order stays as-is
+
+    const newOrder = [...result.orderedStops, ...unroutable];
+    for (let i = 0; i < newOrder.length; i++) {
+      await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: newOrder[i].place_id }).update({ sort_order: i });
+    }
+
     return loadDraftDayView(trx, draftId, date);
   });
 }
@@ -520,8 +612,10 @@ module.exports = {
   loadDraftDayView,
   addStop,
   removeStop,
+  deleteActiveDraft,
   reorderDay,
   setVisitType,
+  reoptimizeDay,
   getSuggestions,
   commitDay,
   commitAll,

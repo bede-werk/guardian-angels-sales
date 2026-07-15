@@ -12,7 +12,6 @@ const { importNotes } = require('./scripts/import-notes');
 // Each of these files is an Express Router handling one resource/area of the API.
 const places = require('./routes/places');
 const visits = require('./routes/visits');
-const schedule = require('./routes/schedule');
 const scheduleDrafts = require('./routes/scheduleDrafts');
 const dashboard = require('./routes/dashboard');
 const users = require('./routes/users');
@@ -44,7 +43,6 @@ app.use('/api', requireAuth);
 
 app.use('/api/places', places);
 app.use('/api/visits', visits);
-app.use('/api/schedule', schedule);
 app.use('/api/schedule-drafts', scheduleDrafts);
 app.use('/api/dashboard', dashboard);
 app.use('/api/users', users);
