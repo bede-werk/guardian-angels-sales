@@ -10,9 +10,9 @@ const CREATE_PERSON = '__create_person__'; // sentinel option value for "+ Creat
 // fields aren't editable here yet. Any of those already present on an
 // existing `visit` are preserved as-is (carried through in the save payload)
 // rather than shown or cleared.
-// `visit` may be a scheduled stop (has visit_id, from Schedule.jsx) or, when
-// opened from a place with no scheduled visit, `placeId` is provided
-// instead to create a brand-new ad-hoc visit (from PlaceDetail.jsx).
+// `visit` is passed when editing an existing visit (has visit_id); when
+// opened from a place with no visit yet, `placeId` is provided instead to
+// create a brand-new ad-hoc visit (from PlaceDetail.jsx).
 // On narrow screens this renders as a bottom slide-up sheet instead of a
 // centered modal — see the @media rule for .modal-backdrop in styles.css.
 export default function VisitLogModal({ visit, placeId, placeName, userId, onClose, onSaved }) {

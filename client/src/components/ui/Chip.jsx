@@ -1,6 +1,6 @@
 // Small colored "pill" labels used throughout the app: tier/priority, visit
-// status, visit outcome, and category. This file replaced the old Badges.jsx
-// during the brand redesign — same idea, restyled with the brand tokens.
+// outcome, and category. This file replaced the old Badges.jsx during the
+// brand redesign — same idea, restyled with the brand tokens.
 import React from 'react';
 import { OUTCOME_LABELS } from '../../api';
 
@@ -12,12 +12,6 @@ export function TierChip({ tier, isPriority }) {
       {isPriority && <span className="badge star">★ Priority</span>}
     </span>
   );
-}
-
-// A visit's status: planned | completed | skipped. The CSS class is built
-// from the status string directly (see .badge.status-* rules in styles.css).
-export function StatusChip({ status }) {
-  return <span className={`badge status-${status}`}>{status}</span>;
 }
 
 // A visit's outcome (interested / not_ready / follow_up / no_answer /

@@ -14,6 +14,7 @@ import VisitLogModal from './VisitLogModal';
 // People.jsx (clicking a row).
 export default function PersonDetail({ personId, userId, onClose, onChanged, onDeleted, onOpenPlace }) {
   const [data, setData] = useState(null); // GET /api/people/:id response (person + place + visits)
+  const [loadError, setLoadError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [places, setPlaces] = useState([]); // every place, for the "assign to a place" picker
@@ -44,7 +45,12 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const [removingBirthday, setRemovingBirthday] = useState(false);
 
   async function load() {
-    setData(await api.people.get(personId));
+    try {
+      setLoadError(null);
+      setData(await api.people.get(personId));
+    } catch (e) {
+      setLoadError(e.message);
+    }
   }
   useEffect(() => {
     load();
@@ -237,7 +243,14 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     return (
       <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <div className="loading">Loading…</div>
+          {loadError ? (
+            <div className="stack" style={{ padding: 20 }}>
+              <div className="error-banner">{loadError}</div>
+              <Button variant="secondary" onClick={onClose}>Close</Button>
+            </div>
+          ) : (
+            <div className="loading">Loading…</div>
+          )}
         </div>
       </div>
     );
@@ -267,6 +280,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
           <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
+          {loadError && <div className="error-banner">{loadError}</div>}
           {(data.phone || data.email) && (
             <div className="stack" style={{ background: 'var(--bg)', borderRadius: 'var(--radius-md)', padding: '12px 16px' }}>
               <div className="tiny">
@@ -618,8 +632,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         />
       )}
 
-      {/* VisitLogModal expects `visit_id` (it doubles as Schedule.jsx's stop
-          editor, where visits come shaped that way) — map our row's `id` to
+      {/* VisitLogModal expects `visit_id`, not `id` — map our row's `id` to
           it here so editing an existing visit PATCHes instead of creating a
           new one. */}
       {editingVisit && (

@@ -101,7 +101,7 @@ router.get('/people/:id', async (req, res, next) => {
     const place = await knex('places').where({ id: person.place_id }).first();
 
     // Visit history is for what actually happened — a still-planned or
-    // skipped stop from Today's Route doesn't belong here.
+    // skipped visit doesn't belong here.
     const visits = await knex('visits as v')
       .leftJoin('users as u', 'u.id', 'v.user_id')
       .where('v.person_id', person.id)

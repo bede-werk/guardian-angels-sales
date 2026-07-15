@@ -75,13 +75,6 @@ export const api = {
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
 
-  // Today's Route — server/src/routes/schedule.js
-  schedule: (date, userId) =>
-    request(`/schedule?date=${date}${userId ? `&userId=${userId}` : ''}`),
-  generateSchedule: (body) => request('/schedule/generate', { method: 'POST', body }),
-  reorder: (orderedVisitIds) =>
-    request('/schedule/reorder', { method: 'PATCH', body: { orderedVisitIds } }),
-
   // Visits (logging a call) — server/src/routes/visits.js
   createVisit: (body) => request('/visits', { method: 'POST', body }),
   updateVisit: (id, body) => request(`/visits/${id}`, { method: 'PATCH', body }),
@@ -123,6 +116,33 @@ export const api = {
     remove: (id) => request(`/referrals/${id}`, { method: 'DELETE' }),
   },
 
+  // Route planner draft/commit lifecycle — server/src/routes/scheduleDrafts.js
+  scheduleDrafts: {
+    generate: (body) => request('/schedule-drafts/generate', { method: 'POST', body }),
+    active: () => request('/schedule-drafts/active'),
+    discard: (draftId) => request(`/schedule-drafts/${draftId}`, { method: 'DELETE' }),
+    reorderDay: (draftId, date, placeIds) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/reorder`, { method: 'PATCH', body: { placeIds } }),
+    addStop: (draftId, date, placeId, visitType) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/stops`, { method: 'POST', body: { placeId, visitType } }),
+    removeStop: (draftId, date, placeId) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/stops/${placeId}`, { method: 'DELETE' }),
+    setVisitType: (draftId, date, placeId, visitType) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/stops/${placeId}`, { method: 'PATCH', body: { visitType } }),
+    reoptimizeDay: (draftId, date) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/reoptimize`, { method: 'POST' }),
+    getSuggestions: (draftId, date) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/suggestions`),
+    commitDay: (draftId, date) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/commit`, { method: 'POST' }),
+    commitAll: (draftId) =>
+      request(`/schedule-drafts/${draftId}/commit`, { method: 'POST' }),
+  },
+
+  // Address -> coordinates, for the route planner's manual-location fallback
+  // when browser geolocation is denied/unavailable — server/src/routes/geocode.js
+  geocode: (body) => request('/geocode', { method: 'POST', body }),
+
   // Auth (login/logout/password) — server/src/routes/auth.js
   auth: {
     users: () => request('/auth/users'), // list for the login picker (name + hasPassword only)
@@ -152,6 +172,15 @@ export const ROLE_TYPE_LABELS = {
   gatekeeper: 'Gatekeeper',
   champion: 'Champion',
   other: 'Other',
+};
+
+// Display labels for a draft stop's visit type (server/src/config/visitTypes.js's VISIT_TYPES).
+export const VISIT_TYPE_LABELS = {
+  drop_in: 'Drop-in',
+  check_in: 'Check-in',
+  working_visit: 'Working visit',
+  presentation: 'Presentation / in-service',
+  pre_qualification: 'Pre-qualification',
 };
 
 // Today's date as 'YYYY-MM-DD', matching how dates are stored/compared everywhere else.

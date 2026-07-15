@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, today, formatDate, getToken, clearToken } from './api';
 import Dashboard from './components/Dashboard';
-import Schedule from './components/Schedule';
+import PlanVisits from './components/PlanVisits';
 import Places from './components/Places';
 import People from './components/People';
 import NeedsMapping from './components/NeedsMapping';
@@ -11,11 +11,11 @@ import Header from './components/ui/Header';
 import Splash from './components/ui/Splash';
 import Button from './components/ui/Button';
 
-// The five tabs shown in the nav bar under the header. `id` picks which
+// The tabs shown in the nav bar under the header. `id` picks which
 // component renders below; `label` is the button text.
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
-  { id: 'schedule', label: "Today's Route" },
+  { id: 'planner', label: 'Plan My Visits' },
   { id: 'places', label: 'Places' },
   { id: 'people', label: 'People' },
   { id: 'mapping', label: 'Needs Mapping' },
@@ -94,12 +94,10 @@ export default function App() {
         ))}
       </nav>
 
-      {/* Only the active tab's component is mounted — the others unmount entirely
-          (so e.g. Schedule's polling/state resets each time you come back to it). */}
-      {tab === 'dashboard' && (
-        <Dashboard date={date} userId={authUser.id} onGoToSchedule={() => setTab('schedule')} />
-      )}
-      {tab === 'schedule' && <Schedule date={date} userId={authUser.id} />}
+      {/* Only the active tab's component is mounted — the others unmount entirely,
+          resetting their state each time you come back to them. */}
+      {tab === 'dashboard' && <Dashboard date={date} userId={authUser.id} />}
+      {tab === 'planner' && <PlanVisits />}
       {tab === 'places' && <Places userId={authUser.id} />}
       {tab === 'people' && <People userId={authUser.id} />}
       {tab === 'mapping' && <NeedsMapping onChanged={refreshMappingCount} />}

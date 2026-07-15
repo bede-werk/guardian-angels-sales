@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api, formatDate } from '../api';
-import { TierChip, StatusChip, OutcomeChip, CategoryChip } from './ui/Chip';
+import { TierChip, OutcomeChip, CategoryChip } from './ui/Chip';
 import StatTile from './ui/StatTile';
 import EmptyState from './ui/EmptyState';
-import Button from './ui/Button';
 import PlaceDetail from './PlaceDetail';
 
-// At-a-glance: today's route, visits completed this week, places never visited,
-// and relationships that need attention (cooling people, overdue visits).
+// At-a-glance: visits completed this week, places never visited, and
+// relationships that need attention (cooling people, overdue visits).
 // This whole screen is driven by one request: GET /api/dashboard (see
 // server/src/routes/dashboard.js), which bundles everything below into one response.
-export default function Dashboard({ date, userId, onGoToSchedule }) {
+export default function Dashboard({ date, userId }) {
   const [data, setData] = useState(null); // the dashboard API response, or null while loading
   const [error, setError] = useState(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState(null); // which place's detail modal is open, if any
@@ -40,13 +39,8 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
 
   return (
     <div className="grid" style={{ gap: 20 }}>
-      {/* Three big stat tiles across the top. */}
+      {/* Two big stat tiles across the top. */}
       <div className="grid stats">
-        <StatTile
-          num={data.today.count}
-          label="Stops on today's route"
-          hint={`${data.today.completed} completed · ${data.today.planned} planned`}
-        />
         <StatTile
           num={data.completed_this_week.count}
           label="Visits completed this week"
@@ -59,58 +53,24 @@ export default function Dashboard({ date, userId, onGoToSchedule }) {
         />
       </div>
 
-      {/* Two side-by-side cards: today's route preview, and this week's completed visits. */}
-      <div className="grid cols2">
-        <div className="card">
-          <div className="card-head">
-            <h2>Today's route</h2>
-            <Button size="small" variant="secondary" onClick={onGoToSchedule}>Open route</Button>
-          </div>
-          <div className="card-body">
-            {data.today.route.length === 0 ? (
-              <EmptyState
-                message="No visits planned yet. Let's map out your day."
-                action={<Button size="small" onClick={onGoToSchedule}>Plan today's visits</Button>}
-              />
-            ) : (
-              <ul className="list">
-                {data.today.route.map((v, i) => (
-                  <li key={v.visit_id} className={`stop ${v.status === 'completed' ? 'done' : ''}`}>
-                    <div className="order">{i + 1}</div>
-                    <div className="main">
-                      <div className="name">{v.name}</div>
-                      <div className="meta">{v.city} {v.zip} · {v.region}</div>
-                      <div className="tag-list" style={{ marginTop: 4 }}>
-                        <StatusChip status={v.status} />
-                        <OutcomeChip outcome={v.outcome} />
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-head"><h2>Completed this week</h2></div>
-          <div className="card-body">
-            {data.completed_this_week.visits.length === 0 ? (
-              <EmptyState message="Nothing completed yet this week." />
-            ) : (
-              <ul className="list">
-                {data.completed_this_week.visits.map((v) => (
-                  <li key={v.visit_id} className="stop">
-                    <div className="main">
-                      <div className="name tiny">{v.name}</div>
-                      <div className="meta">{formatDate(v.scheduled_date)} · {v.city}</div>
-                    </div>
-                    <OutcomeChip outcome={v.outcome} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+      <div className="card">
+        <div className="card-head"><h2>Completed this week</h2></div>
+        <div className="card-body">
+          {data.completed_this_week.visits.length === 0 ? (
+            <EmptyState message="Nothing completed yet this week." />
+          ) : (
+            <ul className="list">
+              {data.completed_this_week.visits.map((v) => (
+                <li key={v.visit_id} className="stop">
+                  <div className="main">
+                    <div className="name tiny">{v.name}</div>
+                    <div className="meta">{formatDate(v.scheduled_date)} · {v.city}</div>
+                  </div>
+                  <OutcomeChip outcome={v.outcome} />
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 

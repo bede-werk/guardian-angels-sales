@@ -76,7 +76,7 @@ async function setupUsers(trx) {
       nameToId[u.name] = existing.id;
     } else {
       const [row] = await trx('users').insert({ name: u.name, email: u.email }).returning('id');
-      nameToId[u.name] = row && row.id ? row.id : row;
+      nameToId[u.name] = knex.extractId(row);
     }
   }
   // Drop placeholder/test users (their visits, if any, are set null by FK).

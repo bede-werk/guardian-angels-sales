@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, formatDate } from '../api';
 import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
@@ -16,9 +16,14 @@ export default function People({ userId }) {
   const [q, setQ] = useState({ search: '', placeId: '', category: '', neverContacted: '', needsAttention: '' });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null); // person id whose detail modal is open, if any
   const [viewingPlaceId, setViewingPlaceId] = useState(null); // place id opened from a person's "View place" link
   const [adding, setAdding] = useState(false);
+  // Bumped on every load() call; a response only gets applied if it's still
+  // the most recent request when it resolves — guards against a slower
+  // earlier keystroke's response overwriting a faster later one.
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     api.filters().then(setFilters).catch(() => {});
@@ -26,11 +31,16 @@ export default function People({ userId }) {
   }, []);
 
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
+    setError(null);
     try {
-      setRows(await api.people.list(q));
+      const data = await api.people.list(q);
+      if (requestIdRef.current === requestId) setRows(data);
+    } catch (e) {
+      if (requestIdRef.current === requestId) setError(e.message);
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
   }, [q]);
 
@@ -44,6 +54,8 @@ export default function People({ userId }) {
 
   return (
     <div className="grid" style={{ gap: 16 }}>
+      {error && <div className="error-banner">{error}</div>}
+
       {/* Filter bar: search box + place/category dropdowns + "Never
           contacted" / "Needs attention" toggle buttons. */}
       <div className="card">

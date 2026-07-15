@@ -1,59 +1,10 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { api, formatDate } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import DuplicateWarning from './ui/DuplicateWarning';
 import useDuplicateMatches from '../hooks/useDuplicateMatches';
-
-// Searchable place picker used inside a referrer's card: type a few
-// characters, pick a matching place from the dropdown, calls onPick(place).
-// This is a lightweight custom autocomplete (no library) — `open` controls
-// whether the results dropdown is visible.
-function PlacePicker({ onPick }) {
-  const [q, setQ] = useState(''); // what's typed in the search box
-  const [results, setResults] = useState([]); // matching places from the API
-  const [open, setOpen] = useState(false); // whether the results dropdown is showing
-  const boxRef = useRef(null); // used to detect clicks outside this component
-
-  // Debounced search: wait 200ms after typing stops before hitting the API.
-  useEffect(() => {
-    if (!q.trim()) { setResults([]); return; }
-    const t = setTimeout(async () => {
-      const rows = await api.places({ search: q });
-      setResults(rows.slice(0, 8)); // cap the dropdown to 8 results
-      setOpen(true);
-    }, 200);
-    return () => clearTimeout(t);
-  }, [q]);
-
-  // Close the dropdown if the user clicks anywhere outside this component.
-  useEffect(() => {
-    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-
-  return (
-    <div className="picker" ref={boxRef}>
-      <input
-        placeholder="Assign to existing place…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onFocus={() => results.length && setOpen(true)}
-      />
-      {open && results.length > 0 && (
-        <div className="picker-menu">
-          {results.map((p) => (
-            <button key={p.id} className="picker-item" onClick={() => { onPick(p); setQ(''); setOpen(false); }}>
-              <strong>{p.name}</strong>
-              <span className="muted tiny"> · {p.category} · {p.city} {p.zip}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import PlacePicker from './ui/PlacePicker';
 
 // Modal to create a new place from a referrer, then assign its notes to it.
 // Used when the referrer turns out to be a real place that just isn't in the

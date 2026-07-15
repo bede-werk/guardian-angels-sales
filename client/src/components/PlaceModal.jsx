@@ -8,6 +8,13 @@ import ConfirmDialog from './ui/ConfirmDialog';
 // pre-filled from it); absent = creating a brand-new one from a blank form.
 // Opened from Places.jsx's "Add place" button, or PlaceDetail.jsx's "Edit" button.
 export default function PlaceModal({ place, categories = [], onClose, onSaved }) {
+  // category is a fixed enum (server/src/config/categories.js), not free
+  // text — include the place's own current value defensively even if it
+  // somehow isn't in the list, so editing never silently discards it.
+  const categoryOptions = place?.category && !categories.includes(place.category)
+    ? [place.category, ...categories]
+    : categories;
+
   const [form, setForm] = useState({
     name: place?.name || '',
     category: place?.category || '',
@@ -106,10 +113,10 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
           <div className="row">
             <div>
               <label className="field">Category</label>
-              <input list="place-category-options" value={form.category} onChange={set('category')} placeholder="e.g. Hospitals" />
-              <datalist id="place-category-options">
-                {categories.map((c) => <option key={c} value={c} />)}
-              </datalist>
+              <select value={form.category} onChange={set('category')}>
+                <option value="">None</option>
+                {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
             <div>
               <label className="field">Tier</label>
