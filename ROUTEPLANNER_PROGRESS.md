@@ -157,12 +157,11 @@ Everything phase 4 flagged as "explicitly not built yet" (real routing API,
 stop-sequencing, draft/commit lifecycle, collision handling, the live-edit
 recalculation loop) **has since been built** — see the phase 5/6 sections
 below, which used to describe these as future plans and now describe what
-was actually shipped, plus two frontend sub-slices on top of the phase 6
-API. Still genuinely not built: pre-qual capture (visit-logging UI/
-relationship-confirm prompts), suggestions + commit in the UI (frontend
-sub-slice 3, next up), and retiring the old `services/scheduler.js`/
-`routes/schedule.js`/`Schedule.jsx` "Today's Route" screen (deliberately
-still running in parallel — see the frontend sections below).
+was actually shipped, including all three frontend sub-slices on top of the
+phase 6 API. The old single-day scheduler this whole document originally
+assumed would keep running in parallel is now fully removed (see "Old
+scheduler retired" below). Still genuinely not built: pre-qual capture
+(visit-logging UI/relationship-confirm prompts).
 
 ## Open questions / notes for later
 
@@ -454,10 +453,85 @@ kept working correctly through all of these edits. No console errors. Also
 re-verified `NeedsMapping.jsx` still renders with no errors after the
 `PlacePicker` extraction. All smoke-test rows/tokens cleaned up after.
 
-**Next:** sub-slice 3 — suggestions (the "nearby eligible stop" prompt on
-under-budget days, wired to the already-built `getSuggestions` endpoint) and
-commit (per-day and full), same one-slice-at-a-time review discipline. After
-that, retiring the old scheduler becomes possible for the first time.
+## Phase 6 frontend, sub-slice 3 — suggestions + commit (DONE, 2026-07-15)
+
+Last of the 3-sub-slice frontend plan. Both new pieces sit on top of sub-slice 2's
+`DraftDay` component, no new backend work needed — `getSuggestions`/`commitDay`/`commitAll`
+were already built and tested as part of phase 6's backend.
+
+**Suggestions:** a "Suggest a stop" button appears on a day's card whenever
+`!day.overBudget && day.remainingMinutes > 0` (next to "+ Add a stop"). Clicking it fetches
+`GET .../days/:date/suggestions` on demand (not eagerly for every day — a real API call) and
+renders each candidate's name/category/city/zone with an "Add" button. Adding a suggestion
+calls the exact same `addStop` endpoint the ad-hoc `PlacePicker` flow uses — a suggestion is
+just a pre-filtered candidate, not a different code path — and removes it from the local
+suggestions list on success (rather than an automatic re-fetch) so the panel doesn't need a
+second round trip just to stop offering something already added.
+
+**Commit:** `commitDay` (per-day, in each `DraftDay`'s card header) and `commitAll` (top-level,
+next to "Plan again"), both gated behind `window.confirm` — matches `Schedule.jsx`'s existing
+confirm-before-destructive-action convention. `commitDay`'s response shape (`{ date, committed,
+skippedCollisions }`) isn't a day view — the committed stops just became real `visits` rows and
+are gone from the draft — so this is the one mutation in `PlanVisits.jsx` that triggers a full
+`load()` (whole-draft reload) instead of patching one day's slice via `onDayUpdated`. A new
+`.notice-banner` CSS class (blue, alongside the existing red `.error-banner`) reports what got
+committed and separately surfaces any `skippedCollisions` (a stop that collided with a
+same-date `visits` row committed by someone else since it was added to this draft).
+
+**Verified live** the same way as sub-slices 1-2 (fresh temp token on Lisa Marks, cleaned up
+after): generated a 5-day draft, opened suggestions on the first (under-budget) day — 5 real
+nearby candidates came back, correctly zone-filtered to that day's zone ("South Lincoln") —
+added one via its "Add" button (5→6 stops, running total correctly flipped the day to "20m
+over," which is the never-drop evaluator working exactly as designed for a user-driven add, not
+a bug), committed that day (6 real `visits` rows landed, `visit_type` correctly resolved from
+draft override → place default, notice banner text correct), then committed all remaining days
+(20 more `visits` rows). Confirmed directly against the dev DB: 26 total `visits` rows in the
+right shape, 0 leftover `schedule_draft_stops`. No console errors. Fully cleaned up after:
+deleted all 26 test `visits` rows plus the test draft, cleared Lisa's temp `auth_token` back to
+null.
+
+**All three route-planner frontend sub-slices are now done.** The "Plan My Visits" workspace
+(generate → live-edit → suggest → commit) is functionally complete end-to-end.
+
+## Old scheduler retired (2026-07-15)
+
+Deleted outright: `server/src/services/scheduler.js`, `server/src/routes/schedule.js` (the
+whole `/api/schedule` prefix — `GET /`, `POST /generate`, `PATCH /reorder`),
+`client/src/components/Schedule.jsx`, and the "Today's Route" nav tab in `App.jsx`. Also
+removed everything that only existed to support it:
+- `client/src/api.js`'s `schedule`/`generateSchedule`/`reorder` methods (the new system's
+  `api.scheduleDrafts.*` namespace is untouched, no naming collisions).
+- `StatusChip` (`ui/Chip.jsx`) and its `.badge.status-*` CSS — no other consumer existed.
+- Dead CSS: `.stop.done`/`.stop.skipped`/`.stop-contact`/`.stop-note-preview`/
+  `.stop-buttons`/`.grid.cols2` (all Schedule.jsx-only). Shared classes reused by
+  `PlanVisits.jsx` (`.stop.dragging`/`.drag-over`, `.drag-handle`, `.reorder`,
+  `.progress-bar`/`.progress-label`) were kept — only their stale "Schedule.jsx" comments
+  were updated to point at `PlanVisits.jsx` instead.
+
+**Bede's explicit call on the one non-obvious tradeoff:** the Dashboard's "Today's Route" card
+(stat tile + stop list + "Open route" button) depended on the old scheduler's `loadRoute()`
+query — a read-only display, not generation logic, so it could technically have been kept by
+moving the query elsewhere. Asked Bede directly rather than assuming; he chose full removal
+("remove all of that... very clean") over keeping a slimmed read-only version. Dashboard now
+shows 2 stat tiles (was 3) and "Completed this week" as a standalone full-width card instead
+of a two-column layout paired with the removed route card.
+
+Every file that referenced the old scheduler in a comment (not just code) was updated rather
+than left dangling: `scheduleDraft.js`, `scheduleDrafts.js`, `visits.js`, `places.js`,
+`people.js`, `PlanVisits.jsx`, `PersonDetail.jsx`, `PlaceDetail.jsx`, `VisitLogModal.jsx`.
+`README.md`'s API table still listed the deleted `/api/schedule*` endpoints and had never
+been updated with the route planner's real endpoints — fixed, plus rewrote the stale "Daily
+schedule generator" and "Dashboard — today's route" feature-list bullets.
+
+**Verified**: 139 backend tests pass unchanged, client build succeeds (59 modules, down from
+60), and a live Playwright pass (Lisa Marks id 5 temp token, cleaned up after) confirmed: the
+nav bar shows exactly 5 tabs with no "Today's Route", the Dashboard renders cleanly with no
+layout gap where the old card was, `Plan My Visits` still works end-to-end, `GET /api/schedule`
+now 404s, `GET /api/dashboard` no longer returns a `today` key — zero console/page errors
+throughout.
+
+**The route planner is now the only route-planning surface in the app.** There is no
+old-system fallback left to fall back to.
 
 ## Running things
 

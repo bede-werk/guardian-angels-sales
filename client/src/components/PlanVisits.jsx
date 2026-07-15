@@ -7,10 +7,7 @@ import PlacePicker from './ui/PlacePicker';
 
 const HOURS_OPTIONS = [2, 3, 4, 5, 6];
 
-// Turns a minute count into "1h 45m" / "45m" / "2h" (same idea as
-// Schedule.jsx's formatHoursUsed, kept local rather than shared since this
-// screen is meant to fully replace Schedule.jsx eventually — no point wiring
-// a shared util into the screen that's on its way out).
+// Turns a minute count into "1h 45m" / "45m" / "2h".
 function formatMinutes(minutes) {
   const sign = minutes < 0 ? '-' : '';
   const abs = Math.abs(minutes);
@@ -27,10 +24,19 @@ function formatMinutes(minutes) {
 // live time math and over-budget flagging just fall out of that, per the
 // interaction model: edits recalculate in place, nothing is ever auto-
 // dropped or auto-reshuffled beyond what the user themselves just did.
-function DraftDay({ day, draftId, onDayUpdated, onError, reload }) {
+function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted }) {
   const [busy, setBusy] = useState(false); // a reorder/add/remove request is in flight for this day
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
+
+  // Suggestions: nearby eligible places not already in this draft, offered
+  // when the day still has budget to spare. Fetched on demand rather than
+  // eagerly for every day, since it's a real API call per day.
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [addingSuggestionId, setAddingSuggestionId] = useState(null);
+  const canSuggest = !day.overBudget && day.remainingMinutes > 0;
 
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
@@ -41,8 +47,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload }) {
 
   // Optimistically shows the new order right away (stale running totals until
   // the server responds, since those depend on real drive time between
-  // stops) — same pattern Schedule.jsx uses for its own reordering. Rolls
-  // back via a full reload if the server rejects it.
+  // stops). Rolls back via a full reload if the server rejects it.
   function persistReorder(nextStops) {
     onError(null);
     onDayUpdated({ ...day, stops: nextStops });
@@ -110,11 +115,61 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload }) {
     }
   }
 
+  async function toggleSuggestions() {
+    if (suggestionsOpen) { setSuggestionsOpen(false); return; }
+    onError(null);
+    setSuggestionsOpen(true);
+    setSuggestLoading(true);
+    try {
+      setSuggestions(await api.scheduleDrafts.getSuggestions(draftId, day.date));
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setSuggestLoading(false);
+    }
+  }
+
+  // Adding a suggested place reuses the same addStop endpoint an ad-hoc
+  // add uses — a suggestion is just a pre-filtered candidate, not a
+  // different kind of add. Pulled out of the local list on success so the
+  // panel doesn't offer the same place twice without a re-fetch.
+  async function addSuggestion(s) {
+    onError(null);
+    setAddingSuggestionId(s.place_id);
+    try {
+      onDayUpdated(await api.scheduleDrafts.addStop(draftId, day.date, s.place_id));
+      setSuggestions((prev) => prev.filter((x) => x.place_id !== s.place_id));
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setAddingSuggestionId(null);
+    }
+  }
+
+  async function commitThisDay() {
+    if (day.stops.length === 0) return;
+    if (!window.confirm(`Commit ${day.stops.length} visit${day.stops.length === 1 ? '' : 's'} for ${formatDate(day.date)}? This creates real scheduled visits.`)) return;
+    onError(null);
+    setBusy(true);
+    try {
+      onDayCommitted(day.date, await api.scheduleDrafts.commitDay(draftId, day.date));
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="card">
       <div className="card-head">
         <h2>{formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}</h2>
-        {day.overBudget && <span className="badge attention">Over budget</span>}
+        <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
+          {day.overBudget && <span className="badge attention">Over budget</span>}
+          <Button size="small" onClick={commitThisDay} disabled={busy || day.stops.length === 0} title="Turn this day's stops into real scheduled visits">
+            Commit day
+          </Button>
+        </div>
       </div>
       <div className="card-body">
         <div style={{ marginBottom: 14 }}>
@@ -194,23 +249,56 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload }) {
               <Button variant="ghost" size="small" onClick={() => setAddingOpen(false)}>Cancel</Button>
             </div>
           ) : (
-            <Button variant="secondary" size="small" onClick={() => setAddingOpen(true)}>+ Add a stop</Button>
+            <div className="row" style={{ flex: 'unset', gap: 8 }}>
+              <Button variant="secondary" size="small" onClick={() => setAddingOpen(true)}>+ Add a stop</Button>
+              {canSuggest && (
+                <Button variant="ghost" size="small" onClick={toggleSuggestions}>
+                  {suggestionsOpen ? 'Hide suggestions' : 'Suggest a stop'}
+                </Button>
+              )}
+            </div>
           )}
         </div>
+
+        {suggestionsOpen && (
+          <div className="stack" style={{ marginTop: 10, gap: 6 }}>
+            {suggestLoading ? (
+              <div className="tiny muted">Finding nearby places…</div>
+            ) : suggestions.length === 0 ? (
+              <div className="tiny muted">No eligible nearby places right now.</div>
+            ) : (
+              suggestions.map((s) => (
+                <div
+                  key={s.place_id}
+                  className="row"
+                  style={{ alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 10px' }}
+                >
+                  <div>
+                    <strong>{s.name}</strong>
+                    <div className="tiny muted">{s.category ? `${s.category} · ` : ''}{s.city}{s.region ? ` · ${s.region}` : ''}</div>
+                  </div>
+                  <Button size="small" onClick={() => addSuggestion(s)} disabled={addingSuggestionId === s.place_id}>Add</Button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// Phase 6 frontend, sub-slice 2: live editing on top of sub-slice 1's
-// generate + read-only view — reorder, add/remove, and visit-type changes,
-// each recalculating that day's running totals/over-budget flags in place.
-// Suggestions (the "nearby eligible stop" prompt) and commit are sub-slice 3.
+// Phase 6 frontend, sub-slice 3: suggestions (the "nearby eligible stop"
+// prompt on under-budget days, per DraftDay above) and commit — per-day
+// (DraftDay's "Commit day" button) and all-remaining-days (this component's
+// "Commit all" button). Built on top of sub-slice 2's live editing.
 export default function PlanVisits() {
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [committingAll, setCommittingAll] = useState(false);
 
   const [daysAhead, setDaysAhead] = useState(5);
   const [hoursPerDay, setHoursPerDay] = useState(4);
@@ -245,6 +333,43 @@ export default function PlanVisits() {
   // other day, and never re-derives anything client-side.
   function updateDay(dayView) {
     setDraft((prev) => ({ ...prev, days: prev.days.map((d) => (d.date === dayView.date ? dayView : d)) }));
+  }
+
+  // commitDay's response isn't a day view (it's { date, committed,
+  // skippedCollisions } — the committed stops just became real `visits`
+  // rows and are gone from the draft) so, unlike every other mutation here,
+  // this reloads the whole draft rather than patching one day's slice.
+  function handleDayCommitted(date, result) {
+    const parts = [];
+    if (result.committed.length > 0) {
+      parts.push(`Committed ${result.committed.length} visit${result.committed.length === 1 ? '' : 's'} for ${formatDate(date)}.`);
+    }
+    if (result.skippedCollisions.length > 0) {
+      parts.push(`Skipped ${result.skippedCollisions.length} (already booked elsewhere by then): ${result.skippedCollisions.map((c) => c.place_name).join(', ')}.`);
+    }
+    if (parts.length === 0) parts.push(`Nothing to commit for ${formatDate(date)}.`);
+    setNotice(parts.join(' '));
+    load();
+  }
+
+  async function commitAllDays() {
+    if (!draft) return;
+    const totalStops = draft.days.reduce((n, d) => n + d.stops.length, 0);
+    if (totalStops === 0) { setError('Nothing to commit yet.'); return; }
+    if (!window.confirm(`Commit every remaining planned visit across all days? This creates real scheduled visits.`)) return;
+    setError(null);
+    setCommittingAll(true);
+    try {
+      const results = await api.scheduleDrafts.commitAll(draft.id);
+      const committed = results.reduce((n, r) => n + r.committed.length, 0);
+      const skipped = results.reduce((n, r) => n + r.skippedCollisions.length, 0);
+      setNotice(`Committed ${committed} visit${committed === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} (already booked elsewhere)` : ''}.`);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCommittingAll(false);
+    }
   }
 
   function useCurrentLocation() {
@@ -289,6 +414,7 @@ export default function PlanVisits() {
 
   async function generate(regenerate) {
     setError(null);
+    setNotice(null);
     setGenerating(true);
     try {
       const next = await api.scheduleDrafts.generate({
@@ -310,6 +436,7 @@ export default function PlanVisits() {
   return (
     <div className="grid" style={{ gap: 16 }}>
       {error && <div className="error-banner">{error}</div>}
+      {notice && <div className="notice-banner">{notice}</div>}
 
       <div className="card">
         <div className="card-head">
@@ -335,7 +462,12 @@ export default function PlanVisits() {
               </select>
             </div>
             {draft ? (
-              <Button variant="secondary" onClick={() => generate(true)} disabled={!canGenerate}>Plan again</Button>
+              <>
+                <Button variant="secondary" onClick={() => generate(true)} disabled={!canGenerate}>Plan again</Button>
+                <Button onClick={commitAllDays} disabled={committingAll}>
+                  {committingAll ? 'Committing…' : 'Commit all'}
+                </Button>
+              </>
             ) : (
               <Button onClick={() => generate(false)} disabled={!canGenerate}>Plan my visits</Button>
             )}
@@ -395,6 +527,7 @@ export default function PlanVisits() {
             day={day}
             draftId={draft.id}
             onDayUpdated={updateDay}
+            onDayCommitted={handleDayCommitted}
             onError={setError}
             reload={load}
           />

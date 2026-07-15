@@ -5,7 +5,6 @@ const express = require('express');
 const dayjs = require('dayjs');
 const isoWeek = require('dayjs/plugin/isoWeek'); // adds Monday-start-of-week helpers to dayjs
 const knex = require('../db/knex');
-const { loadRoute } = require('../services/scheduler');
 const { priorityLabel } = require('../services/priority');
 const { recentWindowCutoff } = require('../services/referralMetrics');
 
@@ -14,8 +13,8 @@ dayjs.extend(isoWeek);
 const router = express.Router();
 
 // GET /api/dashboard?userId=&date=YYYY-MM-DD
-// Returns: today's route, visits completed this week, never-visited places,
-// and a "needs attention" rollup (cooling people + overdue visits).
+// Returns: visits completed this week, never-visited places, and a "needs
+// attention" rollup (cooling people + overdue visits).
 router.get('/', async (req, res, next) => {
   try {
     const userId = req.query.userId ? Number(req.query.userId) : undefined;
@@ -25,10 +24,8 @@ router.get('/', async (req, res, next) => {
     const weekStart = dayjs(date).isoWeekday(1).format('YYYY-MM-DD');
     const weekEnd = dayjs(date).isoWeekday(7).format('YYYY-MM-DD');
 
-    const [todaysRoute, completedThisWeek, neverVisited, totals, coolingPeople, nextVisitRows] =
+    const [completedThisWeek, neverVisited, totals, coolingPeople, nextVisitRows] =
       await Promise.all([
-        loadRoute(knex, date, userId),
-
         knex('visits as v')
           .join('places as p', 'p.id', 'v.place_id')
           .where('v.status', 'completed')
@@ -96,12 +93,6 @@ router.get('/', async (req, res, next) => {
     res.json({
       date,
       week: { start: weekStart, end: weekEnd },
-      today: {
-        count: todaysRoute.length,
-        planned: todaysRoute.filter((v) => v.status === 'planned').length,
-        completed: todaysRoute.filter((v) => v.status === 'completed').length,
-        route: todaysRoute,
-      },
       completed_this_week: {
         count: completedThisWeek.length,
         visits: completedThisWeek,

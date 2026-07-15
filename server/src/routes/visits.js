@@ -1,7 +1,7 @@
 // Visits — one planned/completed/skipped touchpoint on a place, by a rep,
 // on a date. This covers logging outcomes/notes/person info, skipping a
-// stop, and deleting one. (Creating a whole day's worth at once happens in
-// services/scheduler.js via POST /api/schedule/generate, not here.)
+// stop, and deleting one. (Creating a whole day's worth at once happens via
+// the route planner's commit flow — see services/scheduleDraft.js — not here.)
 const express = require('express');
 const knex = require('../db/knex');
 const { validatePhone } = require('../services/phone');

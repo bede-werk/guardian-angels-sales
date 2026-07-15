@@ -1,6 +1,5 @@
 // Wires the pure route-planner engine (schedulingEngine.js/driveTime.js/
-// scheduleGenerator.js/routeOptimizer.js) to the database — the same role
-// services/scheduler.js plays for the old single-day scheduler. Owns the
+// scheduleGenerator.js/routeOptimizer.js) to the database. Owns the
 // draft/commit lifecycle: generating a multi-day draft into
 // schedule_drafts/schedule_draft_stops, live-recalculating a day on every
 // read (never cached — see loadDraftDayView), collision handling
@@ -10,11 +9,10 @@
 // (mergeLockedElsewhereIds, partitionCommittableStops) that take
 // already-fetched rows and return a decision — no knex, no async — so it's
 // directly unit-testable (see scheduleDraft.test.js) even though the
-// queries that feed it aren't. This is the most consequential new code in
-// the planner (it's what stops two reps double-booking the same place), so
-// it gets the same "query the DB, shape rows, call a pure function" split
-// the rest of this stack already uses, not left entirely untested like the
-// old scheduler.js/routes/schedule.js layer.
+// queries that feed it aren't. This is the most consequential code in the
+// planner (it's what stops two reps double-booking the same place), so it
+// gets the same "query the DB, shape rows, call a pure function" split the
+// rest of this stack uses.
 const knex = require('../db/knex');
 const defaultSchedulingConfig = require('../config/scheduling');
 const { rankCandidates } = require('./schedulingEngine');
@@ -70,9 +68,8 @@ function todayUTC() {
 // next_visit_date off the most recent visit (any status) that set one.
 // Shapes rows into rankCandidates' expected input, minus `lockedElsewhere`
 // (date-specific — attached separately, see generateAndPersistDraft/
-// getSuggestions). Follows loadRoute()'s (services/scheduler.js) existing
-// precedent of reducing multiple queries to one-row-per-place in JS rather
-// than correlated subqueries — more portable across SQLite/Postgres.
+// getSuggestions). Reduces multiple queries to one-row-per-place in JS
+// rather than correlated subqueries — more portable across SQLite/Postgres.
 async function buildCandidatePool(db, { today }) {
   const places = await db('places').select('*');
 

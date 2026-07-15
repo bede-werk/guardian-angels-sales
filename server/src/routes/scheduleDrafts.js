@@ -1,14 +1,11 @@
 // Route planner draft/commit lifecycle — thin HTTP wrappers around
-// services/scheduleDraft.js, which has all the actual logic. Mirrors
-// routes/schedule.js's style for the old scheduler.
+// services/scheduleDraft.js, which has all the actual logic.
 //
 // Every route acts on req.user (set by middleware/requireAuth.js from the
 // caller's own bearer token), not a client-supplied userId — a draft is
 // owned by whoever generated it, and scheduleDraft.js's assertOwnsDraft
-// enforces that on every mutation. This is intentionally stricter than the
-// old scheduler.js routes (which trust a userId body/query param), since
-// getting this wrong is exactly the double-booking risk phase 6 exists to
-// prevent.
+// enforces that on every mutation, since getting this wrong is exactly the
+// double-booking risk phase 6 exists to prevent.
 const express = require('express');
 const knex = require('../db/knex');
 const scheduleDraft = require('../services/scheduleDraft');
