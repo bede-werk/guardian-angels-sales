@@ -298,7 +298,8 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .tab:not(.active) .count { background: var(--grey-tint-2); color: var(--text); }
 
 .error-banner { background: var(--mauve-tint-1); color: var(--mauve); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
-.notice-banner { background: var(--blue-tint-1); color: var(--blue); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
+.notice-banner { background: var(--blue-tint-1); color: var(--blue); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; opacity: 1; transition: opacity 0.5s ease; }
+.notice-banner.fading { opacity: 0; }
 .warning-banner { background: var(--mauve-tint-1); color: var(--text); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
 .warning-banner strong { color: var(--mauve); }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
@@ -369,3 +370,20 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .selected-days-list { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
 .selected-days-row { display: flex; align-items: center; gap: 8px; }
 .selected-days-row .date-label { flex: 1; font-size: 13px; font-weight: 600; }
+
+/* Plan My Visits' generate form: "Starting point" + "Plan for these dates"
+   as two EQUAL-width columns with a vertical rule dead-center between them,
+   instead of stacking one above the other (which left the card mostly
+   empty — the calendar/date-list content is inherently narrower than the
+   card) or an off-center split (which left the divider looking arbitrary
+   rather than a deliberate midline). Each column also gets a one-line
+   helper under its heading so the shorter "Starting point" side doesn't
+   just trail off into blank space next to the taller calendar column.
+   Collapses to one stacked column, divider dropped, on narrow viewports. */
+.plan-columns { display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-start; }
+.plan-col-start, .plan-col-dates { flex: 1 1 320px; min-width: 280px; }
+.plan-col-dates { padding-left: 40px; border-left: 1px solid var(--border); }
+.plan-col-hint { font-size: 12px; color: var(--muted); margin: -4px 0 14px; }
+@media (max-width: 760px) {
+  .plan-col-dates { border-left: none; padding-left: 0; }
+}

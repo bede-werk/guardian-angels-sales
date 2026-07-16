@@ -6,8 +6,18 @@
 const express = require('express');
 const knex = require('../db/knex');
 const { priorityScore, regionForPlace } = require('../services/priority');
+const CATEGORIES = require('../config/categories');
 
 const router = express.Router();
+
+// category is a fixed enum (config/categories.js), not free text — empty/null
+// is allowed (a place can go uncategorized), but anything provided must match
+// exactly one of the canonical values. Same rule as routes/places.js.
+function categoryError(category) {
+  if (category === undefined || category === null || category === '') return null;
+  if (!CATEGORIES.includes(category)) return `category must be one of the existing options`;
+  return null;
+}
 
 // GET /api/notes-review?status=pending — the "needs mapping" bucket.
 // Grouped by referrer so you can map all of a referrer's notes at once.
@@ -74,10 +84,14 @@ router.post('/:id/assign', async (req, res, next) => {
   try {
     const { placeId, applyToReferrer } = req.body;
     if (!placeId) return res.status(400).json({ error: 'placeId is required' });
+    const numericPlaceId = Number(placeId);
+    if (Number.isNaN(numericPlaceId)) return res.status(404).json({ error: 'Place not found' });
 
-    const review = await knex('notes_review').where({ id: req.params.id }).first();
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Review item not found' });
+    const review = await knex('notes_review').where({ id }).first();
     if (!review) return res.status(404).json({ error: 'Review item not found' });
-    const place = await knex('places').where({ id: placeId }).first();
+    const place = await knex('places').where({ id: numericPlaceId }).first();
     if (!place) return res.status(404).json({ error: 'Place not found' });
 
     const result = await knex.transaction(async (trx) => {
@@ -88,7 +102,7 @@ router.post('/:id/assign', async (req, res, next) => {
         : [review];
       let n = 0;
       for (const row of targets) {
-        await assignRowToPlace(trx, row, placeId);
+        await assignRowToPlace(trx, row, numericPlaceId);
         n += 1;
       }
       return n;
@@ -105,10 +119,14 @@ router.post('/:id/assign', async (req, res, next) => {
 // original Excel import.
 router.post('/:id/create-place', async (req, res, next) => {
   try {
-    const review = await knex('notes_review').where({ id: req.params.id }).first();
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Review item not found' });
+    const review = await knex('notes_review').where({ id }).first();
     if (!review) return res.status(404).json({ error: 'Review item not found' });
 
     const { name, category, tier, is_priority, city, zip, address, applyToReferrer } = req.body;
+    const catError = categoryError(category);
+    if (catError) return res.status(400).json({ error: catError });
     const placeName = (name || review.referrer_raw).trim(); // default to the raw referrer text
     const t = Number(tier) || 3;
     const pri = !!is_priority;
@@ -148,7 +166,9 @@ router.post('/:id/create-place', async (req, res, next) => {
 // isn't worth tracking as a place).
 router.post('/:id/dismiss', async (req, res, next) => {
   try {
-    const review = await knex('notes_review').where({ id: req.params.id }).first();
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Review item not found' });
+    const review = await knex('notes_review').where({ id }).first();
     if (!review) return res.status(404).json({ error: 'Review item not found' });
     const q = knex('notes_review');
     if (req.body.applyToReferrer) q.where({ referrer_raw: review.referrer_raw, status: 'pending' });

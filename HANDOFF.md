@@ -95,6 +95,24 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   section per day so a committed day doesn't just look empty. **Bede then explicitly asked to
   commit, push, and merge the whole batch into `main` via a PR** so his coworkers could access
   it — done same session. Expect this live-feedback pattern to continue in future sessions.
+- **Later 2026-07-15, a separate session on branch `bede-working`:** a dedicated code-quality/
+  bug-hunting pass, not route-planner feature work — Bede asked for a full-app review, then a
+  much deeper "ultra" 6-parallel-agent pass on top of it. Regular pass fixed a critical
+  `dashboard.js` bug (same `.whereNotIn()`-against-nullable-`place_id` class the 2026-07-14
+  audit found once already in the old scheduler, recurred here) plus several smaller gaps
+  (category-enum validation missing on the Needs Mapping create-place path, a `MAX_PLAN_DATES`
+  off-by-one in the new calendar date picker, missing error handling/test coverage, dead code).
+  The ultra pass found ~25 issues across 6 slices (route-planner engine, route-planner API/
+  frontend, core CRUD routes/frontend, data-model/migration consistency, security); Bede picked
+  7 to fix immediately, most notably a real TOCTOU double-booking race in `commitDay` (new
+  partial-unique-index migration, scoped to `source = 'planner'` only), missing cross-user
+  ownership checks on `visits.js`, a Postgres-only crash on non-numeric IDs invisible under
+  local SQLite testing, and two more `dashboard.js` instances of the same nullable-FK bug class
+  (via INNER JOIN this time) — see the corrected note in §14A. ~18 further ultra-pass findings
+  were deliberately deferred, not fixed. 146 tests pass (up from 143), client build clean.
+  **Committed, pushed, and merged into `main`** at the end of this session per Bede's explicit
+  request — a direct git merge, not a GitHub PR, since `gh` wasn't available in this
+  environment. Full detail in `NOTES.md`'s same-dated "Code-quality bug hunt" entry.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
@@ -676,6 +694,25 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   ongoing cost while still building — all dev happens locally via `./dev.sh` or the two
   npm-run-dev terminals. Redeploying later is still ~5 min (New → GitHub Repo → add Postgres
   → set `NODE_ENV`/`DATABASE_URL` → generate domain; it self-seeds).
+- **2026-07-15, later the same day (branch `bede-working`):** a dedicated code-quality/
+  bug-hunting session, separate from the route-planner work above — a regular full-app review
+  pass followed by an "ultra" 6-agent deep-review pass. Fixed: a critical `dashboard.js` bug
+  (the same `whereNotIn`-against-nullable-`place_id` class from the old scheduler, recurred —
+  see the corrected §14A note); a real TOCTOU double-booking race in `commitDay`, closed with a
+  new partial unique index
+  (`server/src/migrations/20260715000002_add_visits_place_date_unique_index.js`, scoped to
+  `source = 'planner'` so ad-hoc same-place/same-day "Log a visit" entries stay unaffected);
+  missing cross-user ownership checks on `visits.js`'s `PATCH`/`skip`/`DELETE`; a Postgres-only
+  500 on non-numeric IDs that's invisible under local SQLite testing (fixed with `Number()` +
+  NaN guards across several routes); two more `dashboard.js` instances of the nullable-FK bug
+  class (via INNER JOIN, fixed to LEFT JOIN); ungeocoded places sneaking into a committed visit
+  unreviewed; a discarded-day resurrection edge case in `addStop`/`commitAll`; and a client/
+  server "today" timezone mismatch (server now anchors to `America/Chicago` via a renamed
+  `orgToday()`). ~18 further findings from the ultra pass were deliberately deferred, not an
+  exhaustive fix-everything pass. 146 tests pass (up from 143), client build clean. **Committed,
+  pushed, and merged into `main`** at the end of this session per Bede's explicit request — a
+  direct git merge, not a GitHub PR, since `gh` wasn't available in this environment. Full
+  detail in `NOTES.md`'s "Code-quality bug hunt" entry and the §0/§14A notes above.
 
 ---
 
@@ -759,6 +796,16 @@ What's confirmed solid (don't second-guess these without new evidence): referral
 rollups are correctly live-computed from each entity's *current* state, never stale/stored;
 `needs_attention`/`never_visited` are computed live on every read; detach-not-delete now works
 correctly everywhere, including people→referrals.
+
+**Correction, 2026-07-15:** the "detach-not-delete now works correctly everywhere" line above
+was too broad. The same `.whereNotIn()`/inner-join-against-a-nullable-FK bug class recurred —
+`dashboard.js`'s "never visited" widget had the identical `whereNotIn` bug as the old scheduler
+(fixed same day, `.whereNotNull('place_id')`), and its "completed this week"/"needs attention"
+queries had the same class again via INNER JOIN instead of LEFT JOIN (also fixed same day). That
+makes **3 occurrences across 2 files** now, not the isolated one this section implied — see the
+2026-07-15 bullet in §0 and `NOTES.md`'s "Code-quality bug hunt" entry for the fixes. Don't
+treat "confirmed solid" as proof this bug class can't recur elsewhere; a dedicated grep sweep
+for `whereNotIn`/inner joins against nullable FK columns is still worth doing in a future audit.
 
 ---
 

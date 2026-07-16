@@ -20,10 +20,29 @@ const { generateDraft } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 
+// Recognizes a unique-constraint violation across both engines this app runs
+// on (SQLite in dev, Postgres in prod) — see commitDay's per-row insert loop,
+// which relies on this to distinguish "this row lost a race" (skip it) from
+// a real error (rethrow).
+function isUniqueViolation(err) {
+  return err.code === '23505' // Postgres
+    || (typeof err.code === 'string' && err.code.startsWith('SQLITE_CONSTRAINT'))
+    || /unique constraint/i.test(err.message || '');
+}
+
 // Calendar-driven planning: the user hand-picks which dates to plan (and how
 // many hours on each) rather than the old "N days ahead" auto-window, so
 // these are UI-facing bounds on that selection rather than generator config.
 const MAX_PLAN_DATES = 10;
+// A day's ranking/candidate pool is only as fresh as the moment it was
+// generated — a commitment that becomes due, or a new higher-priority place,
+// between generation and the actual visit date won't retroactively reshuffle
+// an already-proposed day. Capping how far out a date can be planned bounds
+// how stale a proposal can get before the rep would naturally regenerate it
+// anyway. Chosen with Bede 2026-07-15: a week out — counted in weekdays (see
+// maxPlanDateUTC below), not raw calendar days, at Bede's request the same
+// day: a weekend sitting in the middle of the window shouldn't eat into it.
+const MAX_DAYS_AHEAD = 7;
 
 // Validates + normalizes the `days` the client sent for /generate: every
 // entry must be a real future date with a positive hoursPerDay, no date can
@@ -43,6 +62,7 @@ function validateDays(rawDays, { today, committedDates }) {
     throw err;
   }
 
+  const maxDate = maxPlanDateUTC(today);
   const seen = new Set();
   const normalized = [];
   for (const entry of rawDays) {
@@ -54,8 +74,18 @@ function validateDays(rawDays, { today, committedDates }) {
       err.status = 400;
       throw err;
     }
-    if (date <= today) {
-      const err = new Error(`${date} is in the past — pick a future date`);
+    if (date < today) {
+      const err = new Error(`${date} is in the past — pick today or a future date`);
+      err.status = 400;
+      throw err;
+    }
+    if (date > maxDate) {
+      const err = new Error(`${date} is more than ${MAX_DAYS_AHEAD} days out — pick a closer date`);
+      err.status = 400;
+      throw err;
+    }
+    if (isWeekendUTC(date)) {
+      const err = new Error(`${date} is a weekend — visits are only planned Mon-Fri`);
       err.status = 400;
       throw err;
     }
@@ -118,12 +148,26 @@ module.exports.partitionCommittableStops = partitionCommittableStops;
 
 // -- DB-touching layer --------------------------------------------------
 
-// UTC-safe "today", matching scheduleGenerator.js's hand-rolled date
-// convention (no dayjs in this half of the stack) rather than dashboard.js's
-// local-time dayjs default — this feeds directly into schedulingEngine's own
-// UTC date math.
-function todayUTC() {
-  return new Date().toISOString().slice(0, 10);
+// Guardian Angels operates out of one office (Lincoln, NE — America/Chicago),
+// so "today" is computed in that fixed zone rather than raw UTC. Using UTC
+// directly caused a real bug: for several hours every evening (once UTC has
+// already rolled to the next calendar day, any time after ~7pm Central), the
+// server's idea of "today" was a day ahead of every rep's browser (which
+// computes "today" in ITS local timezone — see PlanVisits.jsx's todayISO()) —
+// spuriously rejecting an evening plan-for-today request as "in the past."
+// A fixed IANA zone (not a client-supplied one) keeps this server-
+// authoritative rather than trusting client input for something logic-
+// relevant. formatToParts (not a locale's default format string) guarantees
+// exact YYYY-MM-DD regardless of ICU/locale quirks.
+function orgToday() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (type) => parts.find((p) => p.type === type).value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 // Queries `places` plus, per place: last COMPLETED visit date, count of
@@ -182,6 +226,32 @@ function daysBeforeUTC(dateStr, n) {
   return dt.toISOString().slice(0, 10);
 }
 
+// The latest date validateDays allows — walks forward from `today` one day
+// at a time, only counting weekdays (Mon-Fri) against MAX_DAYS_AHEAD, so a
+// Saturday/Sunday inside the window doesn't shrink the actual planning
+// horizon. A weekend date that ends up inside the resulting window is still
+// itself selectable (this only affects where the boundary lands, not which
+// dates within it are pickable).
+function maxPlanDateUTC(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  let remaining = MAX_DAYS_AHEAD;
+  while (remaining > 0) {
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    const dow = dt.getUTCDay(); // 0 = Sunday, 6 = Saturday
+    if (dow !== 0 && dow !== 6) remaining--;
+  }
+  return dt.toISOString().slice(0, 10);
+}
+
+// Visits are only ever planned Mon-Fri — validateDays rejects a weekend date
+// outright rather than just excluding it from the MAX_DAYS_AHEAD count.
+function isWeekendUTC(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
 // The raw-query half of mergeLockedElsewhereIds. Used at generation and
 // addStop time to steer a rep away from a place another rep is ALREADY
 // drafting, on top of what's already actually committed — reduces how often
@@ -228,7 +298,7 @@ async function ownDraftPlaceIds(db, draftId) {
 // its own), so there's no reason to drag the user's full visit history
 // through this query as it grows over time.
 async function committedDateSummaries(db, userId, { today } = {}) {
-  const cutoff = today || todayUTC();
+  const cutoff = today || orgToday();
   const rows = await db('visits')
     .where({ user_id: userId })
     .andWhere('scheduled_date', '>=', cutoff)
@@ -290,7 +360,7 @@ async function assertOwnsDraft(db, draftId, userId) {
 // each specific date, so a user can still pick it up later if it's
 // genuinely free that day.
 async function generateAndPersistDraft({ userId, params, regenerate = false }) {
-  const today = params.today || todayUTC();
+  const today = params.today || orgToday();
 
   const existing = await getActiveDraft(knex, userId);
   if (existing && !regenerate) return loadDraftView(knex, existing.id);
@@ -477,7 +547,13 @@ async function loadDraftDayView(db, draftId, date) {
 // was true when the draft was generated.
 async function addStop({ draftId, userId, date, placeId, visitType }) {
   return knex.transaction(async (trx) => {
-    await assertOwnsDraft(trx, draftId, userId);
+    const draft = await assertOwnsDraft(trx, draftId, userId);
+    const draftParams = JSON.parse(draft.params_json);
+    if (!draftParams.days.some((d) => d.date === date)) {
+      const err = new Error('That date is not part of this draft');
+      err.status = 400;
+      throw err;
+    }
 
     const own = await ownDraftPlaceIds(trx, draftId);
     if (own.has(placeId)) {
@@ -497,6 +573,11 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
     if (!place) {
       const err = new Error('Place not found');
       err.status = 404;
+      throw err;
+    }
+    if (!isGeocoded(place)) {
+      const err = new Error("This place doesn't have map coordinates yet and can't be added to a route — geocode its address first.");
+      err.status = 400;
       throw err;
     }
 
@@ -665,12 +746,20 @@ async function commitDay({ draftId, userId, date }) {
     const rows = await trx('schedule_draft_stops as s')
       .join('places as p', 'p.id', 's.place_id')
       .where({ 's.draft_id': draftId, 's.date': date })
-      .select('s.place_id', 's.visit_type', 's.sort_order', 'p.name as place_name', 'p.default_visit_type');
+      .select('s.place_id', 's.visit_type', 's.sort_order', 'p.name as place_name', 'p.default_visit_type', 'p.lat', 'p.lng');
 
     if (rows.length === 0) return { date, committed: [], skippedCollisions: [] };
 
+    // Defense-in-depth: a stop can have gone ungeocoded AFTER being added to
+    // the draft (its place's address was edited and re-geocoding failed) —
+    // addStop's own isGeocoded check only guards the moment of adding. Never
+    // silently commit something that isn't even visible in the draft view;
+    // treat it the same as a real collision.
+    const geocodedRows = rows.filter((r) => isGeocoded({ lat: r.lat, lng: r.lng }));
+    const ungeocodedRows = rows.filter((r) => !isGeocoded({ lat: r.lat, lng: r.lng }));
+
     const locked = await committedElsewherePlaceIds(trx, { date });
-    const { committable, skippedCollisions } = partitionCommittableStops(rows, locked);
+    const { committable, skippedCollisions: precheckCollisions } = partitionCommittableStops(geocodedRows, locked);
 
     // Resolve down to a concrete type here (draft override -> place default
     // -> config default) rather than passing s.visit_type through as-is —
@@ -686,30 +775,81 @@ async function commitDay({ draftId, userId, date }) {
       scheduled_date: date,
       status: 'planned',
       sort_order: r.sort_order,
+      // Distinguishes a planner-committed visit from one logged directly via
+      // "Log a visit" (which stays the DB's plain 'manual' default) — needed
+      // so visits_place_date_active_unique (see that migration) can be scoped
+      // to only the planner's own commits. Logging two ad-hoc manual visits
+      // to the same place on the same day (e.g. two different contacts met
+      // there) is a legitimate, unrelated capability this must not restrict —
+      // only two reps' planner commits racing for the same place/date should
+      // ever be blocked.
+      source: 'planner',
     }));
-    if (visitRows.length > 0) await trx('visits').insert(visitRows);
+
+    // Insert one row at a time (rather than one bulk insert) so that a
+    // unique-constraint violation on a single row — the TOCTOU race the
+    // pre-check above can miss under READ COMMITTED, now closed by the
+    // visits_place_date_active_unique partial index — only knocks that one
+    // row out instead of failing the whole day's commit.
+    const committedRows = [];
+    const raceCollisions = [];
+    for (const row of visitRows) {
+      try {
+        await trx('visits').insert(row);
+        committedRows.push(row);
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          raceCollisions.push(row);
+        } else {
+          throw err;
+        }
+      }
+    }
 
     await trx('schedule_draft_stops').where({ draft_id: draftId, date }).del();
 
+    const skippedCollisions = [
+      ...precheckCollisions.map((r) => ({ place_id: r.place_id, place_name: r.place_name })),
+      ...ungeocodedRows.map((r) => ({ place_id: r.place_id, place_name: r.place_name })),
+      ...raceCollisions.map((r) => ({ place_id: r.place_id, place_name: r.place_name })),
+    ];
+
     return {
       date,
-      committed: visitRows,
-      skippedCollisions: skippedCollisions.map((r) => ({ place_id: r.place_id, place_name: r.place_name })),
+      committed: committedRows,
+      skippedCollisions,
     };
   });
 }
 
 async function commitAll({ draftId, userId }) {
+  const draft = await assertOwnsDraft(knex, draftId, userId);
+  const params = JSON.parse(draft.params_json);
+  const validDates = new Set(params.days.map((d) => d.date));
   const dateRows = await knex('schedule_draft_stops').where({ draft_id: draftId }).distinct('date').select('date').orderBy('date');
   const results = [];
   for (const { date } of dateRows) {
+    if (!validDates.has(date)) continue; // stray/orphaned date — shouldn't exist post-fix, skip defensively
     results.push(await commitDay({ draftId, userId, date }));
   }
   return results;
 }
 
+// Undoes a whole day's commit — the counterpart to commitDay/commitAll.
+// Deliberately scoped to status: 'planned': a rep who's already logged an
+// outcome for one of that day's stops has real completed/skipped history
+// there, which this must never touch (same "never destroy visit history"
+// spirit as detach-not-delete elsewhere in this app — see project-overview)
+// — only the still-open plan gets removed. Once this empties a date out
+// entirely, committedDateSummaries naturally stops counting it, which is
+// what frees it back up as a selectable calendar date.
+async function deleteCommittedDay(db, { userId, date }) {
+  return db('visits').where({ user_id: userId, scheduled_date: date, status: 'planned' }).del();
+}
+
 module.exports = {
   MAX_PLAN_DATES,
+  MAX_DAYS_AHEAD,
   validateDays,
   mergeLockedElsewhereIds,
   partitionCommittableStops,
@@ -735,4 +875,5 @@ module.exports = {
   getSuggestions,
   commitDay,
   commitAll,
+  deleteCommittedDay,
 };

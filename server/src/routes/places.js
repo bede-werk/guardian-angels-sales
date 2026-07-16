@@ -194,7 +194,9 @@ router.get('/meta/filters', async (req, res, next) => {
 // since Express matches routes top-to-bottom and :id would otherwise swallow them.
 router.get('/:id', async (req, res, next) => {
   try {
-    const place = await knex('places').where({ id: req.params.id }).first();
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Place not found' });
+    const place = await knex('places').where({ id }).first();
     if (!place) return res.status(404).json({ error: 'Place not found' });
 
     // Visit history is for what actually happened — a still-planned or
@@ -256,7 +258,9 @@ router.get('/:id', async (req, res, next) => {
 // visit's notes or a person's notes).
 router.patch('/:id', async (req, res, next) => {
   try {
-    const existing = await knex('places').where({ id: req.params.id }).first();
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Place not found' });
+    const existing = await knex('places').where({ id }).first();
     if (!existing) return res.status(404).json({ error: 'Place not found' });
 
     const { confirm_address } = req.body;
@@ -304,8 +308,8 @@ router.patch('/:id', async (req, res, next) => {
       update.geocoded_at = knex.fn.now();
     }
 
-    await knex('places').where({ id: req.params.id }).update(update);
-    res.json(decorate(await knex('places').where({ id: req.params.id }).first()));
+    await knex('places').where({ id }).update(update);
+    res.json(decorate(await knex('places').where({ id }).first()));
   } catch (err) {
     next(err);
   }
@@ -318,7 +322,9 @@ router.patch('/:id', async (req, res, next) => {
 // is permanent for the place's own details, but not for anyone's history.
 router.delete('/:id', async (req, res, next) => {
   try {
-    const deleted = await knex('places').where({ id: req.params.id }).del();
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Place not found' });
+    const deleted = await knex('places').where({ id }).del();
     if (!deleted) return res.status(404).json({ error: 'Place not found' });
     res.status(204).end();
   } catch (err) {

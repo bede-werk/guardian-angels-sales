@@ -477,12 +477,161 @@ stops committed, 1 correctly skipped and reported, exactly as designed. 139 test
 clean. **Committed, pushed, and opened as a PR against `main`** this session, per Bede's ask —
 see GitHub for the PR.
 
+## 2026-07-15 — Code-quality bug hunt (regular pass + "ultra" 6-agent deep pass)
+
+A different kind of session than the entries above — not route-planner feature work, a
+dedicated bug-hunting/code-quality pass at Bede's request, on branch `bede-working`, run in
+two rounds.
+
+### Round 1 — full-app review (client + server, "regular" depth)
+Bede asked for a full review, "every bug or issue or dead code." Found and fixed:
+- **CRITICAL:** `server/src/routes/dashboard.js`'s "never visited" query had the exact same
+  `.whereNotIn()`-against-nullable-column bug class the 2026-07-14 audit already found and
+  fixed once in the old (now-deleted) scheduler — a detached completed visit's NULL `place_id`
+  poisoned the `NOT IN` subquery, silently zeroing the whole "Never Visited" dashboard widget
+  the first time any place with completed-visit history was ever deleted. Fixed with
+  `.whereNotNull('place_id')`.
+- `PlanVisits.jsx`/`Calendar.jsx` (the calendar-date-picker feature, mid-flight and uncommitted
+  going into this session): `MAX_PLAN_DATES` had been mistakenly set to 7 instead of mirroring
+  the server's real 10, combined with a same-session change making "today" itself selectable —
+  together could block a rep from picking a fully legitimate 8th weekday. Fixed by restoring
+  `MAX_PLAN_DATES = 10` and rewording the UI hint to reference `MAX_DAYS_AHEAD` instead.
+- `notesReview.js`'s `POST /:id/create-place` skipped the `places.category` enum validation
+  entirely — a second, worse gap on top of the already-known geocoding gap on that same path
+  (§14A). Added the same `categoryError()` check `places.js` uses.
+- `client/src/components/ui/PlacePicker.jsx` was missing the stale-response-guard +
+  error-handling convention every other debounced search already has — brought into line.
+- `NeedsMapping.jsx`'s `CreatePlaceModal.save()` had zero error handling (silent failure on
+  network error) — added try/catch + error banner.
+- `PlanVisits.jsx`'s `deleteCommittedDay` didn't reload the draft, leaving a
+  partially-committed day's card stale — added a `load()` call.
+- The "No visits planned yet" empty state had silently disappeared in a refactor — restored,
+  reworded per Bede's request to drop "Let's map out your days" (too cutesy) — now just
+  "No visits planned yet."
+- `scheduleDraft.js`'s `deleteCommittedDay` had zero test coverage — added 3 tests.
+- `visits.js` didn't validate `user_id`/`person_id` existence before insert/update — added
+  400-level checks.
+- Two dead-code cleanups: `VisitLogModal.jsx`'s unreachable `visit?.name` fallback removed;
+  `phone.js`'s unused `PHONE_REGEX` export removed (kept internally).
+- Deferred, not urgent: `visit_type` not patchable post-commit via `PATCH /api/visits/:id`;
+  several route-planner scheduling fields on `places` (capacity_level, relationship_level,
+  do_not_visit, snooze_until, default_visit_type, etc.) have no API route to set/update yet —
+  only ever populated by a one-time migration backfill.
+
+### Round 2 — "ultra" 6-agent deep review
+Bede asked for a much deeper pass, explicitly "ultra" depth — 6 parallel review agents, each
+assigned a narrow slice (route-planner core engine, route-planner API+frontend, core CRUD
+routes, core CRUD frontend, data-model/migration consistency, a dedicated security pass).
+~25 issues found; Bede picked 7 to fix immediately (rest deferred, see below):
+
+1. **Most serious — a real TOCTOU race in `commitDay` let two reps double-book the same
+   place/date.** No unique constraint existed on `visits(place_id, scheduled_date)`, so under
+   Postgres's READ COMMITTED isolation two concurrent commits could both pass the pre-check and
+   both insert. Fixed with a new migration,
+   `server/src/migrations/20260715000002_add_visits_place_date_unique_index.js`, adding a
+   **partial** unique index — `visits_place_date_active_unique` on `(place_id, scheduled_date)
+   WHERE status != 'skipped' AND source = 'planner'` — deliberately scoped to
+   `source = 'planner'`, not a blanket place+date rule: real dev data (place 264 "Guardian
+   Angels (Test)," two manual same-day visits to different contacts — Lionel Messi and "New
+   Guy") proved ad-hoc "Log a visit" legitimately allows multiple visits to the same place on
+   the same day, and a blanket constraint would've broken that unrelated, working capability.
+   `commitDay` now tags its own inserts `source: 'planner'` (previously silently inherited the
+   DB's plain `'manual'` default) and inserts one row at a time inside its transaction,
+   catching a unique-violation per row into the existing `skippedCollisions` mechanism instead
+   of crashing with a raw 500.
+2. Non-numeric IDs (`:id` route params, and body FKs like `place_id`/`user_id`/`person_id`)
+   crashed with a raw 500 on Postgres but looked fine in local SQLite dev testing (SQLite's
+   storage-class comparison silently no-matches a string against an int column → a clean,
+   already-passing 404; Postgres infers an integer type from context and throws `invalid input
+   syntax for integer`, uncaught, surfaced as a 500). Added `Number()` coercion + NaN guards
+   across `places.js`, `people.js`, `visits.js`, `referrals.js`, `notesReview.js`, reusing each
+   route's existing error message/status — `scheduleDrafts.js` already did this correctly
+   everywhere and was the reference pattern. Worth remembering: this bug class is invisible in
+   local SQLite dev testing — needs Postgres, or at least suspicion of any un-coerced
+   `req.params.id`.
+3. Any rep could edit/skip/delete another rep's visits — no ownership check on `visits.js`'s
+   `PATCH /:id`, `POST /:id/skip`, `DELETE /:id`. Per Bede's explicit framing ("only be able to
+   edit routes planned on their own account"), added
+   `if (visit.user_id != null && visit.user_id !== req.user.id) return 403` to all three —
+   deliberately `!= null` so an unassigned visit stays editable by anyone, only a visit with a
+   *different specific* owner gets blocked; `user_id` stays reassignable by the current owner
+   (a "hand this off to Nikki" flow was preserved, not removed).
+4. `dashboard.js` had the SAME bug class as round 1's critical fix, twice more — but via wrong
+   JOIN type (INNER instead of LEFT): "completed this week" and "needs attention / cooling
+   people" both inner-joined against `places`, silently dropping data the moment a place
+   involved got deleted. Fixed both to LEFT JOIN, with `COALESCE(v.place_name, p.name)` for the
+   visit-history query (matching `visits.js`'s `fetchVisit()` precedent for surviving a deleted
+   place via its snapshot column). A third similar-looking query ("overdue places," also an
+   inner join) was deliberately left alone after reasoning through it — a deleted place has
+   nothing left to revisit, so excluding it there is actually correct. **This bug class
+   (`whereNotIn`/inner-join against a nullable FK, breaking detach-not-delete) has now shown up
+   3 times across 2 files** (the old, now-deleted scheduler, and `dashboard.js` twice) — worth
+   a dedicated grep sweep in any future full-codebase audit.
+5. An ungeocoded place could be added to a draft, silently vanish from the review UI (the
+   drive-time fallback path filters ungeocoded stops out of what it shows), yet still get
+   committed to a real visit the rep never actually saw reviewed. Fixed in two places: `addStop`
+   now rejects (400) adding an ungeocoded place at all; `commitDay` also filters ungeocoded
+   stops out of what it commits (defense-in-depth for a place whose address gets edited and
+   re-geocoding fails after it's already sitting in an active draft), folding them into the same
+   `skippedCollisions` reporting.
+6. Discarding a day wasn't fully protected: `addStop` never validated a date against the
+   draft's own selected dates, and `commitAll` sourced its commit list from raw
+   `schedule_draft_stops` rather than the draft's own `params.days`, so a stray/duplicate add
+   targeting an already-discarded date could get silently resurrected on the next "Accept all."
+   Fixed: `addStop` now 400s if the date isn't one of the draft's own `params.days`; `commitAll`
+   now checks draft ownership upfront (a bonus fix — it previously skipped the ownership check
+   whenever the target draft had zero stops) and only commits dates still present in
+   `params.days`.
+7. Client "today" (browser local time) and server "today" (previously raw UTC, via
+   `scheduleDraft.js`'s `todayUTC()`) could disagree by a full calendar day for several hours
+   every evening in any US timezone behind UTC — spuriously rejecting an evening "plan for
+   today" as "in the past" with no way for the rep to have known. Since this app is for one
+   single-office team (Lincoln, NE), fixed by anchoring the server's "today" to a fixed
+   `America/Chicago` timezone via `Intl.DateTimeFormat`/`formatToParts` (renamed the function
+   `todayUTC()` → `orgToday()` to be honest about what it now does), rather than trusting a
+   client-supplied date. No client-side change was needed — the client never sent its own
+   `today` value to the server.
+
+**Deferred, not fixed this session** (Bede: "hold on the others for another prompt") — roughly
+18 more findings from the ultra pass, not acted on, including: transactions held open across
+live OSRM network calls in most draft mutations (a real connection-pool-exhaustion risk as
+usage grows); `PersonModal.jsx`/`PlaceModal.jsx` Save can get permanently stuck on a network
+failure during their duplicate-check pre-step; missing confirm dialog on "Create another
+proposal" (silently deletes+regenerates the whole draft); partial-commit day's budget math
+ignoring time already spent on stops committed in an earlier partial commit; Dashboard's
+embedded place-delete not refreshing the Dashboard's own cached lists; `PersonDetail.jsx`'s
+`exitFieldEdits()` not closing the "assign to a place" picker; `visits.js` `POST /` not
+validating `status` against its enum (only `PATCH` does); a pre-auth account-takeover window in
+`auth.js` (`GET /users`/`POST /set-password` aren't behind `requireAuth`). Full list isn't
+duplicated here — this was intentionally not an exhaustive fix-everything pass, don't assume
+otherwise.
+
+**Verification:** 146 backend tests pass (up from 143 at the start of the session), client
+build clean throughout both rounds, the new migration applied cleanly against the dev DB.
+**Committed, pushed, and merged into `main`** at the end of this session, per Bede's explicit
+request — done as a direct git merge rather than a GitHub PR, since the `gh` CLI wasn't
+available in this environment.
+
 ## Current state
 - Working on branch `bede-routeplanner`, pushed and merged into `main` via PR as of
   2026-07-15 (Bede explicitly asked for this so his coworkers could access the code) — check
   `git log main` / GitHub for the exact merge commit rather than trusting a hardcoded hash
   here. Keep working on `bede-routeplanner` for anything further unless told otherwise; always
   check `git status` before starting new work and only push/merge again when asked.
+- **Later the same day, a separate code-quality session ran on branch `bede-working`** (not a
+  route-planner feature session — see the "Code-quality bug hunt" entry above): a regular
+  full-app review pass plus an "ultra" 6-agent deep-review pass, together fixing a real
+  double-booking race condition in `commitDay` (new partial-unique-index migration), missing
+  cross-user ownership checks on `visits.js`, a Postgres-only crash on non-numeric IDs (invisible
+  under local SQLite testing), two more instances of the `whereNotIn`/inner-join-against-
+  nullable-FK bug class in `dashboard.js` (the same class fixed once already in the
+  now-deleted old scheduler — this makes 3 occurrences across 2 files total, worth a dedicated
+  grep sweep next time), a client/server "today" timezone mismatch, and several smaller gaps
+  (dead code, missing validation, missing error handling). Roughly 18 further findings from the
+  ultra pass were intentionally deferred at Bede's request, not fixed — this was not a
+  fix-everything pass. 146 backend tests pass, client build clean. **Committed, pushed, and
+  merged into `main`** at the end of that session (direct git merge, not a GitHub PR — `gh`
+  wasn't available in this environment).
 - Route planner: phases 1-6 (scoring engine, drive-time, visit types, multi-day generator,
   real routing API + optimization, draft/commit lifecycle) are all built, tested, and
   committed on the backend/API side. **All three frontend sub-slices are built and verified

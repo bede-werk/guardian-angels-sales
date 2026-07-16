@@ -35,7 +35,7 @@ export default function VisitLogModal({ visit, placeId, placeName, userId, onClo
   const [done, setDone] = useState(false); // true after a successful save — shows the confirmation screen
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const title = placeName || visit?.name || visit?.place_name || 'Visit';
+  const title = placeName || visit?.place_name || 'Visit';
   // The person originally linked to this visit was since deleted (person_id
   // nulled out via ON DELETE SET NULL, but the person_name snapshot
   // survives). Reassigning the "who did you meet?" picker in that state

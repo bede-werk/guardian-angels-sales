@@ -12,15 +12,19 @@ import PlacePicker from './ui/PlacePicker';
 function CreatePlaceModal({ referrer, categories, onClose, onCreate }) {
   const [form, setForm] = useState({ name: referrer, category: '', tier: '3', city: 'Lincoln', zip: '' });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const duplicateMatches = useDuplicateMatches(form.name, (q) => api.places({ search: q }));
 
   async function save() {
     setSaving(true);
+    setError(null);
     try {
       await onCreate(form);
       onClose();
+    } catch (e) {
+      setError(e.message);
     } finally {
       setSaving(false);
     }
@@ -34,6 +38,7 @@ function CreatePlaceModal({ referrer, categories, onClose, onCreate }) {
           <button className="close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
+          {error && <div className="error-banner">{error}</div>}
           <div>
             <label className="field">Name</label>
             <input value={form.name} onChange={set('name')} />

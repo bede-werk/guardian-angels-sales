@@ -95,7 +95,9 @@ router.get('/people', async (req, res, next) => {
 // they've sent us.
 router.get('/people/:id', async (req, res, next) => {
   try {
-    const person = await knex('people').where({ id: req.params.id }).first();
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Person not found' });
+    const person = await knex('people').where({ id }).first();
     if (!person) return res.status(404).json({ error: 'Person not found' });
 
     const place = await knex('places').where({ id: person.place_id }).first();
@@ -131,8 +133,10 @@ router.get('/people/:id', async (req, res, next) => {
 // "People here" card and the "who did you meet?" picker.
 router.get('/places/:placeId/people', async (req, res, next) => {
   try {
+    const placeId = Number(req.params.placeId);
+    if (Number.isNaN(placeId)) return res.json([]);
     const people = await knex('people')
-      .where({ place_id: req.params.placeId })
+      .where({ place_id: placeId })
       .orderBy('name', 'asc');
     res.json(people);
   } catch (err) {
@@ -151,9 +155,11 @@ router.post('/people', async (req, res, next) => {
 
     let placeId = null;
     if (place_id !== undefined && place_id !== null && place_id !== '') {
-      const place = await knex('places').where({ id: place_id }).first();
+      const numericPlaceId = Number(place_id);
+      if (Number.isNaN(numericPlaceId)) return res.status(400).json({ error: 'place not found' });
+      const place = await knex('places').where({ id: numericPlaceId }).first();
       if (!place) return res.status(400).json({ error: 'place not found' });
-      placeId = place_id;
+      placeId = numericPlaceId;
     }
 
     const payload = { place_id: placeId, name: String(name).trim() };
@@ -177,7 +183,9 @@ router.post('/people', async (req, res, next) => {
 // PATCH /api/people/:id — update any editable field.
 router.patch('/people/:id', async (req, res, next) => {
   try {
-    const existing = await knex('people').where({ id: req.params.id }).first();
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Person not found' });
+    const existing = await knex('people').where({ id }).first();
     if (!existing) return res.status(404).json({ error: 'Person not found' });
 
     const update = { updated_at: knex.fn.now() };
@@ -190,9 +198,11 @@ router.patch('/people/:id', async (req, res, next) => {
       if (req.body.place_id === null || req.body.place_id === '') {
         update.place_id = null;
       } else {
-        const place = await knex('places').where({ id: req.body.place_id }).first();
+        const numericPlaceId = Number(req.body.place_id);
+        if (Number.isNaN(numericPlaceId)) return res.status(400).json({ error: 'place not found' });
+        const place = await knex('places').where({ id: numericPlaceId }).first();
         if (!place) return res.status(400).json({ error: 'place not found' });
-        update.place_id = req.body.place_id;
+        update.place_id = numericPlaceId;
       }
     }
 
@@ -200,8 +210,8 @@ router.patch('/people/:id', async (req, res, next) => {
     if (validationError) return res.status(400).json({ error: validationError });
 
     const person = await knex.transaction(async (trx) => {
-      await trx('people').where({ id: req.params.id }).update(update);
-      return trx('people').where({ id: req.params.id }).first();
+      await trx('people').where({ id }).update(update);
+      return trx('people').where({ id }).first();
     });
 
     res.json(person);
@@ -219,11 +229,13 @@ router.patch('/people/:id', async (req, res, next) => {
 // something that happened. The UI confirms this with the rep before calling here.
 router.delete('/people/:id', async (req, res, next) => {
   try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Person not found' });
     const deleted = await knex.transaction(async (trx) => {
-      const person = await trx('people').where({ id: req.params.id }).first();
+      const person = await trx('people').where({ id }).first();
       if (!person) return false;
-      await trx('referrals').where({ person_id: req.params.id }).del();
-      await trx('people').where({ id: req.params.id }).del();
+      await trx('referrals').where({ person_id: id }).del();
+      await trx('people').where({ id }).del();
       return true;
     });
     if (!deleted) return res.status(404).json({ error: 'Person not found' });

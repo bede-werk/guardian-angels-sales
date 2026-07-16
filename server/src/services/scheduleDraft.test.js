@@ -1,6 +1,6 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, MAX_PLAN_DATES } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 
 describe('mergeLockedElsewhereIds', () => {
   test('unions committed and other-draft rows', () => {
@@ -96,10 +96,46 @@ describe('validateDays', () => {
     assert.throws(() => validateDays(many, { today: TODAY, committedDates: noCommitted }), /cannot plan more than/i);
   });
 
-  test('rejects a date that is today or earlier', () => {
+  test('allows today itself', () => {
+    const result = validateDays([{ date: TODAY, hoursPerDay: 4 }], { today: TODAY, committedDates: noCommitted });
+    assert.deepEqual(result, [{ date: TODAY, hoursPerDay: 4 }]);
+  });
+
+  test('rejects a date before today', () => {
     assert.throws(
-      () => validateDays([{ date: TODAY, hoursPerDay: 4 }], { today: TODAY, committedDates: noCommitted }),
+      () => validateDays([{ date: '2026-07-12', hoursPerDay: 4 }], { today: TODAY, committedDates: noCommitted }),
       /in the past/
+    );
+  });
+
+  // TODAY (2026-07-13) is a Monday. Counting only weekdays toward
+  // MAX_DAYS_AHEAD: Tue 14(1), Wed 15(2), Thu 16(3), Fri 17(4), Sat/Sun
+  // 18-19 (skipped, don't count), Mon 20(5), Tue 21(6), Wed 22(7) — so the
+  // boundary lands on 2026-07-22, two calendar days later than a raw
+  // "+7 days" count would give, because the weekend in between is free.
+  test(`allows a date exactly ${MAX_DAYS_AHEAD} weekdays out (skipping the weekend in between)`, () => {
+    const result = validateDays([{ date: '2026-07-22', hoursPerDay: 4 }], { today: TODAY, committedDates: noCommitted });
+    assert.deepEqual(result, [{ date: '2026-07-22', hoursPerDay: 4 }]);
+  });
+
+  test(`rejects a date more than ${MAX_DAYS_AHEAD} weekdays out`, () => {
+    assert.throws(
+      () => validateDays([{ date: '2026-07-23', hoursPerDay: 4 }], { today: TODAY, committedDates: noCommitted }),
+      /more than 7 days out/
+    );
+  });
+
+  test('rejects a Saturday', () => {
+    assert.throws(
+      () => validateDays([{ date: '2026-07-18', hoursPerDay: 4 }], { today: TODAY, committedDates: noCommitted }),
+      /weekend/
+    );
+  });
+
+  test('rejects a Sunday', () => {
+    assert.throws(
+      () => validateDays([{ date: '2026-07-19', hoursPerDay: 4 }], { today: TODAY, committedDates: noCommitted }),
+      /weekend/
     );
   });
 
@@ -122,5 +158,56 @@ describe('validateDays', () => {
       () => validateDays([{ date: '2026-07-14', hoursPerDay: 4 }], { today: TODAY, committedDates: new Set(['2026-07-14']) }),
       /already has committed visits/
     );
+  });
+});
+
+describe('deleteCommittedDay', () => {
+  // deleteCommittedDay isn't pure (it issues a real `visits` delete), and
+  // nothing in this codebase's service-level tests spins up a real/mock Knex
+  // DB (scheduleDraft.test.js and its siblings only exercise pure functions).
+  // A minimal fake db that records the filter handed to `.where()` and lets
+  // `.del()` return a controllable count is enough to assert on the query
+  // shape without standing up sqlite — mirroring the query itself
+  // (`db('visits').where({...}).del()`) closely enough that a regression to
+  // either scoping would show up here as a wrong recorded filter.
+  function makeFakeDb(deletedCount) {
+    const calls = [];
+    const db = (table) => {
+      calls.push({ table });
+      return {
+        where(filter) {
+          calls[calls.length - 1].filter = filter;
+          return { del: () => Promise.resolve(deletedCount) };
+        },
+      };
+    };
+    db.calls = calls;
+    return db;
+  }
+
+  test('scopes the delete to status: planned, leaving completed/skipped history untouched', async () => {
+    const db = makeFakeDb(2);
+    await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
+
+    assert.equal(db.calls.length, 1);
+    assert.equal(db.calls[0].table, 'visits');
+    assert.equal(db.calls[0].filter.status, 'planned');
+  });
+
+  test('scopes the delete to the given userId and date', async () => {
+    const db = makeFakeDb(1);
+    await deleteCommittedDay(db, { userId: 7, date: '2026-07-17' });
+
+    assert.deepEqual(db.calls[0].filter, {
+      user_id: 7,
+      scheduled_date: '2026-07-17',
+      status: 'planned',
+    });
+  });
+
+  test('resolves to the number of rows deleted', async () => {
+    const db = makeFakeDb(3);
+    const result = await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
+    assert.equal(result, 3);
   });
 });

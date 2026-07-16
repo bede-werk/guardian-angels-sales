@@ -11,4 +11,4 @@ function validatePhone(value) {
   return PHONE_REGEX.test(value) ? null : 'phone must be in the format (402) 555-1234';
 }
 
-module.exports = { PHONE_REGEX, validatePhone };
+module.exports = { validatePhone };

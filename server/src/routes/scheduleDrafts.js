@@ -67,6 +67,16 @@ router.get('/committed-dates', handle(async (req, res) => {
   res.json(summaries);
 }));
 
+// DELETE /api/schedule-drafts/committed-dates/:date — undo a whole day's
+// commit: removes every still-planned (not completed/skipped) visit this
+// user has on that date — see scheduleDraft.deleteCommittedDay for why
+// completed/skipped history is deliberately left alone. Frees the date back
+// up on the calendar once nothing real is left on it.
+router.delete('/committed-dates/:date', handle(async (req, res) => {
+  const deleted = await scheduleDraft.deleteCommittedDay(knex, { userId: req.user.id, date: req.params.date });
+  res.json({ date: req.params.date, deleted });
+}));
+
 // DELETE /api/schedule-drafts/:id/days/:date — discard just this day's
 // still-open proposal, as if that date had never been picked at all (every
 // other day, and anything already accepted for THIS day, is untouched — see

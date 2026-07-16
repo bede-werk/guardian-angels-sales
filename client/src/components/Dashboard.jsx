@@ -64,7 +64,7 @@ export default function Dashboard({ date, userId }) {
                 <li key={v.visit_id} className="stop">
                   <div className="main">
                     <div className="name tiny">{v.name}</div>
-                    <div className="meta">{formatDate(v.scheduled_date)} · {v.city}</div>
+                    <div className="meta">{formatDate(v.scheduled_date)}{v.city ? ` · ${v.city}` : ''}</div>
                   </div>
                   <OutcomeChip outcome={v.outcome} />
                 </li>
@@ -99,7 +99,7 @@ export default function Dashboard({ date, userId }) {
               {attention.cooling_people.map((c) => (
                 <li key={`cooling-${c.person_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
                   <div className="main">
-                    <div className="name tiny">{c.person_name} <span className="muted">· {c.place_name}</span></div>
+                    <div className="name tiny">{c.person_name} {c.place_name && <span className="muted">· {c.place_name}</span>}</div>
                     <div className="meta">
                       Referred {c.lifetime_referrals}x, last {formatDate(c.last_referral_date)} — nothing in the last 90 days
                     </div>
