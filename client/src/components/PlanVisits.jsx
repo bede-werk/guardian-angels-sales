@@ -443,9 +443,9 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
             </div>
           ) : (
             <div className="row" style={{ flex: 'unset', gap: 8 }}>
-              <Button variant="secondary" size="small" onClick={() => setAddingOpen(true)}>+ Add a stop</Button>
+              <Button variant="secondary" size="small" onClick={() => setAddingOpen(true)} disabled={busy}>+ Add a stop</Button>
               {canSuggest && (
-                <Button variant="ghost" size="small" onClick={toggleSuggestions}>
+                <Button variant="ghost" size="small" onClick={toggleSuggestions} disabled={busy}>
                   {suggestionsOpen ? 'Hide suggestions' : 'Suggest a stop'}
                 </Button>
               )}
@@ -512,6 +512,7 @@ export default function PlanVisits() {
   const [committedSummaries, setCommittedSummaries] = useState([]);
   const committedDates = useMemo(() => new Set(committedSummaries.map((s) => s.date)), [committedSummaries]);
   const [deletingCommittedDate, setDeletingCommittedDate] = useState(null); // which "Already Planned" row's ✕ is in flight
+  const [reopeningDate, setReopeningDate] = useState(null); // which "Already Planned" row's Edit is in flight
   // Dates already generated into the active draft — once a day's routes
   // have been proposed, it can't be deselected (calendar click or the ✕ in
   // the list below); discarding that day's proposal (or the whole draft) is
@@ -554,6 +555,30 @@ export default function PlanVisits() {
       setError(e.message);
     } finally {
       setDeletingCommittedDate(null);
+    }
+  }
+
+  // Pulls a committed day's visits back out of `visits` and into a normal
+  // editable draft day (see scheduleDraft.reopenCommittedDay) — the response
+  // is a full draft view, same shape generate() returns, so it's handled the
+  // same way: setDraft AND setSelectedDays together, since the reopened date
+  // is now part of draft.params.days and selectedDays needs to match or it
+  // silently drifts out of sync (see the seededFromDraft effect above, which
+  // only syncs the two once on initial mount).
+  async function reopenDay(date) {
+    if (!homeBase) return; // the button is disabled in this case; guard anyway
+    if (!window.confirm(`Edit the planned visits for ${formatDate(date)}? They'll temporarily show as not-yet-scheduled while you make changes — accept the updated proposal again when you're done.`)) return;
+    setError(null);
+    setReopeningDate(date);
+    try {
+      const next = await api.scheduleDrafts.reopenDay(date, { lat: homeBase.lat, lng: homeBase.lng });
+      setDraft(next);
+      setSelectedDays(next.params.days);
+      await refreshCommittedDates();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setReopeningDate(null);
     }
   }
 
@@ -779,6 +804,7 @@ export default function PlanVisits() {
   }
 
   async function generate(regenerate) {
+    if (regenerate && !window.confirm('Regenerate this proposal? Any changes you\'ve made to it will be replaced.')) return;
     setError(null);
     setNotice(null);
     setGenerating(true);
@@ -819,6 +845,11 @@ export default function PlanVisits() {
     setSelectedDays((prev) => prev.filter((d) => d.date !== iso));
   }
 
+  // Keeps the three header buttons mutually exclusive — any one of them being
+  // in flight should block the other two, since they all act on the same
+  // draft (e.g. regenerating while "Accept all proposals" is still
+  // committing would fire a regenerate against a draft that's mid-commit).
+  const busy = generating || committingAll || discarding;
   const canGenerate = !!homeBase && !generating && selectedDays.length > 0;
   // "Create another proposal" regenerates the WHOLE draft, so it should only
   // be live when something has actually changed since the last generate —
@@ -847,19 +878,19 @@ export default function PlanVisits() {
           <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
             {draft ? (
               <>
-                <Button variant="danger" onClick={discardDraft} disabled={discarding || committingAll} style={{ flex: 'none', minWidth: 0 }}>
+                <Button variant="danger" onClick={discardDraft} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>
                   {discarding ? 'Discarding…' : 'Discard all proposals'}
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={() => generate(true)}
-                  disabled={!canGenerate || !needsRegenerate}
+                  disabled={!canGenerate || !needsRegenerate || busy}
                   title={needsRegenerate ? undefined : 'Nothing has changed since the current proposal was generated'}
                   style={{ flex: 'none', minWidth: 0 }}
                 >
                   Create another proposal
                 </Button>
-                <Button onClick={commitAllDays} disabled={committingAll} style={{ flex: 'none', minWidth: 0 }}>
+                <Button onClick={commitAllDays} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>
                   {committingAll ? 'Accepting…' : 'Accept all proposals'}
                 </Button>
               </>
@@ -997,10 +1028,19 @@ export default function PlanVisits() {
                   <div className="actions" style={{ alignItems: 'center' }}>
                     <span className="badge committed" style={{ flex: 'none', minWidth: 0 }}>✓ Planned</span>
                     <Button
+                      variant="secondary"
+                      size="small"
+                      onClick={() => reopenDay(s.date)}
+                      disabled={!homeBase || reopeningDate === s.date || deletingCommittedDate === s.date}
+                      title={homeBase ? "Pull this day's visits back into an editable proposal" : 'Set a starting point above before editing a planned day'}
+                    >
+                      {reopeningDate === s.date ? 'Editing…' : 'Edit'}
+                    </Button>
+                    <Button
                       variant="danger"
                       size="small"
                       onClick={() => deleteCommittedDay(s.date)}
-                      disabled={deletingCommittedDate === s.date}
+                      disabled={deletingCommittedDate === s.date || reopeningDate === s.date}
                       title="Remove this day's planned visits"
                     >
                       ✕

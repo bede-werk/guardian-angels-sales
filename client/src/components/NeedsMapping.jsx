@@ -15,7 +15,11 @@ function CreatePlaceModal({ referrer, categories, onClose, onCreate }) {
   const [error, setError] = useState(null);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const duplicateMatches = useDuplicateMatches(form.name, (q) => api.places({ search: q }));
+  // Stable identity so useDuplicateMatches's effect (which now depends on
+  // `search`) only re-runs when `form.name` actually changes, not on every
+  // unrelated keystroke in this modal's other fields.
+  const searchPlaces = useCallback((q) => api.places({ search: q }), []);
+  const duplicateMatches = useDuplicateMatches(form.name, searchPlaces);
 
   async function save() {
     setSaving(true);

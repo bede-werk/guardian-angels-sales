@@ -67,6 +67,19 @@ router.get('/committed-dates', handle(async (req, res) => {
   res.json(summaries);
 }));
 
+// POST /api/schedule-drafts/days/:date/reopen — reopen an already-committed
+// day back into an editable draft: pulls that date's committed (planner-
+// sourced) visits back into schedule_draft_stops and deletes the visits rows
+// (see scheduleDraft.reopenCommittedDay). From here on, every existing
+// draft-editing endpoint below (reorder/add/remove/visit-type/reoptimize/
+// commit) works on this day exactly as if it had never been committed.
+// Body: { homeBase? } — required only if the caller has no active draft yet;
+// ignored (the existing draft's own homeBase wins) if they do.
+router.post('/days/:date/reopen', handle(async (req, res) => {
+  const draft = await scheduleDraft.reopenCommittedDay({ userId: req.user.id, date: req.params.date, homeBase: req.body.homeBase });
+  res.json(draft);
+}));
+
 // DELETE /api/schedule-drafts/committed-dates/:date — undo a whole day's
 // commit: removes every still-planned (not completed/skipped) visit this
 // user has on that date — see scheduleDraft.deleteCommittedDay for why

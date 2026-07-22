@@ -3,6 +3,7 @@ import { api } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
+import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
 
 // Create or edit a place (organization). `place` present = editing (form is
 // pre-filled from it); absent = creating a brand-new one from a blank form.
@@ -67,14 +68,14 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
       return;
     }
 
-    setSaving(true);
-    const [duplicates, addressCheck] = await Promise.all([
+    const result = await runPreSaveCheck(setSaving, setError, () => Promise.all([
       !place && form.name.trim().length >= 3 ? api.places({ search: form.name.trim() }) : [],
       form.address || form.city || form.zip
         ? api.checkAddress({ address: form.address, city: form.city, state: form.state, zip: form.zip })
         : { recognized: true },
-    ]);
-    setSaving(false);
+    ]));
+    if (!result.ok) return;
+    const [duplicates, addressCheck] = result.value;
 
     const issues = [];
     if (duplicates.length > 0) {

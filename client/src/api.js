@@ -78,7 +78,6 @@ export const api = {
   // Visits (logging a call) — server/src/routes/visits.js
   createVisit: (body) => request('/visits', { method: 'POST', body }),
   updateVisit: (id, body) => request(`/visits/${id}`, { method: 'PATCH', body }),
-  skipVisit: (id) => request(`/visits/${id}/skip`, { method: 'POST' }),
   deleteVisit: (id) => request(`/visits/${id}`, { method: 'DELETE' }),
 
   // Dashboard rollup — server/src/routes/dashboard.js
@@ -140,6 +139,8 @@ export const api = {
       request(`/schedule-drafts/${draftId}/days/${date}/commit`, { method: 'POST' }),
     commitAll: (draftId) =>
       request(`/schedule-drafts/${draftId}/commit`, { method: 'POST' }),
+    reopenDay: (date, homeBase) =>
+      request(`/schedule-drafts/days/${date}/reopen`, { method: 'POST', body: { homeBase } }),
   },
 
   // Address -> coordinates, for the route planner's manual-location fallback

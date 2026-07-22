@@ -1,7 +1,7 @@
 // Visits — one planned/completed/skipped touchpoint on a place, by a rep,
-// on a date. This covers logging outcomes/notes/person info, skipping a
-// stop, and deleting one. (Creating a whole day's worth at once happens via
-// the route planner's commit flow — see services/scheduleDraft.js — not here.)
+// on a date. This covers logging outcomes/notes/person info, and deleting
+// one. (Creating a whole day's worth at once happens via the route planner's
+// commit flow — see services/scheduleDraft.js — not here.)
 const express = require('express');
 const knex = require('../db/knex');
 const { validatePhone } = require('../services/phone');
@@ -59,6 +59,9 @@ router.post('/', async (req, res, next) => {
     for (const f of EDITABLE) if (req.body[f] !== undefined) payload[f] = req.body[f];
     if (payload.outcome && !OUTCOMES.includes(payload.outcome)) {
       return res.status(400).json({ error: `outcome must be one of ${OUTCOMES.join(', ')}` });
+    }
+    if (payload.status && !STATUSES.includes(payload.status)) {
+      return res.status(400).json({ error: `status must be one of ${STATUSES.join(', ')}` });
     }
 
     // user_id and person_id are both nullable FKs (a visit doesn't have to be
@@ -145,24 +148,6 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     await knex('visits').where({ id }).update(update);
-    res.json(await fetchVisit(id));
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/visits/:id/skip — convenience for skipping a stop on today's route
-// without opening the full log-visit form.
-router.post('/:id/skip', async (req, res, next) => {
-  try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
-    const visit = await knex('visits').where({ id }).first();
-    if (!visit) return res.status(404).json({ error: 'Visit not found' });
-    if (visit.user_id != null && visit.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'You can only edit visits scheduled under your own account' });
-    }
-    await knex('visits').where({ id }).update({ status: 'skipped', updated_at: knex.fn.now() });
     res.json(await fetchVisit(id));
   } catch (err) {
     next(err);

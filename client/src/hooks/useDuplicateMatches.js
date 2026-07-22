@@ -25,7 +25,7 @@ export default function useDuplicateMatches(query, search, { minLength = 3, enab
       }
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [query, enabled, minLength]);
+  }, [query, enabled, minLength, search]);
 
   return matches;
 }

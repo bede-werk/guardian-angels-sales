@@ -113,6 +113,36 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   **Committed, pushed, and merged into `main`** at the end of this session per Bede's explicit
   request — a direct git merge, not a GitHub PR, since `gh` wasn't available in this
   environment. Full detail in `NOTES.md`'s same-dated "Code-quality bug hunt" entry.
+- **2026-07-22, branch `bede-working`:** picked up two threads — a "Plan My Visits" feature
+  Bede had already started (reopening an already-committed day back into an editable draft,
+  see `ROUTEPLANNER_PROGRESS.md`'s new entry), plus working through the ~18-item ultra-review
+  backlog `NOTES.md`/§0 above deferred. Fixed: `POST /api/visits` wasn't validating `status`
+  against its enum (only `PATCH` was); `places.js` never validated `tier` was 1/2/3 (PATCH
+  could even let a place's stored `tier` diverge from the `priority_score` derived from it —
+  now the coerced numeric value is what's written, not the raw body value); the fully-orphaned
+  `visits.skip_reason` column was dropped (new migration) along with the dead
+  `POST /api/visits/:id/skip` route and `api.skipVisit()` client fn — the whole "skip a stop"
+  concept was a leftover from the retired `Schedule.jsx`, never rebuilt in the new workspace,
+  `status: 'skipped'` itself is unaffected and still fully supported via the regular `PATCH`;
+  every currently-passwordless user got backfilled to a real default password (`Angels#1`, new
+  migration) as a stopgap for the pre-auth account-takeover window (`GET /auth/users`/
+  `POST /auth/set-password` still aren't behind `requireAuth` and can't be — Bede's still
+  designing a real login-page overhaul, this just closes the "claim someone else's account
+  before they ever log in" window for accounts that exist today, not future ones); the
+  `PersonModal.jsx`/`PlaceModal.jsx` stuck-Save bug (network failure during the duplicate/
+  address pre-check used to leave Save disabled forever) fixed via a new shared
+  `usePreSaveCheck` helper so the two forms' error handling can't drift apart again; Dashboard's
+  embedded place-delete now refreshes the Dashboard (`onDeleted={load}`, matching Places.jsx/
+  People.jsx); `PersonDetail.jsx`'s `exitFieldEdits()` now also closes the "assign to a place"
+  picker; `assignToPlace()` got an in-flight guard matching the rest of that file's save
+  handlers; `useDuplicateMatches`'s effect now depends on `search` (its one caller,
+  `NeedsMapping.jsx`, had to get its own `search` callback wrapped in `useCallback` first, or
+  the fix would've caused a refetch on every unrelated keystroke in that modal). Two items were
+  deliberately left for Bede to scope later: `visits.skip_reason`'s wider "skip a stop" concept
+  could be rebuilt as a real feature (declined — cleanup only, per above) and the remaining
+  ~9 unbuilt scheduling-field API surface / `visit_type`-not-patchable capability gaps (see
+  §14A's "still open" notes) haven't been touched. 146 tests pass, client build clean
+  throughout. Not yet pushed/merged — ask before doing either, same as always.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
@@ -713,6 +743,15 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   pushed, and merged into `main`** at the end of this session per Bede's explicit request — a
   direct git merge, not a GitHub PR, since `gh` wasn't available in this environment. Full
   detail in `NOTES.md`'s "Code-quality bug hunt" entry and the §0/§14A notes above.
+- **2026-07-22, still on `bede-working`:** a "Plan My Visits" feature (reopening a committed
+  day) plus a chunk of the deferred ultra-review backlog — see §0's 2026-07-22 bullet for the
+  full list and `ROUTEPLANNER_PROGRESS.md` for the reopen-day feature's own writeup. Every
+  currently-passwordless user now has a real default password (`Angels#1`) instead of an open
+  self-serve first-login flow — the pre-auth account-takeover window itself (unauthenticated
+  `GET /auth/users`/`POST /auth/set-password`) is still open pending a real login-page
+  redesign Bede hasn't finalized yet. `visits.skip_reason` and the dead "skip a stop" code path
+  it belonged to are gone. 146 tests pass, client build clean. Committed on `bede-working`
+  (see `git log` for the hash) — not yet pushed/merged, ask before doing either.
 
 ---
 

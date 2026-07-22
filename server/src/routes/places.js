@@ -20,6 +20,15 @@ function categoryError(category) {
   return null;
 }
 
+// tier is always 1, 2, or 3 — empty/null is allowed on PATCH (no change), but
+// anything provided must be one of the three valid numbers.
+function tierError(tier) {
+  if (tier === undefined || tier === null || tier === '') return null;
+  const n = Number(tier);
+  if (!Number.isInteger(n) || n < 1 || n > 3) return 'tier must be 1, 2, or 3';
+  return null;
+}
+
 // Fields a client is allowed to set on an existing place via PATCH. (POST
 // below has its own inline handling since it also derives priority_score/region.)
 const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes'];
@@ -34,7 +43,9 @@ router.post('/', async (req, res, next) => {
     if (phoneError) return res.status(400).json({ error: phoneError });
     const catError = categoryError(category);
     if (catError) return res.status(400).json({ error: catError });
-    const t = Number(tier) || 3;
+    const tErr = tierError(tier);
+    if (tErr) return res.status(400).json({ error: tErr });
+    const t = tier === undefined || tier === null || tier === '' ? 3 : Number(tier);
     const pri = !!is_priority;
     const payload = {
       name: String(name).trim(),
@@ -271,12 +282,16 @@ router.patch('/:id', async (req, res, next) => {
     if (phoneError) return res.status(400).json({ error: phoneError });
     const catError = categoryError(update.category);
     if (catError) return res.status(400).json({ error: catError });
+    const tErr = tierError(update.tier);
+    if (tErr) return res.status(400).json({ error: tErr });
 
     // Tier/region/priority changes need the same derived fields kept in sync
-    // as at creation time.
+    // as at creation time. Store the coerced numeric tier (not the raw body
+    // value) so it can never diverge from the priority_score derived from it.
     if (update.tier !== undefined || update.is_priority !== undefined) {
       const t = update.tier !== undefined ? Number(update.tier) : existing.tier;
       const pri = update.is_priority !== undefined ? !!update.is_priority : !!existing.is_priority;
+      if (update.tier !== undefined) update.tier = t;
       update.priority_score = priorityScore(t, pri);
     }
     if (update.city !== undefined || update.zip !== undefined) {

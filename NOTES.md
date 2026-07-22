@@ -657,9 +657,11 @@ available in this environment.
 - Database: 261 real places, a handful of real visits/referrals logged since
   the clean-slate wipe, plus Bede's own manually-created test data (place
   "Guardian Angels (Test)"; people Lionel Messi / Mohamed Salah / Neymar Jr. —
-  don't delete these, they're fixtures he made on purpose). Only Bede's account
-  has a real password set; Nikki/Lisa/Basil still need to log in once to create
-  theirs.
+  don't delete these, they're fixtures he made on purpose). All four users now
+  have a password set — as of 2026-07-22, anyone who didn't already have one
+  was backfilled to a default (`Angels#1`, see that session's entry below);
+  this line was already stale before that (Lisa's had a real password since
+  2026-07-14) — a reminder to update this section instead of trusting it blindly.
 - **Geocoding backfill has been run** — 255/262 places have coordinates, 7 need
   manual address review (still open, see below).
 - See `HANDOFF.md` §13 for the authoritative, more detailed current-state
@@ -703,3 +705,70 @@ available in this environment.
   historical referrer notes.
 - Still true from the original handoff: consider Postgres backups and a
   Railway spend cap whenever this gets redeployed.
+
+## 2026-07-22 — Reopen-a-committed-day feature + ultra-review backlog cleanup
+
+Branch `bede-working`. Two threads: a "Plan My Visits" feature Bede had already started before
+this session (reopening an already-committed day back into an editable draft), and working
+through part of the ~18-item backlog deferred from 2026-07-15's ultra review.
+
+**Reopen a committed day** — full writeup in `ROUTEPLANNER_PROGRESS.md`'s new entry. Short
+version: a new "Edit" button on a committed day pulls its `visits` rows back into
+`schedule_draft_stops` via a new `reopenCommittedDay` service function and
+`POST /api/schedule-drafts/days/:date/reopen` route, so a planned day can be reordered/added-
+to/removed-from/re-optimized/re-committed exactly like it was never accepted in the first
+place. Bundled in: `commitDay` no longer leaves a fully-committed date lingering in the draft's
+own `params.days` (the ambiguous "committed AND still an open proposal" state this feature
+exists to eliminate); the OSRM-call-held-open-inside-a-transaction anti-pattern in
+`reoptimizeDay` is fixed (ownership check + the network call now happen outside any
+transaction); `addStop`'s duplicate-add race now returns a clean 409 instead of a raw 500.
+
+**Ultra-review backlog, picked off one at a time as Bede reviewed the list:**
+1. `POST /api/visits` now validates `status` against its enum (only `PATCH` did before).
+2. `places.js` now validates `tier` is 1/2/3 on both `POST` and `PATCH` (new `tierError()`,
+   same shape as the existing `categoryError()`); `PATCH` also now writes the *coerced numeric*
+   tier back, not the raw request-body value, so it can never diverge from the `priority_score`
+   derived from it.
+3. `visits.skip_reason` turned out to be worse than "an orphaned column" — the entire "skip a
+   stop" feature it belonged to (`POST /api/visits/:id/skip`, `api.skipVisit()`) had zero
+   callers anywhere in the frontend, a leftover from the old `Schedule.jsx` scheduler retired
+   2026-07-15 that nobody rebuilt an equivalent for in the new workspace. Dropped the column
+   (new migration, no FK/rebuild needed) and deleted the dead route + client fn. `status:
+   'skipped'` itself is untouched — still a valid value settable via the regular `PATCH`, and
+   still relied on by the partial unique index from 2026-07-15.
+4. The pre-auth account-takeover window (`GET /api/auth/users`/`POST /api/auth/set-password`
+   aren't behind `requireAuth`, necessarily — there's no session before first login) got a
+   stopgap, not a full fix: every currently-passwordless user now has a real default password
+   (`Angels#1`, new migration, ran against the dev DB — only Nikki Shasserre was affected there,
+   everyone else already had one). This closes the "claim someone else's account before they
+   ever log in" window for accounts that exist *today*; a user created in the future still
+   starts passwordless and is exposed to the same window until their first login. Bede's still
+   designing the real login-page overhaul (a "seamless" single login form, a change-password
+   button) — this is explicitly a stopgap ahead of that, not the final answer.
+5. `PersonModal.jsx`/`PlaceModal.jsx`'s stuck-Save bug: the duplicate-name/address pre-check
+   ran outside any try/catch, so a network failure there left Save disabled forever with no
+   error shown. Fixed via a new shared `client/src/hooks/usePreSaveCheck.js` helper (both forms
+   now go through it) instead of fixing the same bug twice in parallel, so the two forms'
+   error-handling can't drift apart again.
+6. `Dashboard.jsx`'s embedded `PlaceDetail` now has `onDeleted={load}` — deleting a place from
+   the Dashboard now actually refreshes it, matching Places.jsx/People.jsx.
+7. `PersonDetail.jsx`'s `exitFieldEdits()` now also closes the "assign to a place" picker
+   (previously only reset notes/preferences/birthday edit state, unlike the backdrop-click
+   handler which reset all four).
+8. `assignToPlace()` got an in-flight guard (`savingAssign`), matching the save-in-progress
+   pattern every other handler in that file already used.
+9. `useDuplicateMatches`'s debounce effect now depends on `search`, not just `query`/`enabled`/
+   `minLength`. Its one real caller (`NeedsMapping.jsx`'s `CreatePlaceModal`) was passing an
+   inline arrow function that got a new identity every render — applying the dependency fix
+   as-is would've caused a refetch on every unrelated keystroke in that modal (category/tier/
+   city/zip), so that call site got its own `search` callback wrapped in `useCallback` first.
+
+**Deliberately left alone, Bede's call for later:** rebuilding "skip a stop" as a real feature
+(declined in favor of cleanup — see #3 above); the two remaining capability-gap items from
+2026-07-15 (`visit_type` not patchable after commit; nine scheduling-profile fields on `places`
+with no API surface at all) — neither is a bug, both are "build this UI" scope decisions.
+
+**Verification:** 146 backend tests pass throughout (unchanged count — no new tests added this
+session), client build clean (62 modules), the two new migrations applied cleanly against the
+dev DB. Committed on `bede-working` per Bede's explicit request — not pushed/merged, ask before
+doing either.

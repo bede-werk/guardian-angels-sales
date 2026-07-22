@@ -633,6 +633,52 @@ opened as a PR against `main` this session** — see `git log`/GitHub for the fi
 and PR number; not hardcoded here to avoid this doc referencing state that doesn't exist yet
 at write-time.
 
+## Reopen a committed day (2026-07-22)
+
+Once a day's stops were committed, they were locked — the only way to change anything about a
+planned day after accepting it was to delete individual `visits` rows by hand, or delete the
+whole committed day and re-plan it from scratch. Added a proper "Edit" path instead.
+
+**Backend:** `scheduleDraft.reopenCommittedDay({ userId, date, homeBase })` pulls that date's
+still-planned (`status: 'planned'`, `source: 'planner'` only — an ad-hoc `source: 'manual'`
+"Log a visit" entry sharing the date must never get swept in) `visits` rows back out, deletes
+them, and inserts them into `schedule_draft_stops` on whichever draft the user's currently
+working from — reusing an existing active draft's own `homeBase` if they have one, or creating
+a new draft (from the passed-in `homeBase`) if they don't. From that point on, every existing
+draft-editing endpoint (reorder/add/remove/visit-type/reoptimize/commit) treats the day exactly
+as if it had never been committed — "Accept proposal" simply re-commits it through the normal
+`commitDay` path. New route: `POST /api/schedule-drafts/days/:date/reopen`.
+
+One correctness fix this required: `commitDay` used to leave a committed date sitting in the
+draft's own `params.days` forever, so a day could be simultaneously "committed" (real `visits`
+rows exist) AND "still an open proposal" (still shows in the draft view) — exactly the
+ambiguous state this whole feature exists to eliminate. Fixed: once at least one stop from a
+date actually commits, that date is dropped from `params.days` (skipped entirely if every stop
+collided — an all-collision day is still a live proposal, not a done one). Deliberately does
+*not* delete the draft row even if this empties `params.days` out completely, since `commitAll`
+calls `commitDay` in a loop against one `draftId` captured up front — deleting mid-loop would
+break a later iteration's ownership check. An empty-but-present draft cleans itself up on
+`PlanVisits.jsx`'s own next `load()`.
+
+**Frontend:** an "Edit" button next to each "✓ Planned" day's badge in the "Already Planned"
+list, gated on having a `homeBase` set (same requirement as generating a new draft) and
+confirm-gated ("They'll temporarily show as not-yet-scheduled while you make changes…").
+
+**Two related fixes bundled in with this work:**
+- `reoptimizeDay` used to hold a DB transaction open across the real OSRM `/trip` network call
+  (up to a few seconds) — the exact anti-pattern this file's own comments warn against
+  elsewhere, and a real connection-pool-exhaustion risk as usage grows (flagged in the
+  2026-07-15 ultra-review backlog). Fixed: the ownership check and OSRM call now happen outside
+  any transaction; only the final sort-order write re-checks ownership and runs inside one.
+- `addStop`'s two-request duplicate-add race (same place, same draft, two near-simultaneous
+  requests) used to surface a raw 500 from the `unique(['draft_id', 'place_id'])` constraint
+  instead of the clean 409 the pre-check throws for the non-race case. Fixed by catching the
+  constraint violation and translating it, same pattern `commitDay`'s own per-row insert loop
+  already used.
+
+146 backend tests pass, client build clean. Committed on `bede-working` (see `git log` for the
+hash) — not yet pushed/merged.
+
 ## Running things
 
 - Tests: `nvm use 24` then `npm test` from `server/` (runs

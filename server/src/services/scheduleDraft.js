@@ -34,6 +34,12 @@ function isUniqueViolation(err) {
 // many hours on each) rather than the old "N days ahead" auto-window, so
 // these are UI-facing bounds on that selection rather than generator config.
 const MAX_PLAN_DATES = 10;
+// Default hours budget for a date reopenCommittedDay adds to a draft's
+// params.days on the fly (there's no UI step to pick hours when reopening an
+// already-committed day — the rep is editing stops, not re-picking a
+// schedule). Mirrors PlanVisits.jsx's own DEFAULT_HOURS_PER_DAY constant —
+// keep the two equal.
+const DEFAULT_HOURS_PER_DAY = 4;
 // A day's ranking/candidate pool is only as fresh as the moment it was
 // generated — a commitment that becomes due, or a new higher-priority place,
 // between generation and the actual visit date won't retroactively reshuffle
@@ -546,7 +552,7 @@ async function loadDraftDayView(db, draftId, date) {
 // draft) for this specific date — both checked fresh, not against whatever
 // was true when the draft was generated.
 async function addStop({ draftId, userId, date, placeId, visitType }) {
-  return knex.transaction(async (trx) => {
+  await knex.transaction(async (trx) => {
     const draft = await assertOwnsDraft(trx, draftId, userId);
     const draftParams = JSON.parse(draft.params_json);
     if (!draftParams.days.some((d) => d.date === date)) {
@@ -584,18 +590,35 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
     const { max } = await trx('schedule_draft_stops').where({ draft_id: draftId, date }).max('sort_order as max').first();
     const nextSortOrder = (max ?? -1) + 1;
 
-    await trx('schedule_draft_stops').insert({ draft_id: draftId, date, place_id: placeId, visit_type: visitType || null, sort_order: nextSortOrder });
-
-    return loadDraftDayView(trx, draftId, date);
+    // Guards against the two-request race the pre-check above (own.has(placeId))
+    // can't fully close: two near-simultaneous addStop calls for the same
+    // place can both pass that SELECT before either INSERT lands. The real
+    // backstop is the DB-level unique(['draft_id', 'place_id']) constraint
+    // (see the migration that creates schedule_draft_stops) — catch its
+    // violation here and surface the same clean 409 the pre-check throws,
+    // rather than letting a raw constraint error fall through as a 500. Same
+    // pattern as commitDay's per-row insert loop below.
+    try {
+      await trx('schedule_draft_stops').insert({ draft_id: draftId, date, place_id: placeId, visit_type: visitType || null, sort_order: nextSortOrder });
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        const dupErr = new Error('That place is already in this draft');
+        dupErr.status = 409;
+        throw dupErr;
+      }
+      throw err;
+    }
   });
+
+  return loadDraftDayView(knex, draftId, date);
 }
 
 async function removeStop({ draftId, userId, date, placeId }) {
-  return knex.transaction(async (trx) => {
+  await knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
     await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: placeId }).del();
-    return loadDraftDayView(trx, draftId, date);
   });
+  return loadDraftDayView(knex, draftId, date);
 }
 
 // Discards just one day's still-open proposal, as if that date had never
@@ -612,7 +635,7 @@ async function removeStop({ draftId, userId, date, placeId }) {
 // the full recalculated draft view (there's no single "day view" to hand
 // back once the day itself no longer exists).
 async function discardDay({ draftId, userId, date }) {
-  return knex.transaction(async (trx) => {
+  const draftDeleted = await knex.transaction(async (trx) => {
     const draft = await assertOwnsDraft(trx, draftId, userId);
     await trx('schedule_draft_stops').where({ draft_id: draftId, date }).del();
 
@@ -621,12 +644,15 @@ async function discardDay({ draftId, userId, date }) {
 
     if (remainingDays.length === 0) {
       await deleteDraft(trx, draftId);
-      return null;
+      return true;
     }
 
     await trx('schedule_drafts').where({ id: draftId }).update({ params_json: JSON.stringify({ ...params, days: remainingDays }) });
-    return loadDraftView(trx, draftId);
+    return false;
   });
+
+  if (draftDeleted) return null;
+  return loadDraftView(knex, draftId);
 }
 
 // Discards the whole proposal — every day, not just one. Unlike
@@ -643,21 +669,21 @@ async function deleteActiveDraft({ draftId, userId }) {
 }
 
 async function reorderDay({ draftId, userId, date, placeIds }) {
-  return knex.transaction(async (trx) => {
+  await knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
     for (let i = 0; i < placeIds.length; i++) {
       await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: placeIds[i] }).update({ sort_order: i });
     }
-    return loadDraftDayView(trx, draftId, date);
   });
+  return loadDraftDayView(knex, draftId, date);
 }
 
 async function setVisitType({ draftId, userId, date, placeId, visitType }) {
-  return knex.transaction(async (trx) => {
+  await knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
     await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: placeId }).update({ visit_type: visitType || null });
-    return loadDraftDayView(trx, draftId, date);
   });
+  return loadDraftDayView(knex, draftId, date);
 }
 
 // Re-sequences a day's stops via a real OSRM /trip call — the ONE mutation
@@ -672,34 +698,44 @@ async function setVisitType({ draftId, userId, date, placeId, visitType }) {
 // untouched if OSRM is unreachable/times out (optimizeRoute returns null) —
 // this never drops a stop, only fails to reorder it.
 async function reoptimizeDay({ draftId, userId, date }) {
-  return knex.transaction(async (trx) => {
+  // Ownership-checked up front, outside any transaction — a plain read, same
+  // as generateAndPersistDraft's pre-transaction section. This is what lets
+  // the OSRM /trip call below (optimizeRoute) happen without holding a DB
+  // transaction open across it.
+  await assertOwnsDraft(knex, draftId, userId);
+
+  const draft = await knex('schedule_drafts').where({ id: draftId }).first();
+  const params = JSON.parse(draft.params_json);
+
+  const rows = await knex('schedule_draft_stops as s')
+    .join('places as p', 'p.id', 's.place_id')
+    .where({ 's.draft_id': draftId, 's.date': date })
+    .orderBy('s.sort_order')
+    .select('s.id as stop_id', 's.visit_type', 'p.*');
+
+  const stops = rows.map(toDraftStopShape);
+  const routable = stops.filter(isGeocoded);
+  const unroutable = stops.filter((s) => !isGeocoded(s));
+
+  if (routable.length < 2) return loadDraftDayView(knex, draftId, date); // nothing worth reordering
+
+  const result = await optimizeRoute({ start: params.homeBase, stops: routable });
+  if (!result) return loadDraftDayView(knex, draftId, date); // OSRM unreachable — order stays as-is
+
+  const newOrder = [...result.orderedStops, ...unroutable];
+
+  // Re-check ownership inside the write transaction: time has passed since
+  // the check above (an OSRM round-trip), and the write's correctness
+  // depends on being atomic with an ownership check made right before it —
+  // same reasoning as every other mutation in this file.
+  await knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
-
-    const draft = await trx('schedule_drafts').where({ id: draftId }).first();
-    const params = JSON.parse(draft.params_json);
-
-    const rows = await trx('schedule_draft_stops as s')
-      .join('places as p', 'p.id', 's.place_id')
-      .where({ 's.draft_id': draftId, 's.date': date })
-      .orderBy('s.sort_order')
-      .select('s.id as stop_id', 's.visit_type', 'p.*');
-
-    const stops = rows.map(toDraftStopShape);
-    const routable = stops.filter(isGeocoded);
-    const unroutable = stops.filter((s) => !isGeocoded(s));
-
-    if (routable.length < 2) return loadDraftDayView(trx, draftId, date); // nothing worth reordering
-
-    const result = await optimizeRoute({ start: params.homeBase, stops: routable });
-    if (!result) return loadDraftDayView(trx, draftId, date); // OSRM unreachable — order stays as-is
-
-    const newOrder = [...result.orderedStops, ...unroutable];
     for (let i = 0; i < newOrder.length; i++) {
       await trx('schedule_draft_stops').where({ draft_id: draftId, date, place_id: newOrder[i].place_id }).update({ sort_order: i });
     }
-
-    return loadDraftDayView(trx, draftId, date);
   });
+
+  return loadDraftDayView(knex, draftId, date);
 }
 
 // Nearby eligible candidates not yet in the draft, for the "day is under
@@ -808,6 +844,28 @@ async function commitDay({ draftId, userId, date }) {
 
     await trx('schedule_draft_stops').where({ draft_id: draftId, date }).del();
 
+    // Once at least one stop from this date actually became a real visit,
+    // the date is done as far as this draft is concerned — drop it from
+    // params.days so the draft stops claiming it's still an open proposal
+    // (the ambiguous "committed AND still in the active draft" state this
+    // whole reopen feature exists to eliminate). Skipped entirely if nothing
+    // committed (every stop collided) — an all-collision day is still a live
+    // proposal, not a done one. Deliberately does NOT delete the draft row
+    // even if this empties params.days out completely: commitAll calls this
+    // in a loop across multiple dates against one draftId captured up front,
+    // and deleting the row mid-loop would break a later iteration's
+    // assertOwnsDraft. An empty-but-present draft is already cleaned up by
+    // PlanVisits.jsx's own load() on its next read (see openDays().length
+    // === 0 handling there) — no further action needed here.
+    if (committedRows.length > 0) {
+      const draftRow = await trx('schedule_drafts').where({ id: draftId }).first();
+      const draftParams = JSON.parse(draftRow.params_json);
+      const remainingDays = draftParams.days.filter((d) => d.date !== date);
+      if (remainingDays.length !== draftParams.days.length) {
+        await trx('schedule_drafts').where({ id: draftId }).update({ params_json: JSON.stringify({ ...draftParams, days: remainingDays }) });
+      }
+    }
+
     const skippedCollisions = [
       ...precheckCollisions.map((r) => ({ place_id: r.place_id, place_name: r.place_name })),
       ...ungeocodedRows.map((r) => ({ place_id: r.place_id, place_name: r.place_name })),
@@ -847,6 +905,78 @@ async function deleteCommittedDay(db, { userId, date }) {
   return db('visits').where({ user_id: userId, scheduled_date: date, status: 'planned' }).del();
 }
 
+// Reopens a whole day's ALREADY-COMMITTED visits back into the same
+// draft-editing surface used before commit (schedule_draft_stops): pulls
+// those `visits` rows back out, deletes them, and hands the day to whichever
+// draft the user's currently working from — creating one (sourced from the
+// passed-in `homeBase`) if they don't have one yet, or reusing an existing
+// draft's own homeBase otherwise (a draft's homeBase is single-sourced from
+// whenever it was created/last generated — a later per-day reopen shouldn't
+// silently override it). Scoped to source: 'planner' only, same reasoning as
+// commitDay's own source tagging — an ad-hoc "Log a visit" entry
+// (source: 'manual') was never part of a plan and must never get swept into
+// one just because it shares a date with a planner-committed day. Once the
+// rows are back in schedule_draft_stops, every existing draft-editing
+// endpoint (reorder/add/remove/visit-type/reoptimize/commit) works on this
+// day exactly as if it had never been committed — "Accept proposal" simply
+// re-commits it through the normal commitDay path.
+//
+// DB work stays inside a short transaction; loadDraftView (which can trigger
+// a real OSRM call via evaluateDay) runs after it resolves — same
+// no-network-call-inside-a-transaction convention as every other mutation in
+// this file.
+async function reopenCommittedDay({ userId, date, homeBase }) {
+  const draftId = await knex.transaction(async (trx) => {
+    const rows = await trx('visits')
+      .where({ user_id: userId, scheduled_date: date, status: 'planned', source: 'planner' })
+      .orderBy('sort_order')
+      .select('id', 'place_id', 'visit_type', 'sort_order');
+
+    if (rows.length === 0) {
+      const err = new Error('Nothing committed for this date to edit');
+      err.status = 404;
+      throw err;
+    }
+
+    const existing = await getActiveDraft(trx, userId);
+    let id;
+    let params;
+    if (existing) {
+      id = existing.id;
+      params = JSON.parse(existing.params_json);
+    } else {
+      if (!homeBase || homeBase.lat == null || homeBase.lng == null) {
+        const err = new Error('homeBase is required to start editing this day');
+        err.status = 400;
+        throw err;
+      }
+      params = { days: [], homeBase, zoneOverrides: {} };
+      id = await createDraft(trx, { userId, params });
+    }
+
+    if (!params.days.some((d) => d.date === date)) {
+      params.days.push({ date, hoursPerDay: DEFAULT_HOURS_PER_DAY });
+      params.days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      await trx('schedule_drafts').where({ id }).update({ params_json: JSON.stringify(params) });
+    }
+
+    const stopRows = rows.map((r, i) => ({
+      draft_id: id,
+      date,
+      place_id: r.place_id,
+      visit_type: r.visit_type,
+      sort_order: r.sort_order ?? i,
+    }));
+    await trx('schedule_draft_stops').insert(stopRows);
+
+    await trx('visits').whereIn('id', rows.map((r) => r.id)).del();
+
+    return id;
+  });
+
+  return loadDraftView(knex, draftId);
+}
+
 module.exports = {
   MAX_PLAN_DATES,
   MAX_DAYS_AHEAD,
@@ -876,4 +1006,5 @@ module.exports = {
   commitDay,
   commitAll,
   deleteCommittedDay,
+  reopenCommittedDay,
 };

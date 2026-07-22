@@ -3,6 +3,7 @@ import { api, ROLE_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
+import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
 
 // Create or edit a person. `person` present = editing (form is pre-filled from
 // it); absent = creating a brand-new one from a blank form.
@@ -39,9 +40,9 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
       return;
     }
     if (!person && form.name.trim().length >= 3) {
-      setSaving(true);
-      const matches = await api.people.list({ search: form.name.trim() });
-      setSaving(false);
+      const result = await runPreSaveCheck(setSaving, setError, () => api.people.list({ search: form.name.trim() }));
+      if (!result.ok) return;
+      const matches = result.value;
       if (matches.length > 0) {
         const names = matches.slice(0, 5).map((m) => m.name).join(', ');
         setConfirmPrompt({

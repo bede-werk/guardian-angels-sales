@@ -21,6 +21,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const [removingFromPlace, setRemovingFromPlace] = useState(false);
   const [assigning, setAssigning] = useState(false); // whether the "assign to a place" picker is open
   const [placeDraft, setPlaceDraft] = useState('');
+  const [savingAssign, setSavingAssign] = useState(false); // in-flight guard for assignToPlace, same shape as saveField's
   const [removingReferralId, setRemovingReferralId] = useState(null); // referral currently being deleted (disables its row)
   const [loggingReferral, setLoggingReferral] = useState(false); // whether the Log Referral modal is open
   const [viewingReferral, setViewingReferral] = useState(null); // referral whose full detail popup is open, if any
@@ -172,10 +173,13 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     setEditingNotes(false);
     setEditingPreferences(false);
     setEditingBirthday(false);
+    setAssigning(false);
+    setPlaceDraft('');
   }
 
   async function assignToPlace() {
     if (!placeDraft) return;
+    setSavingAssign(true);
     try {
       await api.people.update(data.id, { place_id: placeDraft });
       setAssigning(false);
@@ -184,6 +188,8 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
       onChanged?.();
     } catch (e) {
       window.alert(e.message);
+    } finally {
+      setSavingAssign(false);
     }
   }
 
@@ -322,13 +328,15 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                 </div>
               ) : assigning ? (
                 <div className="row" style={{ alignItems: 'center' }}>
-                  <select value={placeDraft} onChange={(e) => setPlaceDraft(e.target.value)} autoFocus>
+                  <select value={placeDraft} onChange={(e) => setPlaceDraft(e.target.value)} autoFocus disabled={savingAssign}>
                     <option value="">Select a place…</option>
                     {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                   <div className="tag-list" style={{ flex: 'unset' }}>
-                    <Button size="small" title="Link this person to the selected place" onClick={assignToPlace} disabled={!placeDraft}>Save</Button>
-                    <Button variant="secondary" size="small" title="Close without assigning" onClick={() => { setAssigning(false); setPlaceDraft(''); }}>Cancel</Button>
+                    <Button size="small" title="Link this person to the selected place" onClick={assignToPlace} disabled={!placeDraft || savingAssign}>
+                      {savingAssign ? 'Saving…' : 'Save'}
+                    </Button>
+                    <Button variant="secondary" size="small" title="Close without assigning" onClick={() => { setAssigning(false); setPlaceDraft(''); }} disabled={savingAssign}>Cancel</Button>
                   </div>
                 </div>
               ) : (

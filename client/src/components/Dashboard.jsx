@@ -138,7 +138,7 @@ export default function Dashboard({ date, userId }) {
 
       {/* Clicking any place row/card above opens this same detail modal. */}
       {selectedPlaceId && (
-        <PlaceDetail placeId={selectedPlaceId} userId={userId} onClose={() => setSelectedPlaceId(null)} onChanged={load} />
+        <PlaceDetail placeId={selectedPlaceId} userId={userId} onClose={() => setSelectedPlaceId(null)} onChanged={load} onDeleted={load} />
       )}
     </div>
   );
