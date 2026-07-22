@@ -228,6 +228,29 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    more specific target than the row itself — drop the row's own highlight so
    only the button appears selected, instead of both lighting up at once. */
 .hover-row:has(.btn:hover) { background: none; }
+
+/* Plan My Visits' stop rows: the click-to-open-detail area is only .main
+   (the drag handle + reorder buttons sit to its left, the time estimate +
+   remove button to its right, as separate flex siblings — see .stop below)
+   — painting just .main's own box on hover looked like a narrow, off-center
+   highlight rather than "this whole row opens the place." :has() lets the
+   full-width .stop <li> (no horizontal padding, so its background already
+   reaches edge to edge) repaint itself off its .main child's hover state
+   instead. Both this and .main's own highlight are explicitly cancelled
+   while hovering the visit-type <select> nested inside .main — picking a
+   visit type isn't "open the detail" and shouldn't look selected as if it
+   were; the extra :has(select:hover) on each makes that override reliably
+   win on specificity over the plain :hover/:has(.main…) rules above, no
+   source-order dependency. Hovering the reorder/remove buttons never
+   triggers any of this in the first place, since they're .main's siblings,
+   not descendants. Instant on/off here (no fade) — .hover-row's shared
+   transition would only animate .main's own background, not the .stop
+   background painted alongside it below, so the two layers visibly fell out
+   of sync (one fading, one snapping) instead of reading as one highlight. */
+.stop .main.hover-row { transition: none; }
+.stop .main.hover-row:hover:has(select:hover) { background: none; }
+.stop:has(.main.hover-row:hover) { background: var(--blue-tint-1); }
+.stop:has(.main.hover-row:hover):has(select:hover) { background: none; }
 /* Persistent version of the above for rows that stay picked after the click
    (e.g. AssignPersonModal's person list) — a stronger tint so it still reads
    as "on" once the mouse moves away. */
@@ -370,6 +393,21 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .selected-days-list { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
 .selected-days-row { display: flex; align-items: center; gap: 8px; }
 .selected-days-row .date-label { flex: 1; font-size: 13px; font-weight: 600; }
+
+/* Two-part duration picker (hours + minutes) for a planned date's daily
+   budget — PlanVisits.jsx keeps this as one field on the wire
+   (`hoursPerDay`, a decimal), but shows it as two selects. Grouped inside
+   one bordered pill (shared border, no border/outline of their own on the
+   individual selects) so it still reads as a single "duration" control
+   rather than two disconnected dropdowns. */
+.duration-picker {
+  display: inline-flex; align-items: center; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: #fff; overflow: hidden;
+}
+.duration-picker select { width: auto; border: none; background: none; padding: 8px 6px; }
+.duration-picker select:focus { outline: none; }
+.duration-picker:focus-within { outline: 2px solid var(--blue-tint-3); border-color: var(--blue); }
+.duration-sep { color: var(--muted); font-size: 12px; }
 
 /* Plan My Visits' generate form: "Starting point" + "Plan for these dates"
    as two EQUAL-width columns with a vertical rule dead-center between them,

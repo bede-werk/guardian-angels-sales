@@ -703,6 +703,50 @@ Verified live: real Lincoln address, live suggestions, selected one, start-locat
 updated correctly, no console errors. 146 backend tests pass (route deletion only, no logic
 changed), client build clean.
 
+## Plan My Visits: duration picker, click-to-view place detail, default visit type (2026-07-22)
+
+Four more small live-feedback rounds from Bede on the same tab, same day.
+
+**Hours + minutes budget picker.** The per-date daily budget was a single whole-hours
+`<select>` (2-6). `hoursPerDay` was already a decimal on the wire (`budgetMinutes = hoursPerDay
+* 60`, validated as just `> 0`), so no backend change was needed — replaced it with two selects
+(hours 1-9, minutes 0/15/30/45) grouped in one bordered `.duration-picker` pill so it still
+reads as one control. `splitHoursPerDay()` converts the stored decimal for display;
+`HOUR_OPTIONS` starts at 1 (never 0) so the pair can never combine to a 0-value. Verified with a
+real generated draft at a 4.5-hour budget (`hoursPerDay: 4.5` in the request, `~4h 22m of 4h
+30m` in the resulting day).
+
+**Click a stop to open its place detail.** Reused `PlaceDetail.jsx` unchanged — the same
+`placeId`/`userId`/`onClose`/`onChanged`/`onDeleted` modal Places/People/Dashboard already use.
+`PlanVisits.jsx` didn't take a `userId` prop before (schedule-draft endpoints infer the user
+from the auth token, never needed one) — added it, threaded from `App.jsx`. Click target is
+just the stop's `.main` block, not the whole `<li>`, since that row already owns drag-and-drop
+plus its own reorder/visit-type/remove controls as siblings — only the visit-type `<select>`
+(nested inside `.main`) needed `stopPropagation()`. Deleting a place from inside the modal is
+safe with no backend change: `schedule_draft_stops.place_id` is `ON DELETE CASCADE`, so the
+stop just disappears on the next `reload()`.
+
+**Hover-highlight polish, two rounds.** The highlight only covered `.main`'s own box, not the
+full row (`.reorder`/`.order`/`.actions` are siblings, not descendants) — fixed via
+`.stop:has(.main.hover-row:hover)` repainting the full-width `<li>`, with a matching
+`:has(...):has(select:hover)` cancel rule so the visit-type select and the reorder/remove
+buttons never show it. Then: the shared `.hover-row` transition only animated one of the two
+now-overlapping background layers, so hovering looked like an inconsistent fade — scoped
+`transition: none` to this specific row (not the shared class, which still fades everywhere
+else it's used) for instant on/off instead, per Bede's preference.
+
+**Default visit type: Drop-in, not Working visit.** `config/visitTypes.js`'s
+`DEFAULT_VISIT_TYPE` changed from `working_visit` (30 min) to `drop_in` (7 min). Bigger than a
+UI tweak: all 262 real places have `default_visit_type: NULL`, so every one of them rides this
+fallback for actual duration budgeting, not just a dropdown's initial value — a test 4-hour day
+went from 6 packed stops to 12. Flagged explicitly to Bede for that reason. Two
+`scheduleGenerator.test.js` tests encoded the old 30-minute assumption in a tight-budget
+exclusion/rollover scenario; fixed by pinning those specific place fixtures to
+`default_visit_type: 'working_visit'` explicitly rather than just updating the expected
+numbers, so the tests stay correct regardless of the global default going forward.
+
+146 backend tests pass (2 fixed), client build clean throughout all four changes.
+
 ## Running things
 
 - Tests: `nvm use 24` then `npm test` from `server/` (runs

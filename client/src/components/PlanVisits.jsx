@@ -6,9 +6,24 @@ import PlacePicker from './ui/PlacePicker';
 import AddressAutocomplete from './ui/AddressAutocomplete';
 import Calendar from './ui/Calendar';
 import EmptyState from './ui/EmptyState';
+import PlaceDetail from './PlaceDetail';
 
-const HOURS_OPTIONS = [2, 3, 4, 5, 6];
+// The per-day budget picker shows hours + minutes as two selects, but the
+// wire/schema shape is still a single decimal `hoursPerDay` (see
+// scheduleDraft.js's `budgetMinutes = hoursPerDay * 60`) — HOUR_OPTIONS
+// starts at 1, never 0, so hours+minutes can never both be zero and trip
+// the server's `hoursPerDay > 0` validation.
+const HOUR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const MINUTE_OPTIONS = [0, 15, 30, 45];
 const DEFAULT_HOURS_PER_DAY = 4;
+
+// Decimal hoursPerDay -> whole { hours, minutes } for the two selects above.
+// 15-minute increments are exactly representable in binary floating point
+// (0.25/0.5/0.75), so there's no rounding drift round-tripping through this.
+function splitHoursPerDay(hoursPerDay) {
+  const totalMinutes = Math.round(hoursPerDay * 60);
+  return { hours: Math.floor(totalMinutes / 60), minutes: totalMinutes % 60 };
+}
 const MAX_PLAN_DATES = 10; // mirrors scheduleDraft.js's MAX_PLAN_DATES
 const MAX_DAYS_AHEAD = 7; // mirrors scheduleDraft.js's MAX_DAYS_AHEAD
 
@@ -92,10 +107,11 @@ function openDays(draft) {
 // live time math and over-budget flagging just fall out of that, per the
 // interaction model: edits recalculate in place, nothing is ever auto-
 // dropped or auto-reshuffled beyond what the user themselves just did.
-function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded }) {
+function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded, userId }) {
   const [busy, setBusy] = useState(false); // a reorder/add/remove request is in flight for this day
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
+  const [viewingPlaceId, setViewingPlaceId] = useState(null); // stop whose full PlaceDetail is open, if any
 
   // Two-part gate for the Re-optimize button below, both set by anything
   // that changes which stops are in the day or their order (add/remove/
@@ -399,7 +415,11 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     <button onClick={() => move(i, 1)} disabled={rowBusy || i === day.stops.length - 1} title="Move down">▼</button>
                   </div>
                   <div className="order">{i + 1}</div>
-                  <div className="main">
+                  <div
+                    className="main hover-row"
+                    title="View place details"
+                    onClick={() => setViewingPlaceId(stop.place_id)}
+                  >
                     <div className="name">{stop.place_name}</div>
                     <div className="meta">
                       {stop.address ? `${stop.address}, ` : ''}{stop.city} {stop.zip}
@@ -410,6 +430,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                       <select
                         value={stop.visitType}
                         onChange={(e) => changeVisitType(stop, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
                         disabled={rowBusy}
                         style={{ width: 'auto' }}
                       >
@@ -478,6 +499,23 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
           </div>
         )}
       </div>
+
+      {/* Clicking a proposed stop's name opens its full place detail (same
+          modal Places.jsx/People.jsx/Dashboard.jsx use) so a rep can check
+          capacity/notes/history/contacts before deciding what visit type
+          this stop should be. onChanged/onDeleted both just reload() the
+          draft — a deleted place cascades its schedule_draft_stops row
+          server-side, so the stop simply disappears from this day on the
+          next load, same as removing it here directly. */}
+      {viewingPlaceId && (
+        <PlaceDetail
+          placeId={viewingPlaceId}
+          userId={userId}
+          onClose={() => setViewingPlaceId(null)}
+          onChanged={reload}
+          onDeleted={reload}
+        />
+      )}
     </div>
   );
 }
@@ -487,7 +525,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
 // (DraftDay's "Accept proposal" button) and all-remaining-days (this
 // component's "Accept all proposals" button). Built on top of sub-slice 2's
 // live editing.
-export default function PlanVisits() {
+export default function PlanVisits({ userId }) {
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -819,8 +857,8 @@ export default function PlanVisits() {
     });
   }
 
-  function setHoursForDate(iso, hours) {
-    setSelectedDays((prev) => prev.map((d) => (d.date === iso ? { ...d, hoursPerDay: Number(hours) } : d)));
+  function setHoursForDate(iso, hoursPerDay) {
+    setSelectedDays((prev) => prev.map((d) => (d.date === iso ? { ...d, hoursPerDay: Number(hoursPerDay) } : d)));
   }
 
   function removeDate(iso) {
@@ -950,14 +988,33 @@ export default function PlanVisits() {
                 </div>
                 <div className="selected-days-list" style={{ flex: 'none', minWidth: 0 }}>
                   {selectedDays.length > 0 && (
-                    selectedDays.map((d) => (
+                    selectedDays.map((d) => {
+                      const { hours, minutes } = splitHoursPerDay(d.hoursPerDay);
+                      const dateLabel = formatDate(d.date);
+                      return (
                       <div key={d.date} className="selected-days-row">
-                        <span className="date-label">{formatDate(d.date)}</span>
-                        <select value={d.hoursPerDay} onChange={(e) => setHoursForDate(d.date, e.target.value)} style={{ width: 'auto' }}>
-                          {HOURS_OPTIONS.map((h) => (
-                            <option key={h} value={h}>{h} hrs</option>
-                          ))}
-                        </select>
+                        <span className="date-label">{dateLabel}</span>
+                        <div className="duration-picker">
+                          <select
+                            aria-label={`Hours budgeted for ${dateLabel}`}
+                            value={hours}
+                            onChange={(e) => setHoursForDate(d.date, Number(e.target.value) + minutes / 60)}
+                          >
+                            {HOUR_OPTIONS.map((h) => (
+                              <option key={h} value={h}>{h} h</option>
+                            ))}
+                          </select>
+                          <span className="duration-sep">:</span>
+                          <select
+                            aria-label={`Minutes budgeted for ${dateLabel}`}
+                            value={minutes}
+                            onChange={(e) => setHoursForDate(d.date, hours + Number(e.target.value) / 60)}
+                          >
+                            {MINUTE_OPTIONS.map((m) => (
+                              <option key={m} value={m}>{String(m).padStart(2, '0')} m</option>
+                            ))}
+                          </select>
+                        </div>
                         <Button
                           variant="ghost"
                           size="small"
@@ -968,7 +1025,8 @@ export default function PlanVisits() {
                           ✕
                         </Button>
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1046,6 +1104,7 @@ export default function PlanVisits() {
               onDayDiscarded={handleDayDiscarded}
               onError={setError}
               reload={load}
+              userId={userId}
             />
           ))
       )}

@@ -97,7 +97,7 @@ export default function App() {
       {/* Only the active tab's component is mounted — the others unmount entirely,
           resetting their state each time you come back to them. */}
       {tab === 'dashboard' && <Dashboard date={date} userId={authUser.id} />}
-      {tab === 'planner' && <PlanVisits />}
+      {tab === 'planner' && <PlanVisits userId={authUser.id} />}
       {tab === 'places' && <Places userId={authUser.id} />}
       {tab === 'people' && <People userId={authUser.id} />}
       {tab === 'mapping' && <NeedsMapping onChanged={refreshMappingCount} />}

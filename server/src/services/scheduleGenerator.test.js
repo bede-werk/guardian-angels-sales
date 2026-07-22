@@ -419,10 +419,12 @@ describe('generateDraft', () => {
     // but East is listed first and capacityRank ties keep insertion order via
     // a stable sort) only for day 1; a tight budget fits exactly one stop, so
     // after day 1 dedupes East's top pick, day 2 should reconsider and pick
-    // whichever region now has the top remaining candidate.
-    const eastTop = candidate(place(1, { region: 'East Lincoln', capacity_level: 'high' }));
-    const eastSecond = candidate(place(2, { region: 'East Lincoln', capacity_level: 'low' }));
-    const southwestTop = candidate(place(3, { region: 'Southwest Lincoln', capacity_level: 'high', lat: SOUTHWEST_LINCOLN.lat, lng: SOUTHWEST_LINCOLN.lng }));
+    // whichever region now has the top remaining candidate. Pinned to
+    // working_visit explicitly (not relying on config's DEFAULT_VISIT_TYPE)
+    // so "tight" stays tight regardless of what the global default is set to.
+    const eastTop = candidate(place(1, { region: 'East Lincoln', capacity_level: 'high', default_visit_type: 'working_visit' }));
+    const eastSecond = candidate(place(2, { region: 'East Lincoln', capacity_level: 'low', default_visit_type: 'working_visit' }));
+    const southwestTop = candidate(place(3, { region: 'Southwest Lincoln', capacity_level: 'high', lat: SOUTHWEST_LINCOLN.lat, lng: SOUTHWEST_LINCOLN.lng, default_visit_type: 'working_visit' }));
 
     const result = await generateDraft({
       candidates: [eastTop, eastSecond, southwestTop],
@@ -469,9 +471,11 @@ describe('generateDraft', () => {
   });
 
   test('a candidate excluded by budget on day 1 remains available and gets packed on day 2', async () => {
+    // Pinned to working_visit explicitly so the 1-hour budget stays tight
+    // enough to exclude a second stop regardless of the global default.
     const candidates = [
-      candidate(place(1, { capacity_level: 'high' })),
-      candidate(place(2, { capacity_level: 'medium' })),
+      candidate(place(1, { capacity_level: 'high', default_visit_type: 'working_visit' })),
+      candidate(place(2, { capacity_level: 'medium', default_visit_type: 'working_visit' })),
     ];
     const result = await generateDraft({
       candidates, days: mkDays(2, 1), homeBase: DOWNTOWN,

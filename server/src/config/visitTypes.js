@@ -26,7 +26,7 @@ module.exports = {
   },
 
   // Used when neither a visit nor its place specifies a type.
-  DEFAULT_VISIT_TYPE: 'working_visit',
+  DEFAULT_VISIT_TYPE: 'drop_in',
 
   // Flat per-stop overhead that isn't drive time and isn't the visit itself:
   // reviewing notes/history on the way in, logging the outcome on the way

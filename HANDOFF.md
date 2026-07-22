@@ -172,6 +172,26 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   real suggestions, selected one, start location set correctly) via a temporary Lisa Marks
   smoke-test token, cleared after. 146 tests pass, client build clean. Not yet
   pushed/merged.
+- **Also 2026-07-22, four more live-feedback rounds on "Plan My Visits":** (1) the per-date
+  budget picker now does hours **and** minutes (two selects grouped in one `.duration-picker`
+  pill) instead of whole hours only — needed zero backend changes, `hoursPerDay` was already a
+  decimal on the wire. (2) Clicking a proposed stop now opens its full `PlaceDetail` (reused
+  as-is — same modal Places/People/Dashboard already use) so a rep can check capacity/notes/
+  history before picking a visit type; `PlanVisits.jsx` gained a `userId` prop (threaded from
+  `App.jsx`, same as the other tabs) since `PlaceDetail` needs it downstream. (3) Two rounds of
+  hover-highlight polish on that same stop row: made the highlight cover the whole row (`:has()`
+  off `.main`'s hover state, not just `.main`'s own box) while excluding the visit-type select
+  and reorder/remove buttons, then made it instant instead of partially-fading (the shared
+  `.hover-row` transition only animated one of the two now-overlapping background layers).
+  (4) `config/visitTypes.js`'s `DEFAULT_VISIT_TYPE` changed from `working_visit` (30 min) to
+  `drop_in` (7 min) — flagged to Bede as a real behavior change, not cosmetic: every one of the
+  262 real places has `default_visit_type: NULL`, so all of them ride this fallback, and it's
+  the actual per-stop duration the planner budgets, not just a dropdown's initial value (a test
+  4-hour day went from packing 6 stops to 12). Two `scheduleGenerator.test.js` tests that
+  encoded the old 30-minute assumption in a tight-budget scenario got their specific place
+  fixtures pinned to `working_visit` explicitly, so they test what they're supposed to
+  regardless of the global default. 146 tests pass (2 fixed), client build clean. Full detail
+  in `NOTES.md`'s matching 2026-07-22 entry.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
@@ -789,6 +809,15 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   `POST /api/geocode` route and `api.geocode()` client fn are gone (dead code once this
   landed) — this does **not** touch place-address geocoding (§9A), which still runs through
   the free Census geocoder untouched. Verified live, 146 tests pass, client build clean.
+- **Also 2026-07-22, four more "Plan My Visits" live-feedback rounds:** the per-date budget
+  picker supports minutes now, not just whole hours; clicking a proposed stop opens its full
+  `PlaceDetail` (capacity/notes/people/history) so a rep can make a better-informed visit-type
+  choice; the stop row's hover highlight covers the whole row (not just its clickable `.main`
+  sub-box) and turns on/off instantly rather than partially fading; and the route planner's
+  fallback visit-type duration is now **Drop-in (7 min)**, not Working visit (30 min) — a real
+  scheduling-behavior change since every place currently rests on this fallback, not just a
+  UI default. See §0's matching bullet and `NOTES.md` for full detail. 146 tests pass (2 fixed
+  to stay correct under the new default), client build clean.
 
 ---
 

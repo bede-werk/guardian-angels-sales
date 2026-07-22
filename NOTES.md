@@ -821,3 +821,77 @@ of the app, selected one, and the start-location display updated correctly ("Sta
 Lisa Marks (id 5) smoke-test token, cleared afterward. No console errors. 146 backend tests
 pass (unchanged — no backend logic touched besides deleting the dead route), client build
 clean.
+
+## 2026-07-22 (later still) — Plan My Visits: duration picker, click-to-view place detail, default visit type
+
+Four more small, targeted UX requests from Bede on the same "Plan My Visits" surface, same
+session/branch (`bede-working`).
+
+**Hours + minutes duration picker.** The per-date daily-budget control was a single `<select>`
+in whole-hour steps (2/3/4/5/6 hrs). Bede wanted minute-level granularity. Turned out to need
+zero backend changes — `hoursPerDay` was already a decimal on the wire (`scheduleDraft.js`'s
+`budgetMinutes = hoursPerDay * 60`, validated only as `> 0`, no integer requirement), so a value
+like 4.5 was already fully supported end to end; only the UI was artificially limited to whole
+hours. Replaced the single select with two (`HOUR_OPTIONS` 1-9, `MINUTE_OPTIONS` 0/15/30/45,
+`PlanVisits.jsx`), grouped inside one bordered `.duration-picker` pill (`styles.css`) so it
+still reads as one "duration" control rather than two disconnected dropdowns.
+`splitHoursPerDay()` converts the stored decimal to whole `{hours, minutes}` for display;
+`HOUR_OPTIONS` deliberately starts at 1 (never 0) so the two selects can never combine to a
+0-value that would trip the server's `hoursPerDay > 0` check. Verified live end-to-end,
+including generating a real draft with a 4.5-hour budget and confirming the request body
+(`hoursPerDay: 4.5`) and the resulting draft's `~4h 22m of 4h 30m` display both came out right.
+
+**Click a proposed stop to open its full place detail.** Bede wanted to see a place's full
+context (notes, capacity, people, referral metrics, visit history) before deciding what visit
+type a proposed stop should get, without leaving the planner. Reused `PlaceDetail.jsx` as-is —
+already a self-contained "slide-in modal" component (`placeId`/`userId`/`onClose`/`onChanged`/
+`onDeleted` props) shared by Places.jsx/People.jsx/Dashboard.jsx — rather than building anything
+new. `PlanVisits.jsx` didn't receive a `userId` prop before now (schedule-draft endpoints infer
+the user from the auth token server-side, so it never needed one); added it, threaded from
+`App.jsx` the same way Places/People/Dashboard already get it, since `PlaceDetail` needs it for
+its own nested "Log a visit"/`PersonDetail` actions. The click target is just the stop's `.main`
+block (name/meta/tags), not the whole `<li>` — that row already has drag-and-drop plus several
+of its own interactive controls (reorder buttons, the visit-type select, a remove button) as
+flex siblings/children, and wrapping the entire row would have meant adding
+`stopPropagation()` to every one of them. Only the visit-type `<select>` needed one (it's nested
+inside `.main`). Deleting a place from inside this embedded modal is safe without any backend
+change: `schedule_draft_stops.place_id` is `ON DELETE CASCADE`, so the stop's row just vanishes
+server-side and `reload()` (passed through as `onChanged`/`onDeleted`) picks that up on the next
+fetch — same outcome as removing the stop directly.
+
+**Hover-highlight cosmetic fixes, two rounds.** First: the row's hover highlight only painted
+`.main`'s own box (the middle slice of the row), not the full row width, since `.reorder`/
+`.order`/`.actions` are `.main`'s flex siblings, not descendants — looked like a narrow,
+off-center highlight rather than "this whole row opens the place." Fixed with `:has()`
+(`.stop:has(.main.hover-row:hover) { background: var(--blue-tint-1); }` — the existing
+`.hover-row` shared class, reused as-is, doesn't have this problem anywhere else it's used,
+since in every other spot the hover-row div already *is* the full clickable row) so the
+full-width `.stop` `<li>` repaints off its `.main` child's hover state, plus a matching
+cancel-both-layers rule (`:has(...):has(select:hover)`) so hovering the visit-type select
+nested inside `.main`, or the reorder/remove buttons (`.main`'s siblings, never triggering
+`.main:hover` at all), shows no row-wide highlight — only each control's own hover style.
+Second round, reported as "that animation looking thing": the pre-existing `.hover-row`
+class's `transition: background 0.1s ease` only animated `.main`'s own background, not the new
+`.stop`-level one painted alongside it, so the two layers visibly fell out of sync (one fading,
+one snapping) instead of reading as one highlight. Scoped `transition: none` to `.stop .main
+.hover-row` specifically (not the shared `.hover-row` class itself, which still fades normally
+everywhere else it's used — click-to-edit notes, PersonDetail's place row, PlaceDetail's people
+roster) per Bede's preference for instant on/off over a matched fade.
+
+**Default visit type changed to Drop-in.** `server/src/config/visitTypes.js`'s
+`DEFAULT_VISIT_TYPE` was `working_visit` (30 min); changed to `drop_in` (7 min). Flagged to
+Bede as a bigger change than it might sound: every one of the 262 real places in the dev DB
+currently has `default_visit_type: NULL`, so *all of them* were resting on this fallback — it's
+not just what a dropdown shows pre-selected, it's the actual duration the route planner budgets
+per stop when packing a day (confirmed live: the same 4-hour test budget went from packing 6
+stops to 12). Two `scheduleGenerator.test.js` tests broke as a direct result — both were using a
+deliberately tight 1-hour budget to test "a candidate excluded by budget on day 1 rolls over to
+day 2," calibrated against the old 30-minute default, so a 7-minute default no longer excluded
+the second candidate. Fixed by pinning those two tests' specific place fixtures to
+`default_visit_type: 'working_visit'` explicitly, rather than just updating the expected
+numbers — keeps the tests' actual intent (tight-budget exclusion/rollover) correct regardless
+of whatever the global default gets set to next.
+
+**Verification:** 146 backend tests pass (2 fixed, not just re-passing by coincidence), client
+build clean throughout all four changes. Not yet committed as of this entry — see the top of
+`git log` for whether that's since changed.
