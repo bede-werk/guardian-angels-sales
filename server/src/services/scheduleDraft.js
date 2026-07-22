@@ -430,14 +430,18 @@ function toDraftStopShape(row) {
 }
 
 // Real `visits` rows already committed for this user — shown ALONGSIDE
-// (never instead of) whatever's still left in the draft for that date,
-// since a partial commit (some stops hit a same-day collision and stayed in
-// the draft — see commitDay's skippedCollisions) can leave both non-empty
-// for the same day. Read-only here: editing an already-committed visit goes
-// through the normal visit-log flow elsewhere in the app (PersonDetail/
-// PlaceDetail), not this draft UI. `place_id` can be null (detach-not-
-// delete) — the left join and the `place_name` snapshot column both exist
-// specifically to survive that.
+// (never instead of) whatever's still left in the draft for that date.
+// commitDay always commits a day's stops as a single unit and clears every
+// schedule_draft_stops row for that date (plus drops the date from
+// params.days once anything committed), so this draft's OWN commit action
+// can never leave both non-empty for the same day. They can still coexist
+// if a visit for that date was logged outside this draft entirely (directly,
+// or via another draft) while this draft still lists the date as open.
+// Read-only here: editing an already-committed visit goes through the
+// normal visit-log flow elsewhere in the app (PersonDetail/PlaceDetail), not
+// this draft UI. `place_id` can be null (detach-not-delete) — the left join
+// and the `place_name` snapshot column both exist specifically to survive
+// that.
 function committedVisitsQuery(db, { userId }) {
   return db('visits as v')
     .leftJoin('places as p', 'p.id', 'v.place_id')
@@ -627,8 +631,11 @@ async function removeStop({ draftId, userId, date, placeId }) {
 // opinion about at all (unlike every other per-day mutation here, which
 // keeps every date in params.days fixed — see loadDraftView). The rest of
 // the draft (its other days) is untouched, and so is anything already
-// accepted for THIS day (a prior partial commit's visits rows live in
-// `visits`, not `schedule_draft_stops`, so this can never touch them). If
+// committed for THIS day (any visits already logged for that date live in
+// `visits`, not `schedule_draft_stops`, so this can never touch them —
+// though in practice a fully-committed date is dropped from params.days by
+// commitDay and can't be re-picked per validateDays, so this mostly guards
+// against a visit logged outside this draft's own commit flow). If
 // this was the last remaining date, the whole draft is deleted rather than
 // left behind as an empty, dateless husk — returns null in that case (same
 // "no active draft" shape getActiveDraft/loadDraftView return), otherwise

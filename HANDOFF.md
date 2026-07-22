@@ -137,7 +137,15 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   picker; `assignToPlace()` got an in-flight guard matching the rest of that file's save
   handlers; `useDuplicateMatches`'s effect now depends on `search` (its one caller,
   `NeedsMapping.jsx`, had to get its own `search` callback wrapped in `useCallback` first, or
-  the fix would've caused a refetch on every unrelated keystroke in that modal). Two items were
+  the fix would've caused a refetch on every unrelated keystroke in that modal); the long-open
+  Needs Mapping geocoding gap (§14A) is closed — `notesReview.js`'s `POST /:id/create-place`
+  now calls `geocodeAddress()` the same way `routes/places.js`'s create route does, best-effort
+  and non-blocking, so places created from that flow no longer silently skip lat/lng. Also
+  cleaned up a few stale/imprecise comments in `scheduleDraft.js` (`committedVisitsQuery`,
+  `removeStop`) that still described pre-reopen-feature behavior (implied a partial commit
+  could leave both a committed visit and a draft stop for the same day — no longer possible now
+  that `commitDay` always commits/clears a full day and drops it from `params.days`) — no
+  behavior change, just brought the comments back in line with the code. Two items were
   deliberately left for Bede to scope later: `visits.skip_reason`'s wider "skip a stop" concept
   could be rebuilt as a real feature (declined — cleanup only, per above) and the remaining
   ~9 unbuilt scheduling-field API surface / `visit_type`-not-patchable capability gaps (see
@@ -184,9 +192,8 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
 first): extending "needs attention" coverage to the "Plan My Visits" workspace (the old
 scheduler's "Today's Route" screen is gone — this app now has one route-planning surface),
 feeding referral metrics into priority scoring (the natural successor to the old "Phase 2
-relationship-temp" idea), finishing the remaining Needs Mapping referrers, fixing the
-Needs-Mapping geocoding gap (§14A), the 7 places whose addresses didn't geocode (§9A) need
-manual review.
+relationship-temp" idea), finishing the remaining Needs Mapping referrers, the 7 places whose
+addresses didn't geocode (§9A) need manual review.
 
 **If something in this note contradicts the actual code** (a file's gone, a function's
 renamed), trust the code — this note is a snapshot from one point in time, not a live source
@@ -704,9 +711,9 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   standing instruction to keep doing it automatically.
 - **Geocoding backfill has been run against real data:** 255 of 262 places have `lat`/`lng`;
   7 are stamped `geocoded_at` but unmatched and still need manual address review. See §9A.
-  One known gap: places created via the Needs Mapping "create place" flow
-  (`routes/notesReview.js`) still skip geocoding entirely (§14A) — this only affects places
-  created that way, not the backfill itself.
+  Places created via the Needs Mapping "create place" flow (`routes/notesReview.js`) used to
+  skip geocoding entirely — **fixed 2026-07-22** (§14A), that path now geocodes the same way
+  `POST /api/places` does.
 - **`places.category` is now a locked enum**, not free text (`server/src/config/categories.js`,
   fixed in the 2026-07-14 audit, `c408809`) — `POST`/`PATCH /api/places` reject any
   non-matching value.
@@ -750,8 +757,9 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   self-serve first-login flow — the pre-auth account-takeover window itself (unauthenticated
   `GET /auth/users`/`POST /auth/set-password`) is still open pending a real login-page
   redesign Bede hasn't finalized yet. `visits.skip_reason` and the dead "skip a stop" code path
-  it belonged to are gone. 146 tests pass, client build clean. Committed on `bede-working`
-  (see `git log` for the hash) — not yet pushed/merged, ask before doing either.
+  it belonged to are gone. The Needs Mapping create-place geocoding gap (§14A) is closed. 146
+  tests pass, client build clean. Committed on `bede-working` (see `git log` for the hash) —
+  not yet pushed/merged, ask before doing either.
 
 ---
 
@@ -759,8 +767,6 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 - **Manually review the 7 places whose addresses didn't geocode** (§9A) before any routing
   logic trusts every place having coordinates.
-- **Fix the Needs Mapping geocoding gap** (§14A) — its create-place path still skips
-  `geocodeAddress()`.
 - **"Needs attention" coverage on Plan My Visits:** referral metrics are wired into the
   People tab, Places tab, both detail pages, and the Dashboard, but not the route-planning
   screen's stop cards.
@@ -808,9 +814,10 @@ Lower-priority findings from the same audit — status as of the 2026-07-14 foll
   response can no longer overwrite a faster later one).
 - **Moot.** The People directory's missing "Departed" status is moot — the `departed` field
   was dropped from the schema entirely on 2026-07-11 (nobody was using it).
-- **Still open.** Places created via the Needs Mapping "create place" flow
-  (`server/src/routes/notesReview.js`) still skip geocoding entirely — a second, hand-rolled
-  insert path that duplicates `POST /api/places` but never calls `geocodeAddress(...)`.
+- **FIXED (2026-07-22).** Places created via the Needs Mapping "create place" flow
+  (`server/src/routes/notesReview.js`) used to skip geocoding entirely — a second, hand-rolled
+  insert path that duplicated `POST /api/places` but never called `geocodeAddress(...)`. Now
+  calls it the same way, best-effort and non-blocking.
 - **FIXED.** `Schedule.jsx`'s remove/skip-stop actions now confirm, error-handle, and disable
   the row while in flight, matching `removeVisit()` elsewhere.
 - **FIXED.** `places.category` is now a locked enum (`server/src/config/categories.js`), not

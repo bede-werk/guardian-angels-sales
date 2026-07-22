@@ -648,10 +648,9 @@ available in this environment.
   about them as open issues anymore.
 - **`places.category` is now a locked enum**, not free text (`c408809`) — see
   `server/src/config/categories.js`.
-- One known gap still open from the 2026-07-10 audit, not yet fixed: places created via the
-  Needs Mapping "create place" flow (`routes/notesReview.js`) still skip geocoding — a second,
-  hand-rolled insert path that duplicates `POST /api/places` but never calls
-  `geocodeAddress(...)`.
+- The Needs Mapping "create place" flow (`routes/notesReview.js`) — a second, hand-rolled
+  insert path that duplicates `POST /api/places` — used to skip geocoding entirely; **fixed
+  2026-07-22**, see that entry below.
 - Local dev only — nothing deployed. `./dev.sh` runs both servers
   (backend :4000, frontend :5173).
 - Database: 261 real places, a handful of real visits/referrals logged since
@@ -690,8 +689,6 @@ available in this environment.
 - Referral metrics still aren't shown on Today's Route's stop cards — only
 - **Manually review the 7 places with unmatched addresses** before any
   routing logic assumes every place has coordinates.
-- **Fix the Needs Mapping geocoding gap** — places created via
-  `routes/notesReview.js`'s create-place flow still skip `geocodeAddress()`.
 - Referral metrics still aren't shown on Plan My Visits' stop cards — only
   the People tab, Places tab, both detail pages, and the Dashboard.
 - Feeding referral metrics back into place priority scoring is still an open
@@ -762,6 +759,14 @@ transaction); `addStop`'s duplicate-add race now returns a clean 409 instead of 
    inline arrow function that got a new identity every render — applying the dependency fix
    as-is would've caused a refetch on every unrelated keystroke in that modal (category/tier/
    city/zip), so that call site got its own `search` callback wrapped in `useCallback` first.
+10. The long-open Needs Mapping geocoding gap: `notesReview.js`'s `POST /:id/create-place` — a
+    second, hand-rolled place-insert path — never called `geocodeAddress()`, unlike
+    `routes/places.js`'s create route. Now it does, same best-effort/non-blocking contract.
+    Also cleaned up two stale comments in `scheduleDraft.js` (`committedVisitsQuery`,
+    `removeStop`) that still described the pre-reopen-feature world where a partial commit
+    could leave a committed visit and a draft stop coexisting for the same day — no longer
+    possible now that `commitDay` always commits/clears a whole day at once (see the reopen-day
+    feature above). No behavior change, comments only.
 
 **Deliberately left alone, Bede's call for later:** rebuilding "skip a stop" as a real feature
 (declined in favor of cleanup — see #3 above); the two remaining capability-gap items from

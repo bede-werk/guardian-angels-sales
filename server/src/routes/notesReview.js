@@ -6,6 +6,7 @@
 const express = require('express');
 const knex = require('../db/knex');
 const { priorityScore, regionForPlace } = require('../services/priority');
+const { geocodeAddress } = require('../services/geocoding');
 const CATEGORIES = require('../config/categories');
 
 const router = express.Router();
@@ -131,6 +132,14 @@ router.post('/:id/create-place', async (req, res, next) => {
     const t = Number(tier) || 3;
     const pri = !!is_priority;
 
+    // Best-effort, same as routes/places.js's create route — never blocks
+    // creation on a miss, but a place created here shouldn't silently skip
+    // the geocoding every other creation path gets.
+    let coords = null;
+    if (address || city || zip) {
+      coords = await geocodeAddress({ address, city, state: 'NE', zip });
+    }
+
     const result = await knex.transaction(async (trx) => {
       const [pRow] = await trx('places')
         .insert({
@@ -144,6 +153,9 @@ router.post('/:id/create-place', async (req, res, next) => {
           state: 'NE',
           zip: zip || null,
           region: regionForPlace({ city, zip }),
+          lat: coords ? coords.lat : null,
+          lng: coords ? coords.lng : null,
+          geocoded_at: (address || city || zip) ? knex.fn.now() : null,
         })
         .returning('id');
       const placeId = knex.extractId(pRow);
