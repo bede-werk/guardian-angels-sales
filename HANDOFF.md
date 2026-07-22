@@ -151,6 +151,27 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   ~9 unbuilt scheduling-field API surface / `visit_type`-not-patchable capability gaps (see
   §14A's "still open" notes) haven't been touched. 146 tests pass, client build clean
   throughout. Not yet pushed/merged — ask before doing either, same as always.
+- **Also 2026-07-22, same session, a UI/UX request from Bede:** the route planner's "enter
+  address manually" start-location form (4 separate street/city/state/zip fields + a "Use this
+  address" button, geocoded one-shot via the free Census API) was replaced with a single
+  Google-Maps-search-style box — type freely, pick a live suggestion, done, no separate lookup
+  step. New dependency: `@mapbox/search-js-react`'s `SearchBox` component, wrapped in
+  `client/src/components/ui/AddressAutocomplete.jsx` and themed to match this app's existing
+  inputs/dropdowns (colors/radius/shadow copied from `styles.css`'s design tokens, since the
+  component is a custom element and can't read the app's own CSS classes directly), biased
+  toward Lincoln, NE via a `proximity` option. Needs a free Mapbox access token in
+  `client/.env` (`VITE_MAPBOX_TOKEN`, see `client/.env.example`) — Bede has one now; the
+  component shows a small inline notice instead of failing silently if it's ever missing.
+  This made the old single-shot `POST /api/geocode` route (and `api.geocode()` client fn)
+  genuinely dead code — both deleted, along with the manual-entry-specific state/handler in
+  `PlanVisits.jsx` (`manualAddress`, `geocoding`, `lookUpManualAddress`) they existed for. The
+  Census geocoder itself (`services/geocoding.js`) is untouched and still does all of the
+  place-address geocoding described in §9A — this only replaced the router's own
+  start-of-day-location entry point, a different use case (live suggestions while typing vs.
+  one-shot resolve-a-complete-address). Verified live end-to-end (typed a Lincoln address, got
+  real suggestions, selected one, start location set correctly) via a temporary Lisa Marks
+  smoke-test token, cleared after. 146 tests pass, client build clean. Not yet
+  pushed/merged.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
@@ -269,7 +290,7 @@ guardian-angels-sales/
 │       │   ├── geocoding.js          # geocodeAddress() — address -> {lat, lng} via US Census
 │       │   └── fetchWithTimeout.js   # shared AbortController+setTimeout wrapper (OSRM, geocoding)
 │       ├── routes/                   # auth, places, people, referrals, visits,
-│       │                             # scheduleDrafts (route planner), geocode, dashboard,
+│       │                             # scheduleDrafts (route planner), dashboard,
 │       │                             # users, notesReview
 │       └── scripts/
 │           ├── import-excel.js       # importPlaces() — place list
@@ -760,6 +781,14 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   it belonged to are gone. The Needs Mapping create-place geocoding gap (§14A) is closed. 146
   tests pass, client build clean. Committed on `bede-working` (see `git log` for the hash) —
   not yet pushed/merged, ask before doing either.
+- **Also 2026-07-22:** the route planner's manual start-location entry is now a single live
+  address-search box (Mapbox `SearchBox`, `client/src/components/ui/AddressAutocomplete.jsx`)
+  instead of 4 separate fields + a lookup button — see §0's matching bullet for the full
+  writeup. New client dependency (`@mapbox/search-js-react`) and a new required env var for
+  local dev (`client/.env`'s `VITE_MAPBOX_TOKEN`, see `client/.env.example`). The old
+  `POST /api/geocode` route and `api.geocode()` client fn are gone (dead code once this
+  landed) — this does **not** touch place-address geocoding (§9A), which still runs through
+  the free Census geocoder untouched. Verified live, 146 tests pass, client build clean.
 
 ---
 

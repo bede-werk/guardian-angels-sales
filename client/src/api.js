@@ -143,10 +143,6 @@ export const api = {
       request(`/schedule-drafts/days/${date}/reopen`, { method: 'POST', body: { homeBase } }),
   },
 
-  // Address -> coordinates, for the route planner's manual-location fallback
-  // when browser geolocation is denied/unavailable — server/src/routes/geocode.js
-  geocode: (body) => request('/geocode', { method: 'POST', body }),
-
   // Auth (login/logout/password) — server/src/routes/auth.js
   auth: {
     users: () => request('/auth/users'), // list for the login picker (name + hasPassword only)

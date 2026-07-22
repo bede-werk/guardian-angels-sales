@@ -376,14 +376,22 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
    instead of stacking one above the other (which left the card mostly
    empty — the calendar/date-list content is inherently narrower than the
    card) or an off-center split (which left the divider looking arbitrary
-   rather than a deliberate midline). Each column also gets a one-line
-   helper under its heading so the shorter "Starting point" side doesn't
-   just trail off into blank space next to the taller calendar column.
-   Collapses to one stacked column, divider dropped, on narrow viewports. */
-.plan-columns { display: flex; gap: 40px; flex-wrap: wrap; align-items: flex-start; }
-.plan-col-start, .plan-col-dates { flex: 1 1 320px; min-width: 280px; }
+   rather than a deliberate midline). Grid (not flex) so the two tracks stay
+   a true 50/50 split regardless of which side's content is wider — flex's
+   equal flex-basis only holds until one side's content forces extra width,
+   which is what happened here (the calendar+date-list pair is wider than
+   the starting-point controls, so it won extra flex-grow space and dragged
+   the divider off-center). min-width: 0 on each column lets its content
+   shrink/wrap (.row already wraps) instead of overflowing its 1fr track.
+   Each column also gets a one-line helper under its heading so the shorter
+   "Starting point" side doesn't just trail off into blank space next to the
+   taller calendar column. Collapses to one stacked column, divider dropped,
+   on narrow viewports. */
+.plan-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+.plan-col-start, .plan-col-dates { min-width: 0; }
 .plan-col-dates { padding-left: 40px; border-left: 1px solid var(--border); }
 .plan-col-hint { font-size: 12px; color: var(--muted); margin: -4px 0 14px; }
 @media (max-width: 760px) {
+  .plan-columns { grid-template-columns: 1fr; }
   .plan-col-dates { border-left: none; padding-left: 0; }
 }

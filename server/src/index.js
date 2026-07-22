@@ -18,7 +18,6 @@ const users = require('./routes/users');
 const notesReview = require('./routes/notesReview');
 const people = require('./routes/people');
 const referrals = require('./routes/referrals');
-const geocode = require('./routes/geocode');
 const auth = require('./routes/auth');
 const requireAuth = require('./middleware/requireAuth'); // blocks a request unless it has a valid login token
 
@@ -51,7 +50,6 @@ app.use('/api/notes-review', notesReview);
 // so it's mounted at the bare '/api' prefix rather than a single resource prefix.
 app.use('/api', people);
 app.use('/api/referrals', referrals);
-app.use('/api/geocode', geocode);
 
 // In production, serve the built React app so a single service can host both.
 if (process.env.NODE_ENV === 'production') {

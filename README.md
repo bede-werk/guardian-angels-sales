@@ -73,8 +73,14 @@ npm run dev          # starts the API with auto-reload
 ```bash
 cd client
 npm install          # first time only
+cp .env.example .env # first time only — set VITE_MAPBOX_TOKEN (see below)
 npm run dev
 ```
+
+> The route planner's "enter address manually" box (`components/ui/AddressAutocomplete.jsx`)
+> needs a free Mapbox access token in `client/.env` (`VITE_MAPBOX_TOKEN`) to power its live
+> address suggestions. Without one, that box shows a small inline notice instead of failing
+> silently — everything else in the app works fine either way.
 
 Then open **http://localhost:5173**.
 
@@ -136,7 +142,6 @@ All routes below require an `Authorization: Bearer <token>` header (obtained via
 | GET | `/api/schedule-drafts/:id/days/:date/suggestions` | Nearby eligible candidates for an under-budget day |
 | POST | `/api/schedule-drafts/:id/days/:date/commit` | Commit one day's draft stops into real visits |
 | POST | `/api/schedule-drafts/:id/commit` | Commit every remaining day |
-| POST | `/api/geocode` | Geocode an address to `{lat, lng}` (manual-entry fallback for the route planner's start location) |
 | POST | `/api/visits` | Create an ad-hoc visit |
 | PATCH | `/api/visits/:id` | Log/update a visit |
 | POST | `/api/visits/:id/skip` | Skip a stop |

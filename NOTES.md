@@ -777,3 +777,47 @@ with no API surface at all) — neither is a bug, both are "build this UI" scope
 session), client build clean (62 modules), the two new migrations applied cleanly against the
 dev DB. Committed on `bede-working` per Bede's explicit request — not pushed/merged, ask before
 doing either.
+
+## 2026-07-22 (later same day) — Mapbox address autocomplete for the route planner
+
+A UI/UX request, not a bug fix: Bede wanted the route planner's "enter address manually"
+start-location form to feel like a Google Maps search — one box, type freely, pick a
+suggestion — instead of the existing 4 separate street/city/state/zip fields plus a "Use this
+address" button that geocoded them all in one shot via the free Census API.
+
+Researched options first (Google Places, Mapbox Search Box, Radar, Geoapify, Photon/OSM) and
+reported back trade-offs — free tier size, account/key friction, React-component readiness.
+Went with **Mapbox Search Box** (`@mapbox/search-js-react`'s `SearchBox` component): its
+official React component is purpose-built for exactly this one-box-live-suggestions flow, and
+its free tier (100k requests/month) needs no credit card to start.
+
+**Built:** `client/src/components/ui/AddressAutocomplete.jsx` wraps `<SearchBox>`, themed via
+Mapbox's Theme API to match this app's existing inputs/dropdowns (colors/border-radius/shadow
+values copied from `styles.css`'s design tokens — the component is a custom element under the
+hood and can't read the app's own CSS classes directly), with `proximity` biased toward
+Lincoln, NE so results favor the area without excluding matches elsewhere (a rep occasionally
+starts from home, out of town, etc.). `onRetrieve` maps Mapbox's response to the same
+`{ lat, lng, label }` shape `PlanVisits.jsx` already used from browser geolocation, so the
+calling code didn't need to change at all past the swap itself.
+
+**Wired into `PlanVisits.jsx`:** replaced the whole 4-field form + "Use this address" button
+with one `<AddressAutocomplete>` — selecting a suggestion *is* the confirmation now, no
+separate lookup step. Removed the state/handler that only existed for the old form
+(`manualAddress`, `geocoding`, `lookUpManualAddress`).
+
+**Cleanup this made possible:** the old single-shot `POST /api/geocode` route
+(`server/src/routes/geocode.js`) and `api.geocode()` client fn had no other caller anywhere in
+the app — both deleted. Doesn't touch place-address geocoding (`services/geocoding.js`, §9A in
+`HANDOFF.md`) at all — that's a different use case (resolve one complete address server-side
+via the free Census API when a place is created/edited) and still works exactly as before.
+
+**Setup:** needs a free Mapbox access token in `client/.env` (`VITE_MAPBOX_TOKEN` — see the new
+`client/.env.example`). Bede signed up and provided one this session. The component shows a
+small inline notice instead of erroring if the token's ever missing.
+
+**Verified live:** typed a real Lincoln address, got live suggestions styled to match the rest
+of the app, selected one, and the start-location display updated correctly ("Starting from
+8300 West O Street, Lincoln, Nebraska 68528, United States" + Change link) — via a temporary
+Lisa Marks (id 5) smoke-test token, cleared afterward. No console errors. 146 backend tests
+pass (unchanged — no backend logic touched besides deleting the dead route), client build
+clean.

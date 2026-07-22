@@ -3,6 +3,7 @@ import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
 import { TierChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
+import AddressAutocomplete from './ui/AddressAutocomplete';
 import Calendar from './ui/Calendar';
 import EmptyState from './ui/EmptyState';
 
@@ -525,13 +526,14 @@ export default function PlanVisits() {
   // for at generate time instead. Manual entry is offered as an equal
   // option alongside "Use my current location" (toggled open by its own
   // button), not just shown after geolocation fails — `locationError` still
-  // auto-opens it too, since at that point it's the only option left.
+  // auto-opens it too, since at that point it's the only option left. Manual
+  // entry itself is a single Mapbox-backed search box (AddressAutocomplete)
+  // that resolves straight to { lat, lng, label } — no separate "look up"
+  // step/button, unlike the old 4-field form this replaced.
   const [homeBase, setHomeBase] = useState(null); // { lat, lng, label }
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
-  const [manualAddress, setManualAddress] = useState({ address: '', city: '', state: '', zip: '' });
-  const [geocoding, setGeocoding] = useState(false);
 
   const refreshCommittedDates = useCallback(async () => {
     setCommittedSummaries(await api.scheduleDrafts.committedDates());
@@ -784,25 +786,6 @@ export default function PlanVisits() {
     );
   }
 
-  async function lookUpManualAddress() {
-    setGeocoding(true);
-    setError(null);
-    try {
-      const coords = await api.geocode(manualAddress);
-      if (!coords) {
-        setError("Couldn't find that address — check it and try again.");
-        return;
-      }
-      const label = [manualAddress.address, manualAddress.city].filter(Boolean).join(', ') || 'Start address';
-      setHomeBase({ ...coords, label });
-      setLocationError(null);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setGeocoding(false);
-    }
-  }
-
   async function generate(regenerate) {
     if (regenerate && !window.confirm('Regenerate this proposal? Any changes you\'ve made to it will be replaced.')) return;
     setError(null);
@@ -940,27 +923,9 @@ export default function PlanVisits() {
                   </div>
                   {locationError && <div className="tiny muted">{locationError}</div>}
                   {(manualEntryOpen || locationError) && (
-                    <div className="row">
-                      <div>
-                        <label className="field">Street address</label>
-                        <input value={manualAddress.address} onChange={(e) => setManualAddress({ ...manualAddress, address: e.target.value })} />
-                      </div>
-                      <div>
-                        <label className="field">City</label>
-                        <input value={manualAddress.city} onChange={(e) => setManualAddress({ ...manualAddress, city: e.target.value })} />
-                      </div>
-                      <div style={{ minWidth: 70 }}>
-                        <label className="field">State</label>
-                        <input value={manualAddress.state} onChange={(e) => setManualAddress({ ...manualAddress, state: e.target.value })} />
-                      </div>
-                      <div style={{ minWidth: 90 }}>
-                        <label className="field">Zip</label>
-                        <input value={manualAddress.zip} onChange={(e) => setManualAddress({ ...manualAddress, zip: e.target.value })} />
-                      </div>
-                      <Button size="small" onClick={lookUpManualAddress} disabled={geocoding}>
-                        {geocoding ? 'Looking up…' : 'Use this address'}
-                      </Button>
-                    </div>
+                    <AddressAutocomplete
+                      onSelect={(next) => { setHomeBase(next); setLocationError(null); }}
+                    />
                   )}
                 </div>
               )}

@@ -679,6 +679,30 @@ confirm-gated ("They'll temporarily show as not-yet-scheduled while you make cha
 146 backend tests pass, client build clean. Committed on `bede-working` (see `git log` for the
 hash) — not yet pushed/merged.
 
+## Mapbox address autocomplete for manual start-location entry (2026-07-22)
+
+A UI/UX request: the generate form's "enter address manually" start-location entry was 4
+separate street/city/state/zip fields plus a "Use this address" button (one-shot geocode via
+the free Census API). Replaced with a single Google-Maps-search-style box — type freely, pick
+a live suggestion, done.
+
+New client dependency, `@mapbox/search-js-react` — its `SearchBox` component is purpose-built
+for exactly this flow. Wrapped in `client/src/components/ui/AddressAutocomplete.jsx`, themed
+to match the app's own inputs/dropdowns via Mapbox's Theme API (it's a custom element, can't
+read this app's CSS classes directly), `proximity`-biased toward Lincoln, NE. `onRetrieve`
+maps straight to the `{ lat, lng, label }` shape `homeBase` already used, so nothing else in
+`PlanVisits.jsx`'s generate flow had to change. Needs `client/.env`'s `VITE_MAPBOX_TOKEN` (see
+`client/.env.example`) — shows an inline notice instead of erroring if it's missing.
+
+The old one-shot `POST /api/geocode` route and `api.geocode()` client fn had no other caller,
+so both were deleted along with the manual-entry-only state/handler (`manualAddress`,
+`geocoding`, `lookUpManualAddress`) they existed for. Doesn't touch place-address geocoding
+(`services/geocoding.js`) — different use case, still Census-backed, untouched.
+
+Verified live: real Lincoln address, live suggestions, selected one, start-location display
+updated correctly, no console errors. 146 backend tests pass (route deletion only, no logic
+changed), client build clean.
+
 ## Running things
 
 - Tests: `nvm use 24` then `npm test` from `server/` (runs
