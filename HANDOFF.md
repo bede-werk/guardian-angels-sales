@@ -150,7 +150,10 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   could be rebuilt as a real feature (declined — cleanup only, per above) and the remaining
   ~9 unbuilt scheduling-field API surface / `visit_type`-not-patchable capability gaps (see
   §14A's "still open" notes) haven't been touched. 146 tests pass, client build clean
-  throughout. Not yet pushed/merged — ask before doing either, same as always.
+  throughout. **Pushed and merged into `main`** later the same session (2026-07-22), along
+  with everything else below through the visit-type-default bullet — a fast-forward merge
+  (direct `git merge`, `gh` unavailable in this environment, same as 2026-07-15's precedent),
+  at Bede's explicit request.
 - **Also 2026-07-22, same session, a UI/UX request from Bede:** the route planner's "enter
   address manually" start-location form (4 separate street/city/state/zip fields + a "Use this
   address" button, geocoded one-shot via the free Census API) was replaced with a single
@@ -800,7 +803,7 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   redesign Bede hasn't finalized yet. `visits.skip_reason` and the dead "skip a stop" code path
   it belonged to are gone. The Needs Mapping create-place geocoding gap (§14A) is closed. 146
   tests pass, client build clean. Committed on `bede-working` (see `git log` for the hash) —
-  not yet pushed/merged, ask before doing either.
+  **pushed and merged into `main`** later the same session, per Bede's explicit request.
 - **Also 2026-07-22:** the route planner's manual start-location entry is now a single live
   address-search box (Mapbox `SearchBox`, `client/src/components/ui/AddressAutocomplete.jsx`)
   instead of 4 separate fields + a lookup button — see §0's matching bullet for the full
@@ -817,7 +820,8 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   fallback visit-type duration is now **Drop-in (7 min)**, not Working visit (30 min) — a real
   scheduling-behavior change since every place currently rests on this fallback, not just a
   UI default. See §0's matching bullet and `NOTES.md` for full detail. 146 tests pass (2 fixed
-  to stay correct under the new default), client build clean.
+  to stay correct under the new default), client build clean. **Pushed and merged into `main`**
+  the same session, per Bede's explicit request.
 
 ---
 
@@ -978,7 +982,9 @@ wire that into `scheduler.js`'s ordering in place of/alongside `clusterSort`, (d
 
 1. Open the folder: `code ~/guardian-angels-sales`
 2. Ensure Node: `nvm use 24` (or rely on `./dev.sh`)
-3. `git checkout bede-routeplanner` — that's where all route-planner work lives, not `main`.
+3. `git checkout bede-working` — active work happens here, periodically merged into `main`
+   (most recently 2026-07-22, all pushed). `bede-routeplanner` was the branch for this
+   *before* 2026-07-15's merge — long since folded into `main`, don't resume work there.
 4. Start it: `cd ~/guardian-angels-sales && ./dev.sh` → open http://localhost:5173
 5. Check `git status` before starting anything new — ask Bede before committing, always.
 6. Read `ROUTEPLANNER_PROGRESS.md` before touching the route planner — it's the up-to-date

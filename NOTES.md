@@ -775,8 +775,9 @@ with no API surface at all) — neither is a bug, both are "build this UI" scope
 
 **Verification:** 146 backend tests pass throughout (unchanged count — no new tests added this
 session), client build clean (62 modules), the two new migrations applied cleanly against the
-dev DB. Committed on `bede-working` per Bede's explicit request — not pushed/merged, ask before
-doing either.
+dev DB. Committed on `bede-working` per Bede's explicit request — **pushed and merged into
+`main`** later the same session (2026-07-22), along with every other entry below through the
+default-visit-type change, per another explicit request.
 
 ## 2026-07-22 (later same day) — Mapbox address autocomplete for the route planner
 
@@ -893,5 +894,6 @@ numbers — keeps the tests' actual intent (tight-budget exclusion/rollover) cor
 of whatever the global default gets set to next.
 
 **Verification:** 146 backend tests pass (2 fixed, not just re-passing by coincidence), client
-build clean throughout all four changes. Not yet committed as of this entry — see the top of
-`git log` for whether that's since changed.
+build clean throughout all four changes. Committed (`e958d83`), then **pushed and merged into
+`main`** the same session (fast-forward, direct `git merge` — `gh` still unavailable in this
+environment), per Bede's explicit request.

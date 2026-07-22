@@ -677,7 +677,7 @@ confirm-gated ("They'll temporarily show as not-yet-scheduled while you make cha
   already used.
 
 146 backend tests pass, client build clean. Committed on `bede-working` (see `git log` for the
-hash) — not yet pushed/merged.
+hash) — **pushed and merged into `main`** later the same session, per Bede's explicit request.
 
 ## Mapbox address autocomplete for manual start-location entry (2026-07-22)
 
@@ -753,6 +753,10 @@ numbers, so the tests stay correct regardless of the global default going forwar
   `node --test "src/**/*.test.js"`).
 - Client dev server: `cd client && npm run dev` (or `./dev.sh` from the repo
   root runs both); client build: `npm run build` from `client/`.
-- Resume the branch: `git checkout bede-routeplanner` — as of this writing,
-  ahead of `origin/bede-routeplanner` and not merged into `main`; push/PR
-  only when Bede asks.
+- Resume the branch: `bede-routeplanner` was merged into `main` back on
+  2026-07-15 (via GitHub PR) — every entry above that date happened there,
+  everything from the "old-scheduler retirement" UX-feedback pass onward
+  happened on `bede-working` instead, which is where active work continues.
+  `git checkout bede-working`. As of this writing it's merged into `main`
+  (pushed 2026-07-22) — check `git status`/`git log` for whether that's
+  since drifted before assuming it's still in sync.
