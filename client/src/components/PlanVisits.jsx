@@ -7,6 +7,7 @@ import AddressAutocomplete from './ui/AddressAutocomplete';
 import Calendar from './ui/Calendar';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
+import PlannedDayModal from './PlannedDayModal';
 
 // The per-day budget picker shows hours + minutes as two selects, but the
 // wire/schema shape is still a single decimal `hoursPerDay` (see
@@ -422,30 +423,30 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     title="View place details"
                     onClick={() => setViewingPlaceId(stop.place_id)}
                   >
-                    <div className="name">{stop.place_name}</div>
+                    <div className="tag-list" style={{ alignItems: 'center' }}>
+                      <div className="name">{stop.place_name}</div>
+                      <CategoryChip category={stop.category} />
+                      <TierChip tier={stop.tier} />
+                    </div>
                     <div className="meta">
                       {stop.address ? `${stop.address}, ` : ''}{stop.city} {stop.zip}
                     </div>
-                    <div className="tag-list" style={{ marginTop: 6 }}>
-                      <CategoryChip category={stop.category} />
-                      <TierChip tier={stop.tier} />
-                      <select
-                        value={stop.visitType}
-                        onChange={(e) => changeVisitType(stop, e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        disabled={rowBusy}
-                        style={{ width: 'auto' }}
-                      >
-                        {Object.entries(VISIT_TYPE_LABELS).map(([key, label]) => (
-                          <option key={key} value={key}>{label}</option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
-                  <div className="actions" style={{ alignItems: 'center' }}>
+                  <div className="actions" style={{ alignItems: 'center', gap: 14 }}>
+                    <select
+                      value={stop.visitType}
+                      onChange={(e) => changeVisitType(stop, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      disabled={rowBusy}
+                      style={{ width: 190, flex: 'none' }}
+                    >
+                      {Object.entries(VISIT_TYPE_LABELS).map(([key, label]) => (
+                        <option key={key} value={key}>{label}</option>
+                      ))}
+                    </select>
                     <div
                       className="tiny muted"
-                      style={{ whiteSpace: 'nowrap', textAlign: 'right' }}
+                      style={{ whiteSpace: 'nowrap', textAlign: 'right', width: 90, flex: 'none' }}
                       title={`Estimated: drive ${stop.driveMinutes}m + visit ${stop.visitMinutes}m + prep ${stop.prepMinutes}m + data entry ${stop.dataEntryMinutes}m`}
                     >
                       ~{formatMinutes(stop.blockMinutes)}
@@ -459,7 +460,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
           </ul>
         )}
 
-        <div style={{ marginTop: 14 }}>
+        <div style={{ marginTop: 14, paddingTop: day.stops.length > 0 ? 14 : 0, borderTop: day.stops.length > 0 ? '1px solid var(--border)' : 'none' }}>
           {addingOpen ? (
             <div className="row" style={{ alignItems: 'center' }}>
               <PlacePicker placeholder="Add a stop to this day…" onPick={addStop} excludeIds={draftPlaceIds} />
@@ -563,6 +564,8 @@ export default function PlanVisits({ userId }) {
   const committedDates = useMemo(() => new Set(committedSummaries.map((s) => s.date)), [committedSummaries]);
   const [deletingCommittedDate, setDeletingCommittedDate] = useState(null); // which "Already Planned" row's ✕ is in flight
   const [reopeningDate, setReopeningDate] = useState(null); // which "Already Planned" row's Edit is in flight
+  const [viewingDate, setViewingDate] = useState(null); // which "Already Planned" row's drill-down modal is open, if any
+  const [viewingPlaceId, setViewingPlaceId] = useState(null); // full PlaceDetail opened from within that drill-down, if any
   // Dates already generated into the active draft — once a day's routes
   // have been proposed, it can't be deselected (calendar click or the ✕ in
   // the list below); discarding that day's proposal (or the whole draft) is
@@ -603,16 +606,21 @@ export default function PlanVisits({ userId }) {
   // shrink (a lower count) rather than disappear if there's real history left
   // on it. Re-fetches rather than patching locally so the resulting count is
   // always exactly what the server has, not a client-side guess.
+  // Returns whether the day was actually removed — callers (e.g. the "already
+  // planned" drill-down modal) use this to decide whether to close themselves,
+  // since a cancelled confirm or a failed request should leave things as-is.
   async function deleteCommittedDay(date) {
-    if (!window.confirm(`Remove the planned visits for ${formatDate(date)}? This can't be undone.`)) return;
+    if (!window.confirm(`Remove the planned visits for ${formatDate(date)}? This can't be undone.`)) return false;
     setError(null);
     setDeletingCommittedDate(date);
     try {
       await api.scheduleDrafts.deleteCommittedDay(date);
       await refreshCommittedDates();
       await load();
+      return true;
     } catch (e) {
       setError(e.message);
+      return false;
     } finally {
       setDeletingCommittedDate(null);
     }
@@ -625,9 +633,11 @@ export default function PlanVisits({ userId }) {
   // is now part of draft.params.days and selectedDays needs to match or it
   // silently drifts out of sync (see the seededFromDraft effect above, which
   // only syncs the two once on initial mount).
+  // Returns whether the day was actually reopened — see deleteCommittedDay's
+  // matching note above.
   async function reopenDay(date) {
-    if (!homeBase) return; // the button is disabled in this case; guard anyway
-    if (!window.confirm(`Edit the planned visits for ${formatDate(date)}? They'll temporarily show as not-yet-scheduled while you make changes — accept the updated proposal again when you're done.`)) return;
+    if (!homeBase) return false; // the button is disabled in this case; guard anyway
+    if (!window.confirm(`Edit the planned visits for ${formatDate(date)}? They'll temporarily show as not-yet-scheduled while you make changes — accept the updated proposal again when you're done.`)) return false;
     setError(null);
     setReopeningDate(date);
     try {
@@ -635,8 +645,10 @@ export default function PlanVisits({ userId }) {
       setDraft(next);
       setSelectedDays(next.params.days);
       await refreshCommittedDates();
+      return true;
     } catch (e) {
       setError(e.message);
+      return false;
     } finally {
       setReopeningDate(null);
     }
@@ -1064,30 +1076,16 @@ export default function PlanVisits({ userId }) {
             <ul className="list">
               {committedSummaries.map((s) => (
                 <li key={s.date} className="stop">
-                  <div className="main">
+                  <div
+                    className="main hover-row"
+                    title="View this day's planned visits"
+                    onClick={() => setViewingDate(s.date)}
+                  >
                     <div className="name">{formatDate(s.date)}</div>
                     <div className="meta">{s.count} visit{s.count === 1 ? '' : 's'} planned</div>
                   </div>
                   <div className="actions" style={{ alignItems: 'center' }}>
                     <span className="badge committed" style={{ flex: 'none', minWidth: 0 }}>✓ Planned</span>
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onClick={() => reopenDay(s.date)}
-                      disabled={!homeBase || reopeningDate === s.date || deletingCommittedDate === s.date}
-                      title={homeBase ? "Pull this day's visits back into an editable proposal" : 'Set a starting point above before editing a planned day'}
-                    >
-                      {reopeningDate === s.date ? 'Editing…' : 'Edit'}
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="small"
-                      onClick={() => deleteCommittedDay(s.date)}
-                      disabled={deletingCommittedDate === s.date || reopeningDate === s.date}
-                      title="Remove this day's planned visits"
-                    >
-                      ✕
-                    </Button>
                   </div>
                 </li>
               ))}
@@ -1128,6 +1126,29 @@ export default function PlanVisits({ userId }) {
               draftPlaceIds={draftPlaceIds}
             />
           ))
+      )}
+
+      {viewingDate && (
+        <PlannedDayModal
+          date={viewingDate}
+          onClose={() => setViewingDate(null)}
+          onViewPlace={setViewingPlaceId}
+          onEditDay={async () => { if (await reopenDay(viewingDate)) setViewingDate(null); }}
+          editingDay={reopeningDate === viewingDate}
+          canEditDay={!!homeBase}
+          onDeleteDay={async () => { if (await deleteCommittedDay(viewingDate)) setViewingDate(null); }}
+          deletingDay={deletingCommittedDate === viewingDate}
+        />
+      )}
+
+      {viewingPlaceId && (
+        <PlaceDetail
+          placeId={viewingPlaceId}
+          userId={userId}
+          onClose={() => setViewingPlaceId(null)}
+          onChanged={refreshCommittedDates}
+          onDeleted={refreshCommittedDates}
+        />
       )}
     </div>
   );

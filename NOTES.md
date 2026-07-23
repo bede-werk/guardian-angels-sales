@@ -986,3 +986,90 @@ clean throughout. Restarted the dev servers (`./dev.sh`) after the Playwright pa
 stopping them to clean up the test session took the live site down mid-conversation — worth
 remembering: don't kill ports 4000/5173 as throwaway cleanup while Bede might still be using
 the running app.
+
+## 2026-07-23 — Proposed-stop row layout (several live-feedback rounds) + a new
+## "Already Planned" day drill-down modal
+
+Branch `bede-working`. All live UX feedback on "Plan My Visits," verified after every change
+via a throwaway Playwright session against the real dev server (Lisa Marks id 5, temp token,
+cleaned up each time per the smoke-test convention) — screenshots and, for the alignment fix,
+actual measured DOM coordinates, not just eyeballing CSS.
+
+**A divider between the last proposed stop and the "+ Add a stop"/"Suggest a stop" row** — a
+`borderTop` on that row's wrapper, shown only when the day actually has stops (`day.stops.length
+> 0`) so an empty day doesn't get a stray line.
+
+**The proposed-stop row went through several compaction rounds, each a distinct ask:**
+1. Category/tier/visit-type chips were already one flex row (`tag-list`) below the address —
+   confirmed via screenshots at 1400/1100/800px that they never actually wrap, so "put them on
+   one line" turned out to mean something else; asked Bede to disambiguate with three mockup
+   options and he picked **drop the address from the list entirely** (still viewable via the
+   place-detail click-through) — 3 lines/stop down to 2 (name; category/tier/visit-type).
+2. Then: category/tier pills moved up onto the **name's** line; visit-type dropdown demoted to
+   its own second line alone.
+3. Then: visit-type dropdown moved back up, this time to the right side next to the estimated
+   time/remove button — one line/stop total (name+pills left, select+time+✕ right).
+4. Then: address came back (Bede wanted it after all) — now sitting under the name+pills line,
+   and the visit-type select got breathing room (`gap: 14`) before the time/remove button.
+5. **Real bug, not just polish:** a longer visit type ("Presentation / in-service") made the
+   estimated-time text wider ("~27m" → "~1h 18m"), which shrank the flexible name column next
+   to it, which shifted every row's dropdown left by a few px — rows didn't line up. Root cause
+   was the time display having no fixed width. Fixed with `width: 90` on that div plus `width:
+   190` (was `'auto'`) on the select itself, so neither box's size depends on its own text
+   length. Verified by measuring actual `boundingBox()` x-coordinates across all 18 rows in a
+   real generated draft (one stop switched to `presentation` to force the long label) — every
+   select sits at the exact same x, not just visually close.
+
+End state: `place_id + category chip + tier chip` (line 1), `address` (line 2), then on the
+right: fixed-width visit-type select, fixed-width estimated time, remove button — all on line 1.
+See `client/src/components/PlanVisits.jsx` around the stop `<li>` render (~line 404 onward).
+
+**New: click an "Already Planned" day to see what's actually on it, in a modal.** Previously
+each day in the "Already Planned" card was a plain row with Edit/Delete buttons sitting directly
+on it, and no way to see which places were actually scheduled without reopening the whole day
+into an editable draft first. Bede wanted a Places/People-style split instead: the row itself
+becomes a plain clickable summary, and a new modal (`client/src/components/PlannedDayModal.jsx`)
+shows the day's actual visits (name, category, tier, address, visit type — each visit clickable
+to open the same `PlaceDetail` modal used everywhere else), with Edit and Delete moved into the
+modal's footer (Delete bottom-left, Close/Edit on the right — same layout convention as
+Place/Person modals).
+
+Needed one new read: `visits` had no per-date list endpoint, only the count-per-date
+`committedDateSummaries` query backing the old row. Added `scheduleDraft.committedDayVisits(db,
+userId, date)` (`server/src/services/scheduleDraft.js`) — left-joins `places` for category/tier/
+address/city/zip (a visit's place can be detached, so this can't be an inner join; `place_name`
+is always present as the detach-safe snapshot) — and a new route, `GET /api/schedule-drafts/
+committed-dates/:date/visits` (`server/src/routes/scheduleDrafts.js`). Deliberately the exact
+same `user_id` + `scheduled_date` scope as the existing count query (no extra status/source
+filter), so the modal's visit count always matches the row's stated count.
+
+`reopenDay`/`deleteCommittedDay` (the functions the old row's Edit/✕ already called) now return
+a boolean (previously nothing) so the modal knows whether to close itself after a confirm-gated
+action actually succeeds, rather than always closing regardless of outcome.
+
+Modal widened from an initial 480px to 640px after Bede tried it live and asked for more room —
+default `.modal` max-width is 560px, so this is deliberately wider than the app's other modals to
+comfortably fit a day's full stop list without cramming.
+
+**Verified live, full click-through:** opened the modal on a real committed 12-stop day, clicked
+a visit into full `PlaceDetail` and back (day modal still open behind it, not double-closed),
+Edit (pulled the day back into an editable proposal, modal closed, all 12 stops now editable),
+and Delete (removed the day, modal closed, "Already Planned" card disappeared, calendar date
+freed back up) — each on its own freshly-committed test day, cleaned up after.
+
+**Noticed, not fixed:** loading a fully-committed day fresh shows a brief "Draft not found"
+error banner. Root cause is React StrictMode double-invoking `PlanVisits.jsx`'s `load()` effect
+in dev only (`main.jsx` wraps the app in `<React.StrictMode>`) — when a draft's every day is
+already committed, `load()` auto-discards the now-empty draft shell server-side, and the second
+StrictMode-only invocation tries to discard the same already-gone draft and 404s. Doesn't happen
+in production (StrictMode's double-invoke is dev-only) and isn't specific to this session's
+changes — flagged to Bede rather than fixed, since it wasn't the ask.
+
+Also asked directly why the "Already Planned" day's Edit button was disabled for Bede on
+7/23/2026 (today): `homeBase` (the day's-route starting point) is captured fresh each page load
+from geolocation or manual entry, never persisted — so a fresh session with neither set yet
+disables Edit until "Use my current location"/"Enter address manually" is clicked once. Not a
+bug, same gating the old row's Edit button already had; the tooltip already said as much
+("Set a starting point before editing a planned day").
+
+146 backend tests pass throughout, client build clean.

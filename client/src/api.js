@@ -120,6 +120,7 @@ export const api = {
     generate: (body) => request('/schedule-drafts/generate', { method: 'POST', body }),
     active: () => request('/schedule-drafts/active'),
     committedDates: () => request('/schedule-drafts/committed-dates'),
+    committedDayVisits: (date) => request(`/schedule-drafts/committed-dates/${date}/visits`),
     deleteCommittedDay: (date) => request(`/schedule-drafts/committed-dates/${date}`, { method: 'DELETE' }),
     discard: (draftId) => request(`/schedule-drafts/${draftId}`, { method: 'DELETE' }),
     discardDay: (draftId, date) => request(`/schedule-drafts/${draftId}/days/${date}`, { method: 'DELETE' }),

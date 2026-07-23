@@ -662,7 +662,9 @@ break a later iteration's ownership check. An empty-but-present draft cleans its
 
 **Frontend:** an "Edit" button next to each "✓ Planned" day's badge in the "Already Planned"
 list, gated on having a `homeBase` set (same requirement as generating a new draft) and
-confirm-gated ("They'll temporarily show as not-yet-scheduled while you make changes…").
+confirm-gated ("They'll temporarily show as not-yet-scheduled while you make changes…"). **Stale
+as of 2026-07-23:** Edit (and Delete) no longer sit directly on the row — see that date's entry
+below for the drill-down modal they moved into.
 
 **Two related fixes bundled in with this work:**
 - `reoptimizeDay` used to hold a DB transaction open across the real OSRM `/trip` network call
@@ -774,6 +776,30 @@ row and "Hide suggestions" are now right-aligned and compact rather than left-al
 stretched full-width.
 
 146 backend tests pass (no backend changes), client build clean throughout.
+
+## Proposed-stop row layout + "Already Planned" day drill-down modal (2026-07-23)
+
+Several live-feedback rounds on the proposed-stop row's layout (divider before the add/suggest
+buttons; category/tier/visit-type/address rearranged across ~5 iterations; a real alignment bug
+where a longer visit-type label shifted every row's dropdown left, fixed by giving the estimated-
+time display and the select both a fixed width instead of `'auto'`/content-driven sizing) — full
+blow-by-blow in `NOTES.md`'s 2026-07-23 entry, not repeated here.
+
+**New: "Already Planned" days are now a drill-down, not inline Edit/Delete buttons.** Clicking a
+day's row opens `PlannedDayModal.jsx` — the day's actual visits (name/category/tier/address/
+visit type), each clickable into full `PlaceDetail`, with Edit/Delete moved into the modal's
+footer (matching the Place/Person modal convention: Delete bottom-left, Close/Edit on the right).
+New backend read: `scheduleDraft.committedDayVisits(db, userId, date)` + `GET /api/schedule-
+drafts/committed-dates/:date/visits`, left-joined against `places` (a visit's place can be
+detached) and scoped identically to the existing count query so the modal's list always matches
+the row's stated count. `reopenDay`/`deleteCommittedDay` in `PlanVisits.jsx` now return a
+boolean so the modal can tell whether its confirm-gated action actually succeeded before closing
+itself. Modal widened to 640px (default `.modal` max-width is 560px) after Bede tried the
+initial 480px live and asked for more room.
+
+Verified live end-to-end (open modal → view real 12-stop day → click into PlaceDetail and back →
+Edit reopens the day into an editable proposal → Delete removes it), each against a real
+freshly-committed test day, cleaned up after. 146 backend tests pass, client build clean.
 
 ## Running things
 

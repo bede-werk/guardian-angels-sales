@@ -195,6 +195,18 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
   fixtures pinned to `working_visit` explicitly, so they test what they're supposed to
   regardless of the global default. 146 tests pass (2 fixed), client build clean. Full detail
   in `NOTES.md`'s matching 2026-07-22 entry.
+- **2026-07-23, still on `bede-working`:** several live-feedback rounds on the proposed-stop
+  row's layout in "Plan My Visits" (ending at: name+category+tier pills on one line, address
+  below, fixed-width visit-type select + fixed-width estimated time + remove button on the
+  right — a real alignment bug along the way, where a longer visit-type label was shifting
+  every row's dropdown left by a few px, fixed by giving both the time display and the select a
+  fixed width instead of content-driven sizing). Then a new feature: "Already Planned" days are
+  now a click-through drill-down (`PlannedDayModal.jsx`) instead of exposing Edit/Delete
+  directly on the row — the modal lists that day's actual visits (clickable into full
+  `PlaceDetail`) with Edit/Delete moved into its footer, matching the Place/Person modal
+  convention. New backend read (`scheduleDraft.committedDayVisits` + `GET /api/schedule-drafts/
+  committed-dates/:date/visits`). 146 tests pass, client build clean. Full detail in
+  `NOTES.md`'s and `ROUTEPLANNER_PROGRESS.md`'s matching 2026-07-23 entries.
 
 **Mental model you need before touching this codebase:**
 1. **Detach, don't delete.** Places, people, and visits are designed so deleting one thing
@@ -826,6 +838,12 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   UI default. See §0's matching bullet and `NOTES.md` for full detail. 146 tests pass (2 fixed
   to stay correct under the new default), client build clean. **Pushed and merged into `main`**
   the same session, per Bede's explicit request.
+- **2026-07-23:** proposed-stop row layout iterated through several live-feedback rounds (ended
+  at name+pills / address / fixed-width select+time+remove — see §0's matching bullet for the
+  alignment-bug fix). New: "Already Planned" days open a drill-down modal (`PlannedDayModal.jsx`)
+  on click instead of showing Edit/Delete directly on the row; those actions moved into the
+  modal's footer. New read endpoint (`GET /api/schedule-drafts/committed-dates/:date/visits`).
+  146 tests pass, client build clean. Not yet pushed — see `git log`/`git status`.
 
 ---
 

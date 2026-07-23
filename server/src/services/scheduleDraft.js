@@ -315,6 +315,30 @@ async function committedDateSummaries(db, userId, { today } = {}) {
   return rows.map((r) => ({ date: r.date, count: Number(r.count) }));
 }
 
+// The actual visits behind one "Already Planned" row — same user+date scope
+// as committedDateSummaries above (no status/source filter), so the list a
+// rep sees after clicking a day always matches that day's count exactly.
+// Left-joins `places` for category/tier/address/city/zip since a visit's
+// place can be detached (place_id null, or the row simply gone) — v.place_name
+// is the detach-safe snapshot, always present regardless.
+async function committedDayVisits(db, userId, date) {
+  return db('visits as v')
+    .leftJoin('places as p', 'v.place_id', 'p.id')
+    .where({ 'v.user_id': userId, 'v.scheduled_date': date })
+    .orderBy('v.sort_order')
+    .select(
+      'v.id as visit_id',
+      'v.place_id',
+      'v.place_name',
+      'v.visit_type',
+      'p.category',
+      'p.tier',
+      'p.address',
+      'p.city',
+      'p.zip'
+    );
+}
+
 async function committedDatesForUser(db, userId, { today } = {}) {
   const summaries = await committedDateSummaries(db, userId, { today });
   return new Set(summaries.map((s) => s.date));
@@ -995,6 +1019,7 @@ module.exports = {
   committedElsewherePlaceIds,
   committedDatesForUser,
   committedDateSummaries,
+  committedDayVisits,
   ownDraftPlaceIds,
   getActiveDraft,
   createDraft,

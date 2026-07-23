@@ -67,6 +67,15 @@ router.get('/committed-dates', handle(async (req, res) => {
   res.json(summaries);
 }));
 
+// GET /api/schedule-drafts/committed-dates/:date/visits — the actual visits
+// behind one "Already Planned" day, for the click-to-view modal (place name/
+// category/tier/visit type, plus place_id so the modal can open full
+// PlaceDetail). Same user+date scope as committed-dates' count above.
+router.get('/committed-dates/:date/visits', handle(async (req, res) => {
+  const visits = await scheduleDraft.committedDayVisits(knex, req.user.id, req.params.date);
+  res.json(visits);
+}));
+
 // POST /api/schedule-drafts/days/:date/reopen — reopen an already-committed
 // day back into an editable draft: pulls that date's committed (planner-
 // sourced) visits back into schedule_draft_stops and deletes the visits rows
