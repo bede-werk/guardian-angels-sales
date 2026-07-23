@@ -25,10 +25,18 @@ export default function People({ userId }) {
   // earlier keystroke's response overwriting a faster later one.
   const requestIdRef = useRef(0);
 
-  useEffect(() => {
+  // Re-run via `refresh` (not just on mount) whenever a person/place
+  // create/edit/delete could change these — otherwise a place renamed or
+  // added while this tab stays mounted won't show up in the Place filter
+  // or the Add Person picker until the tab unmounts and remounts.
+  const loadReferenceData = useCallback(() => {
     api.filters().then(setFilters).catch(() => {});
     api.places({}).then(setPlaces).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadReferenceData();
+  }, [loadReferenceData]);
 
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
@@ -49,6 +57,13 @@ export default function People({ userId }) {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Refreshes both the row list and the reference data (filters/places) —
+  // used after any create/edit/delete of a person or place.
+  const refresh = useCallback(() => {
+    load();
+    loadReferenceData();
+  }, [load, loadReferenceData]);
 
   const set = (k) => (e) => setQ((s) => ({ ...s, [k]: e.target.value }));
 
@@ -163,18 +178,18 @@ export default function People({ userId }) {
           personId={selected}
           userId={userId}
           onClose={() => setSelected(null)}
-          onChanged={load}
-          onDeleted={load}
+          onChanged={refresh}
+          onDeleted={refresh}
           onOpenPlace={(placeId) => setViewingPlaceId(placeId)}
         />
       )}
 
       {viewingPlaceId && (
-        <PlaceDetail placeId={viewingPlaceId} userId={userId} onClose={() => setViewingPlaceId(null)} onChanged={load} onDeleted={load} />
+        <PlaceDetail placeId={viewingPlaceId} userId={userId} onClose={() => setViewingPlaceId(null)} onChanged={refresh} onDeleted={refresh} />
       )}
 
       {adding && (
-        <PersonModal places={places} onClose={() => setAdding(false)} onSaved={load} />
+        <PersonModal places={places} onClose={() => setAdding(false)} onSaved={refresh} />
       )}
     </div>
   );

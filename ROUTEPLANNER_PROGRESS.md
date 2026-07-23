@@ -747,6 +747,34 @@ numbers, so the tests stay correct regardless of the global default going forwar
 
 146 backend tests pass (2 fixed), client build clean throughout all four changes.
 
+## Add-stop dedupe + a real button-layout bug (2026-07-22)
+
+**"+ Add a stop" now excludes places already in the draft.** `ui/PlacePicker.jsx`'s search
+had no filtering at all — you could pick a place already used on another day and only find out
+from `addStop`'s 409. Added an `excludeIds` prop; `PlanVisits.jsx` computes it as every
+`place_id` across *every day* in the active draft (not just the one being edited), matching
+`scheduleDraft.js`'s draft-wide own-draft check.
+
+**Found a real layout bug via a throwaway Playwright session** (`playwright-core` against the
+system Chrome install, logged in as Lisa Marks id 5 with a temp token, cleaned up after) rather
+than just eyeballing the CSS. "+ Add a stop"/"Suggest a stop" were rendering **509px wide**
+(vs. 108px for a correctly-sized reference button) — they're direct children of a `.row` flex
+container that defaults every child to `flex: 1; min-width: 120px`, and unlike every other
+button in this file they never opted out with `flex: none, minWidth: 0`. Same bug hit the
+"Cancel" button next to the add-stop picker and each suggestion row's "Add" button. Fixed all
+four; re-measured to confirm (509px → 86px/98px).
+
+**Live-feedback round on the same controls:** "Suggest a stop" clicked now hides "+ Add a
+stop" (mirroring "+ Add a stop" already hiding "Suggest a stop"); a bug where "Suggest a stop"
+disappeared entirely once a day's budget filled up (`{canSuggest && <Button>}` unmounting it)
+is now `disabled` with a tooltip instead; the over-budget pill moved from the button row to sit
+next to the date/region in the day header, which surfaced a `.badge` font-family bug (inherited
+the heading's serif font when nested in an `<h2>`, fixed on `.badge` itself); the add/suggest
+row and "Hide suggestions" are now right-aligned and compact rather than left-aligned or
+stretched full-width.
+
+146 backend tests pass (no backend changes), client build clean throughout.
+
 ## Running things
 
 - Tests: `nvm use 24` then `npm test` from `server/` (runs

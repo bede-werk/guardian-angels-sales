@@ -21,10 +21,18 @@ export default function Places({ userId }) {
   // earlier keystroke's response overwriting a faster later one.
   const requestIdRef = useRef(0);
 
-  // Load the filter dropdown options (distinct categories/cities/zips) once on mount.
-  useEffect(() => {
+  // Load the filter dropdown options (distinct categories/tiers/regions).
+  // Re-run via `refresh` (not just on mount) whenever a place create/edit/
+  // delete could have introduced or removed a region — otherwise a value
+  // added while this tab stays mounted won't show up in the dropdown until
+  // the tab unmounts and remounts (e.g. by navigating away and back).
+  const loadFilters = useCallback(() => {
     api.filters().then(setFilters).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadFilters();
+  }, [loadFilters]);
 
   const load = useCallback(async () => {
     const requestId = ++requestIdRef.current;
@@ -46,6 +54,13 @@ export default function Places({ userId }) {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
   }, [load]);
+
+  // Refreshes both the row list and the filter dropdown options — used after
+  // any create/edit/delete, since either can change what regions exist.
+  const refresh = useCallback(() => {
+    load();
+    loadFilters();
+  }, [load, loadFilters]);
 
   // Shorthand for wiring an <input>/<select> straight into the `q` filter state.
   const set = (k) => (e) => setQ((s) => ({ ...s, [k]: e.target.value }));
@@ -157,14 +172,14 @@ export default function Places({ userId }) {
       </div>
 
       {selected && (
-        <PlaceDetail placeId={selected} userId={userId} onClose={() => setSelected(null)} onChanged={load} onDeleted={load} />
+        <PlaceDetail placeId={selected} userId={userId} onClose={() => setSelected(null)} onChanged={refresh} onDeleted={refresh} />
       )}
 
       {adding && (
         <PlaceModal
           categories={filters.allCategories}
           onClose={() => setAdding(false)}
-          onSaved={load}
+          onSaved={refresh}
         />
       )}
     </div>

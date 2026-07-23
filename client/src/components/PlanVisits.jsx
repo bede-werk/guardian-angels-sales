@@ -107,7 +107,7 @@ function openDays(draft) {
 // live time math and over-budget flagging just fall out of that, per the
 // interaction model: edits recalculate in place, nothing is ever auto-
 // dropped or auto-reshuffled beyond what the user themselves just did.
-function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded, userId }) {
+function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded, userId, draftPlaceIds }) {
   const [busy, setBusy] = useState(false); // a reorder/add/remove request is in flight for this day
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
@@ -315,10 +315,12 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   return (
     <div className="card">
       <div className="card-head">
-        <h2>{formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}</h2>
+        <h2>
+          {formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}
+          {day.overBudget && <span className="badge attention" style={{ marginLeft: 8 }}>Over budget</span>}
+        </h2>
         <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
           {day.committed.length > 0 && <span className="badge committed" style={{ flex: 'none', minWidth: 0 }}>✓ {day.committed.length} planned</span>}
-          {day.overBudget && <span className="badge attention" style={{ flex: 'none', minWidth: 0 }}>Over budget</span>}
           {everEdited && day.stops.length >= 2 && (
             <Button
               size="small"
@@ -460,17 +462,26 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
         <div style={{ marginTop: 14 }}>
           {addingOpen ? (
             <div className="row" style={{ alignItems: 'center' }}>
-              <PlacePicker placeholder="Add a stop to this day…" onPick={addStop} />
-              <Button variant="ghost" size="small" onClick={() => setAddingOpen(false)}>Cancel</Button>
+              <PlacePicker placeholder="Add a stop to this day…" onPick={addStop} excludeIds={draftPlaceIds} />
+              <Button variant="ghost" size="small" onClick={() => setAddingOpen(false)} style={{ flex: 'none', minWidth: 0 }}>Cancel</Button>
+            </div>
+          ) : suggestionsOpen ? (
+            <div className="row" style={{ flex: 'unset', gap: 8, justifyContent: 'flex-end' }}>
+              <Button variant="ghost" size="small" onClick={toggleSuggestions} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>Hide suggestions</Button>
             </div>
           ) : (
-            <div className="row" style={{ flex: 'unset', gap: 8 }}>
-              <Button variant="secondary" size="small" onClick={() => setAddingOpen(true)} disabled={busy}>+ Add a stop</Button>
-              {canSuggest && (
-                <Button variant="ghost" size="small" onClick={toggleSuggestions} disabled={busy}>
-                  {suggestionsOpen ? 'Hide suggestions' : 'Suggest a stop'}
-                </Button>
-              )}
+            <div className="row" style={{ flex: 'unset', gap: 8, justifyContent: 'flex-end' }}>
+              <Button variant="secondary" size="small" onClick={() => setAddingOpen(true)} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>+ Add a stop</Button>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={toggleSuggestions}
+                disabled={busy || !canSuggest}
+                title={canSuggest ? undefined : 'No time left in this day to suggest another stop'}
+                style={{ flex: 'none', minWidth: 0 }}
+              >
+                Suggest a stop
+              </Button>
             </div>
           )}
         </div>
@@ -492,7 +503,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     <strong>{s.name}</strong>
                     <div className="tiny muted">{s.category ? `${s.category} · ` : ''}{s.city}{s.region ? ` · ${s.region}` : ''}</div>
                   </div>
-                  <Button size="small" onClick={() => addSuggestion(s)} disabled={addingSuggestionId === s.place_id}>Add</Button>
+                  <Button size="small" onClick={() => addSuggestion(s)} disabled={addingSuggestionId === s.place_id} style={{ flex: 'none', minWidth: 0 }}>Add</Button>
                 </div>
               ))
             )}
@@ -557,6 +568,15 @@ export default function PlanVisits({ userId }) {
   // the list below); discarding that day's proposal (or the whole draft) is
   // the only way to free the date back up. See Calendar.jsx's `proposed` prop.
   const proposedDates = useMemo(() => new Set((draft?.days ?? []).map((d) => d.date)), [draft]);
+  // Every place already used anywhere in the active draft (any day, not
+  // just the one being edited) — addStop rejects these as a 409 regardless
+  // of which day you try to add them to, so the ad-hoc "+ Add a stop"
+  // picker excludes them up front rather than letting the user pick one and
+  // only find out from an error.
+  const draftPlaceIds = useMemo(
+    () => new Set((draft?.days ?? []).flatMap((d) => d.stops.map((s) => s.place_id))),
+    [draft]
+  );
   const seededFromDraft = useRef(false);
 
   // homeBase capture: browser geolocation, or a manually entered address —
@@ -1105,6 +1125,7 @@ export default function PlanVisits({ userId }) {
               onError={setError}
               reload={load}
               userId={userId}
+              draftPlaceIds={draftPlaceIds}
             />
           ))
       )}

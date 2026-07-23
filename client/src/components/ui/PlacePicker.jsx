@@ -7,7 +7,7 @@ import { api } from '../../api';
 // Originally lived only in NeedsMapping.jsx (assigning a note to a place);
 // extracted here once PlanVisits.jsx needed the identical picker for adding
 // an ad-hoc stop to a draft day.
-export default function PlacePicker({ onPick, placeholder = 'Assign to existing place…' }) {
+export default function PlacePicker({ onPick, placeholder = 'Assign to existing place…', excludeIds }) {
   const [q, setQ] = useState(''); // what's typed in the search box
   const [results, setResults] = useState([]); // matching places from the API
   const [open, setOpen] = useState(false); // whether the results dropdown is showing
@@ -26,7 +26,8 @@ export default function PlacePicker({ onPick, placeholder = 'Assign to existing 
       try {
         const rows = await api.places({ search: q });
         if (requestIdRef.current !== requestId) return;
-        setResults(rows.slice(0, 8)); // cap the dropdown to 8 results
+        const filtered = excludeIds ? rows.filter((p) => !excludeIds.has(p.id)) : rows;
+        setResults(filtered.slice(0, 8)); // cap the dropdown to 8 results
         setOpen(true);
         setError(null);
       } catch (e) {
@@ -35,7 +36,7 @@ export default function PlacePicker({ onPick, placeholder = 'Assign to existing 
       }
     }, 200);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, excludeIds]);
 
   // Close the dropdown if the user clicks anywhere outside this component.
   useEffect(() => {

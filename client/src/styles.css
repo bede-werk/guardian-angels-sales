@@ -168,7 +168,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 
 /* Chips / badges — small colored pills. See ui/Chip.jsx (TierChip/
    OutcomeChip) for which component renders which class below. */
-.badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .badge.t1 { background: var(--blue-tint-1); color: var(--tier1); } /* Tier 1 */
 .badge.t2 { background: var(--teal-tint-1); color: var(--tier2); } /* Tier 2 */
 .badge.t3 { background: var(--grey-tint-1); color: var(--tier3); } /* Tier 3 */

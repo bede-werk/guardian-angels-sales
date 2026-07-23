@@ -897,3 +897,92 @@ of whatever the global default gets set to next.
 build clean throughout all four changes. Committed (`e958d83`), then **pushed and merged into
 `main`** the same session (fast-forward, direct `git merge` — `gh` still unavailable in this
 environment), per Bede's explicit request.
+
+## 2026-07-22 (evening) — Geocoding review, filter-dropdown staleness, and a real Plan My
+## Visits button-layout bug
+
+Branch `bede-working`. Picked off two items from HANDOFF §14's backlog, then a run of live
+UX feedback on Plan My Visits' "+ Add a stop"/"Suggest a stop" controls that turned up an
+actual layout bug along the way — not just polish.
+
+**Manually reviewed the 7 places that never geocoded (§9A/§14).** Queried `places` for
+`lat IS NULL`. 5 are genuinely non-geocodable and always will be: 2 are PO Boxes (Health at
+Home Consultants, Lincoln Right to Life), 3 are "(Online)" referral sources with no physical
+address at all (A Place for Mom, Chefs For Seniors, Stephanie Oelke) — nothing to fix, and
+`addStop` already refuses to route them with a clear error rather than failing silently. The
+other 2 (Nebraska DHHS Administrative Offices — "301 Centennial Mall S, Floor 3"; Southwood
+Lutheran Church — "4301 Wilderness Hills Blvd") have real street addresses that the free
+Census geocoder just doesn't have indexed — confirmed by hitting the Census API directly with
+several address-format variants (stripping "Floor 3", trying "Boulevard" vs "Blvd," etc.), all
+returning zero matches. Cross-checked both against OpenStreetMap's Nominatim geocoder, which
+resolved them exactly (matched by name — "Nebraska State Office Building" at the DHHS address,
+"Southwood Lutheran Church" at the other), and hand-set their `lat`/`lng` directly in the dev
+DB. **Known fragility, not fixed:** `places.js` has no manual lat/lng override — `lat`/`lng`
+are only ever set by re-running `geocodeAddress()` against the address fields, and `PATCH`
+re-attempts geocoding any time address/city/state/zip is present in the request body (which
+`PlaceModal.jsx` always sends, even unchanged). If either of these 2 places is edited again,
+Census will fail again, the existing "address not recognized — save anyway?" dialog will pop,
+and clicking through it nulls the coordinates back out. Real fix would mean adding a second
+geocoding provider or a manual override field — a design decision, not done here.
+
+**Filter dropdowns went stale within a session (Places.jsx/People.jsx).** Both fetched their
+reference data (Places: category/tier/region options; People: category options + the full
+places list backing the Place filter and Add Person picker) once on mount only. Editing a
+place's city/region, or creating/renaming a place, while staying on the same tab wouldn't
+show up in the dropdown until the tab unmounted and remounted (e.g. navigating away and back).
+Fixed by extracting the reference-data fetch into its own `loadFilters`/`loadReferenceData`
+callback and wiring a combined `refresh` (row list + reference data) into every place/person
+create/edit/delete callback that used to just call `load`.
+
+**Bug: "+ Add a stop" let you pick a place already in the draft, only to 409 on submit.**
+`ui/PlacePicker.jsx`'s search had zero exclusion — it searched every place, while the
+"Suggest a stop" panel already correctly excluded in-draft places server-side. Added an
+`excludeIds` prop to `PlacePicker` (filters results client-side before capping to 8); wired
+`PlanVisits.jsx` to compute a `draftPlaceIds` set across **every day in the active draft, not
+just the one being edited** — matching `scheduleDraft.js`'s `addStop`, which rejects a place
+already used anywhere in the user's own draft regardless of which day you try to add it to.
+
+**Add/Suggest button mutual exclusivity, then a real bug in how "Suggest a stop" hid itself.**
+Live feedback, iterative: first, made "+ Add a stop" clicked → hides both buttons, shows the
+picker + Cancel (Bede confirmed he liked this). Then the mirror case: "Suggest a stop" clicked
+→ hides "+ Add a stop", shows only "Hide suggestions" alone in the row. Then Bede hit a case
+where "Suggest a stop" disappeared entirely after adding a stop — turned out `canSuggest`
+(`!day.overBudget && day.remainingMinutes > 0`) was wrapped around the whole button
+(`{canSuggest && <Button>...}`), so filling a day's remaining budget via "+ Add a stop"
+silently removed "Suggest a stop" from the DOM instead of just disabling it. Changed to always
+render the button, `disabled={busy || !canSuggest}` with an explanatory title tooltip.
+
+**A real layout bug, found by actually rendering the page, not just reading the CSS.** Set up
+a throwaway Playwright session (`playwright-core` pointed at the system-installed Chrome, no
+fresh Chromium download needed — `chromium-cli` isn't available in this environment) against
+the local dev server, logged in as Lisa Marks (id 5, temp token, per the smoke-test
+convention) with a real generated draft. Measured actual rendered widths: "+ Add a stop" and
+"Suggest a stop" were **509px wide** — vs. 108px for "Discard proposal," a correctly-sized
+button right above them. Root cause: both are direct children of a `.row` flex container,
+which defaults every child to `flex: 1; min-width: 120px` (see `styles.css`) — every *other*
+button in this file (Discard/Accept/Re-optimize) explicitly opts out with
+`style={{ flex: 'none', minWidth: 0 }}`, but these two, plus the "Cancel" button next to the
+add-stop picker and each suggestion row's "Add" button, never did, so they silently inherited
+the stretch. Fixed by adding the same override to all four. Re-measured after the fix:
+"+ Add a stop" 509px → 86px, "Suggest a stop" 509px → 98px. Confirmed via before/after
+screenshots. Cleaned up the throwaway draft and cleared Lisa's temp token afterward.
+
+**Over-budget pill moved next to the date/region, not in the button row** (Bede's ask) — and
+while nested inside the `<h2>`, it silently inherited the heading's serif font
+(`h1, h2, h3 { font-family: var(--font-serif); }`) instead of the sans font every other
+`.badge` uses, since `.badge` itself never set `font-family`. Fixed on `.badge` directly (not
+a one-off inline style on this instance) so it's correct regardless of where a badge ends up
+nested in the future.
+
+**Right-alignment** (Bede's ask, applied after the sizing fix made it meaningful):
+`justifyContent: 'flex-end'` on the default add/suggest row and the suggestions-open row —
+"Hide suggestions" also got the same `flex: none, minWidth: 0` treatment so it's small and
+right-aligned instead of stretching full-width (superseding the full-width look from the
+mutual-exclusivity change earlier the same session, which Bede explicitly liked at the time
+but changed his mind on once he saw the compact-button alternative).
+
+**Verification:** 146 backend tests pass (no backend changes this session), client build
+clean throughout. Restarted the dev servers (`./dev.sh`) after the Playwright pass, since
+stopping them to clean up the test session took the live site down mid-conversation — worth
+remembering: don't kill ports 4000/5173 as throwaway cleanup while Bede might still be using
+the running app.

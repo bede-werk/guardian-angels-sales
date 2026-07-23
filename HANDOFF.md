@@ -632,10 +632,14 @@ future routing use, never populated). This session actually populated them.
   the script never re-sends already-attempted rows. Logs a list of unmatched addresses at the
   end for manual review. **Has now been run against the real dataset** (confirmed against the
   dev DB during the 2026-07-10 audit — see §14A/§14B): 255 of 262 places have `lat`/`lng`; the
-  other 7 are stamped `geocoded_at` (so the script won't re-attempt them) but have no
-  coordinates because their address didn't match — those 7 need manual review before any
-  routing logic can use them. (Earlier revisions of this doc said the backfill hadn't run
-  yet — that was true as of 2026-07-09, corrected here.)
+  other 7 were stamped `geocoded_at` (so the script wouldn't re-attempt them) but had no
+  coordinates because Census didn't match their address. (Earlier revisions of this doc said
+  the backfill hadn't run yet — that was true as of 2026-07-09, corrected here.)
+  **Manually reviewed 2026-07-22 (§14):** 5 of the 7 are genuinely non-geocodable (2 PO Boxes,
+  3 "(Online)" referral sources with no physical address) — expected, not a data problem. The
+  other 2 had real addresses Census just doesn't have indexed; cross-checked against
+  OpenStreetMap and hand-set their `lat`/`lng` directly. No manual-override field exists, so
+  this is durable only until one of those 2 places' address is edited again (see §14).
 - **Migration:** `server/src/migrations/20260711000000_add_geocoded_at_to_places.js` adds a
   plain `t.timestamp('geocoded_at')` — no FK, no rebuild needed (see mental-model point 4).
   The `lat`/`lng` columns themselves are older (`20260707010000_places_and_people.js`).
@@ -827,8 +831,17 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
 
 ## 14. Next steps / ideas (not yet done)
 
-- **Manually review the 7 places whose addresses didn't geocode** (§9A) before any routing
-  logic trusts every place having coordinates.
+- **DONE (2026-07-22).** ~~Manually review the 7 places whose addresses didn't geocode~~ (§9A).
+  5 turned out to be genuinely non-geocodable (2 PO Boxes, 3 "(Online)" referral sources with
+  no physical address) — nothing to fix, `addStop` already refuses to route them with a clear
+  error. The other 2 (Nebraska DHHS Administrative Offices, Southwood Lutheran Church) have
+  real street addresses the free Census geocoder simply doesn't have indexed; cross-checked
+  both against OpenStreetMap's geocoder (which resolved them exactly) and hand-set their
+  `lat`/`lng` directly in the DB. Caveat: there's still no manual lat/lng override field, so if
+  either place's address is edited again through the app, Census will fail again and the
+  existing "address not recognized — save anyway?" dialog will null the coordinates back out if
+  someone clicks through it. Fixing that for real means picking a second geocoding provider —
+  a real design decision, not done here.
 - **"Needs attention" coverage on Plan My Visits:** referral metrics are wired into the
   People tab, Places tab, both detail pages, and the Dashboard, but not the route-planning
   screen's stop cards.
@@ -885,8 +898,10 @@ Lower-priority findings from the same audit — status as of the 2026-07-14 foll
 - **FIXED.** `places.category` is now a locked enum (`server/src/config/categories.js`), not
   free text — `POST`/`PATCH /api/places` reject any non-matching value. Bede deliberately
   deferred building an "add a category" admin UI until it's actually needed.
-- **Still open.** Filter dropdown options (category/city/zip) are fetched once per mount and
-  don't refresh when a new value is added elsewhere in the same session.
+- **FIXED (2026-07-22).** Filter dropdown options (category/tier/region in Places.jsx, the
+  place picker/filter in People.jsx) used to be fetched once per mount and not refresh when a
+  new value was added elsewhere in the same session. Both now re-fetch alongside the row list
+  on every create/edit/delete.
 
 **New findings from the 2026-07-14 full-codebase audit (`c408809`), both fixed same day:**
 - **Critical, was live in production:** `GET`/`POST /api/users` returned full user rows
