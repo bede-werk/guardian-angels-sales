@@ -11,13 +11,10 @@ const { referralMetricsByPersonId, summarizeReferralDates, metricsFor } = requir
 
 const router = express.Router();
 
-const ROLE_TYPES = ['decision_maker', 'gatekeeper', 'champion', 'other'];
-
 // Fields a client is allowed to set on a person (mirrors the `people` migration).
 const EDITABLE = [
   'name',
   'title',
-  'role_type',
   'email',
   'phone',
   'preferences',
@@ -28,19 +25,54 @@ const EDITABLE = [
 // Checks the enum-like fields against their allowed values. Returns an error
 // string to send back to the client, or null if everything's valid.
 function validate(payload) {
-  if (payload.role_type && !ROLE_TYPES.includes(payload.role_type)) {
-    return `role_type must be one of ${ROLE_TYPES.join(', ')}`;
-  }
   return validatePhone(payload.phone);
 }
 
+// Null-safe ascending date compare for last_visit_date — a person never
+// contacted (null) sorts as "oldest possible" (first in ascending order,
+// last once sortPeople flips it for descending) rather than being pushed to
+// one arbitrary end regardless of direction: whichever direction you're
+// sorting by, "never contacted" is the most-overdue case, so it belongs at
+// the "oldest" end either way.
+function compareDatesAsc(a, b) {
+  if (a === b) return 0;
+  if (a == null) return -1;
+  if (b == null) return 1;
+  return a < b ? -1 : 1;
+}
+
+// Re-sorts the already-decorated (referral_metrics attached) people list per
+// the `sort` query param. Pure (no knex) — takes/returns plain arrays. The
+// default case returns `rows` unchanged, preserving the SQL query's own
+// `p.name, pe.name` order, so "no sort picked" behaves exactly as it always
+// has. Array.prototype.sort is spec-guaranteed stable, so every case here
+// keeps that same name-order as its tiebreaker for free.
+function sortPeople(rows, sort) {
+  switch (sort) {
+    case 'last_contacted_desc':
+      return [...rows].sort((a, b) => -compareDatesAsc(a.last_visit_date, b.last_visit_date));
+    case 'last_contacted_asc':
+      return [...rows].sort((a, b) => compareDatesAsc(a.last_visit_date, b.last_visit_date));
+    case 'referrals_desc':
+      return [...rows].sort((a, b) => b.referral_metrics.lifetime_referrals - a.referral_metrics.lifetime_referrals);
+    case 'referrals_asc':
+      return [...rows].sort((a, b) => a.referral_metrics.lifetime_referrals - b.referral_metrics.lifetime_referrals);
+    case 'last_referral_desc':
+      return [...rows].sort((a, b) => -compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
+    case 'last_referral_asc':
+      return [...rows].sort((a, b) => compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
+    default:
+      return rows;
+  }
+}
+
 // GET /api/people — cross-place directory (the People tab). Query params:
-// search (name/title), placeId, category (of their place), neverContacted=1
-// (no completed visit on file yet), needsAttention=1 (referred before but
-// nothing in the last 90 days — see services/referralMetrics.js).
+// search (name/title), placeId, category (of their place),
+// sort (name [default] | last_contacted_desc | last_contacted_asc |
+// referrals_desc | referrals_asc | last_referral_desc | last_referral_asc).
 router.get('/people', async (req, res, next) => {
   try {
-    const { search, placeId, category, neverContacted, needsAttention } = req.query;
+    const { search, placeId, category, sort } = req.query;
 
     // Last *completed* visit per person, same "only a finished call counts"
     // rule used for places (see places.js's lastVisit subquery).
@@ -61,8 +93,7 @@ router.get('/people', async (req, res, next) => {
       .select(
         'pe.*',
         'p.name as place_name',
-        'p.category as place_category',
-        'p.city as place_city',
+        'p.region as place_region',
         'lv.last_visit_date'
       );
 
@@ -74,16 +105,13 @@ router.get('/people', async (req, res, next) => {
     }
     if (placeId) query.where('pe.place_id', placeId);
     if (category) query.where('p.category', category);
-    if (neverContacted === '1' || neverContacted === 'true') query.whereNull('lv.last_visit_date');
 
     query.orderBy('p.name', 'asc').orderBy('pe.name', 'asc');
 
     const people = await query;
     const metricsById = await referralMetricsByPersonId(knex, people.map((p) => p.id));
     let decorated = people.map((p) => ({ ...p, referral_metrics: metricsFor(metricsById, p.id) }));
-    if (needsAttention === '1' || needsAttention === 'true') {
-      decorated = decorated.filter((p) => p.referral_metrics.needs_attention);
-    }
+    decorated = sortPeople(decorated, sort);
     res.json(decorated);
   } catch (err) {
     next(err);

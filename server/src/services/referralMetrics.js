@@ -6,10 +6,6 @@
 //   lifetime_referrals      — total referral rows attributed to them, ever
 //   last_referral_date      — the most recent referral_date on file, or null
 //   referrals_last_90_days  — how many landed within the trailing 90-day window
-// Plus one derived flag:
-//   needs_attention — they've referred before (lifetime > 0) but nothing in
-//   the last 90 days. A brand-new contact with zero lifetime referrals is
-//   just unstarted, not "cooling" — needs_attention stays false for them.
 
 const RECENT_WINDOW_DAYS = 90;
 
@@ -17,7 +13,6 @@ const EMPTY_METRICS = {
   lifetime_referrals: 0,
   last_referral_date: null,
   referrals_last_90_days: 0,
-  needs_attention: false,
 };
 
 // 'YYYY-MM-DD' cutoff for the recent window, RECENT_WINDOW_DAYS back from
@@ -42,14 +37,13 @@ function rowsToMetricsMap(rows, keyField) {
       lifetime_referrals: lifetime,
       last_referral_date: r.last_referral_date || null,
       referrals_last_90_days: last90,
-      needs_attention: lifetime > 0 && last90 === 0,
     };
   }
   return byKey;
 }
 
-// Looks up one id's metrics from a batch map, defaulting to "none yet" (not
-// needs_attention) for an id with no referral rows at all.
+// Looks up one id's metrics from a batch map, defaulting to "none yet" for an
+// id with no referral rows at all.
 function metricsFor(byKey, id) {
   return byKey[id] || EMPTY_METRICS;
 }
@@ -102,7 +96,6 @@ function summarizeReferralDates(dates, now = new Date()) {
     lifetime_referrals: lifetime,
     last_referral_date: dated.length ? dated[dated.length - 1] : null,
     referrals_last_90_days: last90,
-    needs_attention: lifetime > 0 && last90 === 0,
   };
 }
 

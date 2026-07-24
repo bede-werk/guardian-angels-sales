@@ -175,11 +175,6 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
                 {data.referral_metrics.lifetime_referrals} referral{data.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
               </span>
-              {data.referral_metrics.needs_attention && (
-                <span className="badge attention" title="Referred before, but nothing in the last 90 days">
-                  Cooling — needs attention
-                </span>
-              )}
             </div>
           </div>
           <button className="close" title="Close" onClick={onClose}>×</button>
@@ -290,11 +285,6 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                           {p.referral_metrics.lifetime_referrals} referral{p.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
                           {p.referral_metrics.last_referral_date ? ` · last ${formatDate(p.referral_metrics.last_referral_date)}` : ''}
                         </span>
-                        {p.referral_metrics.needs_attention && (
-                          <span className="badge attention" title="Referred before, but nothing in the last 90 days">
-                            Cooling
-                          </span>
-                        )}
                         <Button
                           variant="ghost"
                           size="small"

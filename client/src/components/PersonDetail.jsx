@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, ROLE_TYPE_LABELS, formatDate } from '../api';
+import { api, formatDate } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
@@ -271,15 +271,9 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
           <div>
             <div className="tag-list" style={{ alignItems: 'center' }}>
               <h2 style={{ fontSize: 22 }}>{data.name}</h2>
-              {data.role_type && <span className="badge role">{ROLE_TYPE_LABELS[data.role_type]}</span>}
               <span className="badge" style={{ background: 'var(--teal-tint-2)', color: 'var(--teal-dark)' }}>
                 {metrics.lifetime_referrals} referral{metrics.lifetime_referrals === 1 ? '' : 's'}
               </span>
-              {metrics.needs_attention && (
-                <span className="badge attention" title="Referred before, but nothing in the last 90 days">
-                  Cooling — needs attention
-                </span>
-              )}
             </div>
             {data.title && <div className="tiny muted" style={{ marginTop: 4 }}>{data.title}</div>}
           </div>
@@ -499,11 +493,6 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               <div className="tiny muted">
                 Last referral: {metrics.last_referral_date ? formatDate(metrics.last_referral_date) : 'none yet'} · {metrics.referrals_last_90_days} in the last 90 days
               </div>
-              {metrics.needs_attention && (
-                <div className="tiny" style={{ color: 'var(--mauve)' }}>
-                  Cooling — referred before, but nothing in the last 90 days.
-                </div>
-              )}
               {data.referrals.length === 0 ? (
                 <EmptyState message="No referrals logged for this person yet." />
               ) : (

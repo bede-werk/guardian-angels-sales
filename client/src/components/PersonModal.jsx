@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api, ROLE_TYPE_LABELS } from '../api';
+import { api } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
@@ -16,7 +16,6 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
     place_id: placeId || person?.place_id || '',
     name: person?.name || '',
     title: person?.title || '',
-    role_type: person?.role_type || '',
     email: person?.email || '',
     phone: person?.phone || '',
     birthday: person?.birthday || '',
@@ -107,15 +106,6 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
           </div>
 
           <div className="row">
-            <div>
-              <label className="field">Role</label>
-              <select value={form.role_type} onChange={set('role_type')}>
-                <option value="">—</option>
-                {Object.entries(ROLE_TYPE_LABELS).map(([val, label]) => (
-                  <option key={val} value={val}>{label}</option>
-                ))}
-              </select>
-            </div>
             <div>
               <label className="field">Email</label>
               <input type="email" value={form.email} onChange={set('email')} />

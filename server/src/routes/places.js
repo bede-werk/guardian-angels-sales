@@ -88,11 +88,10 @@ function decorate(p) {
 }
 
 // GET /api/places — searchable / filterable list with last-visit + contact info.
-// Query params: search, category, tier, region, neverVisited=1,
-// needsAttention=1 (referred before but nothing in the last 90 days).
+// Query params: search, category, tier, region, neverVisited=1.
 router.get('/', async (req, res, next) => {
   try {
-    const { search, category, tier, region, neverVisited, needsAttention } = req.query;
+    const { search, category, tier, region, neverVisited } = req.query;
 
     // Subquery: last *completed* visit per place. A visit that's only planned
     // (on today's route but not yet done) must not count as a real visit.
@@ -149,15 +148,12 @@ router.get('/', async (req, res, next) => {
     // every place at once so the directory doesn't need N+1 requests.
     const metricsByPlace = await referralMetricsByPlaceId(knex, ids);
 
-    let decorated = places.map((p) => ({
+    const decorated = places.map((p) => ({
       ...decorate(p),
       visit_count: Number(p.visit_count) || 0,
       person: personByPlace[p.id] || null,
       referral_metrics: metricsFor(metricsByPlace, p.id),
     }));
-    if (needsAttention === '1' || needsAttention === 'true') {
-      decorated = decorated.filter((p) => p.referral_metrics.needs_attention);
-    }
 
     res.json(decorated);
   } catch (err) {
@@ -238,7 +234,7 @@ router.get('/:id', async (req, res, next) => {
 
     // Sum lifetime and last-90-days across people; last_referral_date is
     // whichever person's is most recent. A place with no referrals at all
-    // reads as "none yet" (needs_attention stays false), same rule as a person.
+    // reads as "none yet", same rule as a person.
     const referralMetrics = peopleWithMetrics.reduce(
       (acc, p) => ({
         lifetime_referrals: acc.lifetime_referrals + p.referral_metrics.lifetime_referrals,
@@ -251,7 +247,6 @@ router.get('/:id', async (req, res, next) => {
       }),
       { ...EMPTY_METRICS }
     );
-    referralMetrics.needs_attention = referralMetrics.lifetime_referrals > 0 && referralMetrics.referrals_last_90_days === 0;
 
     res.json({
       ...decorate(place),

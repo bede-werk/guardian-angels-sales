@@ -10,7 +10,7 @@ import PlaceModal from './PlaceModal';
 // Clicking any row opens that place's full detail (PlaceDetail.jsx).
 export default function Places({ userId }) {
   const [filters, setFilters] = useState({ categories: [], allCategories: [], regions: [], tiers: [] }); // dropdown options, loaded once
-  const [q, setQ] = useState({ search: '', category: '', tier: '', region: '', neverVisited: '', needsAttention: '' }); // current filter values
+  const [q, setQ] = useState({ search: '', category: '', tier: '', region: '', neverVisited: '' }); // current filter values
   const [rows, setRows] = useState([]); // the filtered place list from the API
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -109,16 +109,6 @@ export default function Places({ userId }) {
                 Never visited
               </Button>
             </div>
-            <div style={{ flex: 'unset' }}>
-              <label className="field">&nbsp;</label>
-              <Button
-                variant={q.needsAttention ? 'primary' : 'secondary'}
-                onClick={() => setQ((s) => ({ ...s, needsAttention: s.needsAttention ? '' : '1' }))}
-                title="Referred before, but nothing in the last 90 days"
-              >
-                Needs attention
-              </Button>
-            </div>
           </div>
         </div>
       </div>
@@ -151,12 +141,7 @@ export default function Places({ userId }) {
                   <td className="tiny">{p.last_visit_date ? formatDate(p.last_visit_date) : <span className="muted">—</span>}</td>
                   <td className="tiny">
                     {p.referral_metrics.lifetime_referrals > 0 ? (
-                      <>
-                        {p.referral_metrics.lifetime_referrals}
-                        {p.referral_metrics.needs_attention && (
-                          <span className="badge attention" style={{ marginLeft: 6 }}>Needs attention</span>
-                        )}
-                      </>
+                      p.referral_metrics.lifetime_referrals
                     ) : (
                       <span className="muted">None yet</span>
                     )}

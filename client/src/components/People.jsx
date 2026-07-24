@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, formatDate } from '../api';
-import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonDetail from './PersonDetail';
@@ -13,7 +12,7 @@ import PlaceDetail from './PlaceDetail';
 export default function People({ userId }) {
   const [filters, setFilters] = useState({ categories: [] }); // category dropdown options, loaded once
   const [places, setPlaces] = useState([]); // every place, for the place filter + the Add Person picker
-  const [q, setQ] = useState({ search: '', placeId: '', category: '', neverContacted: '', needsAttention: '' });
+  const [q, setQ] = useState({ search: '', placeId: '', category: '', sort: '' });
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -71,8 +70,7 @@ export default function People({ userId }) {
     <div className="grid" style={{ gap: 16 }}>
       {error && <div className="error-banner">{error}</div>}
 
-      {/* Filter bar: search box + place/category dropdowns + "Never
-          contacted" / "Needs attention" toggle buttons. */}
+      {/* Filter bar: search box + place/category dropdowns + sort. */}
       <div className="card">
         <div className="card-body">
           <div className="row">
@@ -94,25 +92,17 @@ export default function People({ userId }) {
                 {filters.categories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            <div style={{ flex: 'unset' }}>
-              <label className="field">&nbsp;</label>
-              <Button
-                variant={q.neverContacted ? 'primary' : 'secondary'}
-                title={q.neverContacted ? 'Showing only people with no visit ever logged — click to clear this filter' : 'Filter to only people with no visit ever logged'}
-                onClick={() => setQ((s) => ({ ...s, neverContacted: s.neverContacted ? '' : '1' }))}
-              >
-                Never contacted
-              </Button>
-            </div>
-            <div style={{ flex: 'unset' }}>
-              <label className="field">&nbsp;</label>
-              <Button
-                variant={q.needsAttention ? 'primary' : 'secondary'}
-                onClick={() => setQ((s) => ({ ...s, needsAttention: s.needsAttention ? '' : '1' }))}
-                title="Referred before, but nothing in the last 90 days"
-              >
-                Needs attention
-              </Button>
+            <div>
+              <label className="field">Sort by</label>
+              <select value={q.sort} onChange={set('sort')}>
+                <option value="">Name (A-Z)</option>
+                <option value="last_contacted_desc">Last contacted (newest first)</option>
+                <option value="last_contacted_asc">Last contacted (oldest/never first)</option>
+                <option value="referrals_desc">Referrals (most first)</option>
+                <option value="referrals_asc">Referrals (fewest first)</option>
+                <option value="last_referral_desc">Last referral (newest first)</option>
+                <option value="last_referral_asc">Last referral (oldest/never first)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -130,7 +120,6 @@ export default function People({ userId }) {
               <tr>
                 <th>Name</th>
                 <th>Place</th>
-                <th>Category</th>
                 <th>Referrals</th>
                 <th>Last contacted</th>
               </tr>
@@ -144,19 +133,16 @@ export default function People({ userId }) {
                   </td>
                   <td className="tiny">
                     {p.place_name ? (
-                      <>{p.place_name}<br /><span className="muted">{p.place_city}</span></>
+                      <>{p.place_name}<br /><span className="muted">{p.place_region}</span></>
                     ) : (
                       <span className="muted">Unassigned</span>
                     )}
                   </td>
-                  <td><CategoryChip category={p.place_category} /></td>
                   <td className="tiny">
                     {p.referral_metrics.lifetime_referrals > 0 ? (
                       <>
-                        {p.referral_metrics.lifetime_referrals} · last {formatDate(p.referral_metrics.last_referral_date)}
-                        {p.referral_metrics.needs_attention && (
-                          <div><span className="badge attention" style={{ marginTop: 2 }}>Needs attention</span></div>
-                        )}
+                        <strong style={{ color: 'var(--teal-dark)', fontSize: 16 }}>{p.referral_metrics.lifetime_referrals}</strong>
+                        {' '}· last {formatDate(p.referral_metrics.last_referral_date)}
                       </>
                     ) : (
                       <span className="muted">None yet</span>
@@ -166,7 +152,7 @@ export default function People({ userId }) {
                 </tr>
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={5}><EmptyState message="No people match those filters." /></td></tr>
+                <tr><td colSpan={4}><EmptyState message="No people match those filters." /></td></tr>
               )}
             </tbody>
           </table>

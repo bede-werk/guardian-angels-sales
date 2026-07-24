@@ -94,7 +94,7 @@ export const api = {
 
   // People — server/src/routes/people.js
   people: {
-    // Cross-place People directory tab. params: search, placeId, category, neverContacted, needsAttention
+    // Cross-place People directory tab. params: search, placeId, category, sort
     list: (params = {}) => {
       const q = new URLSearchParams(
         Object.entries(params).filter(([, v]) => v !== '' && v != null)
@@ -167,13 +167,6 @@ export const OUTCOME_LABELS = {
   left_materials: 'Left materials',
 };
 
-// Display labels for a person's role_type enum (server/src/routes/people.js's ROLE_TYPES).
-export const ROLE_TYPE_LABELS = {
-  decision_maker: 'Decision maker',
-  gatekeeper: 'Gatekeeper',
-  champion: 'Champion',
-  other: 'Other',
-};
 
 // Display labels for a draft stop's visit type (server/src/config/visitTypes.js's VISIT_TYPES).
 export const VISIT_TYPE_LABELS = {

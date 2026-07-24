@@ -5,9 +5,8 @@ import StatTile from './ui/StatTile';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
 
-// At-a-glance: visits completed this week, places never visited, and
-// relationships that need attention (cooling people, overdue visits).
-// This whole screen is driven by one request: GET /api/dashboard (see
+// At-a-glance: visits completed this week and places never visited. This
+// whole screen is driven by one request: GET /api/dashboard (see
 // server/src/routes/dashboard.js), which bundles everything below into one response.
 export default function Dashboard({ date, userId }) {
   const [data, setData] = useState(null); // the dashboard API response, or null while loading
@@ -35,7 +34,6 @@ export default function Dashboard({ date, userId }) {
   const neverPct = data.never_visited.total_places
     ? Math.round((data.never_visited.count / data.never_visited.total_places) * 100)
     : 0;
-  const attention = data.needs_attention;
 
   return (
     <div className="grid" style={{ gap: 20 }}>
@@ -67,43 +65,6 @@ export default function Dashboard({ date, userId }) {
                     <div className="meta">{formatDate(v.scheduled_date)}{v.city ? ` · ${v.city}` : ''}</div>
                   </div>
                   <OutcomeChip outcome={v.outcome} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-
-      {/* "Needs attention" merges two different lists from the API (overdue
-          next-visit dates, cooling/dormant people) into one feed. Clicking
-          any row opens that place's detail modal. */}
-      <div className="card">
-        <div className="card-head">
-          <h2>Needs attention</h2>
-          {attention.count > 0 && <span className="muted tiny">{attention.count} item{attention.count === 1 ? '' : 's'}</span>}
-        </div>
-        <div className="card-body">
-          {attention.count === 0 ? (
-            <EmptyState message="Nothing needs attention right now — every relationship is in good shape." />
-          ) : (
-            <ul className="list">
-              {attention.overdue_places.map((p) => (
-                <li key={`overdue-${p.place_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(p.place_id)}>
-                  <div className="main">
-                    <div className="name tiny">{p.name}</div>
-                    <div className="meta">Next visit was due {formatDate(p.next_visit_date)} · {p.city}</div>
-                  </div>
-                  <CategoryChip category={p.category} />
-                </li>
-              ))}
-              {attention.cooling_people.map((c) => (
-                <li key={`cooling-${c.person_id}`} className="stop attention-flag" style={{ cursor: 'pointer' }} onClick={() => setSelectedPlaceId(c.place_id)}>
-                  <div className="main">
-                    <div className="name tiny">{c.person_name} {c.place_name && <span className="muted">· {c.place_name}</span>}</div>
-                    <div className="meta">
-                      Referred {c.lifetime_referrals}x, last {formatDate(c.last_referral_date)} — nothing in the last 90 days
-                    </div>
-                  </div>
                 </li>
               ))}
             </ul>
