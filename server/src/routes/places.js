@@ -7,16 +7,46 @@ const { priorityLabel, priorityScore, regionForPlace } = require('../services/pr
 const { geocodeAddress } = require('../services/geocoding');
 const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, referralMetricsByPlaceId, metricsFor, EMPTY_METRICS } = require('../services/referralMetrics');
-const CATEGORIES = require('../config/categories');
+const { compareDatesAsc } = require('../services/sortHelpers');
 
 const router = express.Router();
 
-// category is a fixed enum (config/categories.js), not free text — empty/null
-// is allowed (a place can go uncategorized), but anything provided must match
-// exactly one of the canonical values.
-function categoryError(category) {
+// Re-sorts the already-decorated (last_visit_date/my_last_visit_date/
+// referral_metrics attached) place list per the `sort` query param. Pure (no
+// knex) — takes/returns plain arrays, same shape/convention as
+// people.js's sortPeople. The default case returns `rows` unchanged,
+// preserving the SQL query's own `priority_score desc, name asc` order, so
+// "no sort picked" behaves exactly as it always has.
+function sortPlaces(rows, sort) {
+  switch (sort) {
+    case 'last_visited_desc':
+      return [...rows].sort((a, b) => -compareDatesAsc(a.last_visit_date, b.last_visit_date));
+    case 'last_visited_asc':
+      return [...rows].sort((a, b) => compareDatesAsc(a.last_visit_date, b.last_visit_date));
+    case 'my_last_visited_desc':
+      return [...rows].sort((a, b) => -compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
+    case 'my_last_visited_asc':
+      return [...rows].sort((a, b) => compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
+    case 'referrals_desc':
+      return [...rows].sort((a, b) => b.referral_metrics.lifetime_referrals - a.referral_metrics.lifetime_referrals);
+    case 'referrals_asc':
+      return [...rows].sort((a, b) => a.referral_metrics.lifetime_referrals - b.referral_metrics.lifetime_referrals);
+    case 'last_referral_desc':
+      return [...rows].sort((a, b) => -compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
+    case 'last_referral_asc':
+      return [...rows].sort((a, b) => compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
+    default:
+      return rows;
+  }
+}
+
+// category must match one of the canonical values in the categories table
+// (managed via routes/categories.js, add/rename/retire) — empty/null is
+// allowed, a place can go uncategorized.
+async function categoryError(category) {
   if (category === undefined || category === null || category === '') return null;
-  if (!CATEGORIES.includes(category)) return `category must be one of the existing options`;
+  const exists = await knex('categories').where({ name: category }).first();
+  if (!exists) return `category must be one of the existing options`;
   return null;
 }
 
@@ -41,7 +71,7 @@ router.post('/', async (req, res, next) => {
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
     const phoneError = validatePhone(phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
-    const catError = categoryError(category);
+    const catError = await categoryError(category);
     if (catError) return res.status(400).json({ error: catError });
     const tErr = tierError(tier);
     if (tErr) return res.status(400).json({ error: tErr });
@@ -88,10 +118,13 @@ function decorate(p) {
 }
 
 // GET /api/places — searchable / filterable list with last-visit + contact info.
-// Query params: search, category, tier, region, neverVisited=1.
+// Query params: search, category, tier, region, sort (name [default] |
+// last_visited_desc | last_visited_asc | my_last_visited_desc |
+// my_last_visited_asc | referrals_desc | referrals_asc | last_referral_desc |
+// last_referral_asc).
 router.get('/', async (req, res, next) => {
   try {
-    const { search, category, tier, region, neverVisited } = req.query;
+    const { search, category, tier, region, sort } = req.query;
 
     // Subquery: last *completed* visit per place. A visit that's only planned
     // (on today's route but not yet done) must not count as a real visit.
@@ -103,11 +136,24 @@ router.get('/', async (req, res, next) => {
       .groupBy('place_id')
       .as('lv');
 
+    // Same, but scoped to only the logged-in rep's own visits — lets
+    // "last visited by me" answer "have I personally been here" separately
+    // from "has anyone on the team." Same pattern as people.js's myLastVisit.
+    const myLastVisit = knex('visits')
+      .where('status', 'completed')
+      .where('user_id', req.user.id)
+      .select('place_id')
+      .max('scheduled_date as my_last_visit_date')
+      .groupBy('place_id')
+      .as('mlv');
+
     const query = knex('places as p')
       .leftJoin(lastVisit, 'lv.place_id', 'p.id')
+      .leftJoin(myLastVisit, 'mlv.place_id', 'p.id')
       .select(
         'p.*',
         'lv.last_visit_date',
+        'mlv.my_last_visit_date',
         knex.raw('COALESCE(lv.visit_count, 0) as visit_count')
       );
 
@@ -123,7 +169,6 @@ router.get('/', async (req, res, next) => {
     if (category) query.where('p.category', category);
     if (tier) query.where('p.tier', Number(tier));
     if (region) query.where('p.region', region);
-    if (neverVisited === '1' || neverVisited === 'true') query.whereNull('lv.last_visit_date');
 
     query.orderBy('p.priority_score', 'desc').orderBy('p.name', 'asc');
 
@@ -148,12 +193,13 @@ router.get('/', async (req, res, next) => {
     // every place at once so the directory doesn't need N+1 requests.
     const metricsByPlace = await referralMetricsByPlaceId(knex, ids);
 
-    const decorated = places.map((p) => ({
+    let decorated = places.map((p) => ({
       ...decorate(p),
       visit_count: Number(p.visit_count) || 0,
       person: personByPlace[p.id] || null,
       referral_metrics: metricsFor(metricsByPlace, p.id),
     }));
+    decorated = sortPlaces(decorated, sort);
 
     res.json(decorated);
   } catch (err) {
@@ -178,19 +224,20 @@ router.get('/check-address', async (req, res, next) => {
 });
 
 // GET /api/places/meta/filters — distinct values for the search screen's
-// filter dropdowns (category/region), plus the full canonical category enum
-// (allCategories, config/categories.js) for the create/edit form's picker —
-// deliberately not the same list: `categories` only shows values places
-// actually have today (so an empty filter option never appears), while
-// `allCategories` includes every valid choice even one with zero places on
-// it yet. Tiers are always just 1/2/3.
+// filter dropdowns (category/region), plus the full canonical category list
+// (allCategories, the categories table — see routes/categories.js) for the
+// create/edit form's picker — deliberately not the same list: `categories`
+// only shows values places actually have today (so an empty filter option
+// never appears), while `allCategories` includes every category on file even
+// one with zero places on it yet. Tiers are always just 1/2/3.
 router.get('/meta/filters', async (req, res, next) => {
   try {
-    const [categories, regions] = await Promise.all([
+    const [categories, allCategories, regions] = await Promise.all([
       knex('places').distinct('category').whereNotNull('category').orderBy('category').pluck('category'),
+      knex('categories').orderBy('name').pluck('name'),
       knex('places').distinct('region').whereNotNull('region').orderBy('region').pluck('region'),
     ]);
-    res.json({ categories, allCategories: CATEGORIES, regions, tiers: [1, 2, 3] });
+    res.json({ categories, allCategories, regions, tiers: [1, 2, 3] });
   } catch (err) {
     next(err);
   }
@@ -275,7 +322,7 @@ router.patch('/:id', async (req, res, next) => {
 
     const phoneError = validatePhone(update.phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
-    const catError = categoryError(update.category);
+    const catError = await categoryError(update.category);
     if (catError) return res.status(400).json({ error: catError });
     const tErr = tierError(update.tier);
     if (tErr) return res.status(400).json({ error: tErr });

@@ -5,12 +5,13 @@ import EmptyState from './ui/EmptyState';
 import PersonDetail from './PersonDetail';
 import PersonModal from './PersonModal';
 import PlaceDetail from './PlaceDetail';
+import CategoriesModal from './CategoriesModal';
 
 // Searchable / filterable directory of every person across every place —
 // the People counterpart to Places.jsx. Clicking any row opens that
 // person's full detail (PersonDetail.jsx).
 export default function People({ userId }) {
-  const [filters, setFilters] = useState({ categories: [] }); // category dropdown options, loaded once
+  const [filters, setFilters] = useState({ categories: [], allCategories: [] }); // category dropdown options, loaded once
   const [places, setPlaces] = useState([]); // every place, for the place filter + the Add Person picker
   const [q, setQ] = useState({ search: '', placeId: '', category: '', sort: '' });
   const [rows, setRows] = useState([]);
@@ -19,6 +20,7 @@ export default function People({ userId }) {
   const [selected, setSelected] = useState(null); // person id whose detail modal is open, if any
   const [viewingPlaceId, setViewingPlaceId] = useState(null); // place id opened from a person's "View place" link
   const [adding, setAdding] = useState(false);
+  const [managingCategories, setManagingCategories] = useState(false);
   // Bumped on every load() call; a response only gets applied if it's still
   // the most recent request when it resolves — guards against a slower
   // earlier keystroke's response overwriting a faster later one.
@@ -66,6 +68,22 @@ export default function People({ userId }) {
 
   const set = (k) => (e) => setQ((s) => ({ ...s, [k]: e.target.value }));
 
+  // The category dropdown's last option is a sentinel that opens the manage-
+  // categories modal instead of actually filtering — picking it never
+  // touches q.category, so the select just reverts to showing whatever was
+  // already selected once the modal closes.
+  const MANAGE_CATEGORIES_OPTION = '__manage_categories__';
+  const handleCategoryChange = (e) => {
+    if (e.target.value === MANAGE_CATEGORIES_OPTION) { setManagingCategories(true); return; }
+    setQ((s) => ({ ...s, category: e.target.value }));
+  };
+
+  // The "Last contacted" column shows whichever date the active sort is
+  // actually ordering by — team-wide by default, or just this rep's own
+  // visits when one of the "by me" sorts is picked, so the sort order and
+  // the visible column never disagree.
+  const sortingByMe = q.sort === 'my_last_contacted_desc' || q.sort === 'my_last_contacted_asc';
+
   return (
     <div className="grid" style={{ gap: 16 }}>
       {error && <div className="error-banner">{error}</div>}
@@ -87,8 +105,10 @@ export default function People({ userId }) {
             </div>
             <div>
               <label className="field">Category</label>
-              <select value={q.category} onChange={set('category')}>
+              <select value={q.category} onChange={handleCategoryChange}>
                 <option value="">All</option>
+                <option value={MANAGE_CATEGORIES_OPTION}>Manage categories…</option>
+                <option disabled>──────────</option>
                 {filters.categories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -98,6 +118,8 @@ export default function People({ userId }) {
                 <option value="">Name (A-Z)</option>
                 <option value="last_contacted_desc">Last contacted (newest first)</option>
                 <option value="last_contacted_asc">Last contacted (oldest/never first)</option>
+                <option value="my_last_contacted_desc">Last contacted by me (newest first)</option>
+                <option value="my_last_contacted_asc">Last contacted by me (oldest/never first)</option>
                 <option value="referrals_desc">Referrals (most first)</option>
                 <option value="referrals_asc">Referrals (fewest first)</option>
                 <option value="last_referral_desc">Last referral (newest first)</option>
@@ -121,7 +143,7 @@ export default function People({ userId }) {
                 <th>Name</th>
                 <th>Place</th>
                 <th>Referrals</th>
-                <th>Last contacted</th>
+                <th>{sortingByMe ? 'Last contacted (you)' : 'Last contacted'}</th>
               </tr>
             </thead>
             <tbody>
@@ -148,7 +170,12 @@ export default function People({ userId }) {
                       <span className="muted">None yet</span>
                     )}
                   </td>
-                  <td className="tiny">{p.last_visit_date ? formatDate(p.last_visit_date) : <span className="muted">—</span>}</td>
+                  <td className="tiny">
+                    {(() => {
+                      const date = sortingByMe ? p.my_last_visit_date : p.last_visit_date;
+                      return date ? formatDate(date) : <span className="muted">—</span>;
+                    })()}
+                  </td>
                 </tr>
               ))}
               {!loading && rows.length === 0 && (
@@ -175,7 +202,11 @@ export default function People({ userId }) {
       )}
 
       {adding && (
-        <PersonModal places={places} onClose={() => setAdding(false)} onSaved={refresh} />
+        <PersonModal places={places} categories={filters.allCategories} onClose={() => setAdding(false)} onSaved={refresh} />
+      )}
+
+      {managingCategories && (
+        <CategoriesModal onClose={() => setManagingCategories(false)} onChanged={loadReferenceData} />
       )}
     </div>
   );

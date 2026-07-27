@@ -144,6 +144,14 @@ export const api = {
       request(`/schedule-drafts/days/${date}/reopen`, { method: 'POST', body: { homeBase } }),
   },
 
+  // Categories (add/rename/retire a place category) — server/src/routes/categories.js
+  categories: {
+    list: () => request('/categories'), // [{ id, name, place_count }], alphabetical
+    create: (name) => request('/categories', { method: 'POST', body: { name } }),
+    rename: (id, name) => request(`/categories/${id}`, { method: 'PATCH', body: { name } }),
+    remove: (id) => request(`/categories/${id}`, { method: 'DELETE' }), // { deleted, affectedPlaces }
+  },
+
   // Auth (login/logout/password) — server/src/routes/auth.js
   auth: {
     users: () => request('/auth/users'), // list for the login picker (name + hasPassword only)

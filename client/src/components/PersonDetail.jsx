@@ -29,6 +29,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
   const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
   const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
+  const [logging, setLogging] = useState(false); // whether the Log Visit (create) modal is open — only possible when this person has a place
   // Durable notes about this person — editable inline via a small textarea +
   // Save, same pattern as PlaceDetail's org-level notes.
   const [editingNotes, setEditingNotes] = useState(false);
@@ -529,7 +530,12 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               survives even if the place it happened at is later deleted or
               this person is moved to a different place. */}
           <div className="card">
-            <div className="card-head"><h2>Visit history ({data.visits.length})</h2></div>
+            <div className="card-head">
+              <h2>Visit history ({data.visits.length})</h2>
+              {data.place && (
+                <Button size="small" title="Record a visit with this person" onClick={() => { exitFieldEdits(); setLogging(true); }}>Log a visit</Button>
+              )}
+            </div>
             <div className="card-body">
               {data.visits.length === 0 ? (
                 <EmptyState message="No visits logged with this person yet." />
@@ -637,6 +643,21 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
           visit={{ ...editingVisit, visit_id: editingVisit.id }}
           userId={userId}
           onClose={() => setEditingVisit(null)}
+          onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {/* Ad-hoc visit logging, only available when this person has a place —
+          a visit is always anchored to one. Pre-selects this person in the
+          "who did you meet?" picker as a convenience default (still
+          changeable), since PersonDetail already knows who it's with. */}
+      {logging && data.place && (
+        <VisitLogModal
+          placeId={data.place.id}
+          placeName={data.place.name}
+          initialPerson={{ id: data.id, name: data.name, title: data.title, email: data.email, phone: data.phone }}
+          userId={userId}
+          onClose={() => setLogging(false)}
           onSaved={() => { load(); onChanged?.(); }}
         />
       )}

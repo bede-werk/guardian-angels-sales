@@ -5,17 +5,19 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
 import PlaceModal from './PlaceModal';
+import CategoriesModal from './CategoriesModal';
 
 // Searchable / filterable place directory with last-visit + contact info.
 // Clicking any row opens that place's full detail (PlaceDetail.jsx).
 export default function Places({ userId }) {
   const [filters, setFilters] = useState({ categories: [], allCategories: [], regions: [], tiers: [] }); // dropdown options, loaded once
-  const [q, setQ] = useState({ search: '', category: '', tier: '', region: '', neverVisited: '' }); // current filter values
+  const [q, setQ] = useState({ search: '', category: '', tier: '', region: '', sort: '' }); // current filter values
   const [rows, setRows] = useState([]); // the filtered place list from the API
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null); // place id whose detail modal is open, if any
   const [adding, setAdding] = useState(false); // whether the Add Place modal is open
+  const [managingCategories, setManagingCategories] = useState(false);
   // Bumped on every load() call; a response only gets applied if it's still
   // the most recent request when it resolves — guards against a slower
   // earlier keystroke's response overwriting a faster later one.
@@ -65,12 +67,27 @@ export default function Places({ userId }) {
   // Shorthand for wiring an <input>/<select> straight into the `q` filter state.
   const set = (k) => (e) => setQ((s) => ({ ...s, [k]: e.target.value }));
 
+  // The category dropdown's last option is a sentinel that opens the manage-
+  // categories modal instead of actually filtering — picking it never
+  // touches q.category, so the select just reverts to showing whatever was
+  // already selected once the modal closes.
+  const MANAGE_CATEGORIES_OPTION = '__manage_categories__';
+  const handleCategoryChange = (e) => {
+    if (e.target.value === MANAGE_CATEGORIES_OPTION) { setManagingCategories(true); return; }
+    setQ((s) => ({ ...s, category: e.target.value }));
+  };
+
+  // The "Last visit" column shows whichever date the active sort is actually
+  // ordering by — team-wide by default, or just this rep's own visits when
+  // one of the "by me" sorts is picked, so the sort order and the visible
+  // column never disagree. Same logic as People.jsx's sortingByMe.
+  const sortingByMe = q.sort === 'my_last_visited_desc' || q.sort === 'my_last_visited_asc';
+
   return (
     <div className="grid" style={{ gap: 16 }}>
       {error && <div className="error-banner">{error}</div>}
 
-      {/* Filter bar: search box + category/tier/city/zip dropdowns + a
-          "Never visited" toggle button. */}
+      {/* Filter bar: search box + category/tier/region dropdowns + sort. */}
       <div className="card">
         <div className="card-body">
           <div className="row">
@@ -80,8 +97,10 @@ export default function Places({ userId }) {
             </div>
             <div>
               <label className="field">Category</label>
-              <select value={q.category} onChange={set('category')}>
+              <select value={q.category} onChange={handleCategoryChange}>
                 <option value="">All</option>
+                <option value={MANAGE_CATEGORIES_OPTION}>Manage categories…</option>
+                <option disabled>──────────</option>
                 {filters.categories.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -99,15 +118,19 @@ export default function Places({ userId }) {
                 {filters.regions.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
-            <div style={{ flex: 'unset' }}>
-              <label className="field">&nbsp;</label>
-              <Button
-                variant={q.neverVisited ? 'primary' : 'secondary'}
-                title={q.neverVisited ? 'Showing only places with no visit ever logged — click to clear this filter' : 'Filter to only places with no visit ever logged'}
-                onClick={() => setQ((s) => ({ ...s, neverVisited: s.neverVisited ? '' : '1' }))}
-              >
-                Never visited
-              </Button>
+            <div>
+              <label className="field">Sort by</label>
+              <select value={q.sort} onChange={set('sort')}>
+                <option value="">Name (A-Z)</option>
+                <option value="last_visited_desc">Last visited (newest first)</option>
+                <option value="last_visited_asc">Last visited (oldest/never first)</option>
+                <option value="my_last_visited_desc">Last visited by me (newest first)</option>
+                <option value="my_last_visited_asc">Last visited by me (oldest/never first)</option>
+                <option value="referrals_desc">Referrals (most first)</option>
+                <option value="referrals_asc">Referrals (fewest first)</option>
+                <option value="last_referral_desc">Last referral (newest first)</option>
+                <option value="last_referral_asc">Last referral (oldest/never first)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -126,8 +149,8 @@ export default function Places({ userId }) {
                 <th>Organization</th>
                 <th>Category</th>
                 <th>Priority</th>
-                <th>Location</th>
-                <th>Last visit</th>
+                <th>Region</th>
+                <th>{sortingByMe ? 'Last visit (you)' : 'Last visit'}</th>
                 <th>Referrals</th>
               </tr>
             </thead>
@@ -137,11 +160,16 @@ export default function Places({ userId }) {
                   <td><strong>{p.name}</strong></td>
                   <td><CategoryChip category={p.category} /></td>
                   <td><TierChip tier={p.tier} isPriority={p.is_priority} /></td>
-                  <td className="muted tiny">{p.city} {p.zip}<br />{p.region}</td>
-                  <td className="tiny">{p.last_visit_date ? formatDate(p.last_visit_date) : <span className="muted">—</span>}</td>
+                  <td className="muted tiny">{p.region}</td>
+                  <td className="tiny">
+                    {(() => {
+                      const date = sortingByMe ? p.my_last_visit_date : p.last_visit_date;
+                      return date ? formatDate(date) : <span className="muted">—</span>;
+                    })()}
+                  </td>
                   <td className="tiny">
                     {p.referral_metrics.lifetime_referrals > 0 ? (
-                      p.referral_metrics.lifetime_referrals
+                      <strong style={{ color: 'var(--teal-dark)', fontSize: 16 }}>{p.referral_metrics.lifetime_referrals}</strong>
                     ) : (
                       <span className="muted">None yet</span>
                     )}
@@ -166,6 +194,10 @@ export default function Places({ userId }) {
           onClose={() => setAdding(false)}
           onSaved={refresh}
         />
+      )}
+
+      {managingCategories && (
+        <CategoriesModal onClose={() => setManagingCategories(false)} onChanged={loadFilters} />
       )}
     </div>
   );

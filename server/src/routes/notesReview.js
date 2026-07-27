@@ -7,16 +7,16 @@ const express = require('express');
 const knex = require('../db/knex');
 const { priorityScore, regionForPlace } = require('../services/priority');
 const { geocodeAddress } = require('../services/geocoding');
-const CATEGORIES = require('../config/categories');
 
 const router = express.Router();
 
-// category is a fixed enum (config/categories.js), not free text — empty/null
-// is allowed (a place can go uncategorized), but anything provided must match
-// exactly one of the canonical values. Same rule as routes/places.js.
-function categoryError(category) {
+// category must match one of the canonical values in the categories table —
+// empty/null is allowed (a place can go uncategorized). Same rule as
+// routes/places.js.
+async function categoryError(category) {
   if (category === undefined || category === null || category === '') return null;
-  if (!CATEGORIES.includes(category)) return `category must be one of the existing options`;
+  const exists = await knex('categories').where({ name: category }).first();
+  if (!exists) return `category must be one of the existing options`;
   return null;
 }
 
@@ -126,7 +126,7 @@ router.post('/:id/create-place', async (req, res, next) => {
     if (!review) return res.status(404).json({ error: 'Review item not found' });
 
     const { name, category, tier, is_priority, city, zip, address, applyToReferrer } = req.body;
-    const catError = categoryError(category);
+    const catError = await categoryError(category);
     if (catError) return res.status(400).json({ error: catError });
     const placeName = (name || review.referrer_raw).trim(); // default to the raw referrer text
     const t = Number(tier) || 3;

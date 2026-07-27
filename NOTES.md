@@ -1073,3 +1073,72 @@ bug, same gating the old row's Edit button already had; the tooltip already said
 ("Set a starting point before editing a planned day").
 
 146 backend tests pass throughout, client build clean.
+
+## 2026-07-27 — Categories become a real table, People/Places sort parity, log-a-visit from PersonDetail
+
+Series of small live-feedback requests, same pattern as recent sessions: build something, Bede
+clicks through it, asks for a refinement, repeat. All verified live via Playwright (Lisa Marks
+id 5, temp token, cleaned up after every check per the smoke-test rule), 146 backend tests pass
+throughout, client build clean throughout.
+
+**Textarea resize removed app-wide.** One-line CSS fix (`textarea { resize: none; }` in
+`styles.css`) — every notes field in the app (Person/Place/Referral/Visit modals) shares the
+same base input styling, so this single rule covered all of them.
+
+**Place categories are now a real, admin-editable table — no longer a hardcoded enum.**
+Previously `server/src/config/categories.js` was a fixed 18-value JS array; `POST`/`PATCH
+/api/places` validated against it in memory. **This is now stale in §13 of `HANDOFF.md` where
+it says otherwise — corrected there.** New migration `20260727000000_add_categories_table.js`
+creates a `categories` table seeded with the same 18 values (inlined into the migration, not
+`require()`d, so the migration stays a self-contained snapshot); `config/categories.js` is
+deleted. New `server/src/routes/categories.js`: list (with a live per-category place count),
+add, rename (cascades to every place using the old name — a rename isn't a historical record
+the way a place/person delete is, so this one *should* propagate), and delete (a retired
+category doesn't touch or block the places using it — they just fall back to `category = null`,
+already a normal state, matching the app's detach-not-destroy convention rather than a hard
+FK). `routes/places.js` and `routes/notesReview.js` both now validate against the DB table.
+
+New `client/src/components/CategoriesModal.jsx` — went through several live-feedback rounds to
+its final shape: a plain list, each row a clickable name (click to rename inline, autofocus +
+Save/Cancel) and a small red ✕ on the right (styled to match the app's existing danger-button ✕
+convention from `PlanVisits.jsx`'s remove-stop button, then sized down slightly). The "add new
+category" field is always visible, spans the row's width, with a compact `secondary`/`small` Add
+button matching "+ Add person"/"+ Add place" elsewhere (fixed a flex-stretch bug where the button
+was inheriting the taller input's height — needed `alignItems: 'center'` on the row). No
+standalone "Manage categories" button in the filter bar — instead the Category filter dropdown
+itself has a "Manage categories…" sentinel option (People.jsx and Places.jsx both), positioned
+right after "All" (not buried at the bottom) so picking it opens the modal without ever actually
+changing the filter's selected value.
+
+**People tab: new "Last contacted by me" sort**, alongside the existing team-wide "Last
+contacted" — `routes/people.js` gained a second last-visit subquery scoped to `req.user.id`. The
+"Last contacted" column relabels to "Last contacted (you)" and swaps in your own last-visit date
+whenever one of the "by me" sorts is active, so the column and the sort order never disagree.
+
+**Places tab now has full sort parity with People** ("Last visited"/"Last visited by me" instead
+of "contacted", plus the existing Referrals/Last referral options) — same server-side pattern,
+`routes/places.js` gained its own `my_last_visit_date` subquery and a `sortPlaces()`. Extracted
+the shared null-safe `compareDatesAsc` date comparator (previously duplicated identically in
+`people.js`) into new `server/src/services/sortHelpers.js`, used by both routes now. The
+"Never visited" toggle button is gone — sorting by "Last visited (oldest/never first)" already
+surfaces those places first, so the dedicated button was redundant (Bede's call). The place
+list's "Location" column no longer shows city/zip, just region — renamed to "Region" to match.
+Referral count styling (bold, teal, 16px) now matches the People tab exactly, was previously
+plain text.
+
+**PersonModal's place picker can create a brand-new place inline.** When adding a person from
+the People tab (no fixed place yet), the "Place" dropdown has a "+ Add a new place…" option
+(positioned right after "No place (unassigned)", not at the bottom) that opens a nested
+`PlaceModal` on top of the person form — same stacked-modal pattern `PlaceDetail.jsx` already
+uses for its own nested Person/Assign modals. Saving the new place closes the nested modal,
+returns to the person form, and auto-selects the place that was just created (merged into the
+dropdown's options locally, since the `places` prop won't reflect it until the parent reloads).
+
+**PersonDetail can now log a visit directly**, not just view/edit ones already on file — this
+was a real gap, not a deliberate restriction (visits are anchored to a place, and PlaceDetail's
+"Log a visit" flow was never mirrored onto PersonDetail). New "Log a visit" button next to
+"Visit history", shown only when the person has a place assigned (a visit needs one; hidden
+entirely for unassigned people rather than shown disabled). `VisitLogModal` gained an optional
+`initialPerson` prop that pre-selects the "who did you meet?" picker as a convenience default
+(still changeable, unlike the existing `personRecordGone`-locked case) — used here to default to
+whoever's PersonDetail you're already looking at.

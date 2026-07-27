@@ -8,6 +8,7 @@ const express = require('express');
 const knex = require('../db/knex');
 const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, summarizeReferralDates, metricsFor } = require('../services/referralMetrics');
+const { compareDatesAsc } = require('../services/sortHelpers');
 
 const router = express.Router();
 
@@ -28,19 +29,6 @@ function validate(payload) {
   return validatePhone(payload.phone);
 }
 
-// Null-safe ascending date compare for last_visit_date — a person never
-// contacted (null) sorts as "oldest possible" (first in ascending order,
-// last once sortPeople flips it for descending) rather than being pushed to
-// one arbitrary end regardless of direction: whichever direction you're
-// sorting by, "never contacted" is the most-overdue case, so it belongs at
-// the "oldest" end either way.
-function compareDatesAsc(a, b) {
-  if (a === b) return 0;
-  if (a == null) return -1;
-  if (b == null) return 1;
-  return a < b ? -1 : 1;
-}
-
 // Re-sorts the already-decorated (referral_metrics attached) people list per
 // the `sort` query param. Pure (no knex) — takes/returns plain arrays. The
 // default case returns `rows` unchanged, preserving the SQL query's own
@@ -53,6 +41,10 @@ function sortPeople(rows, sort) {
       return [...rows].sort((a, b) => -compareDatesAsc(a.last_visit_date, b.last_visit_date));
     case 'last_contacted_asc':
       return [...rows].sort((a, b) => compareDatesAsc(a.last_visit_date, b.last_visit_date));
+    case 'my_last_contacted_desc':
+      return [...rows].sort((a, b) => -compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
+    case 'my_last_contacted_asc':
+      return [...rows].sort((a, b) => compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
     case 'referrals_desc':
       return [...rows].sort((a, b) => b.referral_metrics.lifetime_referrals - a.referral_metrics.lifetime_referrals);
     case 'referrals_asc':
@@ -69,7 +61,8 @@ function sortPeople(rows, sort) {
 // GET /api/people — cross-place directory (the People tab). Query params:
 // search (name/title), placeId, category (of their place),
 // sort (name [default] | last_contacted_desc | last_contacted_asc |
-// referrals_desc | referrals_asc | last_referral_desc | last_referral_asc).
+// my_last_contacted_desc | my_last_contacted_asc | referrals_desc |
+// referrals_asc | last_referral_desc | last_referral_asc).
 router.get('/people', async (req, res, next) => {
   try {
     const { search, placeId, category, sort } = req.query;
@@ -84,17 +77,31 @@ router.get('/people', async (req, res, next) => {
       .groupBy('person_id')
       .as('lv');
 
+    // Same, but scoped to only the logged-in rep's own visits — lets
+    // "last contacted by me" answer "have I personally talked to this
+    // person" separately from "has anyone on the team."
+    const myLastVisit = knex('visits')
+      .where('status', 'completed')
+      .where('user_id', req.user.id)
+      .whereNotNull('person_id')
+      .select('person_id')
+      .max('scheduled_date as my_last_visit_date')
+      .groupBy('person_id')
+      .as('mlv');
+
     // Left join, not inner — a person can now be unassigned (place_id null),
     // e.g. after their place was deleted or they were manually detached, and
     // should still show up in the directory rather than disappearing.
     const query = knex('people as pe')
       .leftJoin('places as p', 'p.id', 'pe.place_id')
       .leftJoin(lastVisit, 'lv.person_id', 'pe.id')
+      .leftJoin(myLastVisit, 'mlv.person_id', 'pe.id')
       .select(
         'pe.*',
         'p.name as place_name',
         'p.region as place_region',
-        'lv.last_visit_date'
+        'lv.last_visit_date',
+        'mlv.my_last_visit_date'
       );
 
     if (search) {

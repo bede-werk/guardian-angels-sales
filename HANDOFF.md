@@ -1,6 +1,6 @@
 # Guardian Angels Sales Scheduler — Project Handoff
 
-_Last updated: 2026-07-15_
+_Last updated: 2026-07-27_
 
 This document is a self-contained context dump so work can resume in a new session.
 It summarizes what was built, key decisions, how to run it, the Railway deploy saga,
@@ -774,9 +774,13 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   Places created via the Needs Mapping "create place" flow (`routes/notesReview.js`) used to
   skip geocoding entirely — **fixed 2026-07-22** (§14A), that path now geocodes the same way
   `POST /api/places` does.
-- **`places.category` is now a locked enum**, not free text (`server/src/config/categories.js`,
-  fixed in the 2026-07-14 audit, `c408809`) — `POST`/`PATCH /api/places` reject any
-  non-matching value.
+- **`places.category` is validated against a real `categories` table**, not free text.
+  Originally a locked enum in `server/src/config/categories.js` (2026-07-14 audit, `c408809`) —
+  **that file is now deleted**; as of 2026-07-27 the canonical list lives in a `categories` DB
+  table (migration `20260727000000`) managed via `routes/categories.js` and a new
+  `CategoriesModal.jsx` (add/rename/retire, reachable from a "Manage categories…" option in the
+  People/Places category filter dropdowns). `POST`/`PATCH /api/places` still reject any
+  non-matching value, just checked against the table now instead of the hardcoded array.
 - **The route planner is real and fully usable end-to-end in the UI — and is now the only
   route-planning surface in the app.** Backend/API (phases 1-6) is fully built, tested
   (139 tests), and committed. The "Plan My Visits" tab has generate, live editing
@@ -843,7 +847,22 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   alignment-bug fix). New: "Already Planned" days open a drill-down modal (`PlannedDayModal.jsx`)
   on click instead of showing Edit/Delete directly on the row; those actions moved into the
   modal's footer. New read endpoint (`GET /api/schedule-drafts/committed-dates/:date/visits`).
-  146 tests pass, client build clean. Not yet pushed — see `git log`/`git status`.
+  146 tests pass, client build clean.
+- **2026-07-24 (not previously logged in this doc — see `git log`/People.jsx for the actual
+  diff):** People tab got sort/filter polish, `needs_attention` was removed app-wide (it never
+  fed the route-planner algorithm, was purely a display flag), and `people.role_type` was
+  dropped entirely (migration `20260724000000_drop_people_role_type.js`) — too ambiguous to
+  fill in reliably, the free-text `title` field covers it well enough.
+- **2026-07-27:** categories promoted from a hardcoded enum to a real, admin-editable
+  `categories` table (see the corrected bullet above and `NOTES.md`'s matching entry for full
+  detail) — new `CategoriesModal.jsx`, `routes/categories.js`, migration `20260727000000`.
+  Places tab gained full sort parity with People (Last visited/by me, Referrals, Last referral)
+  and lost its "Never visited" toggle (superseded by sorting oldest/never-first); its Location
+  column dropped city/zip down to just Region, and referral-count styling now matches People's.
+  People tab gained a "Last contacted by me" sort. `PersonModal`'s place picker can create a
+  new place inline (nested `PlaceModal`, auto-selected on save). `PersonDetail` can now log a
+  visit directly (previously view/edit only) when the person has a place assigned. 146 tests
+  pass, client build clean. Not yet pushed — see `git log`/`git status`.
 
 ---
 

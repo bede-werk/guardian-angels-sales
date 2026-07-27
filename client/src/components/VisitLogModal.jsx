@@ -12,20 +12,24 @@ const CREATE_PERSON = '__create_person__'; // sentinel option value for "+ Creat
 // rather than shown or cleared.
 // `visit` is passed when editing an existing visit (has visit_id); when
 // opened from a place with no visit yet, `placeId` is provided instead to
-// create a brand-new ad-hoc visit (from PlaceDetail.jsx).
+// create a brand-new ad-hoc visit (from PlaceDetail.jsx). `initialPerson`
+// (id/name/title/email/phone) is an optional convenience default for the
+// "who did you meet?" picker — used when opened from PersonDetail.jsx, which
+// already knows who the visit is with; it's still just a starting
+// selection, not locked, unlike the personRecordGone case below.
 // On narrow screens this renders as a bottom slide-up sheet instead of a
 // centered modal — see the @media rule for .modal-backdrop in styles.css.
-export default function VisitLogModal({ visit, placeId, placeName, userId, onClose, onSaved }) {
+export default function VisitLogModal({ visit, placeId, placeName, initialPerson, userId, onClose, onSaved }) {
   // Whichever way this modal was opened, we need to know which place it's for.
   const resolvedPlaceId = visit?.place_id || placeId;
   const [form, setForm] = useState({
     outcome: visit?.outcome || '',
     notes: visit?.notes || '',
-    person_id: visit?.person_id || '',
-    person_name: visit?.person_name || '',
-    person_title: visit?.person_title || '',
-    person_email: visit?.person_email || '',
-    person_phone: visit?.person_phone || '',
+    person_id: visit?.person_id || initialPerson?.id || '',
+    person_name: visit?.person_name || initialPerson?.name || '',
+    person_title: visit?.person_title || initialPerson?.title || '',
+    person_email: visit?.person_email || initialPerson?.email || '',
+    person_phone: visit?.person_phone || initialPerson?.phone || '',
     next_visit_date: visit?.next_visit_date || '',
   });
   const [people, setPeople] = useState([]); // this place's people, for the "who did you meet?" picker

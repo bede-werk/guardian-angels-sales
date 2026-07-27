@@ -3,15 +3,21 @@ import { api } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
+import PlaceModal from './PlaceModal';
 import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
+
+// The place picker's last option is a sentinel that opens a nested PlaceModal
+// instead of actually picking a place — same pattern as the category filter
+// dropdowns' "Manage categories…" entry (People.jsx/Places.jsx).
+const ADD_PLACE_OPTION = '__add_place__';
 
 // Create or edit a person. `person` present = editing (form is pre-filled from
 // it); absent = creating a brand-new one from a blank form.
 // Opened from PlaceDetail.jsx's "New person" button or PersonDetail.jsx's
 // "Edit" button (both pass a fixed `placeId`), or from People.jsx's
-// "+ Add person" button (passes `places` instead, so the form includes a
-// place picker).
-export default function PersonModal({ placeId, placeName, places, person, onClose, onSaved }) {
+// "+ Add person" button (passes `places`/`categories` instead, so the form
+// includes a place picker that can also create a brand-new place on the fly).
+export default function PersonModal({ placeId, placeName, places, categories, person, onClose, onSaved }) {
   const [form, setForm] = useState({
     place_id: placeId || person?.place_id || '',
     name: person?.name || '',
@@ -25,8 +31,18 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null — see ConfirmDialog
+  const [addingPlace, setAddingPlace] = useState(false); // nested "add a new place" modal open?
+  // Places created via the nested modal this session — merged into the
+  // dropdown's options since the `places` prop won't include it until the
+  // parent (People.jsx) reloads its own place list.
+  const [extraPlaces, setExtraPlaces] = useState([]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value })); // wires a text input/select to `form`
+
+  function handlePlaceChange(e) {
+    if (e.target.value === ADD_PLACE_OPTION) { setAddingPlace(true); return; }
+    setForm((f) => ({ ...f, place_id: e.target.value }));
+  }
 
   // The duplicate-name warning is fetched fresh right here (never from a
   // debounced background hook, which could still be mid-flight and stale at
@@ -87,9 +103,12 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
           {needsPlacePicker && (
             <div>
               <label className="field">Place</label>
-              <select value={form.place_id} onChange={set('place_id')}>
+              <select value={form.place_id} onChange={handlePlaceChange}>
                 <option value="">No place (unassigned)</option>
-                {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                <option value={ADD_PLACE_OPTION}>+ Add a new place…</option>
+                <option disabled>──────────</option>
+                {[...places, ...extraPlaces.filter((ep) => !places.some((p) => p.id === ep.id))]
+                  .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
           )}
@@ -149,6 +168,16 @@ export default function PersonModal({ placeId, placeName, places, person, onClos
           />
         )}
       </div>
+      {addingPlace && (
+        <PlaceModal
+          categories={categories}
+          onClose={() => setAddingPlace(false)}
+          onSaved={(newPlace) => {
+            setExtraPlaces((eps) => [...eps, newPlace]);
+            setForm((f) => ({ ...f, place_id: newPlace.id }));
+          }}
+        />
+      )}
     </div>
   );
 }
