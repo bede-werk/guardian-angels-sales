@@ -7,7 +7,6 @@ const cors = require('cors');
 const path = require('path');
 const knex = require('./db/knex');
 const { importPlaces } = require('./scripts/import-excel');
-const { importNotes } = require('./scripts/import-notes');
 
 // Each of these files is an Express Router handling one resource/area of the API.
 const places = require('./routes/places');
@@ -15,7 +14,6 @@ const visits = require('./routes/visits');
 const scheduleDrafts = require('./routes/scheduleDrafts');
 const dashboard = require('./routes/dashboard');
 const users = require('./routes/users');
-const notesReview = require('./routes/notesReview');
 const people = require('./routes/people');
 const referrals = require('./routes/referrals');
 const categories = require('./routes/categories');
@@ -46,7 +44,6 @@ app.use('/api/visits', visits);
 app.use('/api/schedule-drafts', scheduleDrafts);
 app.use('/api/dashboard', dashboard);
 app.use('/api/users', users);
-app.use('/api/notes-review', notesReview);
 // people.js defines its own full paths (/places/:id/people, /people, /people/:id),
 // so it's mounted at the bare '/api' prefix rather than a single resource prefix.
 app.use('/api', people);
@@ -77,16 +74,15 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 4000;
 const isProd = process.env.NODE_ENV === 'production';
 
-// On first boot with an empty database, load the bundled spreadsheets.
+// On first boot with an empty database, load the bundled spreadsheet.
 // Runs in the background after the server is already listening, so the app
 // comes up immediately and Railway's health check passes.
 async function seedIfEmpty() {
   try {
     const { c } = await knex('places').count({ c: '*' }).first();
     if (Number(c) === 0) {
-      console.log('Empty database detected — seeding from bundled spreadsheets…');
+      console.log('Empty database detected — seeding from bundled spreadsheet…');
       await importPlaces();
-      await importNotes();
       console.log('Seeding complete.');
     }
   } catch (err) {

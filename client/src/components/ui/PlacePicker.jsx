@@ -3,10 +3,8 @@ import { api } from '../../api';
 
 // Searchable place picker: type a few characters, pick a matching place from
 // the dropdown, calls onPick(place). Lightweight custom autocomplete (no
-// library) — `open` controls whether the results dropdown is visible.
-// Originally lived only in NeedsMapping.jsx (assigning a note to a place);
-// extracted here once PlanVisits.jsx needed the identical picker for adding
-// an ad-hoc stop to a draft day.
+// library) — `open` controls whether the results dropdown is visible. Used
+// by PlanVisits.jsx for adding an ad-hoc stop to a draft day.
 export default function PlacePicker({ onPick, placeholder = 'Assign to existing place…', excludeIds }) {
   const [q, setQ] = useState(''); // what's typed in the search box
   const [results, setResults] = useState([]); // matching places from the API

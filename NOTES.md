@@ -343,7 +343,8 @@ The biggest single day on the route planner so far. In order:
    until actually needed), added missing error handling/stale-response guards across
    People/Places/AssignPersonModal, and a handful of smaller cleanups. 112 tests. Only
    remaining item: Bede is removing `NeedsMapping.jsx` himself — flag dangling references
-   (`App.jsx`'s nav, `routes/notesReview.js`) once that happens.
+   (`App.jsx`'s nav, `routes/notesReview.js`) once that happens. **[Done 2026-07-27 — see that
+   date's entry below; the whole feature was removed, not just NeedsMapping.jsx itself.]**
 3. **Phase 6, backend+API** (`95049c7`): the draft/commit lifecycle — dedicated
    `schedule_drafts`/`schedule_draft_stops` tables (not reused `visits` rows), a live-edit-safe
    never-drop time evaluator alongside the existing greedy packer, and
@@ -1142,3 +1143,57 @@ entirely for unassigned people rather than shown disabled). `VisitLogModal` gain
 `initialPerson` prop that pre-selects the "who did you meet?" picker as a convenience default
 (still changeable, unlike the existing `personRecordGone`-locked case) — used here to default to
 whoever's PersonDetail you're already looking at.
+
+## 2026-07-27 (later the same day) — Needs Mapping removed entirely
+
+Bede's explicit request, no ambiguity: "Can we remove the Needs Mapping tab entirely now. I
+don't want any trails of its functionality. I have no use for it any more." He's planning a
+from-scratch replacement for historical-notes-import later — this isn't a "hide it for now,"
+it's a full removal, and nothing about the new version should assume this old shape.
+
+**One real design fork worth remembering:** `scripts/import-notes.js` did double duty — it
+imported referrer notes that matched an existing place as real completed visits (history), and
+parked unmatched ones in `notes_review` for the Needs Mapping tab (workflow). It's also wired
+into the production auto-seed (`index.js`'s `seedIfEmpty()`, runs on a fresh empty-DB deploy).
+Asked directly rather than assuming: keep a simplified matched-only importer (auto-seed still
+backfills history, just silently skips unmatched notes) vs. delete the whole thing. **Bede chose
+full deletion** — a future fresh deploy will only seed places from the main spreadsheet;
+`ReferrerNotes.xlsx`'s historical visit data won't get imported at all until his new
+from-scratch version exists. Checked first whether this was actually safe to lose: dev DB had
+**zero** rows in `notes_review` and **zero** `imported_note` visits at the time — so nothing
+in-progress was actually destroyed by this choice, just a not-yet-exercised capability.
+
+**Full deletion list:** `client/src/components/NeedsMapping.jsx`, `hooks/useDuplicateMatches.js`
+and `ui/DuplicateWarning.jsx` (both had exactly one caller — NeedsMapping — so both went fully
+dead the moment it did; found `DuplicateWarning.jsx` by grepping for its own remaining callers
+after the fact, not from the initial file-reference survey, worth remembering to re-check for
+second-order dead code like this), `server/src/routes/notesReview.js`,
+`server/src/scripts/import-notes.js`. New migration `20260727010000_drop_notes_review.js` drops
+the `notes_review` table outright — a plain `dropTableIfExists`, not editing the original
+`20260706010000_notes_import.js` that created it (this repo's established convention: schema
+removals are new migrations, never edits to already-applied history, see
+`20260724000000_drop_people_role_type.js` for the precedent). `App.jsx` lost the "Needs Mapping"
+nav tab and its pending-count badge machinery entirely; the now-fully-dead `.tab .count` and
+`.warning-banner` CSS rules went with it (double-checked neither was used anywhere else first).
+
+**Deliberately NOT touched, and why:** `visits.source` (`manual`/`imported_note`/`planner`)
+stays — it's still load-bearing for the route planner's commit-collision unique index
+(`source: 'planner'` scoping, see the 2026-07-15 ultra-review entry above), completely
+unrelated to Needs Mapping despite being added by the same original migration. `ui/
+PlacePicker.jsx` stays too — originally lived only in NeedsMapping, but PlanVisits.jsx's ad-hoc
+"+ Add a stop" flow has depended on it since 2026-07-14; only its stale comment referencing
+NeedsMapping got fixed, not the component itself.
+
+Also swept and fixed every stale "Needs Mapping" reference in `README.md` (feature bullet,
+scripts table, API route table, schema table) and `HANDOFF.md` — corrected the file-tree
+diagram (§3), the schema section (§4, `notes_review` bullet replaced with the newer
+`categories` table that's actually current), the key-features list (§5), marked all of §7
+"Historical notes import" as removed-but-kept-for-history rather than deleting that section
+outright (matches this doc's own established convention for retiring a section — see how
+§14A/§14B already do this), and removed two now-impossible "next step" suggestions that
+referenced finishing Needs Mapping work. Left every genuinely historical dated session-log
+entry alone (including the still-accurate-as-history "Needs Mapping geocoding gap, fixed
+2026-07-22" bullets) — those are a record of what was true then, not live claims about now.
+
+146 backend tests pass, client build clean, verified live (nav bar shows exactly 4 tabs — no
+"Needs Mapping" — `GET /api/notes-review` 404s, no console errors on any tab).

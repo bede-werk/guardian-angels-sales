@@ -84,14 +84,6 @@ export const api = {
   dashboard: (userId, date) =>
     request(`/dashboard?${userId ? `userId=${userId}&` : ''}${date ? `date=${date}` : ''}`),
 
-  // Notes review ("Needs Mapping") — server/src/routes/notesReview.js
-  notesReview: () => request('/notes-review?status=pending'),
-  notesReviewCount: () => request('/notes-review/count'), // pending count for the tab badge
-  assignNote: (id, body) => request(`/notes-review/${id}/assign`, { method: 'POST', body }),
-  createPlaceFromNote: (id, body) =>
-    request(`/notes-review/${id}/create-place`, { method: 'POST', body }),
-  dismissNote: (id, body) => request(`/notes-review/${id}/dismiss`, { method: 'POST', body }),
-
   // People — server/src/routes/people.js
   people: {
     // Cross-place People directory tab. params: search, placeId, category, sort

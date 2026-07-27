@@ -4,7 +4,6 @@ import Dashboard from './components/Dashboard';
 import PlanVisits from './components/PlanVisits';
 import Places from './components/Places';
 import People from './components/People';
-import NeedsMapping from './components/NeedsMapping';
 import Login from './components/Login';
 import ChangePassword from './components/ChangePassword';
 import Header from './components/ui/Header';
@@ -18,22 +17,17 @@ const TABS = [
   { id: 'planner', label: 'Plan My Visits' },
   { id: 'places', label: 'Places' },
   { id: 'people', label: 'People' },
-  { id: 'mapping', label: 'Needs Mapping' },
 ];
 
 // The root component: handles login/session state and renders either the
 // Login screen or the main app shell (header + tabs + whichever tab is active).
 export default function App() {
-  const [tab, setTab] = useState('dashboard'); // which of the 4 tabs is showing
+  const [tab, setTab] = useState('dashboard'); // which of the tabs is showing
   const date = today(); // always "today" — there's no date picker (see HANDOFF/README)
-  const [mappingCount, setMappingCount] = useState(0); // pending "Needs Mapping" count, for the tab badge
 
   const [authUser, setAuthUser] = useState(null); // the logged-in user, or null if not logged in
   const [authLoading, setAuthLoading] = useState(true); // true while checking for a saved session on load
   const [showChangePassword, setShowChangePassword] = useState(false); // whether the change-password modal is open
-
-  const refreshMappingCount = () =>
-    api.notesReviewCount().then((r) => setMappingCount(r.pending)).catch(() => {});
 
   // If any API call gets a 401 (see api.js), it fires this event — treat it as
   // an instant logout so the app drops back to the login screen.
@@ -55,12 +49,6 @@ export default function App() {
       .catch(() => clearToken()) // saved token was invalid/expired — clear it
       .finally(() => setAuthLoading(false));
   }, []);
-
-  // Once we know who's logged in, load the Needs Mapping badge count.
-  useEffect(() => {
-    if (!authUser) return;
-    refreshMappingCount();
-  }, [authUser]);
 
   function logout() {
     api.auth.logout().catch(() => {}); // best-effort — log out locally regardless
@@ -89,7 +77,6 @@ export default function App() {
         {TABS.map((t) => (
           <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
             {t.label}
-            {t.id === 'mapping' && mappingCount > 0 && <span className="count">{mappingCount}</span>}
           </button>
         ))}
       </nav>
@@ -100,7 +87,6 @@ export default function App() {
       {tab === 'planner' && <PlanVisits userId={authUser.id} />}
       {tab === 'places' && <Places userId={authUser.id} />}
       {tab === 'people' && <People userId={authUser.id} />}
-      {tab === 'mapping' && <NeedsMapping onChanged={refreshMappingCount} />}
     </div>
   );
 }

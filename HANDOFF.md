@@ -248,8 +248,7 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
 first): extending "needs attention" coverage to the "Plan My Visits" workspace (the old
 scheduler's "Today's Route" screen is gone — this app now has one route-planning surface),
 feeding referral metrics into priority scoring (the natural successor to the old "Phase 2
-relationship-temp" idea), finishing the remaining Needs Mapping referrers, the 7 places whose
-addresses didn't geocode (§9A) need manual review.
+relationship-temp" idea).
 
 **If something in this note contradicts the actual code** (a file's gone, a function's
 renamed), trust the code — this note is a snapshot from one point in time, not a live source
@@ -302,16 +301,18 @@ guardian-angels-sales/
 │       ├── index.js                  # Express app; runs migrations + auto-seeds on boot in prod
 │       ├── db/knex.js
 │       ├── middleware/               # requireAuth (bearer token)
-│       ├── migrations/               # init, notes_import, add_auth, places_and_people,
+│       ├── migrations/               # init, add_auth, places_and_people,
 │       │                             # rename_partners_to_places, people_and_place_notes,
 │       │                             # detach_instead_of_cascade, drop_relationship_temp,
 │       │                             # drop_departed_and_is_primary, add_scheduling_fields,
 │       │                             # add_default_visit_type_to_places,
-│       │                             # add_schedule_drafts (+ _stops), index_notes_review_author
+│       │                             # add_schedule_drafts (+ _stops), add_categories_table,
+│       │                             # drop_notes_review
 │       ├── config/                   # route-planner tuning constants (plain modules, no
 │       │                             # settings table — see ROUTEPLANNER_PROGRESS.md):
 │       │                             # scheduling.js, driveTime.js, visitTypes.js,
-│       │                             # routeOptimizer.js, categories.js (places.category enum)
+│       │                             # routeOptimizer.js (places.category is now a DB table,
+│       │                             # see routes/categories.js, not a config file)
 │       ├── services/
 │       │   ├── priority.js           # priority score + region ("side of town") helpers
 │       │   ├── schedulingEngine.js   # route planner: four-tier scoring/eligibility
@@ -326,16 +327,14 @@ guardian-angels-sales/
 │       │   └── fetchWithTimeout.js   # shared AbortController+setTimeout wrapper (OSRM, geocoding)
 │       ├── routes/                   # auth, places, people, referrals, visits,
 │       │                             # scheduleDrafts (route planner), dashboard,
-│       │                             # users, notesReview
+│       │                             # users, categories
 │       └── scripts/
 │           ├── import-excel.js       # importPlaces() — place list
-│           ├── import-notes.js       # importNotes() — historical notes
 │           └── geocode-places.js     # geocodePlaces() — backfills lat/lng for ungeocoded places
 └── client/
     ├── vite.config.js                # dev proxy /api -> :4000
     └── src/
-        ├── App.jsx                   # tabs: Dashboard, Plan My Visits, Places, People,
-        │                             # Needs Mapping
+        ├── App.jsx                   # tabs: Dashboard, Plan My Visits, Places, People
         ├── api.js                    # incl. formatDate() — YYYY-MM-DD -> M/D/YYYY for display
         ├── styles.css
         └── components/
@@ -345,7 +344,7 @@ guardian-angels-sales/
             ├── Places.jsx, PlaceDetail.jsx, PlaceModal.jsx      # PlaceModal: create AND edit
             ├── People.jsx, PersonDetail.jsx, PersonModal.jsx, AssignPersonModal.jsx
             ├── ReferralModal.jsx, ReferralDetailModal.jsx
-            ├── VisitLogModal.jsx, VisitDetailModal.jsx, NeedsMapping.jsx
+            ├── VisitLogModal.jsx, VisitDetailModal.jsx, CategoriesModal.jsx
             └── ui/                    # Button, Chip, EmptyState, PhoneInput, PlacePicker, ...
 ```
 
@@ -388,8 +387,9 @@ guardian-angels-sales/
   places, on every read (see section 9). **Known gap (§14A #1):** unlike `visits`, this table
   has no name-snapshot columns, so once `person_id` nulls out the referral is unattributed and
   drops out of every metric even though the row itself still exists.
-- **notes_review** — "needs mapping" bucket: imported notes whose referrer didn't match a
-  place (`referrer_raw, note_text, note_date, author_*, status, assigned_*`).
+- **categories** — the canonical, admin-editable list of place categories (`id, name`).
+  `places.category` is validated against it. Managed via `routes/categories.js` and
+  `CategoriesModal.jsx` (add/rename/retire — see §13's 2026-07-27 bullet).
 
 ---
 
@@ -463,7 +463,9 @@ guardian-angels-sales/
 - **Dashboard** — visits completed this week, high-priority never-visited, needs-attention rollup.
 - **Multi-user** — visits assigned to a team member; the route planner avoids double-booking a
   place across reps on the same day (see the collision handling in `scheduleDraft.js`).
-- **Historical notes import + "Needs Mapping" tab** — see section 7.
+- **Categories are a real, admin-editable table** — see §13's 2026-07-27 bullet. (Section 7
+  below, "Historical notes import," describes a feature that was fully removed 2026-07-27 —
+  kept only as historical record, not current state.)
 - **Dates display as `M/D/YYYY`** everywhere in the UI (`formatDate()` in `client/src/api.js`,
   added 2026-07-09) — storage/query format is still `'YYYY-MM-DD'` throughout, this is
   display-only. Don't use `formatDate()`'s output for an `<input type="date">` value.
@@ -500,7 +502,13 @@ guardian-angels-sales/
 
 ---
 
-## 7. Historical notes import (ReferrerNotes.xlsx)
+## 7. Historical notes import (ReferrerNotes.xlsx) — REMOVED 2026-07-27, history only
+
+**This entire feature (the `import:notes` script, the `notes_review` table, the `notesReview.js`
+API, and the "Needs Mapping" tab) was deleted 2026-07-27 at Bede's explicit request — no trace
+left in the running app.** He's planning a from-scratch replacement later; don't resurrect this
+version. See §13's 2026-07-27 bullet for exactly what was removed. The rest of this section is
+kept only as a record of what the feature originally did, not as current state.
 
 343 note rows, authors: Nikki (237), Bede (81), Lisa (25). Run via `npm run import:notes`
 (idempotent). Latest result:
@@ -862,7 +870,25 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   People tab gained a "Last contacted by me" sort. `PersonModal`'s place picker can create a
   new place inline (nested `PlaceModal`, auto-selected on save). `PersonDetail` can now log a
   visit directly (previously view/edit only) when the person has a place assigned. 146 tests
-  pass, client build clean. Not yet pushed — see `git log`/`git status`.
+  pass, client build clean. Committed as `a8af5c2`, **pushed and merged into `main`** the same
+  session per Bede's explicit request.
+- **2026-07-27, later the same day:** the "Needs Mapping" tab and everything behind it removed
+  entirely at Bede's explicit request ("I don't want any trails of its functionality... I have
+  no use for it any more") — see §7 (now marked removed) for what it used to do. Deleted:
+  `NeedsMapping.jsx`, `hooks/useDuplicateMatches.js` and `ui/DuplicateWarning.jsx` (only caller
+  of both was NeedsMapping), `routes/notesReview.js`, `scripts/import-notes.js`, the
+  `notes_review` table (new migration `20260727010000_drop_notes_review.js` — a plain table
+  drop, not editing the original `20260706010000_notes_import.js` that created it), the "Needs
+  Mapping" nav tab + its badge count (`App.jsx`), the now-fully-dead `.tab .count`/
+  `.warning-banner` CSS, and every `api.js`/`README.md` reference. Also removed the
+  `import:notes` step from the production auto-seed (`index.js`'s `seedIfEmpty()`) and `npm run
+  seed` — **explicit tradeoff, confirmed with Bede**: a future fresh deploy will only seed
+  places from the main spreadsheet, not backfill historical visits from `ReferrerNotes.xlsx`
+  anymore; he's building a from-scratch replacement for that later, don't resurrect this
+  version. `visits.source` (`manual`/`imported_note`/`planner`) was deliberately left
+  untouched — still load-bearing for the route planner's commit-collision unique index, not
+  specific to this feature. `ui/PlacePicker.jsx` was kept (still used by Plan My Visits'
+  ad-hoc "+ Add a stop" flow) — only its stale NeedsMapping-referencing comment was fixed.
 
 ---
 
@@ -887,7 +913,6 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   the ones with high recent referral activity, or resurface ones that are `needs_attention`)
   is the natural successor to the old "Phase 2 relationship-temp" idea now that there's an
   objective activity signal to use instead.
-- **Finish mapping** the remaining unmatched referrers in the Needs Mapping tab.
 - `NEGLECT_MULTIPLIER`/`CADENCE_DAYS` (route-planner scoring config) are meant to become
   user-editable settings eventually, not stay hardcoded.
 - **Postgres backups** once real data accumulates (Railway backups or `pg_dump`), if/when
