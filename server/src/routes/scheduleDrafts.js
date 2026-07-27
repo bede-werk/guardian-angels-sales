@@ -149,6 +149,20 @@ router.post('/:id/days/:date/reoptimize', handle(async (req, res) => {
   res.json(day);
 }));
 
+// POST /api/schedule-drafts/:id/days/:date/zone — "Somewhere else": re-pick
+// which zone (region) this day covers, cycling through the day's ranked
+// candidate zones (see scheduleDraft.cycleDayZone) instead of always taking
+// the top-ranked one, and re-fill the day from scratch in the new zone.
+// Body: { direction? } — 1 (default) steps forward, -1 steps back.
+router.post('/:id/days/:date/zone', handle(async (req, res) => {
+  const { direction } = req.body;
+  if (direction !== undefined && direction !== 1 && direction !== -1) {
+    return res.status(400).json({ error: 'direction must be 1 or -1' });
+  }
+  const day = await scheduleDraft.cycleDayZone({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date, direction });
+  res.json(day);
+}));
+
 // GET /api/schedule-drafts/:id/days/:date/suggestions — top nearby eligible
 // candidates not already in the draft, for the "day is under budget" prompt.
 router.get('/:id/days/:date/suggestions', handle(async (req, res) => {

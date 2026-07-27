@@ -15,8 +15,11 @@
 // rest of this stack uses.
 const knex = require('../db/knex');
 const defaultSchedulingConfig = require('../config/scheduling');
+const defaultDriveConfig = require('../config/driveTime');
+const defaultVisitTypesConfig = require('../config/visitTypes');
+const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { rankCandidates } = require('./schedulingEngine');
-const { generateDraft } = require('./scheduleGenerator');
+const { generateDraft, fillDayFromZone, orderedZones, stepZone, outOfZoneCommitments } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 
@@ -769,6 +772,105 @@ async function reoptimizeDay({ draftId, userId, date }) {
   return loadDraftDayView(knex, draftId, date);
 }
 
+// "Somewhere else": re-picks which zone (region) a day covers, cycling
+// through that day's ranked candidate zones (scheduleGenerator.orderedZones)
+// instead of always taking the top-ranked one, then re-fills the day from
+// scratch in the new zone. Ownership-checked and the candidate pool built
+// PRE-transaction, same reasoning as reoptimizeDay: fillDayFromZone can make
+// a real OSRM call, and a SQLite transaction held open across that would
+// lock writes for everyone else for the duration.
+async function cycleDayZone({ draftId, userId, date, direction }) {
+  await assertOwnsDraft(knex, draftId, userId);
+
+  const draft = await knex('schedule_drafts').where({ id: draftId }).first();
+  const params = JSON.parse(draft.params_json);
+  const dayParams = params.days.find((d) => d.date === date);
+  if (!dayParams) {
+    const err = new Error('That date is not part of this draft');
+    err.status = 400;
+    throw err;
+  }
+  const budgetMinutes = dayParams.hoursPerDay * 60;
+
+  const basePool = await buildCandidatePool(knex, { today: date });
+  // Deliberately date-scoped, NOT ownDraftPlaceIds(knex, draftId) unscoped:
+  // this day's OWN current stops (about to be replaced) must stay in the
+  // ranked pool, or a commitment sitting among them would be excluded from
+  // ranking entirely and silently invisible to outOfZoneCommitments below —
+  // exactly the "silently drop a promise" outcome this whole feature exists
+  // to prevent. Only OTHER dates' placements need excluding here, to avoid
+  // re-packing a place this draft already committed to on a different day
+  // (which schedule_draft_stops' unique(['draft_id', 'place_id']) would
+  // reject at insert time anyway, but better to never rank it as a
+  // candidate in the first place).
+  const ownElsewhere = await knex('schedule_draft_stops')
+    .where({ draft_id: draftId })
+    .whereNot('date', date)
+    .select('place_id');
+  const own = new Set(ownElsewhere.map((r) => r.place_id));
+  const locked = await lockedElsewherePlaceIds(knex, { date, userId });
+  const excluded = new Set([...own, ...locked]);
+  const candidates = basePool
+    .filter((c) => !excluded.has(c.place.id))
+    .map((c) => ({ ...c, lockedElsewhere: false })); // already excluded above
+
+  const ranked = rankCandidates(candidates, { today: date, config: defaultSchedulingConfig });
+
+  const zones = orderedZones(ranked);
+  if (zones.length === 0) {
+    const err = new Error('No eligible places to plan a zone for this date');
+    err.status = 400;
+    throw err;
+  }
+
+  const currentZone = params.zoneOverrides?.[date] ?? zones[0];
+  const { zone: nextZone, index } = stepZone(zones, currentZone, direction === -1 ? -1 : 1);
+
+  const fillResult = await fillDayFromZone({
+    candidates: ranked,
+    zone: nextZone,
+    homeBase: params.homeBase,
+    budgetMinutes,
+    driveConfig: defaultDriveConfig,
+    visitTypesConfig: defaultVisitTypesConfig,
+    optimizeRoute,
+    routeOptimizerConfig: defaultRouteOptimizerConfig,
+  });
+
+  // Union, not merge-with-dedupe: outOfZoneCommitments only ever looks
+  // OUTSIDE the selected zone, fillResult.droppedCommitments only ever looks
+  // INSIDE it — disjoint by construction (see scheduleGenerator.js's
+  // comments on both).
+  const droppedCommitments = [...outOfZoneCommitments(ranked, nextZone), ...fillResult.droppedCommitments];
+
+  // Re-check ownership inside the write transaction: time has passed since
+  // the checks above (candidate pool build + an OSRM round-trip), same
+  // discipline as every other mutation in this file.
+  await knex.transaction(async (trx) => {
+    await assertOwnsDraft(trx, draftId, userId);
+    await trx('schedule_draft_stops').where({ draft_id: draftId, date }).del();
+
+    const rows = fillResult.stops.map((stop, i) => ({
+      draft_id: draftId,
+      date,
+      place_id: stop.place_id,
+      visit_type: stop.visitType || null,
+      sort_order: i,
+    }));
+    if (rows.length > 0) await trx('schedule_draft_stops').insert(rows);
+
+    // Re-read params fresh inside the transaction — it could have changed
+    // since the pre-transaction read above.
+    const freshDraft = await trx('schedule_drafts').where({ id: draftId }).first();
+    const freshParams = JSON.parse(freshDraft.params_json);
+    const updatedParams = { ...freshParams, zoneOverrides: { ...freshParams.zoneOverrides, [date]: nextZone } };
+    await trx('schedule_drafts').where({ id: draftId }).update({ params_json: JSON.stringify(updatedParams) });
+  });
+
+  const dayView = await loadDraftDayView(knex, draftId, date);
+  return { ...dayView, droppedCommitments, zones: { list: zones, index, count: zones.length } };
+}
+
 // Nearby eligible candidates not yet in the draft, for the "day is under
 // budget — want to add one more?" suggestion. Mostly wiring: eligibility/
 // ranking already exist in schedulingEngine.js.
@@ -1034,6 +1136,7 @@ module.exports = {
   reorderDay,
   setVisitType,
   reoptimizeDay,
+  cycleDayZone,
   getSuggestions,
   commitDay,
   commitAll,

@@ -889,6 +889,29 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   untouched — still load-bearing for the route planner's commit-collision unique index, not
   specific to this feature. `ui/PlacePicker.jsx` was kept (still used by Plan My Visits'
   ad-hoc "+ Add a stop" flow) — only its stale NeedsMapping-referencing comment was fixed.
+- **2026-07-27, still later:** "Somewhere else" — a manual per-day zone override for the route
+  planner, cycling through a day's ranked candidate regions instead of always taking the
+  top-ranked one. Full design reviewed with Bede before any code (touch-points + threading plan
+  + explicit sign-off on 3 decisions), then built via two parallel background subagents off a
+  frozen contract once the shared pure functions were done. New in `scheduleGenerator.js`:
+  `orderedZones`/`stepZone`/`outOfZoneCommitments` (13 new tests). New in `scheduleDraft.js`:
+  `cycleDayZone`, persisting the resolved zone *name* (not an index) into the existing
+  `params.zoneOverrides[date]` slot both read functions already checked — no changes needed
+  there. New route `POST /:id/days/:date/zone` (`direction: 1|-1`). New UI: a "Somewhere else"
+  button + "Area N of M" indicator per day, plus a dropped-commitments notice banner.
+  **Real finding from the design review**: `droppedCommitments` never actually reached an API
+  response before this session — computed by `fillDayFromZone`, discarded by
+  `generateAndPersistDraft`, never recomputed by the read functions, never referenced client-
+  side. This is the first time it's live. **A real bug caught by live testing** (not code
+  review): the subagent's first cut excluded this day's own current stops from re-ranking
+  (correct for avoiding a re-pack collision, wrong for commitment visibility — it made a
+  commitment sitting among them invisible to the new drop-detection too), giving back an empty
+  `droppedCommitments` on the first live call when it should have had one; fixed by scoping the
+  exclusion to only the draft's other dates. Verified live end-to-end (a real backdated
+  commitment, cycled zones, confirmed the exact notice text and that forward/backward/wraparound
+  all behave correctly). 159 tests pass (146 + 13 new), client build clean. Full narrative,
+  including the design-review findings and three rounds of UI polish, in `NOTES.md`'s matching
+  entry. Not yet pushed — see `git log`/`git status`.
 
 ---
 

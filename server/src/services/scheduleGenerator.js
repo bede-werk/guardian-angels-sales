@@ -93,6 +93,62 @@ async function fillDayFromZone({ candidates, zone, homeBase, budgetMinutes, driv
   return { ...result, droppedCommitments };
 }
 
+// The ordered, deduplicated list of regions a day's ranked-and-eligible
+// candidates span — rank order decides the sequence, first-encountered wins
+// the dedupe. Index 0 is exactly the region fillDayFromZone's caller would
+// pick by default (ranked[0].place.region), so this is the "menu" the
+// "Somewhere else" control cycles through — see stepZone below. Places with
+// no region (shouldn't normally happen, but region isn't NOT NULL) are
+// skipped rather than surfacing as a confusing blank "zone".
+function orderedZones(ranked) {
+  const seen = new Set();
+  const zones = [];
+  for (const c of ranked) {
+    if (c.place.region && !seen.has(c.place.region)) {
+      seen.add(c.place.region);
+      zones.push(c.place.region);
+    }
+  }
+  return zones;
+}
+
+// Cyclic step through `zones` relative to `currentZone` — the actual
+// "Somewhere else" logic. Wraps in both directions (direction: 1 or -1), so
+// repeatedly stepping the same direction always eventually returns to the
+// start — this is the reversibility guarantee "Somewhere else" needs,
+// without requiring a separate reverse control. `currentZone` not found in
+// `zones` (e.g. the candidate pool has shifted enough that it's no longer in
+// play) is treated the same as "nothing selected yet": stepping forward
+// lands on index 0, same as the default pick. Returns null if there are no
+// zones to step through at all (an empty day).
+function stepZone(zones, currentZone, direction = 1) {
+  if (zones.length === 0) return null;
+  const currentIndex = zones.indexOf(currentZone);
+  const from = currentIndex === -1 ? -1 : currentIndex; // -1 so "not found" + direction 1 lands on index 0
+  const nextIndex = (((from + direction) % zones.length) + zones.length) % zones.length;
+  return { zone: zones[nextIndex], index: nextIndex };
+}
+
+// Every commitment-tier candidate that ISN'T going to be visited today
+// because it's outside the selected zone — a real dropped promise, distinct
+// from fillDayFromZone's own droppedCommitments (which only ever looks
+// in-zone, so it can't see this). Matters because Tier 0 always sorts first:
+// under the plain default zone pick (ranked[0].place.region), the
+// auto-selected zone is guaranteed to contain the single most-overdue
+// commitment, so this is normally empty — but a SECOND commitment sitting in
+// a different zone would already be invisible to fillDayFromZone's
+// droppedCommitments even without "Somewhere else" involved, and picking a
+// non-default zone (the whole point of "Somewhere else") makes that the
+// common case rather than a rare one. Callers that pick a non-default zone
+// should union this with fillDayFromZone's own droppedCommitments for the
+// full picture; the two are disjoint by construction (one is region ===
+// zone, this is region !== zone), so no dedupe is needed.
+function outOfZoneCommitments(ranked, zone) {
+  return ranked
+    .filter((c) => c.rankKey?.[0] === TIERS.COMMITMENT && c.place.region !== zone)
+    .map(toPackableStop);
+}
+
 // After the optimizer's tighter real routing packs a day, there can be real
 // slack left that the old greedy trim-to-budget had no way to notice (it
 // only ever walked stops in one fixed order and broke at the first that
@@ -224,5 +280,8 @@ async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, c
 module.exports = {
   toPackableStop,
   fillDayFromZone,
+  orderedZones,
+  stepZone,
+  outOfZoneCommitments,
   generateDraft,
 };

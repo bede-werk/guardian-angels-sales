@@ -108,7 +108,7 @@ function openDays(draft) {
 // live time math and over-budget flagging just fall out of that, per the
 // interaction model: edits recalculate in place, nothing is ever auto-
 // dropped or auto-reshuffled beyond what the user themselves just did.
-function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded, userId, draftPlaceIds }) {
+function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded, onZoneCycled, userId, draftPlaceIds }) {
   const [busy, setBusy] = useState(false); // a reorder/add/remove request is in flight for this day
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
@@ -313,11 +313,54 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
     }
   }
 
+  // Re-picks a different zone (region) for this day and re-packs it from
+  // scratch with that zone's candidates — the server already does the same
+  // real routing/budget packing generate() does, so the result is as fresh
+  // as a brand-new day: everEdited/needsReoptimize reset, same as right
+  // after generation, rather than carrying over whatever edit history this
+  // day had under its old zone. Goes through onZoneCycled (not onDayUpdated
+  // directly) so the parent can also surface the droppedCommitments notice —
+  // this day's slice still gets patched in place either way, never a full
+  // draft reload.
+  async function cycleZone() {
+    onError(null);
+    setBusy(true);
+    try {
+      const result = await api.scheduleDrafts.cycleZone(draftId, day.date);
+      onZoneCycled(result);
+      setEverEdited(false);
+      setNeedsReoptimize(false);
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="card">
       <div className="card-head">
         <h2>
           {formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}
+          {day.zones && (
+            <>
+              {' · '}
+              <span className="tiny muted" style={{ fontWeight: 400 }}>
+                Area {day.zones.index + 1} of {day.zones.count}
+              </span>
+            </>
+          )}
+          {' '}
+          <Button
+            size="small"
+            variant="secondary"
+            onClick={cycleZone}
+            disabled={busy}
+            title="Re-pick a different area for this day and re-pack it with those stops"
+            style={{ flex: 'none', minWidth: 0 }}
+          >
+            Somewhere else
+          </Button>
           {day.overBudget && <span className="badge attention" style={{ marginLeft: 8 }}>Over budget</span>}
         </h2>
         <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
@@ -730,6 +773,21 @@ export default function PlanVisits({ userId }) {
     setDraft((prev) => ({ ...prev, days: prev.days.map((d) => (d.date === dayView.date ? dayView : d)) }));
   }
 
+  // cycleZone's response IS a day view (same shape reorder/addStop/etc.
+  // return, plus droppedCommitments/zones) so this patches this day's slice
+  // in place same as updateDay — no full reload. droppedCommitments only
+  // gets a notice when it's actually non-empty, same "important-but-non-
+  // fatal outcome" banner handleDayCommitted uses for skippedCollisions.
+  function handleZoneCycled(result) {
+    updateDay(result);
+    if (result.droppedCommitments && result.droppedCommitments.length > 0) {
+      const names = result.droppedCommitments.map((c) => c.place_name).join(', ');
+      setNotice(
+        `Switched to a different area for ${formatDate(result.date)} — ${result.droppedCommitments.length} commitment${result.droppedCommitments.length === 1 ? '' : 's'} outside it won't be visited today: ${names}.`
+      );
+    }
+  }
+
   // commitDay's response isn't a day view (it's { date, committed,
   // skippedCollisions } — the committed stops just became real `visits`
   // rows and are gone from the draft) so, unlike every other mutation here,
@@ -1120,6 +1178,7 @@ export default function PlanVisits({ userId }) {
               onDayUpdated={updateDay}
               onDayCommitted={handleDayCommitted}
               onDayDiscarded={handleDayDiscarded}
+              onZoneCycled={handleZoneCycled}
               onError={setError}
               reload={load}
               userId={userId}

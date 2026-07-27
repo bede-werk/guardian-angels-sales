@@ -1197,3 +1197,86 @@ entry alone (including the still-accurate-as-history "Needs Mapping geocoding ga
 
 146 backend tests pass, client build clean, verified live (nav bar shows exactly 4 tabs — no
 "Needs Mapping" — `GET /api/notes-review` 404s, no console errors on any tab).
+
+## 2026-07-27 (still later) — "Somewhere else": manual zone override for a draft day
+
+Bede wanted a way to say "I'd rather work a different area today" on a generated draft day,
+instead of always taking whichever region the top-ranked candidate happens to be in. He asked
+for a design review before any code — walked through `scheduleGenerator.js`/`scheduleDraft.js`
+with him first (touch-points, exact threading plan, open questions) and got explicit sign-off
+on three decisions before writing anything: (1) persist the *resolved zone name* per date, not
+a bare integer index — reuses the existing `params.zoneOverrides[date]` slot `loadDraftView`/
+`loadDraftDayView` already read, so "index persists across edits, resets on regenerate" falls
+out for free with zero changes to those functions; (2) the "a commitment in a non-selected zone
+must still surface as dropped" requirement is scoped to only the new zone-cycle endpoint, not
+backported into plain `generateDraft`/`fillDayFromZone` (a real, narrower version of the same
+gap already existed there too, just rare — see below); (3) the API supports both directions
+(`direction: 1 | -1`) from day one even though the UI only ships a single "Somewhere else"
+button — reversibility comes from the cycle wrapping around, not a visible "back" control yet.
+
+**Real architectural findings from the review, worth remembering:** `droppedCommitments`
+(the "a promise didn't make the cut" flag `fillDayFromZone` computes) never actually survived
+past the initial `/generate` call before this — `generateAndPersistDraft` computed it and threw
+it away, `loadDraftView`/`loadDraftDayView` never recomputed it, the client never referenced it.
+This session is the first time it reaches an API response for real. Also: there was no existing
+"local re-sequence path" doing zone selection (steps 2c→2e) to reuse, despite that being how the
+request was originally framed — `addStop`/`removeStop`/`reorderDay`/`setVisitType` only ever
+mutate stops directly, `reoptimizeDay` only resequences what's already there; none of them touch
+candidate ranking. `fillDayFromZone` itself was already zone-agnostic (takes `zone` as a plain
+parameter, no assumption baked in) — the "zone = top-ranked region" default lived one level up,
+in `generateDraft`'s per-day loop and in the two read functions' display-fallback line. Both
+findings meant this needed a genuinely new function, not a modification of an existing one.
+
+**Built, in parallel via two background subagents** once the shared contract was fully pinned
+down (exact function signatures, endpoint shape, response fields) — the foundation (pure
+functions + their tests) was done directly first since everything else needed its exact shape:
+
+- `scheduleGenerator.js`: three new pure, unit-tested functions — `orderedZones(ranked)` (dedup
+  regions in rank order — index 0 is always what the default pick would choose),
+  `stepZone(zones, currentZone, direction)` (cyclic, wraps both ways — the actual "Somewhere
+  else" logic and the reversibility guarantee), `outOfZoneCommitments(ranked, zone)` (every
+  commitment-tier candidate NOT in the selected zone — the fix for the gap above; disjoint from
+  `fillDayFromZone`'s own `droppedCommitments` by construction, union the two for the full
+  picture). 13 new tests.
+- `scheduleDraft.js`: new `cycleDayZone({ draftId, userId, date, direction })` — rebuilds the
+  candidate pool for that date, ranks, derives the zone list, steps to the next zone, re-runs
+  `fillDayFromZone` (identical packing behavior to generation, only the zone differs), persists
+  by replacing that date's `schedule_draft_stops` and writing the resolved zone name into
+  `params.zoneOverrides[date]`.
+- `scheduleDrafts.js`: new `POST /:id/days/:date/zone` route, `direction` validated to `1`/`-1`/
+  omitted only.
+- `api.js` + `PlanVisits.jsx`: a "Somewhere else" button per day (scoped to that day's own
+  `busy` state, no full-draft reload — same pattern every other per-day mutation already uses),
+  an "Area N of M" position indicator, and a notice banner reusing the exact `.notice-banner`
+  mechanism `commitDay`'s skipped-collisions message already uses, for when
+  `droppedCommitments` comes back non-empty.
+
+**A real bug caught by live testing, not code review**, in the subagent's otherwise-correct
+implementation: `cycleDayZone`'s own-draft exclusion originally reused the existing
+`ownDraftPlaceIds(draftId)` helper unscoped — correct reasoning for avoiding a re-pack
+collision (a place can't belong to two regions, so this day's own current stops could never
+spuriously collide with the new zone's candidates), but wrong for commitment visibility: it also
+excluded this day's own current stops from the re-ranked pool entirely, which made a commitment
+sitting among them invisible to `outOfZoneCommitments` too — the exact "silently drop a promise"
+outcome the whole feature exists to prevent. Only caught by generating a real draft with a real
+backdated commitment (`next_visit_date` due, `scheduled_date` in the past — a same-day
+`scheduled_date` turned out to *also* trip the separate `lockedElsewhere` check, a test-setup
+trap worth remembering for next time) and hitting the live endpoint — the first live call came
+back with an empty `droppedCommitments` when it should have had one. Fixed by scoping the
+exclusion to only the draft's *other* dates, not the current one.
+
+**Verified live end-to-end** (Lisa Marks id 5, temp token, cleaned up after every check):
+generated a draft with a real commitment in Southeast Lincoln, clicked "Somewhere else", landed
+on East Lincoln (Area 2 of 15), notice banner read exactly "Switched to a different area for
+7/28/2026 — 1 commitment outside it won't be visited today: Primary Care Partners." — confirmed
+via direct API calls too that forward/backward/wraparound all behave correctly and an invalid
+`direction` value 400s. 159 backend tests pass (146 + 13 new), client build clean throughout.
+
+**Live UI polish, same session** (three quick rounds after Bede tried it): moved the
+"Somewhere else" button from the day card's right-side action group to sit next to the date/
+region on the left; added a "·" separator matching the app's existing date-region separator
+exactly (first attempt used a muted/lighter span that didn't match the bold h2 text — fixed to
+plain inline text inheriting the header's own styling); moved that separator to sit between the
+region name and the "Area N of M" indicator (it only appears after the first cycle, so this only
+matters once the rep has actually clicked the button once) rather than between "Area N of M" and
+the button itself.

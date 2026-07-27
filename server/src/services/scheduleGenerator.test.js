@@ -4,7 +4,7 @@ const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { estimateDriveMinutes } = require('./driveTime');
 const { TIERS } = require('./schedulingEngine');
-const { fillDayFromZone, generateDraft } = require('./scheduleGenerator');
+const { fillDayFromZone, generateDraft, orderedZones, stepZone, outOfZoneCommitments } = require('./scheduleGenerator');
 
 // 2026-07-13 is a Monday (independently verified via day-of-year math).
 const TODAY = '2026-07-13';
@@ -402,6 +402,86 @@ describe('fillDayFromZone', () => {
 
       assert.equal(receivedDriveConfig.MIN_DRIVE_MINUTES, 15, 'driveConfig should reach optimizeRoute, not just the haversine fallback path');
     });
+  });
+});
+
+describe('orderedZones', () => {
+  test('dedupes regions in rank order, first-encountered wins', () => {
+    const ranked = [
+      candidate(place(1, { region: 'East Lincoln' })),
+      candidate(place(2, { region: 'South Lincoln' })),
+      candidate(place(3, { region: 'East Lincoln' })),
+      candidate(place(4, { region: 'Southeast Lincoln' })),
+    ];
+    assert.deepEqual(orderedZones(ranked), ['East Lincoln', 'South Lincoln', 'Southeast Lincoln']);
+  });
+
+  test('empty input yields an empty list', () => {
+    assert.deepEqual(orderedZones([]), []);
+  });
+
+  test('a candidate with no region is skipped rather than producing a blank zone', () => {
+    const ranked = [candidate(place(1, { region: null })), candidate(place(2, { region: 'East Lincoln' }))];
+    assert.deepEqual(orderedZones(ranked), ['East Lincoln']);
+  });
+});
+
+describe('stepZone', () => {
+  const zones = ['East Lincoln', 'South Lincoln', 'Southeast Lincoln'];
+
+  test('steps forward to the next zone', () => {
+    assert.deepEqual(stepZone(zones, 'East Lincoln', 1), { zone: 'South Lincoln', index: 1 });
+  });
+
+  test('wraps forward past the last zone back to the first', () => {
+    assert.deepEqual(stepZone(zones, 'Southeast Lincoln', 1), { zone: 'East Lincoln', index: 0 });
+  });
+
+  test('steps backward to the previous zone', () => {
+    assert.deepEqual(stepZone(zones, 'South Lincoln', -1), { zone: 'East Lincoln', index: 0 });
+  });
+
+  test('wraps backward past the first zone to the last', () => {
+    assert.deepEqual(stepZone(zones, 'East Lincoln', -1), { zone: 'Southeast Lincoln', index: 2 });
+  });
+
+  test('a full forward cycle returns to the start — the reversibility guarantee', () => {
+    let current = zones[0];
+    for (let i = 0; i < zones.length; i++) current = stepZone(zones, current, 1).zone;
+    assert.equal(current, zones[0]);
+  });
+
+  test('current zone not found in the list starts from index 0', () => {
+    assert.deepEqual(stepZone(zones, 'Nowhere', 1), { zone: 'East Lincoln', index: 0 });
+  });
+
+  test('empty zone list returns null', () => {
+    assert.equal(stepZone([], 'East Lincoln', 1), null);
+  });
+});
+
+describe('outOfZoneCommitments', () => {
+  test('a commitment in a zone that is NOT selected is surfaced, even though it was never a candidate for the selected zone at all', () => {
+    // This is the case fillDayFromZone's own droppedCommitments can't see —
+    // it only ever looks in-zone. A rep using "Somewhere else" to move from
+    // zone A to zone B must still be told zone A's promise didn't get kept
+    // today, not have it silently vanish because it was never considered.
+    const commitmentInA = candidate(place(1, { region: 'Zone A' }), { rankKey: [TIERS.COMMITMENT, 5] });
+    const maintenanceInB = candidate(place(2, { region: 'Zone B' }), { rankKey: [TIERS.MAINTENANCE, 0.5] });
+
+    const result = outOfZoneCommitments([commitmentInA, maintenanceInB], 'Zone B');
+
+    assert.deepEqual(result.map((s) => s.place_id), [1], 'the commitment in the non-selected zone should be surfaced as dropped');
+  });
+
+  test('a commitment IN the selected zone is not included here — fillDayFromZone\'s own droppedCommitments covers that case', () => {
+    const commitmentInB = candidate(place(1, { region: 'Zone B' }), { rankKey: [TIERS.COMMITMENT, 5] });
+    assert.deepEqual(outOfZoneCommitments([commitmentInB], 'Zone B'), []);
+  });
+
+  test('a non-commitment candidate in a different zone is not surfaced — only commitments count as a dropped promise', () => {
+    const maintenanceInA = candidate(place(1, { region: 'Zone A' }), { rankKey: [TIERS.MAINTENANCE, 0.5] });
+    assert.deepEqual(outOfZoneCommitments([maintenanceInA], 'Zone B'), []);
   });
 });
 

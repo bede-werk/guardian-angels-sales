@@ -801,6 +801,48 @@ Verified live end-to-end (open modal → view real 12-stop day → click into Pl
 Edit reopens the day into an editable proposal → Delete removes it), each against a real
 freshly-committed test day, cleaned up after. 146 backend tests pass, client build clean.
 
+## "Somewhere else" — manual per-day zone override, 2026-07-27
+
+A day's zone (region) was always auto-picked as the top-ranked remaining candidate's region,
+with no way for a rep to say "I'd rather work a different area today." Added a per-day
+"Somewhere else" control that cycles through the day's own ranked candidate zones instead.
+
+New pure functions in `scheduleGenerator.js` (unit-tested): `orderedZones(ranked)` — the
+deduplicated, rank-ordered list of regions a day's candidates span; `stepZone(zones,
+currentZone, direction)` — cyclic step, wraps both directions (the reversibility guarantee, no
+separate "back" control needed); `outOfZoneCommitments(ranked, zone)` — every commitment-tier
+candidate NOT in the selected zone, since `fillDayFromZone`'s own `droppedCommitments` only ever
+looks *inside* the selected zone and so can't see a promise sitting in a zone that isn't even
+being visited today.
+
+New `scheduleDraft.js` function `cycleDayZone`: rebuilds the day's candidate pool (excluding
+places already placed on this draft's *other* dates, and anything locked elsewhere), ranks,
+derives the zone list, steps to the next zone, re-runs `fillDayFromZone` with it (identical
+packing behavior to generation — only the zone differs), and persists by replacing that date's
+stops and writing the resolved zone *name* into the existing `params.zoneOverrides[date]` slot
+— deliberately a name, not an index, so it degrades gracefully if the candidate pool shifts
+enough that an old index would point somewhere else entirely, and so the existing read functions
+(`loadDraftView`/`loadDraftDayView`) needed zero changes to keep working. New route
+`POST /:id/days/:date/zone` (`direction: 1 | -1`).
+
+**`droppedCommitments` reached an API response for the first time this session** — it's been
+computed by `fillDayFromZone` and unit-tested since phase 6, but `generateAndPersistDraft`
+always discarded it after generation and neither read function ever recomputed it. Found this
+during the design review, before writing any code.
+
+**A real bug, caught only by live testing**: the first implementation excluded this day's own
+current stops from re-ranking using the existing (correct-for-other-purposes) `ownDraftPlaceIds`
+helper unscoped — which also made a commitment sitting among those stops invisible to the new
+drop-detection, the exact failure mode this feature exists to prevent. The first live call came
+back with an empty `droppedCommitments` when a real backdated commitment should have shown up.
+Fixed by scoping the own-draft exclusion to only the draft's *other* dates.
+
+Built via two parallel background subagents (server DB/route layer; client UI) working off a
+frozen contract, after the shared pure functions were written and tested directly first. Verified
+live end-to-end afterward, including three rounds of UI polish from watching Bede try it (button
+position, a separator dot matching the app's existing convention exactly, then repositioned
+again). 159 tests pass (146 + 13 new), client build clean.
+
 ## Running things
 
 - Tests: `nvm use 24` then `npm test` from `server/` (runs
