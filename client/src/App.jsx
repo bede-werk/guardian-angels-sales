@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api, today, formatDate, getToken, clearToken } from './api';
 import Dashboard from './components/Dashboard';
-import PlanVisits from './components/PlanVisits';
+import RoutePlanner from './components/RoutePlanner';
 import VisitsCalendar from './components/VisitsCalendar';
 import Places from './components/Places';
 import People from './components/People';
@@ -15,7 +15,7 @@ import Button from './components/ui/Button';
 // component renders below; `label` is the button text.
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
-  { id: 'planner', label: 'Plan My Visits' },
+  { id: 'planner', label: 'Route Planner' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'places', label: 'Places' },
   { id: 'people', label: 'People' },
@@ -86,7 +86,7 @@ export default function App() {
       {/* Only the active tab's component is mounted — the others unmount entirely,
           resetting their state each time you come back to them. */}
       {tab === 'dashboard' && <Dashboard date={date} userId={authUser.id} />}
-      {tab === 'planner' && <PlanVisits userId={authUser.id} />}
+      {tab === 'planner' && <RoutePlanner userId={authUser.id} />}
       {tab === 'calendar' && <VisitsCalendar userId={authUser.id} />}
       {tab === 'places' && <Places userId={authUser.id} />}
       {tab === 'people' && <People userId={authUser.id} />}

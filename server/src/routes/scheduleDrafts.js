@@ -58,7 +58,7 @@ router.get('/active', handle(async (req, res) => {
 
 // GET /api/schedule-drafts/committed-dates — every today-or-later date this
 // user already has real visits scheduled on, with a count each:
-// [{ date, count }]. The "Plan My Visits" calendar disables these dates (a
+// [{ date, count }]. The "Route Planner" calendar disables these dates (a
 // day that's already been committed can never be selected for another round
 // of planning) and the page also renders them as a plain "already committed"
 // snapshot list.

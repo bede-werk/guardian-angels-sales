@@ -40,7 +40,7 @@ const MAX_PLAN_DATES = 10;
 // Default hours budget for a date reopenCommittedDay adds to a draft's
 // params.days on the fly (there's no UI step to pick hours when reopening an
 // already-committed day — the rep is editing stops, not re-picking a
-// schedule). Mirrors PlanVisits.jsx's own DEFAULT_HOURS_PER_DAY constant —
+// schedule). Mirrors RoutePlanner.jsx's own DEFAULT_HOURS_PER_DAY constant —
 // keep the two equal.
 const DEFAULT_HOURS_PER_DAY = 4;
 // A day's ranking/candidate pool is only as fresh as the moment it was
@@ -162,7 +162,7 @@ module.exports.partitionCommittableStops = partitionCommittableStops;
 // directly caused a real bug: for several hours every evening (once UTC has
 // already rolled to the next calendar day, any time after ~7pm Central), the
 // server's idea of "today" was a day ahead of every rep's browser (which
-// computes "today" in ITS local timezone — see PlanVisits.jsx's todayISO()) —
+// computes "today" in ITS local timezone — see RoutePlanner.jsx's todayISO()) —
 // spuriously rejecting an evening plan-for-today request as "in the past."
 // A fixed IANA zone (not a client-supplied one) keeps this server-
 // authoritative rather than trusting client input for something logic-
@@ -1051,7 +1051,7 @@ async function commitDay({ draftId, userId, date }) {
     // in a loop across multiple dates against one draftId captured up front,
     // and deleting the row mid-loop would break a later iteration's
     // assertOwnsDraft. An empty-but-present draft is already cleaned up by
-    // PlanVisits.jsx's own load() on its next read (see openDays().length
+    // RoutePlanner.jsx's own load() on its next read (see openDays().length
     // === 0 handling there) — no further action needed here.
     if (committedRows.length > 0) {
       const draftRow = await trx('schedule_drafts').where({ id: draftId }).first();

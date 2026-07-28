@@ -2,7 +2,7 @@
 // — never read or written anywhere in routes/services/frontend. The whole
 // "skip a stop" feature it belonged to was part of the old Schedule.jsx
 // scheduler, retired 2026-07-15; nothing rebuilt an equivalent in the new
-// "Plan My Visits" workspace. No FK, so a plain drop needs no
+// "Route Planner" workspace. No FK, so a plain drop needs no
 // rebuildSqliteTable rebuild.
 exports.up = async function up(knex) {
   await knex.schema.alterTable('visits', (t) => {

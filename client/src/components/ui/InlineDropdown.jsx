@@ -1,7 +1,7 @@
 import React from 'react';
 
 // A native <select> styled to read as plain inline text (e.g. a value sitting
-// inside a header line, like Plan My Visits' zone picker) rather than a boxy
+// inside a header line, like Route Planner's zone picker) rather than a boxy
 // form control, while still being a real <select> for native/keyboard
 // picking. `options` is a plain array of strings. If `value` isn't (yet)
 // among `options` — e.g. the list hasn't loaded — shows `placeholder` as a

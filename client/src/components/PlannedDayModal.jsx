@@ -5,7 +5,7 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 
 // "Already Planned" day drill-down — clicking a committed date's row (see
-// PlanVisits.jsx) opens this instead of exposing Edit/Delete directly on the
+// RoutePlanner.jsx) opens this instead of exposing Edit/Delete directly on the
 // row, matching how Places.jsx/People.jsx keep a list row plain and put the
 // actual actions inside the detail modal it opens. Each visit's name is
 // itself clickable to open full PlaceDetail (via onViewPlace), same pattern

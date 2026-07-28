@@ -174,8 +174,8 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.t2 { background: var(--teal-tint-1); color: var(--tier2); } /* Tier 2 */
 .badge.t3 { background: var(--grey-tint-1); color: var(--tier3); } /* Tier 3 */
 .badge.star { background: var(--mauve-tint-1); color: var(--mauve); } /* ⭐ Priority flag */
-.badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* Over-budget flag on a Plan My Visits day/stop */
-.badge.committed { background: var(--teal-tint-2); color: var(--teal-dark); } /* Plan My Visits: stops already committed to real visits for this day */
+.badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* Over-budget flag on a Route Planner day/stop */
+.badge.committed { background: var(--teal-tint-2); color: var(--teal-dark); } /* Route Planner: stops already committed to real visits for this day */
 .badge.o-interested { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.o-follow_up { background: var(--blue-tint-1); color: var(--blue); }
 .badge.o-not_ready { background: var(--mauve-tint-1); color: var(--warn); }
@@ -186,12 +186,12 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--grey-tint-1); color: var(--grey-dark); }
 
 /* Attention flag — a mauve left border, applied to rows in Dashboard's
-   "Needs attention" list and over-budget stops in Plan My Visits. Mauve is
+   "Needs attention" list and over-budget stops in Route Planner. Mauve is
    used sparingly on purpose (see :root above). */
 .attention-flag { border-left: 3px solid var(--mauve); }
 
 /* Lists / tables — .list/.stop is the vertical-timeline row style used by
-   Plan My Visits and the Dashboard's completed-this-week/needs-attention lists. */
+   Route Planner and the Dashboard's completed-this-week/needs-attention lists. */
 .list { list-style: none; margin: 0; padding: 0; }
 .stop {
   display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--border);
@@ -203,13 +203,13 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .stop .name { font-family: var(--font-serif); font-weight: 600; font-size: 15px; }
 .stop .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .stop .actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-.stop.dragging { opacity: 0.4; } /* the row currently being dragged, in Plan My Visits */
+.stop.dragging { opacity: 0.4; } /* the row currently being dragged, in Route Planner */
 .stop.drag-over { box-shadow: inset 0 2px 0 var(--blue); } /* the row a drag is currently hovering over */
 .stop.attention-flag { padding-left: 10px; }
 .drag-handle { color: var(--muted); cursor: grab; font-size: 14px; text-align: center; user-select: none; line-height: 1; }
 .drag-handle:active { cursor: grabbing; }
 
-/* Up/down arrow buttons — the non-drag fallback for reordering a stop (Plan My Visits) */
+/* Up/down arrow buttons — the non-drag fallback for reordering a stop (Route Planner) */
 .reorder { display: flex; flex-direction: column; gap: 2px; }
 .reorder button { border: 1px solid var(--border); background: #fff; border-radius: 6px; width: 24px; height: 20px;
   cursor: pointer; line-height: 1; padding: 0; color: var(--muted); }
@@ -229,7 +229,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    only the button appears selected, instead of both lighting up at once. */
 .hover-row:has(.btn:hover) { background: none; }
 
-/* Plan My Visits' stop rows: the click-to-open-detail area is only .main
+/* Route Planner's stop rows: the click-to-open-detail area is only .main
    (the drag handle + reorder buttons sit to its left, the time estimate +
    remove button to its right, as separate flex siblings — see .stop below)
    — painting just .main's own box on hover looked like a narrow, off-center
@@ -306,7 +306,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 }
 
 /* Place picker — the custom autocomplete dropdown in ui/PlacePicker.jsx
-   (used by Plan My Visits' ad-hoc "+ Add a stop" flow). */
+   (used by Route Planner's ad-hoc "+ Add a stop" flow). */
 .picker { position: relative; flex: 2; }
 .picker-menu { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--border);
   border-radius: var(--radius-sm); box-shadow: var(--shadow); z-index: 20; margin-top: 4px; max-height: 260px; overflow: auto; }
@@ -341,7 +341,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
    today's date is just shown as text (App.jsx) */
 .static-date { padding: 8px 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
 
-/* Progress bar — a day's running total in Plan My Visits. .progress-total is
+/* Progress bar — a day's running total in Route Planner. .progress-total is
    the prominent "Xh Ym of Zh" readout above the bar; .progress-label is the
    smaller "N stops · Xh Ym free" caption below it. */
 .progress-total { font-family: var(--font-serif); font-size: 20px; font-weight: 700; color: var(--blue-dark); margin-bottom: 6px; }
@@ -349,7 +349,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .progress-bar .fill { height: 100%; background: var(--blue); border-radius: 999px; transition: width 0.3s ease; }
 .progress-label { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
-/* Calendar — Plan My Visits' multi-date picker (ui/Calendar.jsx). A plain
+/* Calendar — Route Planner's multi-date picker (ui/Calendar.jsx). A plain
    month grid; selection/disabled/committed states are just background +
    text color, no icons, consistent with the rest of the app's flat style. */
 .calendar { max-width: 280px; }
@@ -382,7 +382,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 }
 
 /* Calendar tab (ui/MonthCalendar.jsx) — a full-width, unbounded month grid,
-   distinct from .calendar above (Plan My Visits' 280px-capped multi-select
+   distinct from .calendar above (Route Planner's 280px-capped multi-select
    date *picker*). This is a whole tab's main content, so cells get real
    room: a day number plus a row of status dots, not just a bare number.
    Reuses .calendar-head/.calendar-nav/.calendar-title as-is for the month
@@ -424,7 +424,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .selected-days-row .date-label { flex: 1; font-size: 13px; font-weight: 600; }
 
 /* Two-part duration picker (hours + minutes) for a planned date's daily
-   budget — PlanVisits.jsx keeps this as one field on the wire
+   budget — RoutePlanner.jsx keeps this as one field on the wire
    (`hoursPerDay`, a decimal), but shows it as two selects. Grouped inside
    one bordered pill (shared border, no border/outline of their own on the
    individual selects) so it still reads as a single "duration" control
@@ -439,7 +439,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .duration-sep { color: var(--muted); font-size: 12px; }
 
 /* InlineDropdown — a <select> styled to read as plain inline text (used by
-   Plan My Visits' zone picker, sitting inline in a card's h2). font: inherit
+   Route Planner's zone picker, sitting inline in a card's h2). font: inherit
    on the select itself only affects the CLOSED display (so it still matches
    the surrounding h2's size); the option rule below matches every other
    <select> in the app (see the plain `input, select, textarea` rule).
@@ -454,7 +454,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .inline-dropdown:disabled { cursor: default; opacity: 0.6; }
 .inline-dropdown option { font-family: var(--font-sans); font-size: 13px; }
 
-/* Plan My Visits' generate form: "Starting point" + "Plan for these dates"
+/* Route Planner's generate form: "Starting point" + "Plan for these dates"
    as two EQUAL-width columns with a vertical rule dead-center between them,
    instead of stacking one above the other (which left the card mostly
    empty — the calendar/date-list content is inherently narrower than the

@@ -95,7 +95,7 @@ function formatMinutes(minutes) {
 // stops, or never got any stops committed at all (the "nothing planned for
 // this day yet, add one" case right after generating). Once a day has been
 // fully accepted — no stops left, but it did produce committed visits — its
-// card is a redundant empty shell (see PlanVisits' render below) and drops
+// card is a redundant empty shell (see RoutePlanner's render below) and drops
 // out. Shared between the render and load()'s "is this whole draft spent?"
 // check so they can't drift apart.
 function openDays(draft) {
@@ -596,7 +596,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
 // (DraftDay's "Accept proposal" button) and all-remaining-days (this
 // component's "Accept all proposals" button). Built on top of sub-slice 2's
 // live editing.
-export default function PlanVisits({ userId }) {
+export default function RoutePlanner({ userId }) {
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1001,7 +1001,7 @@ export default function PlanVisits({ userId }) {
 
       <div className="card">
         <div className="card-head">
-          <h2>Plan My Visits</h2>
+          <h2>Route Planner</h2>
           <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
             {draft ? (
               <>

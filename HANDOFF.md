@@ -245,7 +245,7 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
    If you touch this, keep that contract.
 
 **Natural next steps Bede has flagged but not yet asked for** (don't just do these — check
-first): extending "needs attention" coverage to the "Plan My Visits" workspace (the old
+first): extending "needs attention" coverage to the "Route Planner" workspace (the old
 scheduler's "Today's Route" screen is gone — this app now has one route-planning surface),
 feeding referral metrics into priority scoring (the natural successor to the old "Phase 2
 relationship-temp" idea).
@@ -334,13 +334,13 @@ guardian-angels-sales/
 └── client/
     ├── vite.config.js                # dev proxy /api -> :4000
     └── src/
-        ├── App.jsx                   # tabs: Dashboard, Plan My Visits, Places, People
+        ├── App.jsx                   # tabs: Dashboard, Route Planner, Places, People
         ├── api.js                    # incl. formatDate() — YYYY-MM-DD -> M/D/YYYY for display
         ├── styles.css
         └── components/
             ├── Login.jsx, ChangePassword.jsx
             ├── Dashboard.jsx
-            ├── PlanVisits.jsx                       # route-planner workspace ("Plan My Visits")
+            ├── RoutePlanner.jsx                     # route-planner workspace ("Route Planner" tab)
             ├── Places.jsx, PlaceDetail.jsx, PlaceModal.jsx      # PlaceModal: create AND edit
             ├── People.jsx, PersonDetail.jsx, PersonModal.jsx, AssignPersonModal.jsx
             ├── ReferralModal.jsx, ReferralDetailModal.jsx
@@ -399,7 +399,7 @@ guardian-angels-sales/
   `/api` routes except the login flow require `requireAuth`.
 - **Import places** from Excel (idempotent upsert). Normalizes category typos
   (`Legal and Trust`→`Legal & Trust`, `Senior Adisors`→`Senior Advisors`).
-- **Route planner ("Plan My Visits" tab)** — four-tier priority scoring (commitments >
+- **Route Planner (tab)** — four-tier priority scoring (commitments >
   endangered/rescue > exploration > maintenance), real drive-time via OSRM with
   stop-sequencing optimization, a multi-day draft you generate once and then edit live
   (reorder/add/remove/change visit type, with in-place time recalculation and over-budget
@@ -791,7 +791,7 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   non-matching value, just checked against the table now instead of the hardcoded array.
 - **The route planner is real and fully usable end-to-end in the UI — and is now the only
   route-planning surface in the app.** Backend/API (phases 1-6) is fully built, tested
-  (139 tests), and committed. The "Plan My Visits" tab has generate, live editing
+  (139 tests), and committed. The "Route Planner" tab has generate, live editing
   (reorder/add/remove/visit-type), suggestions, and commit (per-day and full) all built and
   verified live (2026-07-15) — drafts can be built, edited, and committed to real `visits`
   rows entirely from the new UI. **The old scheduler is fully deleted** (same day, at Bede's
@@ -928,7 +928,7 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   existing "address not recognized — save anyway?" dialog will null the coordinates back out if
   someone clicks through it. Fixing that for real means picking a second geocoding provider —
   a real design decision, not done here.
-- **"Needs attention" coverage on Plan My Visits:** referral metrics are wired into the
+- **"Needs attention" coverage on Route Planner:** referral metrics are wired into the
   People tab, Places tab, both detail pages, and the Dashboard, but not the route-planning
   screen's stop cards.
 - **Feed referral metrics into priority scoring:** `services/priority.js` still only scores

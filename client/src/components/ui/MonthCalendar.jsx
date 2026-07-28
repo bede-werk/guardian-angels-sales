@@ -8,7 +8,7 @@ const MONTH_LABELS = [
 
 // Local Y-M-D, never .toISOString() (which shifts near midnight in timezones
 // behind UTC) — same rule this app's other date-string code already follows
-// (see Calendar.jsx/PlanVisits.jsx's own toISODate/isoDate).
+// (see Calendar.jsx/RoutePlanner.jsx's own toISODate/isoDate).
 function toISODate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -21,7 +21,7 @@ function toISODate(d) {
 // dispatch; the caller owns what's inside a cell and which days are
 // clickable at all, via the three callback props below. This is a
 // deliberately different component from ui/Calendar.jsx (a bounded
-// multi-select date *picker* for Plan My Visits) rather than an extension of
+// multi-select date *picker* for Route Planner) rather than an extension of
 // it — that component's selected/committed/proposed/minDate/maxDate/
 // maxSelected props are all specific to picking upcoming plan dates and
 // don't fit "browse any month, view indicators, click to drill in" at all.

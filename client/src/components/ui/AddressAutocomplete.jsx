@@ -32,7 +32,7 @@ const THEME = {
   },
 };
 
-// onSelect receives { lat, lng, label } — the same shape PlanVisits.jsx
+// onSelect receives { lat, lng, label } — the same shape RoutePlanner.jsx
 // already builds from browser geolocation and the old manual-entry form, so
 // callers don't need to know this uses Mapbox under the hood.
 export default function AddressAutocomplete({ onSelect, placeholder = 'Start typing an address…' }) {
