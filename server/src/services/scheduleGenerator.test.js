@@ -580,6 +580,29 @@ describe('generateDraft', () => {
     }
   });
 
+  test('lockedByDate excludes a place only on the specific date it\'s locked for, not the whole window', async () => {
+    // Regression test for the bug Bede found: another rep already has place
+    // 1 committed/drafted for day 1 specifically, but it's genuinely free on
+    // day 2. lockedByDate must be re-applied fresh each iteration of the day
+    // loop (not baked into the candidate once up front) so day 1 correctly
+    // skips it in favor of the next-best candidate, while day 2 still offers
+    // it — matching what addStop/getSuggestions already did per-date, which
+    // generation's old single generation-day-scoped check did not.
+    const locked = candidate(place(1, { capacity_level: 'high' }));
+    const filler = candidate(place(2, { capacity_level: 'low' }));
+    const days = mkDays(2, 1); // tight budget: one stop per day
+
+    const result = await generateDraft({
+      candidates: [locked, filler],
+      days,
+      homeBase: DOWNTOWN,
+      lockedByDate: { [days[0].date]: new Set([1]) }, // place 1 locked on day 1 only
+    });
+
+    assert.deepEqual(result.days[0].stops.map((s) => s.place_id), [2], 'day 1: place 1 is locked elsewhere, filler gets packed instead');
+    assert.deepEqual(result.days[1].stops.map((s) => s.place_id), [1], 'day 2: place 1 is free again and gets proposed');
+  });
+
   test('a place under the hard floor relative to today becomes eligible starting the day it actually clears the floor, not before', async () => {
     // HARD_FLOOR_DAYS defaults to 5. lastVisitDate = 2026-07-11 means:
     // day1 (07-14) daysSince=3 -> ineligible; day2 (07-15) daysSince=4 -> ineligible;

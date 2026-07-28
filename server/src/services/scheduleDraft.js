@@ -261,11 +261,15 @@ function isWeekendUTC(dateStr) {
   return dow === 0 || dow === 6;
 }
 
-// The raw-query half of mergeLockedElsewhereIds. Used at generation and
-// addStop time to steer a rep away from a place another rep is ALREADY
-// drafting, on top of what's already actually committed — reduces how often
-// a collision arises at all. Deliberately NOT used at commit time — see
-// committedElsewherePlaceIds below for why that needs a narrower check.
+// The raw-query half of mergeLockedElsewhereIds, scoped to one date. Used by
+// addStop/getDayZones/selectDayZone/getSuggestions to steer a rep away from
+// a place another rep is ALREADY drafting, on top of what's already
+// actually committed, for the one specific date each of those acts on —
+// reduces how often a collision arises at all. Deliberately NOT used at
+// commit time — see committedElsewherePlaceIds below for why that needs a
+// narrower check. Bulk multi-date generation uses
+// lockedElsewherePlaceIdsByDate instead (see its header for why a single
+// date isn't enough there).
 async function lockedElsewherePlaceIds(db, { date, userId }) {
   const committedRows = await db('visits').where({ scheduled_date: date }).whereNotNull('place_id').select('place_id');
   const otherDraftRows = await db('schedule_draft_stops as s')
@@ -274,6 +278,32 @@ async function lockedElsewherePlaceIds(db, { date, userId }) {
     .whereNot('d.user_id', userId)
     .select('s.place_id');
   return mergeLockedElsewhereIds({ committedRows, otherDraftRows });
+}
+
+// Bulk counterpart to lockedElsewherePlaceIds: one query pair for EVERY date
+// in a multi-day generation window, grouped by date in JS (same
+// reduce-multiple-rows-to-one-per-key precedent as buildCandidatePool/
+// loadDraftView) instead of one query pair per day. This is what lets
+// generateAndPersistDraft give generateDraft a real per-date lock set —
+// without it, a place another rep already has specifically on day 3 of the
+// window has no way to be excluded from day 3 without the caller running
+// this per date anyway.
+async function lockedElsewherePlaceIdsByDate(db, { dates, userId }) {
+  const byDate = {};
+  for (const date of dates) byDate[date] = new Set();
+  if (dates.length === 0) return byDate;
+
+  const committedRows = await db('visits').whereIn('scheduled_date', dates).whereNotNull('place_id').select('scheduled_date', 'place_id');
+  for (const row of committedRows) byDate[row.scheduled_date].add(row.place_id);
+
+  const otherDraftRows = await db('schedule_draft_stops as s')
+    .join('schedule_drafts as d', 'd.id', 's.draft_id')
+    .whereIn('s.date', dates)
+    .whereNot('d.user_id', userId)
+    .select('s.date', 's.place_id');
+  for (const row of otherDraftRows) byDate[row.date].add(row.place_id);
+
+  return byDate;
 }
 
 // What actually blocks a COMMIT: real `visits` rows only, never another
@@ -383,15 +413,17 @@ async function assertOwnsDraft(db, draftId, userId) {
 // writes for the duration, blocking every other request. Only the final
 // persistence step (delete-old + insert-new draft rows) is wrapped in one.
 //
-// lockedElsewhere is computed ONCE, against `today` (generation time), not
-// re-checked per day within this multi-day run — scheduleGenerator's
-// generateDraft() takes a single candidate pool for the whole window, so
-// there's no per-day hook for it here. This is conservative (a place locked
-// by another rep for tomorrow stays excluded from the whole draft, even a
-// day it'd actually be free) rather than risky (double-booking) — and the
-// per-day suggestions/addStop below re-check lockedElsewhere fresh against
-// each specific date, so a user can still pick it up later if it's
-// genuinely free that day.
+// lockedElsewhere is computed per DATE across the whole window up front
+// (lockedElsewherePlaceIdsByDate, one query pair for every day being
+// planned rather than one per day) and handed to generateDraft as
+// `lockedByDate`, which re-derives each candidate's flag fresh every
+// iteration of its day loop — see that function's header for why a single
+// flag computed once against generation-day used to miss a place locked
+// specifically on a LATER date in the window (it would get proposed there,
+// then rejected at commit by committedElsewherePlaceIds, which is correctly
+// date-scoped). The per-day suggestions/addStop endpoints below were never
+// affected by this — they already re-check lockedElsewhere fresh against
+// their one specific date.
 async function generateAndPersistDraft({ userId, params, regenerate = false }) {
   const today = params.today || orgToday();
 
@@ -407,14 +439,14 @@ async function generateAndPersistDraft({ userId, params, regenerate = false }) {
   };
 
   const basePool = await buildCandidatePool(knex, { today });
-  const locked = await lockedElsewherePlaceIds(knex, { date: today, userId });
-  const candidates = basePool.map((c) => ({ ...c, lockedElsewhere: locked.has(c.place.id) }));
+  const lockedByDate = await lockedElsewherePlaceIdsByDate(knex, { dates: fullParams.days.map((d) => d.date), userId });
 
   const { days: generatedDays } = await generateDraft({
-    candidates,
+    candidates: basePool,
     days: fullParams.days,
     homeBase: fullParams.homeBase,
     zoneOverrides: fullParams.zoneOverrides,
+    lockedByDate,
     optimizeRoute, // real OSRM-backed optimizer, finally wired in (phase 5 left it opt-in)
   });
 
@@ -1149,6 +1181,7 @@ module.exports = {
   partitionCommittableStops,
   buildCandidatePool,
   lockedElsewherePlaceIds,
+  lockedElsewherePlaceIdsByDate,
   committedElsewherePlaceIds,
   committedDatesForUser,
   committedDateSummaries,

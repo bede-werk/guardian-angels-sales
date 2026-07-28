@@ -210,6 +210,13 @@ async function topUpDay(packed, geocodedPool, { homeBase, budgetMinutes, optimiz
 // against THAT DAY'S OWN DATE (not once against `today`) — a place whose
 // hard floor lapses by day 3, or a commitment that becomes due by day 4, is
 // picked up correctly rather than frozen at today's view of the world.
+// `lockedElsewhere` gets the same per-day treatment via `lockedByDate`
+// (date -> Set of place ids someone else already has that specific date):
+// re-derived fresh each iteration from `remaining`, not carried in on the
+// candidate objects, so a place another rep has committed/drafted for day 3
+// specifically is excluded on day 3 without needing to be excluded on day 1
+// too (see scheduleDraft.js's generateAndPersistDraft for why this used to
+// be computed once against generation-day and missed exactly this case).
 // Picks a zone (zoneOverrides[date] if given, else the region of the
 // top-ranked remaining candidate), packs it via fillDayFromZone (using that
 // day's own hoursPerDay budget), then removes every PACKED place from the
@@ -221,7 +228,7 @@ async function topUpDay(packed, geocodedPool, { homeBase, budgetMinutes, optimiz
 // .map()'s callback would fire for every date before any single await
 // resolved, running every day against the SAME stale `remaining` pool
 // instead of each day seeing the previous day's dedupe.
-async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, config = {}, optimizeRoute }) {
+async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, config = {}, optimizeRoute, lockedByDate = {} }) {
   const schedulingConfig = { ...defaultSchedulingConfig, ...(config.scheduling ?? {}) };
   const driveConfig = { ...defaultDriveConfig, ...(config.drive ?? {}) };
   const visitTypesConfig = { ...defaultVisitTypesConfig, ...(config.visitTypes ?? {}) };
@@ -232,7 +239,11 @@ async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, c
   const result = [];
   for (const { date, hoursPerDay } of days) {
     const budgetMinutes = hoursPerDay * 60;
-    const ranked = rankCandidates(remaining, { today: date, config: schedulingConfig });
+    const dayLocked = lockedByDate[date];
+    const dayCandidates = dayLocked
+      ? remaining.map((c) => ({ ...c, lockedElsewhere: dayLocked.has(c.place.id) }))
+      : remaining;
+    const ranked = rankCandidates(dayCandidates, { today: date, config: schedulingConfig });
 
     if (ranked.length === 0) {
       result.push({ date, zone: null, stops: [], totalMinutes: 0, remainingMinutes: budgetMinutes, droppedCommitments: [] });
