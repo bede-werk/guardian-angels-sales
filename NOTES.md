@@ -1280,3 +1280,93 @@ plain inline text inheriting the header's own styling); moved that separator to 
 region name and the "Area N of M" indicator (it only appears after the first cycle, so this only
 matters once the rep has actually clicked the button once) rather than between "Area N of M" and
 the button itself.
+
+## 2026-07-28 — Real double-booking bug fix, Route Planner rename, Calendar tab overhaul, "Already Planned" status-filter bug
+
+Builds on the same day's earlier `1393abf` (new Calendar tab) / `b04c33b` (zone-picker cycling
+→ direct-select dropdown) commits, both already in before this session started.
+
+**Real bug fix: multi-day generate could propose a place another rep already had committed for
+that exact date.** Bede noticed live: he could still be offered a place already locked in on
+someone else's calendar for the same day (couldn't accept it — `commitDay`'s own collision check
+is correctly date-scoped — but it shouldn't have been proposed at all). Root cause:
+`generateAndPersistDraft` computed the locked-elsewhere set ONCE against generation-day
+(`today`), then handed `generateDraft` a single static `lockedElsewhere` flag per candidate,
+reused unchanged across every day in a multi-day window — a place locked specifically on day 3
+of the window (not generation-day) was invisible to that check. This is exactly what an earlier
+session's "known, documented, accepted simplification" note (in phase 6's write-up above) wrongly
+excused as safe — it wasn't. Fixed with a new `lockedElsewherePlaceIdsByDate(db, {dates, userId})`
+(one query pair for the whole window, grouped by date in JS) feeding a new `lockedByDate` param
+on `generateDraft`, which now re-derives each candidate's `lockedElsewhere` flag fresh every
+iteration of its day loop instead of once up front. New regression test in
+`scheduleGenerator.test.js` proves a place locked on day 1 only is excluded day 1, still offered
+day 2. Verified live too: Lisa Marks (temp token) generated a 2-day draft while a throwaway
+`__SMOKETEST_Rep2` user had a real committed visit to a throwaway place (pinned to the `Beatrice`
+region — only 1 other real place there, keeps ranking deterministic) on day 1 — day 1 correctly
+excluded it, day 2 correctly still offered it. 153 tests pass (up from 152, the one new
+regression test). All test data fully cleaned up after.
+
+**"Plan My Visits" tab renamed to "Route Planner"** — more accurately reflects what it is (the
+suggest/optimize tool) versus the new Calendar tab (the actual full picture of everything
+planned). `PlanVisits.jsx` → `RoutePlanner.jsx` (component, file, export), nav label + `<h2>`,
+every current-state comment referencing it across client/server, README's feature bullet, and
+HANDOFF.md's file-tree/features-list/two open-items bullets. Deliberately left NOTES.md/
+`ROUTEPLANNER_PROGRESS.md`/HANDOFF.md's own dated changelog entries alone — those describe what
+the tab was actually called *at the time*, rewriting them would misrepresent history.
+
+**PlannedDayModal** ("Already Planned" day drill-down, reused later this session by the Calendar
+tab too): dropped the tier chip (category alone is enough there; the now-dead `p.tier` column
+also dropped from `committedDayVisits`' query). Edit button used to be disabled whenever no
+starting point (`homeBase`) was set yet, with a "go set one first" tooltip — now it stays enabled
+and auto-locates: a new shared `client/src/geolocation.js` (`getCurrentPosition()`, promise-
+wrapped browser geolocation) is called automatically if `homeBase` is empty when Edit is clicked,
+same fallback both `RoutePlanner.jsx`'s own reopenDay and its "Use my current location" button
+now share. Verified live with geolocation mocked and no starting point ever set client-side —
+Edit rendered enabled, resolved the mock location, day genuinely reopened into an editable draft.
+
+**Calendar tab overhaul** (multiple rounds of live feedback, all Bede-directed): the day cell
+itself is now never clickable at all — `ui/MonthCalendar.jsx`'s contract changed from a `<button>`
+wrapping the whole cell (with `isDayActive`/`onDayClick` props) to a plain `<div>`; the caller's
+`renderDay` supplies its own nested clickable elements instead. `VisitsCalendar.jsx` splits each
+day's visits into three buckets (`splitDayVisits`): **your own planned-status visits** → a blue
+"Planned Route" badge opening `PlannedDayModal` (only ever your own — there's no endpoint to view
+another rep's day, confirmed with Bede before building); **completed visits, any rep** → a teal
+"Completed Visits" badge (renamed from a plain "Completed" chip after Bede's follow-up) opening
+`CalendarDayModal` filtered to just those; **everything else** (skipped, plus other reps'
+still-open planned visits in "All reps" scope) → the pre-existing small status dots, still
+clickable, still `CalendarDayModal`, just narrower now. Full Edit/Delete parity confirmed with
+Bede for the "Planned Route" badge — Edit reopens the day (same auto-locate as above) and hands
+off to the Route Planner tab via a new `onNavigateToPlanner` prop threaded from `App.jsx`, since
+the Calendar tab has no draft workspace of its own to show the result in; Delete removes the
+day's planned visits with the same confirm/endpoint as Route Planner's own. The "Today" button
+(and its `goToday` handler) was removed outright, per Bede's direct ask — no replacement. The
+Mine/All-reps pair of buttons became one `.scope-toggle` button split down the middle (one click
+target, not two) — first pass used a fully-rounded pill, Bede asked for it to read like the app's
+other small buttons instead, so it now uses `--radius-sm` + `.btn.small`'s padding/font-size.
+Every piece live-verified via Playwright (Lisa Marks temp token, mocked geolocation where
+needed, cleaned up after each check) — including a locator gotcha worth remembering: Playwright's
+`hasText` regex matches raw `textContent`, which has no inserted newlines for flex/block layout,
+so anchored regexes like `/^29$/m` against a whole multi-child cell silently match nothing: filter
+on the specific leaf element (`.month-calendar-daynum`) instead.
+
+**Real bug fix: "Already Planned" (Route Planner) was showing completed visits too.** Bede caught
+this from his own real usage, not a smoke test — he had a real completed visit logged for today
+(7/28) and it was showing up in the "Already Planned" list/modal, which should only ever be
+still-open planned visits. Root cause: `committedDateSummaries` (the date-list/count query, also
+what blocks re-planning a date) and `committedDayVisits` (what `PlannedDayModal` actually
+displays) never filtered by `status` at all — any visit, any status, counted. Both now scope to
+`status: 'planned'`, matching `deleteCommittedDay`'s existing scope (previously mismatched: a
+date's shown count could include a completed visit Delete would never actually clear). Verified
+read-only against Bede's own real account (never touched his data) — before the fix,
+`committedDateSummaries` for him included 7/28 (the completed "Guardian Angels (Test)" visit
+lands there); after, only his two genuinely-planned dates (7/29, 7/30) show. 153 tests pass,
+client build clean.
+
+**Flagged, deliberately NOT fixed — revisit tomorrow:** `PlannedDayModal.jsx`/
+`CalendarDayModal.jsx` picked up a manual title-suffix edit outside this session's own changes
+(`<h2>{formatDate(date)} · Planned Visits</h2>` / `· Completed Visits` — presumably Bede's own
+direct edit, not something I wrote). Real issue: `CalendarDayModal` is reused for TWO different
+filtered views in the Calendar tab now (the "Completed Visits" badge AND the leftover skipped/
+other-reps'-planned dots) — the hardcoded "· Completed Visits" suffix will show on the skipped
+popup too, mislabeling it. Bede's explicit call: leave it exactly as-is, just flag it here for
+tomorrow rather than making the suffix conditional now.

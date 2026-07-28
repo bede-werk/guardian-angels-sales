@@ -40,7 +40,7 @@ export default function CalendarDayModal({ date, visits, scope, onClose, onViewP
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{formatDate(date)}</h2>
+          <h2>{formatDate(date)} · Completed Visits</h2>
           <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">

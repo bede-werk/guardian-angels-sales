@@ -328,18 +328,24 @@ async function ownDraftPlaceIds(db, draftId) {
   return new Set(rows.map((r) => r.place_id));
 }
 
-// Every date this user already has a real `visits` row on — from committing
-// a previous draft, or logged directly outside the planner. Once a date is
-// in here, the calendar disables it and /generate rejects it (see
-// validateDays) — a committed day is done, not something a future plan
-// should ever touch again. Scoped to today-or-later: a past committed date
-// can never be selected anyway (validateDays rejects any date <= today on
-// its own), so there's no reason to drag the user's full visit history
-// through this query as it grows over time.
+// Every date this user has a still-open (status: 'planned') visits row on —
+// from committing a previous draft, or a planned visit logged directly
+// outside the planner. Once a date is in here, the calendar disables it and
+// /generate rejects it (see validateDays) — a planned day is done, not
+// something a future plan should ever touch again. Deliberately excludes
+// completed/skipped visits: those are finished history, not an open plan —
+// a date where the only visit on the books is already completed should
+// still be freely plannable. Scoped to status: 'planned' for the same
+// reason deleteCommittedDay is (see its own comment) — keeping the two in
+// sync means a date's count here always matches what Delete would actually
+// remove. Scoped to today-or-later: a past committed date can never be
+// selected anyway (validateDays rejects any date <= today on its own), so
+// there's no reason to drag the user's full visit history through this
+// query as it grows over time.
 async function committedDateSummaries(db, userId, { today } = {}) {
   const cutoff = today || orgToday();
   const rows = await db('visits')
-    .where({ user_id: userId })
+    .where({ user_id: userId, status: 'planned' })
     .andWhere('scheduled_date', '>=', cutoff)
     .groupBy('scheduled_date')
     .orderBy('scheduled_date')
@@ -348,16 +354,17 @@ async function committedDateSummaries(db, userId, { today } = {}) {
   return rows.map((r) => ({ date: r.date, count: Number(r.count) }));
 }
 
-// The actual visits behind one "Already Planned" row — same user+date scope
-// as committedDateSummaries above (no status/source filter), so the list a
-// rep sees after clicking a day always matches that day's count exactly.
-// Left-joins `places` for category/address/city/zip since a visit's
+// The actual visits behind one "Already Planned" row — same user+date+
+// status: 'planned' scope as committedDateSummaries above, so the list a
+// rep sees after clicking a day always matches that day's count exactly
+// (and never includes a completed/skipped visit that happens to share the
+// date). Left-joins `places` for category/address/city/zip since a visit's
 // place can be detached (place_id null, or the row simply gone) — v.place_name
 // is the detach-safe snapshot, always present regardless.
 async function committedDayVisits(db, userId, date) {
   return db('visits as v')
     .leftJoin('places as p', 'v.place_id', 'p.id')
-    .where({ 'v.user_id': userId, 'v.scheduled_date': date })
+    .where({ 'v.user_id': userId, 'v.scheduled_date': date, 'v.status': 'planned' })
     .orderBy('v.sort_order')
     .select(
       'v.id as visit_id',

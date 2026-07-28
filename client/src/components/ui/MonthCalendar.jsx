@@ -17,26 +17,26 @@ function toISODate(d) {
 }
 
 // Generic, unbounded month-grid renderer — knows nothing about visits (or
-// any other domain). It owns cell layout, month navigation, and click
-// dispatch; the caller owns what's inside a cell and which days are
-// clickable at all, via the three callback props below. This is a
-// deliberately different component from ui/Calendar.jsx (a bounded
-// multi-select date *picker* for Route Planner) rather than an extension of
-// it — that component's selected/committed/proposed/minDate/maxDate/
-// maxSelected props are all specific to picking upcoming plan dates and
-// don't fit "browse any month, view indicators, click to drill in" at all.
+// any other domain). It owns cell layout and month navigation; the caller
+// owns everything about what's inside a cell, including whether/how any of
+// it is clickable. This is a deliberately different component from
+// ui/Calendar.jsx (a bounded multi-select date *picker* for Route Planner)
+// rather than an extension of it — that component's selected/committed/
+// proposed/minDate/maxDate/maxSelected props are all specific to picking
+// upcoming plan dates and don't fit "browse any month, view indicators,
+// drill into specific parts of a day" at all.
 //   monthCursor: a Date anywhere in the month to display — CONTROLLED by the
 //     caller (this component holds no month state of its own), so the
 //     caller can implement things like a "Today" button without this
 //     component needing to know about "today" as a concept beyond the ring.
 //   onMonthChange(newCursor): fired by the ‹ › nav buttons.
-//   renderDay(dateObj, iso): cell CONTENT only (e.g. day number + status
-//     dots) — no wrapping button/onClick of its own, this component supplies
-//     both.
-//   isDayActive(iso): whether a cell is clickable at all (gets the active/
-//     hover styling and disabled otherwise).
-//   onDayClick(iso): fired only for a click on an isDayActive cell.
-export default function MonthCalendar({ monthCursor, onMonthChange, renderDay, isDayActive, onDayClick }) {
+//   renderDay(dateObj, iso): full cell CONTENT — day number plus whatever
+//     the caller wants underneath it. The cell itself is a plain non-
+//     interactive <div> (not a <button>, and no onClick of its own) — a day
+//     as a whole is never clickable; renderDay supplies its own nested
+//     clickable elements (e.g. a "Planned Route" badge) where a day
+//     actually has something to drill into.
+export default function MonthCalendar({ monthCursor, onMonthChange, renderDay }) {
   const year = monthCursor.getFullYear();
   const month = monthCursor.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
@@ -64,18 +64,11 @@ export default function MonthCalendar({ monthCursor, onMonthChange, renderDay, i
         {cells.map((date, i) => {
           if (!date) return <div key={i} className="month-calendar-day empty" />;
           const iso = toISODate(date);
-          const active = isDayActive(iso);
           const isToday = iso === todayIso;
           return (
-            <button
-              type="button"
-              key={iso}
-              className={`month-calendar-day ${isToday ? 'today' : ''} ${active ? 'active' : ''}`.trim()}
-              disabled={!active}
-              onClick={active ? () => onDayClick(iso) : undefined}
-            >
+            <div key={iso} className={`month-calendar-day ${isToday ? 'today' : ''}`.trim()}>
               {renderDay(date, iso)}
-            </button>
+            </div>
           );
         })}
       </div>

@@ -1,6 +1,6 @@
 # Guardian Angels Sales Scheduler — Project Handoff
 
-_Last updated: 2026-07-27_
+_Last updated: 2026-07-28_
 
 This document is a self-contained context dump so work can resume in a new session.
 It summarizes what was built, key decisions, how to run it, the Railway deploy saga,
@@ -912,6 +912,20 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   all behave correctly). 159 tests pass (146 + 13 new), client build clean. Full narrative,
   including the design-review findings and three rounds of UI polish, in `NOTES.md`'s matching
   entry. Not yet pushed — see `git log`/`git status`.
+- **2026-07-28:** a real double-booking bug fix (multi-day `generate` could propose a place
+  another rep already had committed for that exact date — `lockedElsewhere` was computed once
+  against generation-day instead of per-day; new `lockedElsewherePlaceIdsByDate` fixes it); the
+  "Plan My Visits" tab renamed to **Route Planner** (`PlanVisits.jsx` → `RoutePlanner.jsx`,
+  everywhere current-state); a full Calendar-tab interaction overhaul (a day cell is never
+  clickable itself anymore — `ui/MonthCalendar.jsx` now renders a plain `<div>`, not a `<button>`;
+  each day instead shows up to three independently-clickable pieces: a "Planned Route" badge
+  (your own planned visits, opens `PlannedDayModal` with full Edit/Delete, Edit hands off to the
+  Route Planner tab), a "Completed Visits" badge, and status dots for everything else; the
+  "Today" button was removed outright; Mine/All-reps became one split-down-the-middle toggle
+  button instead of two); and another real bug fix — "Already Planned" (`committedDateSummaries`/
+  `committedDayVisits`) never filtered by `status`, so a completed visit sharing a date with a
+  planned one polluted the list — both now scoped to `status: 'planned'`. 153 tests pass, client
+  build clean throughout. Full narrative in `NOTES.md`'s matching entry. Not yet pushed.
 
 ---
 
@@ -928,6 +942,12 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   existing "address not recognized — save anyway?" dialog will null the coordinates back out if
   someone clicks through it. Fixing that for real means picking a second geocoding provider —
   a real design decision, not done here.
+- **Fix `CalendarDayModal`'s hardcoded title suffix.** It picked up a manual edit
+  (`· Completed Visits`) outside a normal session's own changes — real problem: the Calendar
+  tab now reuses this same modal for TWO different filtered views (the "Completed Visits" badge
+  AND the leftover skipped/other-reps'-planned status dots), so that suffix is wrong on the
+  second one. Flagged 2026-07-28, deliberately left as-is at Bede's explicit request rather than
+  making it conditional in the moment — pick up tomorrow.
 - **"Needs attention" coverage on Route Planner:** referral metrics are wired into the
   People tab, Places tab, both detail pages, and the Dashboard, but not the route-planning
   screen's stop cards.

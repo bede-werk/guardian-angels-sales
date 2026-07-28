@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
+import { getCurrentPosition } from '../geolocation';
 import { TierChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
@@ -915,24 +916,6 @@ export default function RoutePlanner({ userId }) {
     } finally {
       setDiscarding(false);
     }
-  }
-
-  // Promise-shaped counterpart to the browser geolocation callback API —
-  // shared by the "Use my current location" button below and reopenDay's
-  // auto-fill (a rep editing a planned day with no starting point set yet
-  // shouldn't have to leave the modal to go set one first).
-  function getCurrentPosition() {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error("This browser can't share your location — enter a start address instead."));
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'Current location' }),
-        () => reject(new Error("Couldn't get your location — enter a start address instead.")),
-        { timeout: 10000 }
-      );
-    });
   }
 
   function useCurrentLocation() {

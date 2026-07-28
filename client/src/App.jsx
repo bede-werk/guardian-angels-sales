@@ -87,7 +87,7 @@ export default function App() {
           resetting their state each time you come back to them. */}
       {tab === 'dashboard' && <Dashboard date={date} userId={authUser.id} />}
       {tab === 'planner' && <RoutePlanner userId={authUser.id} />}
-      {tab === 'calendar' && <VisitsCalendar userId={authUser.id} />}
+      {tab === 'calendar' && <VisitsCalendar userId={authUser.id} onNavigateToPlanner={() => setTab('planner')} />}
       {tab === 'places' && <Places userId={authUser.id} />}
       {tab === 'people' && <People userId={authUser.id} />}
     </div>
