@@ -4,7 +4,7 @@ const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { estimateDriveMinutes } = require('./driveTime');
 const { TIERS } = require('./schedulingEngine');
-const { fillDayFromZone, generateDraft, orderedZones, stepZone, outOfZoneCommitments } = require('./scheduleGenerator');
+const { fillDayFromZone, generateDraft, orderedZones, outOfZoneCommitments } = require('./scheduleGenerator');
 
 // 2026-07-13 is a Monday (independently verified via day-of-year math).
 const TODAY = '2026-07-13';
@@ -423,40 +423,6 @@ describe('orderedZones', () => {
   test('a candidate with no region is skipped rather than producing a blank zone', () => {
     const ranked = [candidate(place(1, { region: null })), candidate(place(2, { region: 'East Lincoln' }))];
     assert.deepEqual(orderedZones(ranked), ['East Lincoln']);
-  });
-});
-
-describe('stepZone', () => {
-  const zones = ['East Lincoln', 'South Lincoln', 'Southeast Lincoln'];
-
-  test('steps forward to the next zone', () => {
-    assert.deepEqual(stepZone(zones, 'East Lincoln', 1), { zone: 'South Lincoln', index: 1 });
-  });
-
-  test('wraps forward past the last zone back to the first', () => {
-    assert.deepEqual(stepZone(zones, 'Southeast Lincoln', 1), { zone: 'East Lincoln', index: 0 });
-  });
-
-  test('steps backward to the previous zone', () => {
-    assert.deepEqual(stepZone(zones, 'South Lincoln', -1), { zone: 'East Lincoln', index: 0 });
-  });
-
-  test('wraps backward past the first zone to the last', () => {
-    assert.deepEqual(stepZone(zones, 'East Lincoln', -1), { zone: 'Southeast Lincoln', index: 2 });
-  });
-
-  test('a full forward cycle returns to the start — the reversibility guarantee', () => {
-    let current = zones[0];
-    for (let i = 0; i < zones.length; i++) current = stepZone(zones, current, 1).zone;
-    assert.equal(current, zones[0]);
-  });
-
-  test('current zone not found in the list starts from index 0', () => {
-    assert.deepEqual(stepZone(zones, 'Nowhere', 1), { zone: 'East Lincoln', index: 0 });
-  });
-
-  test('empty zone list returns null', () => {
-    assert.equal(stepZone([], 'East Lincoln', 1), null);
   });
 });
 

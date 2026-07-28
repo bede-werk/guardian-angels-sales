@@ -126,8 +126,10 @@ export const api = {
       request(`/schedule-drafts/${draftId}/days/${date}/stops/${placeId}`, { method: 'PATCH', body: { visitType } }),
     reoptimizeDay: (draftId, date) =>
       request(`/schedule-drafts/${draftId}/days/${date}/reoptimize`, { method: 'POST' }),
-    cycleZone: (draftId, date) =>
-      request(`/schedule-drafts/${draftId}/days/${date}/zone`, { method: 'POST' }),
+    getDayZones: (draftId, date) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/zones`),
+    selectZone: (draftId, date, zone) =>
+      request(`/schedule-drafts/${draftId}/days/${date}/zone`, { method: 'POST', body: { zone } }),
     getSuggestions: (draftId, date) =>
       request(`/schedule-drafts/${draftId}/days/${date}/suggestions`),
     commitDay: (draftId, date) =>

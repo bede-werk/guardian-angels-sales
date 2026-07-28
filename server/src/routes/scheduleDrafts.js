@@ -149,17 +149,24 @@ router.post('/:id/days/:date/reoptimize', handle(async (req, res) => {
   res.json(day);
 }));
 
-// POST /api/schedule-drafts/:id/days/:date/zone — "Somewhere else": re-pick
-// which zone (region) this day covers, cycling through the day's ranked
-// candidate zones (see scheduleDraft.cycleDayZone) instead of always taking
-// the top-ranked one, and re-fill the day from scratch in the new zone.
-// Body: { direction? } — 1 (default) steps forward, -1 steps back.
+// GET /api/schedule-drafts/:id/days/:date/zones — the areas (regions) the
+// "Somewhere else" dropdown can offer for this day (see
+// scheduleDraft.getDayZones). Read-only, no side effects.
+router.get('/:id/days/:date/zones', handle(async (req, res) => {
+  const zones = await scheduleDraft.getDayZones({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date });
+  res.json(zones);
+}));
+
+// POST /api/schedule-drafts/:id/days/:date/zone — "Somewhere else": the user
+// picks a specific zone (region) for this day from the dropdown (see
+// GET .../zones above), and this re-fills the day from scratch in that zone.
+// Body: { zone } — must be one of the current GET .../zones list.
 router.post('/:id/days/:date/zone', handle(async (req, res) => {
-  const { direction } = req.body;
-  if (direction !== undefined && direction !== 1 && direction !== -1) {
-    return res.status(400).json({ error: 'direction must be 1 or -1' });
+  const { zone } = req.body;
+  if (typeof zone !== 'string' || !zone) {
+    return res.status(400).json({ error: 'zone is required' });
   }
-  const day = await scheduleDraft.cycleDayZone({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date, direction });
+  const day = await scheduleDraft.selectDayZone({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date, zone });
   res.json(day);
 }));
 

@@ -19,7 +19,7 @@ const defaultDriveConfig = require('../config/driveTime');
 const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { rankCandidates } = require('./schedulingEngine');
-const { generateDraft, fillDayFromZone, orderedZones, stepZone, outOfZoneCommitments } = require('./scheduleGenerator');
+const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 
@@ -772,14 +772,62 @@ async function reoptimizeDay({ draftId, userId, date }) {
   return loadDraftDayView(knex, draftId, date);
 }
 
-// "Somewhere else": re-picks which zone (region) a day covers, cycling
-// through that day's ranked candidate zones (scheduleGenerator.orderedZones)
-// instead of always taking the top-ranked one, then re-fills the day from
-// scratch in the new zone. Ownership-checked and the candidate pool built
+// Ranked, eligible candidates for one day of a draft — shared by
+// getDayZones (read-only) and selectDayZone (mutating) so both agree on
+// exactly which zones are on offer for a given day. Deliberately date-scoped
+// (excludes only OTHER dates' placements), NOT ownDraftPlaceIds(knex,
+// draftId) unscoped: this day's OWN current stops must stay in the ranked
+// pool, or (a) a commitment sitting among them would be invisible to
+// outOfZoneCommitments, and (b) the day's own current zone could vanish from
+// the list entirely if nothing else unplaced happens to sit in it — exactly
+// the "the dropdown doesn't even list what's already selected" bug that'd
+// produce. Only OTHER dates' placements need excluding here, to avoid
+// re-ranking a place this draft already committed to on a different day
+// (which schedule_draft_stops' unique(['draft_id', 'place_id']) would reject
+// at insert time anyway, but better to never rank it as a candidate here).
+async function rankedCandidatesForDay(db, { draftId, date, userId }) {
+  const basePool = await buildCandidatePool(db, { today: date });
+  const ownElsewhere = await db('schedule_draft_stops')
+    .where({ draft_id: draftId })
+    .whereNot('date', date)
+    .select('place_id');
+  const own = new Set(ownElsewhere.map((r) => r.place_id));
+  const locked = await lockedElsewherePlaceIds(db, { date, userId });
+  const excluded = new Set([...own, ...locked]);
+  const candidates = basePool
+    .filter((c) => !excluded.has(c.place.id))
+    .map((c) => ({ ...c, lockedElsewhere: false })); // already excluded above
+
+  return rankCandidates(candidates, { today: date, config: defaultSchedulingConfig });
+}
+
+// The zones (regions) a day's dropdown can offer — every region this day's
+// own ranked-and-eligible candidates span (scheduleGenerator.orderedZones),
+// always including whatever zone the day is currently in (see
+// rankedCandidatesForDay). Read-only: no fill, no OSRM call, no write.
+async function getDayZones({ draftId, userId, date }) {
+  await assertOwnsDraft(knex, draftId, userId);
+
+  const draft = await knex('schedule_drafts').where({ id: draftId }).first();
+  const params = JSON.parse(draft.params_json);
+  if (!params.days.some((d) => d.date === date)) {
+    const err = new Error('That date is not part of this draft');
+    err.status = 400;
+    throw err;
+  }
+
+  const ranked = await rankedCandidatesForDay(knex, { draftId, date, userId });
+  return { list: orderedZones(ranked) };
+}
+
+// "Somewhere else": the user directly picks which zone (region) a day
+// covers from the dropdown (see getDayZones for the options list) instead
+// of always taking the top-ranked one, then this re-fills the day from
+// scratch in that zone. Ownership-checked and the candidate pool built
 // PRE-transaction, same reasoning as reoptimizeDay: fillDayFromZone can make
 // a real OSRM call, and a SQLite transaction held open across that would
 // lock writes for everyone else for the duration.
-async function cycleDayZone({ draftId, userId, date, direction }) {
+async function selectDayZone({ draftId, userId, date, zone }) {
   await assertOwnsDraft(knex, draftId, userId);
 
   const draft = await knex('schedule_drafts').where({ id: draftId }).first();
@@ -792,29 +840,7 @@ async function cycleDayZone({ draftId, userId, date, direction }) {
   }
   const budgetMinutes = dayParams.hoursPerDay * 60;
 
-  const basePool = await buildCandidatePool(knex, { today: date });
-  // Deliberately date-scoped, NOT ownDraftPlaceIds(knex, draftId) unscoped:
-  // this day's OWN current stops (about to be replaced) must stay in the
-  // ranked pool, or a commitment sitting among them would be excluded from
-  // ranking entirely and silently invisible to outOfZoneCommitments below —
-  // exactly the "silently drop a promise" outcome this whole feature exists
-  // to prevent. Only OTHER dates' placements need excluding here, to avoid
-  // re-packing a place this draft already committed to on a different day
-  // (which schedule_draft_stops' unique(['draft_id', 'place_id']) would
-  // reject at insert time anyway, but better to never rank it as a
-  // candidate in the first place).
-  const ownElsewhere = await knex('schedule_draft_stops')
-    .where({ draft_id: draftId })
-    .whereNot('date', date)
-    .select('place_id');
-  const own = new Set(ownElsewhere.map((r) => r.place_id));
-  const locked = await lockedElsewherePlaceIds(knex, { date, userId });
-  const excluded = new Set([...own, ...locked]);
-  const candidates = basePool
-    .filter((c) => !excluded.has(c.place.id))
-    .map((c) => ({ ...c, lockedElsewhere: false })); // already excluded above
-
-  const ranked = rankCandidates(candidates, { today: date, config: defaultSchedulingConfig });
+  const ranked = await rankedCandidatesForDay(knex, { draftId, date, userId });
 
   const zones = orderedZones(ranked);
   if (zones.length === 0) {
@@ -822,13 +848,18 @@ async function cycleDayZone({ draftId, userId, date, direction }) {
     err.status = 400;
     throw err;
   }
-
-  const currentZone = params.zoneOverrides?.[date] ?? zones[0];
-  const { zone: nextZone, index } = stepZone(zones, currentZone, direction === -1 ? -1 : 1);
+  if (!zones.includes(zone)) {
+    // The dropdown's list can go stale (candidate pool shifted since it was
+    // fetched) — surface that plainly rather than silently falling back to
+    // some other zone the user didn't ask for.
+    const err = new Error('That area is no longer available for this day — refresh and try again');
+    err.status = 400;
+    throw err;
+  }
 
   const fillResult = await fillDayFromZone({
     candidates: ranked,
-    zone: nextZone,
+    zone,
     homeBase: params.homeBase,
     budgetMinutes,
     driveConfig: defaultDriveConfig,
@@ -841,7 +872,7 @@ async function cycleDayZone({ draftId, userId, date, direction }) {
   // OUTSIDE the selected zone, fillResult.droppedCommitments only ever looks
   // INSIDE it — disjoint by construction (see scheduleGenerator.js's
   // comments on both).
-  const droppedCommitments = [...outOfZoneCommitments(ranked, nextZone), ...fillResult.droppedCommitments];
+  const droppedCommitments = [...outOfZoneCommitments(ranked, zone), ...fillResult.droppedCommitments];
 
   // Re-check ownership inside the write transaction: time has passed since
   // the checks above (candidate pool build + an OSRM round-trip), same
@@ -863,12 +894,12 @@ async function cycleDayZone({ draftId, userId, date, direction }) {
     // since the pre-transaction read above.
     const freshDraft = await trx('schedule_drafts').where({ id: draftId }).first();
     const freshParams = JSON.parse(freshDraft.params_json);
-    const updatedParams = { ...freshParams, zoneOverrides: { ...freshParams.zoneOverrides, [date]: nextZone } };
+    const updatedParams = { ...freshParams, zoneOverrides: { ...freshParams.zoneOverrides, [date]: zone } };
     await trx('schedule_drafts').where({ id: draftId }).update({ params_json: JSON.stringify(updatedParams) });
   });
 
   const dayView = await loadDraftDayView(knex, draftId, date);
-  return { ...dayView, droppedCommitments, zones: { list: zones, index, count: zones.length } };
+  return { ...dayView, droppedCommitments };
 }
 
 // Nearby eligible candidates not yet in the draft, for the "day is under
@@ -1136,7 +1167,8 @@ module.exports = {
   reorderDay,
   setVisitType,
   reoptimizeDay,
-  cycleDayZone,
+  getDayZones,
+  selectDayZone,
   getSuggestions,
   commitDay,
   commitAll,

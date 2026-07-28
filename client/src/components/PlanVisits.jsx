@@ -8,6 +8,7 @@ import Calendar from './ui/Calendar';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
 import PlannedDayModal from './PlannedDayModal';
+import InlineDropdown from './ui/InlineDropdown';
 
 // The per-day budget picker shows hours + minutes as two selects, but the
 // wire/schema shape is still a single decimal `hoursPerDay` (see
@@ -108,7 +109,7 @@ function openDays(draft) {
 // live time math and over-budget flagging just fall out of that, per the
 // interaction model: edits recalculate in place, nothing is ever auto-
 // dropped or auto-reshuffled beyond what the user themselves just did.
-function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded, onZoneCycled, userId, draftPlaceIds }) {
+function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted, onDayDiscarded, onZoneSelected, userId, draftPlaceIds }) {
   const [busy, setBusy] = useState(false); // a reorder/add/remove request is in flight for this day
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
@@ -313,21 +314,38 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
     }
   }
 
-  // Re-picks a different zone (region) for this day and re-packs it from
-  // scratch with that zone's candidates — the server already does the same
-  // real routing/budget packing generate() does, so the result is as fresh
-  // as a brand-new day: everEdited/needsReoptimize reset, same as right
-  // after generation, rather than carrying over whatever edit history this
-  // day had under its old zone. Goes through onZoneCycled (not onDayUpdated
-  // directly) so the parent can also surface the droppedCommitments notice —
-  // this day's slice still gets patched in place either way, never a full
-  // draft reload.
-  async function cycleZone() {
+  // The areas (regions) "Somewhere else" can offer for this day — not part
+  // of the normal day view (see scheduleDraft.js's getDayZones), so it's
+  // fetched separately, once per day identity. null while loading (the
+  // dropdown falls back to showing day.zone as plain text until this
+  // resolves, rather than flashing an empty/wrong list).
+  const [zoneOptions, setZoneOptions] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setZoneOptions(null);
+    api.scheduleDrafts.getDayZones(draftId, day.date)
+      .then((z) => { if (!cancelled) setZoneOptions(z.list); })
+      .catch(() => { if (!cancelled) setZoneOptions([]); });
+    return () => { cancelled = true; };
+  }, [draftId, day.date]);
+
+  // Re-packs this day from scratch with the user's directly-picked zone's
+  // candidates — the server already does the same real routing/budget
+  // packing generate() does, so the result is as fresh as a brand-new day:
+  // everEdited/needsReoptimize reset, same as right after generation, rather
+  // than carrying over whatever edit history this day had under its old
+  // zone. Goes through onZoneSelected (not onDayUpdated directly) so the
+  // parent can also surface the droppedCommitments notice — this day's
+  // slice still gets patched in place either way, never a full draft
+  // reload. Re-fetches the zone list afterward (fire-and-forget, own
+  // failure ignored) since the candidate pool can shift once places move.
+  async function selectZone(zone) {
+    if (!zone || zone === day.zone) return;
     onError(null);
     setBusy(true);
     try {
-      const result = await api.scheduleDrafts.cycleZone(draftId, day.date);
-      onZoneCycled(result);
+      const result = await api.scheduleDrafts.selectZone(draftId, day.date, zone);
+      onZoneSelected(result);
       setEverEdited(false);
       setNeedsReoptimize(false);
     } catch (e) {
@@ -335,32 +353,30 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
     } finally {
       setBusy(false);
     }
+    api.scheduleDrafts.getDayZones(draftId, day.date).then((z) => setZoneOptions(z.list)).catch(() => {});
   }
 
   return (
     <div className="card">
       <div className="card-head">
         <h2>
-          {formatDate(day.date)}{day.zone ? ` · ${day.zone}` : ''}
-          {day.zones && (
-            <>
-              {' · '}
-              <span className="tiny muted" style={{ fontWeight: 400 }}>
-                Area {day.zones.index + 1} of {day.zones.count}
-              </span>
-            </>
-          )}
-          {' '}
-          <Button
-            size="small"
-            variant="secondary"
-            onClick={cycleZone}
-            disabled={busy}
-            title="Re-pick a different area for this day and re-pack it with those stops"
-            style={{ flex: 'none', minWidth: 0 }}
-          >
-            Somewhere else
-          </Button>
+          <span style={{ whiteSpace: 'nowrap' }}>
+            {formatDate(day.date)}
+            {day.zone && (
+              <>
+                {' · '}
+                {zoneOptions ? (
+                  <InlineDropdown
+                    value={day.zone}
+                    options={zoneOptions}
+                    onChange={selectZone}
+                    disabled={busy}
+                    title="Pick a different area for this day and re-pack it with those stops"
+                  />
+                ) : day.zone}
+              </>
+            )}
+          </span>
           {day.overBudget && <span className="badge attention" style={{ marginLeft: 8 }}>Over budget</span>}
         </h2>
         <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
@@ -773,12 +789,12 @@ export default function PlanVisits({ userId }) {
     setDraft((prev) => ({ ...prev, days: prev.days.map((d) => (d.date === dayView.date ? dayView : d)) }));
   }
 
-  // cycleZone's response IS a day view (same shape reorder/addStop/etc.
-  // return, plus droppedCommitments/zones) so this patches this day's slice
-  // in place same as updateDay — no full reload. droppedCommitments only
-  // gets a notice when it's actually non-empty, same "important-but-non-
-  // fatal outcome" banner handleDayCommitted uses for skippedCollisions.
-  function handleZoneCycled(result) {
+  // selectZone's response IS a day view (same shape reorder/addStop/etc.
+  // return, plus droppedCommitments) so this patches this day's slice in
+  // place same as updateDay — no full reload. droppedCommitments only gets
+  // a notice when it's actually non-empty, same "important-but-non-fatal
+  // outcome" banner handleDayCommitted uses for skippedCollisions.
+  function handleZoneSelected(result) {
     updateDay(result);
     if (result.droppedCommitments && result.droppedCommitments.length > 0) {
       const names = result.droppedCommitments.map((c) => c.place_name).join(', ');
@@ -1178,7 +1194,7 @@ export default function PlanVisits({ userId }) {
               onDayUpdated={updateDay}
               onDayCommitted={handleDayCommitted}
               onDayDiscarded={handleDayDiscarded}
-              onZoneCycled={handleZoneCycled}
+              onZoneSelected={handleZoneSelected}
               onError={setError}
               reload={load}
               userId={userId}

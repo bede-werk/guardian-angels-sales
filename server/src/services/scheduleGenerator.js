@@ -97,9 +97,9 @@ async function fillDayFromZone({ candidates, zone, homeBase, budgetMinutes, driv
 // candidates span — rank order decides the sequence, first-encountered wins
 // the dedupe. Index 0 is exactly the region fillDayFromZone's caller would
 // pick by default (ranked[0].place.region), so this is the "menu" the
-// "Somewhere else" control cycles through — see stepZone below. Places with
-// no region (shouldn't normally happen, but region isn't NOT NULL) are
-// skipped rather than surfacing as a confusing blank "zone".
+// "Somewhere else" dropdown offers (see scheduleDraft.js's getDayZones).
+// Places with no region (shouldn't normally happen, but region isn't NOT
+// NULL) are skipped rather than surfacing as a confusing blank "zone".
 function orderedZones(ranked) {
   const seen = new Set();
   const zones = [];
@@ -110,23 +110,6 @@ function orderedZones(ranked) {
     }
   }
   return zones;
-}
-
-// Cyclic step through `zones` relative to `currentZone` — the actual
-// "Somewhere else" logic. Wraps in both directions (direction: 1 or -1), so
-// repeatedly stepping the same direction always eventually returns to the
-// start — this is the reversibility guarantee "Somewhere else" needs,
-// without requiring a separate reverse control. `currentZone` not found in
-// `zones` (e.g. the candidate pool has shifted enough that it's no longer in
-// play) is treated the same as "nothing selected yet": stepping forward
-// lands on index 0, same as the default pick. Returns null if there are no
-// zones to step through at all (an empty day).
-function stepZone(zones, currentZone, direction = 1) {
-  if (zones.length === 0) return null;
-  const currentIndex = zones.indexOf(currentZone);
-  const from = currentIndex === -1 ? -1 : currentIndex; // -1 so "not found" + direction 1 lands on index 0
-  const nextIndex = (((from + direction) % zones.length) + zones.length) % zones.length;
-  return { zone: zones[nextIndex], index: nextIndex };
 }
 
 // Every commitment-tier candidate that ISN'T going to be visited today
@@ -281,7 +264,6 @@ module.exports = {
   toPackableStop,
   fillDayFromZone,
   orderedZones,
-  stepZone,
   outOfZoneCommitments,
   generateDraft,
 };

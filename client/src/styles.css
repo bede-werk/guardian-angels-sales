@@ -402,6 +402,22 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .duration-picker:focus-within { outline: 2px solid var(--blue-tint-3); border-color: var(--blue); }
 .duration-sep { color: var(--muted); font-size: 12px; }
 
+/* InlineDropdown — a <select> styled to read as plain inline text (used by
+   Plan My Visits' zone picker, sitting inline in a card's h2). font: inherit
+   on the select itself only affects the CLOSED display (so it still matches
+   the surrounding h2's size); the option rule below matches every other
+   <select> in the app (see the plain `input, select, textarea` rule).
+   NOTE: on macOS, Chrome/Safari render the OPEN popup natively and ignore
+   font-size on <option> — confirmed 2026-07-28 (computed style reports 13px,
+   but the rendered popup doesn't reflect it). Harmless to leave in (other
+   platforms do honor it), but don't rely on this to actually shrink the
+   open list on a Mac — that needs a fully custom-built dropdown instead. */
+.inline-dropdown { font: inherit; color: inherit; background: none; border: none; padding: 0; margin: 0; cursor: pointer; }
+.inline-dropdown:hover:not(:disabled) { text-decoration: underline; }
+.inline-dropdown:focus { outline: 2px solid var(--blue-tint-3); border-radius: 2px; }
+.inline-dropdown:disabled { cursor: default; opacity: 0.6; }
+.inline-dropdown option { font-family: var(--font-sans); font-size: 13px; }
+
 /* Plan My Visits' generate form: "Starting point" + "Plan for these dates"
    as two EQUAL-width columns with a vertical rule dead-center between them,
    instead of stacking one above the other (which left the card mostly
