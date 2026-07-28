@@ -79,6 +79,7 @@ export const api = {
   createVisit: (body) => request('/visits', { method: 'POST', body }),
   updateVisit: (id, body) => request(`/visits/${id}`, { method: 'PATCH', body }),
   deleteVisit: (id) => request(`/visits/${id}`, { method: 'DELETE' }),
+  visitsCalendar: (month, userId) => request(`/visits/calendar?month=${month}${userId ? `&userId=${userId}` : ''}`),
 
   // Dashboard rollup — server/src/routes/dashboard.js
   dashboard: (userId, date) =>
@@ -146,6 +147,11 @@ export const api = {
     create: (name) => request('/categories', { method: 'POST', body: { name } }),
     rename: (id, name) => request(`/categories/${id}`, { method: 'PATCH', body: { name } }),
     remove: (id) => request(`/categories/${id}`, { method: 'DELETE' }), // { deleted, affectedPlaces }
+  },
+
+  // Team members — server/src/routes/users.js
+  users: {
+    list: () => request('/users'),
   },
 
   // Auth (login/logout/password) — server/src/routes/auth.js

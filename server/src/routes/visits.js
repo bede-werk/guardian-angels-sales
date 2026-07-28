@@ -41,6 +41,69 @@ async function fetchVisit(id) {
     .first();
 }
 
+// "2026-07" -> { start: "2026-07-01", end: "2026-07-31" }. Used by the
+// calendar route below to turn a month picker value into a whereBetween range
+// against scheduled_date (a plain 'YYYY-MM-DD' string column, so plain string
+// bounds are enough — no date-library parsing needed).
+function monthRange(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number); // m is 1-based (7 = July)
+  const lastDay = new Date(y, m, 0).getDate(); // new Date(2026, 7, 0) = July 31
+  const mm = String(m).padStart(2, '0');
+  return {
+    start: `${y}-${mm}-01`,
+    end: `${y}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
+// GET /api/visits/calendar?month=YYYY-MM[&userId=<int>] — every visit
+// scheduled in the given month, flat (not grouped by day — the frontend buckets
+// by scheduled_date itself). Omitting userId returns all reps' visits ("All
+// reps" mode); scoping is by the query param, not the caller's own identity.
+router.get('/calendar', async (req, res, next) => {
+  try {
+    const { month } = req.query;
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'month is required, in YYYY-MM format' });
+    }
+    const userId = req.query.userId ? Number(req.query.userId) : undefined;
+    const { start, end } = monthRange(month);
+
+    // Left joins, not inner — same detach-not-delete precedent as fetchVisit()
+    // below and dashboard.js: a visit survives its place or rep being removed.
+    // v.place_name is the durable place-name snapshot (always present); the
+    // rest of the place_* fields and rep_name are honestly null if detached.
+    const rows = await knex('visits as v')
+      .leftJoin('places as p', 'p.id', 'v.place_id')
+      .leftJoin('users as u', 'u.id', 'v.user_id')
+      .whereBetween('v.scheduled_date', [start, end])
+      .modify((qb) => userId && qb.andWhere('v.user_id', userId))
+      .orderBy('v.scheduled_date', 'asc')
+      .orderBy('v.sort_order', 'asc')
+      .select(
+        'v.id',
+        'v.place_id',
+        'v.place_name',
+        'p.category',
+        'p.tier',
+        'p.address',
+        'p.city',
+        'p.zip',
+        'v.user_id',
+        'u.name as rep_name',
+        'v.scheduled_date',
+        'v.status',
+        'v.outcome',
+        'v.notes',
+        'v.visit_type',
+        'v.source'
+      );
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/visits — create an ad-hoc visit (outside the generated schedule),
 // e.g. from the "Log a visit" button on a Place Detail page.
 router.post('/', async (req, res, next) => {

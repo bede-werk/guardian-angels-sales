@@ -381,6 +381,42 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   font-size: 16px; font-weight: 700; color: #1E8E3E;
 }
 
+/* Calendar tab (ui/MonthCalendar.jsx) — a full-width, unbounded month grid,
+   distinct from .calendar above (Plan My Visits' 280px-capped multi-select
+   date *picker*). This is a whole tab's main content, so cells get real
+   room: a day number plus a row of status dots, not just a bare number.
+   Reuses .calendar-head/.calendar-nav/.calendar-title as-is for the month
+   nav strip (prev/title/next) — same look at both scales. */
+.month-calendar { width: 100%; }
+.month-calendar-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 1px; background: var(--border); border: 1px solid var(--border);
+  border-radius: var(--radius-md); overflow: hidden;
+}
+.month-calendar .calendar-weekday { background: var(--bg); padding: 8px 0; }
+.month-calendar-day {
+  position: relative;
+  aspect-ratio: 4 / 3; min-height: 64px; width: 100%; border: none; background: #fff;
+  color: var(--text); font-family: var(--font-serif); font-size: 15px; font-weight: 600;
+  cursor: default; padding: 8px 10px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+}
+.month-calendar-day.empty { background: var(--bg); }
+/* Days with nothing scheduled: not clickable, day number reads muted —
+   distinct from .active below, which gets the hover affordance. */
+.month-calendar-day:disabled { color: var(--grey-tint-3); }
+.month-calendar-day.active { cursor: pointer; color: var(--text); }
+.month-calendar-day.active:hover { background: var(--blue-tint-1); }
+/* Today's ring — a separate visual signal from .active's hover tint, so
+   "today" stays visible even on a day with nothing planned on it. */
+.month-calendar-day.today { box-shadow: inset 0 0 0 2px var(--blue); border-radius: var(--radius-sm); }
+.month-calendar-daynum { line-height: 1; }
+.day-dots { display: flex; gap: 4px; margin-top: auto; }
+.day-dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
+.day-dot.planned { background: var(--blue); }
+.day-dot.completed { background: var(--teal-dark); }
+.day-dot.skipped { background: var(--grey); }
+
 /* Selected-dates + per-date hours list, next to the calendar in Plan My
    Visits' date-picker section. */
 .selected-days-list { display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
