@@ -351,7 +351,7 @@ async function committedDateSummaries(db, userId, { today } = {}) {
 // The actual visits behind one "Already Planned" row — same user+date scope
 // as committedDateSummaries above (no status/source filter), so the list a
 // rep sees after clicking a day always matches that day's count exactly.
-// Left-joins `places` for category/tier/address/city/zip since a visit's
+// Left-joins `places` for category/address/city/zip since a visit's
 // place can be detached (place_id null, or the row simply gone) — v.place_name
 // is the detach-safe snapshot, always present regardless.
 async function committedDayVisits(db, userId, date) {
@@ -365,7 +365,6 @@ async function committedDayVisits(db, userId, date) {
       'v.place_name',
       'v.visit_type',
       'p.category',
-      'p.tier',
       'p.address',
       'p.city',
       'p.zip'

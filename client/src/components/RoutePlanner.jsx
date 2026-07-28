@@ -695,12 +695,20 @@ export default function RoutePlanner({ userId }) {
   // Returns whether the day was actually reopened — see deleteCommittedDay's
   // matching note above.
   async function reopenDay(date) {
-    if (!homeBase) return false; // the button is disabled in this case; guard anyway
     if (!window.confirm(`Edit the planned visits for ${formatDate(date)}? They'll temporarily show as not-yet-scheduled while you make changes — accept the updated proposal again when you're done.`)) return false;
     setError(null);
     setReopeningDate(date);
     try {
-      const next = await api.scheduleDrafts.reopenDay(date, { lat: homeBase.lat, lng: homeBase.lng });
+      // No starting point picked yet (e.g. a fresh session with nothing
+      // generated) — grab the current location automatically instead of
+      // blocking the edit on a manual step; also fills in the generate
+      // form's own "Starting from" display for consistency.
+      let startingPoint = homeBase;
+      if (!startingPoint) {
+        startingPoint = await getCurrentPosition();
+        setHomeBase(startingPoint);
+      }
+      const next = await api.scheduleDrafts.reopenDay(date, { lat: startingPoint.lat, lng: startingPoint.lng });
       setDraft(next);
       setSelectedDays(next.params.days);
       await refreshCommittedDates();
@@ -909,25 +917,31 @@ export default function RoutePlanner({ userId }) {
     }
   }
 
+  // Promise-shaped counterpart to the browser geolocation callback API —
+  // shared by the "Use my current location" button below and reopenDay's
+  // auto-fill (a rep editing a planned day with no starting point set yet
+  // shouldn't have to leave the modal to go set one first).
+  function getCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("This browser can't share your location — enter a start address instead."));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'Current location' }),
+        () => reject(new Error("Couldn't get your location — enter a start address instead.")),
+        { timeout: 10000 }
+      );
+    });
+  }
+
   function useCurrentLocation() {
     setLocating(true);
     setLocationError(null);
-    if (!navigator.geolocation) {
-      setLocationError("This browser can't share your location — enter a start address instead.");
-      setLocating(false);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setHomeBase({ lat: pos.coords.latitude, lng: pos.coords.longitude, label: 'Current location' });
-        setLocating(false);
-      },
-      () => {
-        setLocationError("Couldn't get your location — enter a start address instead.");
-        setLocating(false);
-      },
-      { timeout: 10000 }
-    );
+    getCurrentPosition()
+      .then(setHomeBase)
+      .catch((e) => setLocationError(e.message))
+      .finally(() => setLocating(false));
   }
 
   async function generate(regenerate) {
@@ -1210,7 +1224,6 @@ export default function RoutePlanner({ userId }) {
           onViewPlace={setViewingPlaceId}
           onEditDay={async () => { if (await reopenDay(viewingDate)) setViewingDate(null); }}
           editingDay={reopeningDate === viewingDate}
-          canEditDay={!!homeBase}
           onDeleteDay={async () => { if (await deleteCommittedDay(viewingDate)) setViewingDate(null); }}
           deletingDay={deletingCommittedDate === viewingDate}
         />

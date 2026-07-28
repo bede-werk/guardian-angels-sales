@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
-import { TierChip, CategoryChip } from './ui/Chip';
+import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 
@@ -10,7 +10,7 @@ import EmptyState from './ui/EmptyState';
 // actual actions inside the detail modal it opens. Each visit's name is
 // itself clickable to open full PlaceDetail (via onViewPlace), same pattern
 // as a DraftDay's proposed stops.
-export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, canEditDay, onDeleteDay, deletingDay }) {
+export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay }) {
   const [visits, setVisits] = useState(null);
   const [loadError, setLoadError] = useState(null);
 
@@ -48,7 +48,6 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
                     <div className="tag-list" style={{ alignItems: 'center' }}>
                       <div className="name">{v.place_name}</div>
                       {v.category && <CategoryChip category={v.category} />}
-                      {v.tier && <TierChip tier={v.tier} />}
                     </div>
                     {v.address && (
                       <div className="meta">{v.address}, {v.city} {v.zip}</div>
@@ -70,8 +69,8 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
             <Button variant="secondary" onClick={onClose}>Close</Button>
             <Button
               onClick={onEditDay}
-              disabled={!canEditDay || editingDay}
-              title={canEditDay ? "Pull this day's visits back into an editable proposal" : 'Set a starting point before editing a planned day'}
+              disabled={editingDay}
+              title="Pull this day's visits back into an editable proposal"
             >
               {editingDay ? 'Editing…' : 'Edit'}
             </Button>
