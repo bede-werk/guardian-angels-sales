@@ -10,23 +10,32 @@ import EmptyState from './ui/EmptyState';
 // actual actions inside the detail modal it opens. Each visit's name is
 // itself clickable to open full PlaceDetail (via onViewPlace), same pattern
 // as a DraftDay's proposed stops.
-export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay }) {
-  const [visits, setVisits] = useState(null);
+//
+// Also reused read-only for another rep's planned route (VisitsCalendar.jsx,
+// "All reps" scope) — pass `visits` directly (already-loaded calendar rows,
+// skipping this component's own fetch), `readOnly` to drop the whole-day
+// Edit/Delete footer down to a bare Close, and `title` to swap the header
+// from "Planned Route" to e.g. "Nikki Shasserre's Planned Route". Someone
+// else's route can never be reopened/deleted from here — only the owning
+// rep's own committed-day endpoints support that (see scheduleDrafts.js).
+export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, title, readOnly }) {
+  const [visits, setVisits] = useState(providedVisits ?? null);
   const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
+    if (providedVisits) return;
     let cancelled = false;
     api.scheduleDrafts.committedDayVisits(date)
       .then((rows) => { if (!cancelled) setVisits(rows); })
       .catch((e) => { if (!cancelled) setLoadError(e.message); });
     return () => { cancelled = true; };
-  }, [date]);
+  }, [date, providedVisits]);
 
   return (
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{formatDate(date)} · Planned Visits</h2>
+          <h2>{formatDate(date)} · {title || 'Planned Route'}</h2>
           <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
@@ -39,7 +48,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
           ) : (
             <ul className="list">
               {visits.map((v) => (
-                <li key={v.visit_id} className="stop">
+                <li key={v.visit_id ?? v.id} className="stop">
                   <div
                     className={`main${v.place_id ? ' hover-row' : ''}`}
                     title={v.place_id ? 'View place details' : undefined}
@@ -61,21 +70,27 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
             </ul>
           )}
         </div>
-        <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
-          <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove this day's planned visits">
-            {deletingDay ? 'Removing…' : 'Delete'}
-          </Button>
-          <div style={{ display: 'flex', gap: 10 }}>
+        {readOnly ? (
+          <div className="modal-foot">
             <Button variant="secondary" onClick={onClose}>Close</Button>
-            <Button
-              onClick={onEditDay}
-              disabled={editingDay}
-              title="Pull this day's visits back into an editable proposal"
-            >
-              {editingDay ? 'Editing…' : 'Edit'}
-            </Button>
           </div>
-        </div>
+        ) : (
+          <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
+            <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove this day's planned visits">
+              {deletingDay ? 'Removing…' : 'Delete'}
+            </Button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button variant="secondary" onClick={onClose}>Close</Button>
+              <Button
+                onClick={onEditDay}
+                disabled={editingDay}
+                title="Pull this day's visits back into an editable proposal"
+              >
+                {editingDay ? 'Editing…' : 'Edit'}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

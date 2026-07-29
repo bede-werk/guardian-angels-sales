@@ -26,6 +26,11 @@ const TABS = [
 export default function App() {
   const [tab, setTab] = useState('dashboard'); // which of the tabs is showing
   const date = today(); // always "today" — there's no date picker (see HANDOFF/README)
+  // The Calendar tab's own "Mine/All reps" toggle, lifted up here (rather
+  // than living in VisitsCalendar itself) so it survives switching to
+  // another tab and back — VisitsCalendar unmounts entirely when its tab
+  // isn't active. Reset on logout so a fresh session always starts on "Mine".
+  const [calendarScope, setCalendarScope] = useState('mine');
 
   const [authUser, setAuthUser] = useState(null); // the logged-in user, or null if not logged in
   const [authLoading, setAuthLoading] = useState(true); // true while checking for a saved session on load
@@ -56,6 +61,7 @@ export default function App() {
     api.auth.logout().catch(() => {}); // best-effort — log out locally regardless
     clearToken();
     setAuthUser(null);
+    setCalendarScope('mine');
   }
 
   // Three possible screens: branded loading splash, the login form, or the app itself.
@@ -87,7 +93,14 @@ export default function App() {
           resetting their state each time you come back to them. */}
       {tab === 'dashboard' && <Dashboard date={date} userId={authUser.id} />}
       {tab === 'planner' && <RoutePlanner userId={authUser.id} />}
-      {tab === 'calendar' && <VisitsCalendar userId={authUser.id} onNavigateToPlanner={() => setTab('planner')} />}
+      {tab === 'calendar' && (
+        <VisitsCalendar
+          userId={authUser.id}
+          onNavigateToPlanner={() => setTab('planner')}
+          scope={calendarScope}
+          onScopeChange={setCalendarScope}
+        />
+      )}
       {tab === 'places' && <Places userId={authUser.id} />}
       {tab === 'people' && <People userId={authUser.id} />}
     </div>

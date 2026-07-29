@@ -1370,3 +1370,119 @@ filtered views in the Calendar tab now (the "Completed Visits" badge AND the lef
 other-reps'-planned dots) — the hardcoded "· Completed Visits" suffix will show on the skipped
 popup too, mislabeling it. Bede's explicit call: leave it exactly as-is, just flag it here for
 tomorrow rather than making the suffix conditional now.
+
+**Resolved 2026-07-29** — see below: `CalendarDayModal` now takes an explicit `title` prop (no
+more hardcoded suffix), used for all three of its callers ("Completed Visits", "Skipped Visits",
+and another rep's planned route before that moved to `PlannedDayModal` instead).
+
+## 2026-07-29 — Calendar tab: other reps' planned routes, grid-reflow fixes, a real anchored "+N more"/day-number popover, scope-toggle persistence, rectangular pills
+
+A long back-and-forth session, all Bede-directed live feedback on the Calendar tab built the day
+before, plus one detour into PlaceDetail/PersonDetail. In commit order (roughly):
+
+**"All reps" now actually shows other reps' planned routes, not just a generic dot.**
+`VisitsCalendar.jsx`'s `splitDayVisits` used to filter `myPlanned` to just `userId`, dumping every
+other rep's still-open planned visit into the same catch-all bucket as skipped visits (a single
+unlabeled blue dot). Now it groups all `status: 'planned'` rows by `user_id` into `plannedGroups`
+(own group always first, then everyone else alphabetically), and `renderDay` shows one "Planned
+Route"-style badge per group: **"My Planned Route"** for your own, **"`<Name>`'s Planned Route"**
+for everyone else's. Your own badge still opens `PlannedDayModal` (fetches fresh from
+`committedDayVisits`, has the full Edit/Delete footer). Bede's next ask: make another rep's badge
+*look* the same as your own, minus Edit/Delete — so `PlannedDayModal` gained `visits` (preloaded,
+skips its own fetch), `title` (override the header), and `readOnly` (drops Edit/Delete down to a
+bare Close) props, and now handles both cases. `CalendarDayModal` also gained a `title` prop
+(replacing its old hardcoded "· Completed Visits" suffix — see the flagged item above, now
+resolved) and a `showRepName` prop (replacing an overloaded `scope` prop that existed only to
+toggle one "with {rep}" line).
+
+**Two rounds of "the grid keeps resizing" bug fixes, both real CSS gotchas:**
+1. A long pill's text (e.g. "Nikki Shasserre's Planned Route") was forcing its whole day cell —
+   and the grid column alongside it — wider, because `grid-template-columns: repeat(7, 1fr)` has
+   an implicit per-track minimum of `auto` (the content's min-content size), which a `white-space:
+   nowrap` pill defeats. Fixed with `repeat(7, minmax(0, 1fr))` plus `max-width: 100%; overflow:
+   hidden; text-overflow: ellipsis` on the pill classes themselves — long labels now truncate
+   in-place instead of blowing out the layout.
+2. Separately, switching tabs shifted the whole centered `.app` container left/right by a few
+   pixels, because tabs vary a lot in page height and the vertical scrollbar toggling on/off
+   changes the available width. Fixed globally with `html { overflow-y: scroll; scrollbar-gutter:
+   stable; }` — the scrollbar's gutter is now always reserved, whether or not a given tab actually
+   needs to scroll.
+
+**"+N more" overflow chip**, for when a day has more pills than fit: `buildDayPills`/
+`splitPillsForDay` turn a day's pills into one capped, priority-ordered list (yours first, then
+completed, then everyone else alphabetically); anything past the cap (`MAX_VISIBLE_PILLS`,
+currently 3 — Bede raised it from an initial 2 himself, edited directly in the file) collapses
+into a "+N more" chip.
+
+**`DayOverflowModal` went through four real design iterations, all live Bede feedback, each one
+actually built and screenshot-verified rather than just discussed:**
+1. First cut: a plain centered modal, a plain `<ul>` list of the overflow pills only.
+2. → An "enlarged view of the whole day": switched to showing *every* pill for the day (own +
+   completed + every other rep, via new `buildFullDayPills`, not just the overflowed ones), each
+   rendered as an actual colored pill (reusing `.planned-route-badge`/`.completed-visits-badge`
+   colors) instead of a plain list row — plus a new "Skipped Visits" pill kind, since skipped
+   visits are a plain dot in the cell but deserve a full pill in this enlarged view. Still a
+   centered modal at this point.
+3. → A real anchored popover, not a modal: rendered via `createPortal` straight onto `<body>`
+   (`.month-calendar-grid` has `overflow: hidden` for its own rounded corners, which would
+   otherwise clip a popover nested inside a day cell), positioned in *document* coordinates
+   (`getBoundingClientRect()` + `window.scrollX/Y`, not viewport-`fixed`) so it scrolls naturally
+   with the page. Closes on click-outside or Escape (no backdrop to catch that for you, unlike a
+   real modal). Caught one real bug during live verification: forgot `position: absolute` on the
+   popover's own CSS, so its computed `top`/`left` had no effect and it rendered at the bottom of
+   `<body>` — fixed by adding the missing declaration.
+   Repositioned twice more per direct feedback: first to land flush on the day cell's own
+   top-left corner (anchored to the whole `.month-calendar-day`, not just the chip button) so it
+   visually *covers* the day instead of floating beside it; then, after Bede reported the bottom
+   row's popover looking bad jammed against the screen's bottom edge, changed to center on the
+   cell's own midpoint (both axes) first and only *then* clamp to the viewport — still covers the
+   cell, but now gravitates toward the middle of the screen for edge-row/column cells instead of
+   hugging whichever edge was closest.
+4. → Pills changed from one-per-row wrapping at 14px to one-per-line (`flex-direction: column`)
+   at 12px, per Bede's ask ("only one pill per line" + "just a little too big").
+
+**Every colorful pill across the Calendar tab — day cell badges and the popover's own — reshaped
+from a fully-rounded pill (`border-radius: 999px`) to the app's actual button radius
+(`var(--radius-sm)`).** Bede's reasoning, worth remembering for any future badge/chip: *nothing
+else in this app lets you click a rounded pill*, so keeping that shape on the one place you
+genuinely can click was sending the wrong signal. One shared base-rule edit did it everywhere,
+since `.day-overview-pill`/`.skipped-visits-badge` never override `border-radius` themselves.
+
+**The day number itself is now clickable**, opening the same `DayOverflowModal` popover
+(`buildFullDayPills`, not just the overflow) even on a day with nothing on it at all — every day
+now gets the same "open it up for a closer look" affordance, not just ones with a "+N more" chip.
+`DayOverflowModal` gained an `EmptyState` fallback for that empty-day case. `.month-calendar-daynum`
+went from a plain `<span>` to a `<button>` reset back to looking identical (`font: inherit; color:
+inherit`) plus a blue hover as the one clickability hint, since the number itself carries no other
+visual cue that it's a button now.
+
+**Scope toggle now survives switching tabs.** `VisitsCalendar` unmounts entirely on every tab
+switch (`App.jsx`'s `{tab === 'calendar' && <VisitsCalendar .../>}`), so its own `useState('mine')`
+was silently resetting back to "Mine" every time you left and returned to the Calendar tab — Bede
+wanted it to stick until logout. Lifted `scope`/`onScopeChange` up into `App.jsx` (which never
+unmounts), with `logout()` explicitly resetting it back to `'mine'` so a fresh session always
+starts on your own calendar. Verified via a real logout+relogin round-trip (fresh temp token both
+times, since `logout()` invalidates the old one server-side): toggle set to "All reps" → switch
+tabs away and back → still "All reps" → log out, log back in → back to "Mine".
+
+**Detour: "Upcoming Visits" added to PlaceDetail and PersonDetail, then reverted from PersonDetail
+only.** New `GET /api/places/:id` and (briefly) `GET /api/people/:id` field `upcoming_visits` —
+same shape as the existing `visits` (history) query, just `status: 'planned'` and soonest-first
+instead of most-recent-first — plus a new read-only `UpcomingVisitDetailModal.jsx` (view-only for
+now, editability deliberately deferred). Live-tested against Bede's real committed visits before
+either side landed. Then, before committing, Bede asked directly whether the PersonDetail side was
+worth keeping — flagged that route-planner-committed visits only ever get a `place_id`/`user_id`,
+never a `person_id` (nothing in the current planning flow lets you pin a specific contact ahead of
+time), so that card would read "Nothing upcoming" for every person, indefinitely. Bede agreed to
+cut it. **PlaceDetail keeps its "Upcoming visits" card** (genuinely populated, since a planned
+visit always has a `place_id`); **PersonDetail's was fully reverted**, both the UI (card, modal,
+state, imports) and the server-side query/field on `GET /api/people/:id` — nothing dead left
+behind on either side.
+
+All of the above verified live via Playwright against a temp auth token on Lisa Marks (id 5, per
+house convention — never Bede's real account), cleaned up after every check; several rounds used
+Bede's own real committed visits (read-only) as realistic multi-rep test data, and two rounds
+needed one throwaway `visits` row inserted and deleted afterward (a third rep's planned stop, to
+get a 3rd/4th pill; a skipped-status stop, to check that pill's color) since real data didn't
+happen to cover those cases that day. 153 tests pass throughout (no backend logic changed except
+the `upcoming_visits` add-then-revert on `people.js`, which nets to no diff), client build clean.

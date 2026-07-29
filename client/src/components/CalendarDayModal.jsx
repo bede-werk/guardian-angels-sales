@@ -35,12 +35,12 @@ function statusBadge(v) {
 // PersonDetail's own Visit history rows). Hover-row styling is only applied
 // where the row genuinely does something on click, same guard PlannedDayModal
 // itself uses for its onViewPlace rows.
-export default function CalendarDayModal({ date, visits, scope, onClose, onViewPlace, onLogVisit, onViewVisit }) {
+export default function CalendarDayModal({ date, visits, title, showRepName, onClose, onViewPlace, onLogVisit, onViewVisit }) {
   return (
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{formatDate(date)} · Completed Visits</h2>
+          <h2>{formatDate(date)} · {title}</h2>
           <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
@@ -87,7 +87,7 @@ export default function CalendarDayModal({ date, visits, scope, onClose, onViewP
                         )}
                       </div>
                     </div>
-                    {scope === 'all' && (
+                    {showRepName && (
                       <div className="tiny muted">with {v.rep_name || 'Unknown rep'}</div>
                     )}
                   </li>

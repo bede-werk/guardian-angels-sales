@@ -33,9 +33,9 @@ function toISODate(d) {
 //   renderDay(dateObj, iso): full cell CONTENT — day number plus whatever
 //     the caller wants underneath it. The cell itself is a plain non-
 //     interactive <div> (not a <button>, and no onClick of its own) — a day
-//     as a whole is never clickable; renderDay supplies its own nested
-//     clickable elements (e.g. a "Planned Route" badge) where a day
-//     actually has something to drill into.
+//     as a whole is never one big click target; renderDay supplies its own
+//     nested clickable elements instead (e.g. a "Planned Route" badge, or
+//     the day number itself, which stays clickable even on an empty day).
 export default function MonthCalendar({ monthCursor, onMonthChange, renderDay }) {
   const year = monthCursor.getFullYear();
   const month = monthCursor.getMonth();

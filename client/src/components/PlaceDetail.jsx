@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, navigateUrl, formatDate } from '../api';
+import { api, navigateUrl, formatDate, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
@@ -9,6 +9,7 @@ import AssignPersonModal from './AssignPersonModal';
 import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
 import VisitDetailModal from './VisitDetailModal';
+import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 
 // Slide-in modal: place details + people here + full visit history + "log a
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
@@ -29,6 +30,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [deleting, setDeleting] = useState(false);
   const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
   const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
+  const [viewingUpcomingVisit, setViewingUpcomingVisit] = useState(null); // upcoming (planned) visit whose read-only popup is open, if any
   const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
   // Durable, org-level notes (separate from any single visit's notes or a
   // person's notes) — editable inline via a small textarea + Save.
@@ -302,6 +304,47 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             </div>
           </div>
 
+          {/* Still-open route-planner-committed visits, soonest first. View
+              only for now — editing a planned visit will come later, through
+              the same Route Planner/schedule-drafts flow a route's own days
+              already use, not this card. */}
+          <div className="card">
+            <div className="card-head">
+              <h2>Upcoming visits ({data.upcoming_visits.length})</h2>
+            </div>
+            <div className="card-body">
+              {data.upcoming_visits.length === 0 ? (
+                <EmptyState message="Nothing upcoming at this place." />
+              ) : (
+                <ul className="list">
+                  {data.upcoming_visits.map((v) => (
+                    <li
+                      key={v.id}
+                      className="stack hover-row"
+                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
+                      onClick={() => { setEditingNotes(false); setViewingUpcomingVisit(v); }}
+                    >
+                      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                        <div className="tag-list" style={{ flex: 'unset' }}>
+                          <strong className="tiny">{formatDate(v.scheduled_date)}</strong>
+                          {(v.user_name || v.person_name) && (
+                            <span className="tiny muted">
+                              · {[v.user_name, v.person_name && `with ${v.person_name}`].filter(Boolean).join(' ')}
+                            </span>
+                          )}
+                        </div>
+                        <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
+                          {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
+                        </span>
+                      </div>
+                      {v.notes && <div className="tiny">{v.notes}</div>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
           {/* Every visit ever logged on this place, most recent first. */}
           <div className="card">
             <div className="card-head">
@@ -432,6 +475,13 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           onClose={() => setViewingVisit(null)}
           onEdit={(v) => { setViewingVisit(null); setEditingVisit(v); }}
           onDelete={(v) => { setViewingVisit(null); removeVisit(v); }}
+        />
+      )}
+
+      {viewingUpcomingVisit && (
+        <UpcomingVisitDetailModal
+          visit={viewingUpcomingVisit}
+          onClose={() => setViewingUpcomingVisit(null)}
         />
       )}
 

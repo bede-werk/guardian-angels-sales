@@ -1,6 +1,6 @@
 # Guardian Angels Sales Scheduler — Project Handoff
 
-_Last updated: 2026-07-28_
+_Last updated: 2026-07-29_
 
 This document is a self-contained context dump so work can resume in a new session.
 It summarizes what was built, key decisions, how to run it, the Railway deploy saga,
@@ -926,6 +926,26 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   `committedDayVisits`) never filtered by `status`, so a completed visit sharing a date with a
   planned one polluted the list — both now scoped to `status: 'planned'`. 153 tests pass, client
   build clean throughout. Full narrative in `NOTES.md`'s matching entry. Not yet pushed.
+- **2026-07-29:** a long live-feedback session on the Calendar tab. "All reps" scope now actually
+  shows other reps' planned routes (grouped per rep, "My Planned Route" / "`<Name>`'s Planned
+  Route") instead of lumping them into an unlabeled dot; `PlannedDayModal` gained
+  `visits`/`title`/`readOnly` props so another rep's route reuses the same look as your own, minus
+  Edit/Delete. Two real CSS reflow bugs fixed: a long pill forcing its whole grid column (and the
+  page) wider (`grid-template-columns` needed `minmax(0, 1fr)`, not bare `1fr`), and the page
+  shifting left/right on every tab switch (scrollbar toggling on/off — fixed with `html {
+  overflow-y: scroll; scrollbar-gutter: stable; }`). A "+N more" chip now caps how many pills a day
+  cell shows; clicking it (or now, clicking the day number itself, even on an empty day) opens
+  `DayOverflowModal` — rebuilt across several rounds into a real anchored popover (portal to
+  `<body>`, positioned in document coordinates, centered on the day cell's own midpoint then
+  clamped to the viewport so it doesn't jam against a screen edge) showing every pill as an actual
+  rectangular (not fully-rounded — "nothing else in this app lets you click a rounded pill") colored
+  button. The Mine/All-reps scope toggle is now lifted into `App.jsx` so it survives switching tabs,
+  reset back to "Mine" only on logout. Also: "Upcoming Visits" (a `status: 'planned'` mirror of
+  Visit History) was added to both PlaceDetail and PersonDetail, then deliberately reverted from
+  PersonDetail alone — route-planner-committed visits never get a `person_id`, so that card would
+  read empty for everyone until the planning flow changes to support pinning a contact ahead of
+  time. 153 tests pass, client build clean. Full narrative in `NOTES.md`'s matching entry. Not yet
+  pushed.
 
 ---
 

@@ -263,6 +263,17 @@ router.get('/:id', async (req, res, next) => {
       .orderBy('v.id', 'desc')
       .select('v.*', 'u.name as user_name');
 
+    // The mirror image of visit history: still-open route-planner-committed
+    // visits, soonest first — see the "Upcoming Visits" card in
+    // PlaceDetail.jsx.
+    const upcomingVisits = await knex('visits as v')
+      .leftJoin('users as u', 'u.id', 'v.user_id')
+      .where('v.place_id', place.id)
+      .where('v.status', 'planned')
+      .orderBy('v.scheduled_date', 'asc')
+      .orderBy('v.sort_order', 'asc')
+      .select('v.*', 'u.name as user_name');
+
     const people = await knex('people')
       .where({ place_id: place.id })
       .orderBy('name', 'asc');
@@ -298,6 +309,7 @@ router.get('/:id', async (req, res, next) => {
     res.json({
       ...decorate(place),
       visits,
+      upcoming_visits: upcomingVisits,
       people: peopleWithMetrics,
       referral_metrics: referralMetrics,
     });

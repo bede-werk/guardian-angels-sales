@@ -85,6 +85,15 @@
 }
 
 * { box-sizing: border-box; }
+/* Always reserve the vertical scrollbar's gutter, even on a tab short
+   enough not to need one (e.g. Route Planner) — without this, switching to/
+   from a taller tab (Places, Dashboard, ...) toggles the scrollbar on and
+   off, and since .app below is centered with margin: 0 auto, that toggle
+   shifts the whole page a few pixels left/right on every tab change. Both
+   properties do the same job; scrollbar-gutter is the modern one that keeps
+   the gutter blank instead of always painting a track, overflow-y is the
+   universal fallback for browsers that don't support it yet. */
+html { overflow-y: scroll; scrollbar-gutter: stable; }
 body {
   margin: 0;
   font-family: var(--font-sans);
@@ -402,7 +411,15 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
    nav strip (prev/title/next) — same look at both scales. */
 .month-calendar { width: 100%; }
 .month-calendar-grid {
-  display: grid; grid-template-columns: repeat(7, 1fr);
+  display: grid;
+  /* minmax(0, 1fr), not bare 1fr — a grid track's default minimum is `auto`
+     (its content's min-content size), so a long nowrap pill inside a day
+     cell would otherwise force that whole column, and the grid alongside
+     it, wider to fit it. minmax(0, 1fr) caps each track back to its fair
+     1fr share regardless of content, so overflow is left to the pill itself
+     (see .planned-route-badge's own overflow/text-overflow) rather than
+     bubbling up into the layout. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 1px; background: var(--border); border: 1px solid var(--border);
   border-radius: var(--radius-md); overflow: hidden;
 }
@@ -418,30 +435,72 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 /* Today's ring — the one thing the cell itself still signals passively; the
    day as a whole is otherwise inert, see MonthCalendar.jsx's header. */
 .month-calendar-day.today { box-shadow: inset 0 0 0 2px var(--blue); border-radius: var(--radius-sm); }
-.month-calendar-daynum { line-height: 1; }
-/* "Planned Route" / "Completed" — the genuinely clickable things in a day
-   cell that has your own committed route-planner visits, or any completed
-   visits, on it (see VisitsCalendar.jsx's renderDay/splitDayVisits). Small/
-   pill-shaped so each reads as a distinct nested control, not a second day
-   number. Same color pairing CalendarDayModal's statusBadge uses (planned →
-   blue, completed → teal). */
-.planned-route-badge, .completed-visits-badge {
+/* A plain <button> reset back to reading as the bare day number it always
+   was — font/color inherited from .month-calendar-day rather than the
+   browser's own button chrome — plus a hover color as the one hint that
+   it's actually clickable (opens DayOverflowModal for the whole day, see
+   VisitsCalendar.jsx's renderDayNum). */
+.month-calendar-daynum {
+  font: inherit; color: inherit; line-height: 1;
+  background: none; border: none; padding: 0; cursor: pointer;
+}
+.month-calendar-daynum:hover { color: var(--blue); }
+/* "Planned Route" / "Completed" / "+N more" — the genuinely clickable things
+   in a day cell that has committed route-planner visits (one badge per rep,
+   in "All reps" scope, capped at MAX_VISIBLE_PILLS — see VisitsCalendar.jsx's
+   renderDay/splitPillsForDay), or any completed visits, on it. Same
+   border-radius as .btn (var(--radius-sm), not a fully-rounded pill) so
+   these read as clickable buttons rather than plain status tags — nothing
+   else on this app lets you click a rounded pill. Same color pairing
+   CalendarDayModal's statusBadge uses (planned → blue, completed → teal);
+   "+N more" gets a neutral grey since it isn't its own status. */
+.planned-route-badge, .completed-visits-badge, .pill-overflow-badge {
   font-family: var(--font-sans); font-size: 10px; font-weight: 700;
-  padding: 3px 7px; border-radius: 999px; border: none; cursor: pointer;
+  padding: 3px 7px; border-radius: var(--radius-sm); border: none; cursor: pointer;
   white-space: nowrap; line-height: 1.3;
+  /* Capped to the day cell's own width rather than growing it — a long rep
+     name (e.g. "Nikki Shasserre's Planned Route") truncates with an
+     ellipsis instead of overflowing into neighboring cells or forcing the
+     grid to reflow. */
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box;
 }
 .planned-route-badge { background: var(--blue-tint-1); color: var(--blue-dark); }
 .planned-route-badge:hover { background: var(--blue-tint-3); }
 .completed-visits-badge { background: var(--teal-tint-2); color: var(--teal-dark); }
 .completed-visits-badge:hover { background: var(--teal-tint-4); }
-/* Status dots for everything NOT covered by those two badges (skipped
-   visits, and in "All reps" scope, other reps' still-open planned visits) —
-   clickable as a group, opening CalendarDayModal for just that slice. */
+.pill-overflow-badge { background: var(--grey-tint-1); color: var(--grey-dark); }
+.pill-overflow-badge:hover { background: var(--grey-tint-2); }
+/* Same grey as the day-dot/status-badge skipped color elsewhere — only used
+   inside DayOverflowModal's enlarged view (see .day-overview-pill below),
+   since the day cell itself still shows skipped visits as a plain dot. */
+.skipped-visits-badge { background: var(--grey-tint-1); color: var(--grey-dark); }
+.skipped-visits-badge:hover { background: var(--grey-tint-2); }
+
+/* DayOverflowModal — the "+N more" popover, a small floating card (same
+   look/z-index family as .picker-menu above) anchored to the chip that
+   opened it and positioned via JS (see the component's own useLayoutEffect),
+   not centered like a real modal. Its pills reuse the day cell's own pill
+   classes/colors, just oversized and untruncated — same specificity as the
+   base .planned-route-badge rule, so this only wins because it's declared
+   later; keep it below that rule. */
+.day-overview-popover {
+  position: absolute; background: #fff; border: 1px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: var(--shadow); z-index: 45; padding: var(--space-4);
+  min-width: 220px; max-width: 340px;
+}
+.day-overview-popover-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
+.day-overview-popover-head h3 { margin: 0; font-size: 15px; font-family: var(--font-serif); font-weight: 600; }
+.day-overview-pills { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.day-overview-pill {
+  font-size: 12px; padding: 6px 12px; white-space: normal;
+  max-width: none; overflow: visible; text-overflow: clip;
+}
+/* Status dot for skipped visits — the one status not covered by the two
+   badges above — clickable, opening CalendarDayModal for just that slice. */
 .day-dots { display: flex; gap: 4px; margin-top: auto; border: none; background: none; padding: 0; }
 .day-dots.clickable { cursor: pointer; }
 .day-dots.clickable:hover .day-dot { opacity: 0.6; }
 .day-dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
-.day-dot.planned { background: var(--blue); }
 .day-dot.skipped { background: var(--grey); }
 
 /* Selected-dates + per-date hours list, next to the calendar in Plan My
