@@ -20,13 +20,37 @@ const EDITABLE = [
   'phone',
   'preferences',
   'notes',
-  'birthday',
+  'birthday_month',
+  'birthday_day',
 ];
 
 // Checks the enum-like fields against their allowed values. Returns an error
-// string to send back to the client, or null if everything's valid.
+// string to send back to the client, or null if everything's valid. Plain
+// bounds checks, not full per-month day-count validation — the client's own
+// Day <select> only ever offers valid days for whichever month is picked, so
+// this is just a backstop.
 function validate(payload) {
-  return validatePhone(payload.phone);
+  const phoneErr = validatePhone(payload.phone);
+  if (phoneErr) return phoneErr;
+  if (payload.birthday_month != null && (payload.birthday_month < 1 || payload.birthday_month > 12)) {
+    return 'birthday_month must be between 1 and 12';
+  }
+  if (payload.birthday_day != null && (payload.birthday_day < 1 || payload.birthday_day > 31)) {
+    return 'birthday_day must be between 1 and 31';
+  }
+  return null;
+}
+
+// '' (the picker's unselected option) -> null (clearing), otherwise Number(...)
+// — same coercion shape as person_id/user_id elsewhere in this app. Mutates
+// payload in place; called after EDITABLE has already copied raw body values in.
+function coerceBirthdayFields(payload) {
+  if (payload.birthday_month !== undefined) {
+    payload.birthday_month = payload.birthday_month === '' || payload.birthday_month === null ? null : Number(payload.birthday_month);
+  }
+  if (payload.birthday_day !== undefined) {
+    payload.birthday_day = payload.birthday_day === '' || payload.birthday_day === null ? null : Number(payload.birthday_day);
+  }
 }
 
 // Re-sorts the already-decorated (referral_metrics attached) people list per
@@ -125,6 +149,33 @@ router.get('/people', async (req, res, next) => {
   }
 });
 
+// GET /api/people/birthdays?month=<1-12> — every person with a birthday in
+// the given month, across every place, for the Calendar tab's birthday
+// badges. Registered before /people/:id so Express doesn't match "birthdays"
+// as an :id param. Not scoped to the requesting rep at all (no userId
+// filter) — a birthday isn't rep-owned data, same as places/people generally
+// aren't anywhere else in this app. No year in the query either, since
+// birthday_month/day themselves have no year — a birthday recurs every year
+// by construction, so this always answers "who has a birthday in month X"
+// regardless of which year's instance of that month the Calendar happens to
+// be showing.
+router.get('/people/birthdays', async (req, res, next) => {
+  try {
+    const month = Number(req.query.month);
+    if (!Number.isInteger(month) || month < 1 || month > 12) {
+      return res.status(400).json({ error: 'month is required, 1-12' });
+    }
+    const rows = await knex('people as pe')
+      .leftJoin('places as p', 'p.id', 'pe.place_id')
+      .where('pe.birthday_month', month)
+      .orderBy('pe.birthday_day', 'asc')
+      .select('pe.id', 'pe.name', 'pe.place_id', 'p.name as place_name', 'pe.birthday_day');
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/people/:id — a person with their place, full visit history (every
 // visit where this person was the recorded contact), and every referral
 // they've sent us.
@@ -199,6 +250,7 @@ router.post('/people', async (req, res, next) => {
 
     const payload = { place_id: placeId, name: String(name).trim() };
     for (const f of EDITABLE) if (f !== 'name' && req.body[f] !== undefined) payload[f] = req.body[f];
+    coerceBirthdayFields(payload);
 
     const validationError = validate(payload);
     if (validationError) return res.status(400).json({ error: validationError });
@@ -225,6 +277,7 @@ router.patch('/people/:id', async (req, res, next) => {
 
     const update = { updated_at: knex.fn.now() };
     for (const f of EDITABLE) if (req.body[f] !== undefined) update[f] = req.body[f];
+    coerceBirthdayFields(update);
 
     // place_id isn't in EDITABLE — it needs its own validation and side
     // effects (rather than a straight copy), since it's how a person gets

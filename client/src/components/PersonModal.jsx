@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '../api';
+import { api, MONTH_NAMES, daysInMonth } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
@@ -24,7 +24,8 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
     title: person?.title || '',
     email: person?.email || '',
     phone: person?.phone || '',
-    birthday: person?.birthday || '',
+    birthday_month: person?.birthday_month || '',
+    birthday_day: person?.birthday_day || '',
     preferences: person?.preferences || '',
     notes: person?.notes || '',
   });
@@ -145,9 +146,23 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
             <textarea rows={2} value={form.notes} onChange={set('notes')} />
           </div>
 
-          <div style={{ maxWidth: 200 }}>
+          <div>
             <label className="field">Birthday</label>
-            <input value={form.birthday} onChange={set('birthday')} placeholder="e.g. March 14" />
+            <div className="row">
+              <select
+                value={form.birthday_month}
+                onChange={(e) => setForm((f) => ({ ...f, birthday_month: e.target.value, birthday_day: '' }))}
+              >
+                <option value="">Month</option>
+                {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+              </select>
+              <select value={form.birthday_day} onChange={set('birthday_day')} disabled={!form.birthday_month}>
+                <option value="">Day</option>
+                {Array.from({ length: daysInMonth(Number(form.birthday_month)) }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
         <div className="modal-foot">

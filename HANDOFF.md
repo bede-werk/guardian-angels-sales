@@ -245,10 +245,10 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
    If you touch this, keep that contract.
 
 **Natural next steps Bede has flagged but not yet asked for** (don't just do these — check
-first): extending "needs attention" coverage to the "Route Planner" workspace (the old
-scheduler's "Today's Route" screen is gone — this app now has one route-planning surface),
-feeding referral metrics into priority scoring (the natural successor to the old "Phase 2
-relationship-temp" idea).
+first): feeding referral metrics into priority scoring (the natural successor to the old
+"Phase 2 relationship-temp" idea) — see §14's note on `needs_attention` having been removed
+app-wide 2026-07-24; the underlying `referral_metrics` numbers (lifetime/last/90-day) are
+still live and usable here, just not that specific flag.
 
 **If something in this note contradicts the actual code** (a file's gone, a function's
 renamed), trust the code — this note is a snapshot from one point in time, not a live source
@@ -962,20 +962,16 @@ Railway's autodetection until `railway.json` pinned the builder/commands.
   existing "address not recognized — save anyway?" dialog will null the coordinates back out if
   someone clicks through it. Fixing that for real means picking a second geocoding provider —
   a real design decision, not done here.
-- **Fix `CalendarDayModal`'s hardcoded title suffix.** It picked up a manual edit
-  (`· Completed Visits`) outside a normal session's own changes — real problem: the Calendar
-  tab now reuses this same modal for TWO different filtered views (the "Completed Visits" badge
-  AND the leftover skipped/other-reps'-planned status dots), so that suffix is wrong on the
-  second one. Flagged 2026-07-28, deliberately left as-is at Bede's explicit request rather than
-  making it conditional in the moment — pick up tomorrow.
-- **"Needs attention" coverage on Route Planner:** referral metrics are wired into the
-  People tab, Places tab, both detail pages, and the Dashboard, but not the route-planning
-  screen's stop cards.
+- **DONE (2026-07-29).** ~~Fix `CalendarDayModal`'s hardcoded title suffix~~ — first fixed with an
+  explicit `title` prop, then rendered moot entirely: at Bede's request, the shared component was
+  split into two dedicated ones, `CompletedVisitsModal.jsx` and `SkippedVisitsModal.jsx`
+  (`CalendarDayModal.jsx` no longer exists), so there's no longer a shared title to mismatch.
 - **Feed referral metrics into priority scoring:** `services/priority.js` still only scores
   off tier + the manual priority star; folding in a place's `referral_metrics` (e.g. boost
-  the ones with high recent referral activity, or resurface ones that are `needs_attention`)
-  is the natural successor to the old "Phase 2 relationship-temp" idea now that there's an
-  objective activity signal to use instead.
+  the ones with high recent referral activity) is the natural successor to the old "Phase 2
+  relationship-temp" idea now that there's an objective activity signal to use instead. (Note:
+  the old `needs_attention` flag this used to reference was removed app-wide 2026-07-24 —
+  don't resurface it, just the raw lifetime/last/90-day numbers.)
 - `NEGLECT_MULTIPLIER`/`CADENCE_DAYS` (route-planner scoring config) are meant to become
   user-editable settings eventually, not stay hardcoded.
 - **Postgres backups** once real data accumulates (Railway backups or `pg_dump`), if/when

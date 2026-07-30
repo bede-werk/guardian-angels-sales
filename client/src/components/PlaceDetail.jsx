@@ -473,7 +473,11 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         <VisitDetailModal
           visit={viewingVisit}
           onClose={() => setViewingVisit(null)}
-          onEdit={(v) => { setViewingVisit(null); setEditingVisit(v); }}
+          onEdit={(v) => {
+            if (v.user_id != null && v.user_id !== userId && !window.confirm("This visit is logged under a different rep's account. Edit it anyway?")) return;
+            setViewingVisit(null);
+            setEditingVisit(v);
+          }}
           onDelete={(v) => { setViewingVisit(null); removeVisit(v); }}
         />
       )}
@@ -482,6 +486,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         <UpcomingVisitDetailModal
           visit={viewingUpcomingVisit}
           onClose={() => setViewingUpcomingVisit(null)}
+          onComplete={(v) => { setViewingUpcomingVisit(null); setEditingVisit(v); }}
         />
       )}
 

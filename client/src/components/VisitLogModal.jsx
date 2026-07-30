@@ -1,15 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../api';
+import { api, today, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import PersonModal from './PersonModal';
 
 const CREATE_PERSON = '__create_person__'; // sentinel option value for "+ Create new person…"
 
 // Modal for logging/updating a visit. For now this is deliberately minimal:
-// notes plus who you met with — outcome, next-visit-date, and manual contact
-// fields aren't editable here yet. Any of those already present on an
-// existing `visit` are preserved as-is (carried through in the save payload)
-// rather than shown or cleared.
+// date (not always editable — see below), visit type, notes, plus who you
+// met with — outcome, next-visit-date, and manual contact fields aren't
+// editable here yet. Any of those already present on an existing `visit` are
+// preserved as-is (carried through in the save payload) rather than shown or
+// cleared. The Date field is hidden only when `visit.status === 'planned'`
+// — a still-open route-planner stop, whose date is fixed to whatever the
+// route planner assigned it (completing it via UpcomingVisitDetailModal
+// shouldn't let the date drift from the day it was actually scheduled for).
+// Every other case shows it editable: a brand-new ad-hoc visit (no `visit`
+// at all) defaults to today, and correcting an already-completed visit's
+// date (opened via VisitDetailModal's Edit) is just as valid a correction as
+// its notes/outcome/contact already are.
 // `visit` is passed when editing an existing visit (has visit_id); when
 // opened from a place with no visit yet, `placeId` is provided instead to
 // create a brand-new ad-hoc visit (from PlaceDetail.jsx). `initialPerson`
@@ -23,6 +31,8 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   // Whichever way this modal was opened, we need to know which place it's for.
   const resolvedPlaceId = visit?.place_id || placeId;
   const [form, setForm] = useState({
+    scheduled_date: visit?.scheduled_date || today(),
+    visit_type: visit?.visit_type || 'drop_in',
     outcome: visit?.outcome || '',
     notes: visit?.notes || '',
     person_id: visit?.person_id || initialPerson?.id || '',
@@ -112,7 +122,6 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
         saved = await api.createVisit({
           place_id: placeId,
           user_id: userId,
-          scheduled_date: new Date().toISOString().slice(0, 10),
           ...payload,
         });
       }
@@ -151,6 +160,22 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
+
+          {visit?.status !== 'planned' && (
+            <div>
+              <label className="field">Date</label>
+              <input type="date" value={form.scheduled_date} max={today()} onChange={set('scheduled_date')} />
+            </div>
+          )}
+
+          <div>
+            <label className="field">Visit type</label>
+            <select value={form.visit_type} onChange={set('visit_type')}>
+              {Object.entries(VISIT_TYPE_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </div>
 
           <div>
             <label className="field">Notes</label>

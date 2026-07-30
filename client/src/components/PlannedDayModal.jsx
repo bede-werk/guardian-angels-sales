@@ -3,13 +3,23 @@ import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
 import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import VisitLogModal from './VisitLogModal';
+import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 
 // "Already Planned" day drill-down — clicking a committed date's row (see
 // RoutePlanner.jsx) opens this instead of exposing Edit/Delete directly on the
 // row, matching how Places.jsx/People.jsx keep a list row plain and put the
-// actual actions inside the detail modal it opens. Each visit's name is
-// itself clickable to open full PlaceDetail (via onViewPlace), same pattern
-// as a DraftDay's proposed stops.
+// actual actions inside the detail modal it opens. This is a list of
+// VISITS first and foremost: clicking a row opens the same read-only
+// UpcomingVisitDetailModal PlaceDetail's own "Upcoming visits" card uses,
+// whose "Complete Visit" action is what actually opens VisitLogModal (see
+// onComplete below) — this is how a planned stop becomes a completed one;
+// logging it drops the row out of this list (reloadOwnVisits) and, via
+// onChanged, tells VisitsCalendar to reload so the day cell's pills
+// (planned -> completed) update too. A separate "View place" button is the
+// way into full PlaceDetail (onViewPlace) instead — the inverse of the row
+// click, on purpose, since this modal's whole point is showing what's
+// planned for the day, not the places themselves.
 //
 // Also reused read-only for another rep's planned route (VisitsCalendar.jsx,
 // "All reps" scope) — pass `visits` directly (already-loaded calendar rows,
@@ -18,9 +28,11 @@ import EmptyState from './ui/EmptyState';
 // from "Planned Route" to e.g. "Nikki Shasserre's Planned Route". Someone
 // else's route can never be reopened/deleted from here — only the owning
 // rep's own committed-day endpoints support that (see scheduleDrafts.js).
-export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, title, readOnly }) {
+export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, title, readOnly, userId, onChanged }) {
   const [visits, setVisits] = useState(providedVisits ?? null);
   const [loadError, setLoadError] = useState(null);
+  const [viewingVisit, setViewingVisit] = useState(null); // planned visit open in UpcomingVisitDetailModal, or null
+  const [loggingVisit, setLoggingVisit] = useState(null); // planned visit open in VisitLogModal for completing, or null
 
   useEffect(() => {
     if (providedVisits) return;
@@ -30,6 +42,17 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
       .catch((e) => { if (!cancelled) setLoadError(e.message); });
     return () => { cancelled = true; };
   }, [date, providedVisits]);
+
+  // A logged visit is no longer `status: 'planned'`, so it should drop out of
+  // this list — same server call the mount effect above uses, just re-run on
+  // demand instead of only once. Not applicable to the read-only other-rep
+  // case (no reload prop, and the Log button never renders there anyway).
+  function reloadOwnVisits() {
+    if (providedVisits) return;
+    api.scheduleDrafts.committedDayVisits(date)
+      .then(setVisits)
+      .catch((e) => setLoadError(e.message));
+  }
 
   return (
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
@@ -50,20 +73,22 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
               {visits.map((v) => (
                 <li key={v.visit_id ?? v.id} className="stop">
                   <div
-                    className={`main${v.place_id ? ' hover-row' : ''}`}
-                    title={v.place_id ? 'View place details' : undefined}
-                    onClick={v.place_id ? () => onViewPlace(v.place_id) : undefined}
+                    className="main hover-row"
+                    title="View this visit's details"
+                    onClick={() => setViewingVisit(v)}
                   >
                     <div className="tag-list" style={{ alignItems: 'center' }}>
                       <div className="name">{v.place_name}</div>
                       {v.category && <CategoryChip category={v.category} />}
                     </div>
-                    {v.address && (
-                      <div className="meta">{v.address}, {v.city} {v.zip}</div>
-                    )}
+                    <div className="tiny muted">{VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}</div>
                   </div>
-                  <div className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
-                    {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
+                  <div className="actions" style={{ alignItems: 'center' }}>
+                    {v.place_id && (
+                      <Button variant="secondary" size="small" title="View this place's details" onClick={() => onViewPlace(v.place_id)}>
+                        View place
+                      </Button>
+                    )}
                   </div>
                 </li>
               ))}
@@ -92,6 +117,23 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
           </div>
         )}
       </div>
+
+      {viewingVisit && (
+        <UpcomingVisitDetailModal
+          visit={viewingVisit}
+          onClose={() => setViewingVisit(null)}
+          onComplete={readOnly ? undefined : (v) => { setViewingVisit(null); setLoggingVisit(v); }}
+        />
+      )}
+
+      {loggingVisit && (
+        <VisitLogModal
+          visit={loggingVisit}
+          userId={userId}
+          onClose={() => setLoggingVisit(null)}
+          onSaved={() => { reloadOwnVisits(); onChanged?.(); }}
+        />
+      )}
     </div>
   );
 }

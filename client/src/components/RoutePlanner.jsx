@@ -1203,6 +1203,8 @@ export default function RoutePlanner({ userId }) {
       {viewingDate && (
         <PlannedDayModal
           date={viewingDate}
+          userId={userId}
+          onChanged={refreshCommittedDates}
           onClose={() => setViewingDate(null)}
           onViewPlace={setViewingPlaceId}
           onEditDay={async () => { if (await reopenDay(viewingDate)) setViewingDate(null); }}

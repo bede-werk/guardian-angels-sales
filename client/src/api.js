@@ -99,6 +99,7 @@ export const api = {
     create: (body) => request('/people', { method: 'POST', body }), // place_id in body is optional
     update: (id, body) => request(`/people/${id}`, { method: 'PATCH', body }),
     remove: (id) => request(`/people/${id}`, { method: 'DELETE' }),
+    birthdays: (month) => request(`/people/birthdays?month=${month}`), // month is 1-12; Calendar tab's birthday badges
   },
 
   // Referrals — server/src/routes/referrals.js
@@ -190,6 +191,23 @@ export const VISIT_TYPE_LABELS = {
 // Today's date as 'YYYY-MM-DD', matching how dates are stored/compared everywhere else.
 export function today() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Month names for the birthday picker (PersonModal.jsx/PersonDetail.jsx) and
+// the Calendar tab's birthday badges — a separate array from
+// ui/MonthCalendar.jsx's own internal one rather than a refactor of that
+// working file, same small-duplication tradeoff as VISIT_TYPE_LABELS above.
+export const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// Birthdays have no year on file (often unknown), so this is generic per
+// month rather than leap-year-aware for a specific year — February is
+// capped at 29 so a leap-day birthday can still be entered.
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+export function daysInMonth(month) {
+  return DAYS_IN_MONTH[month - 1] || 31;
 }
 
 // Formats a 'YYYY-MM-DD' date string as 'M/D/YYYY' for display (no leading

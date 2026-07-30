@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, formatDate } from '../api';
+import { api, formatDate, MONTH_NAMES } from '../api';
 import { getCurrentPosition } from '../geolocation';
 import MonthCalendar from './ui/MonthCalendar';
-import CalendarDayModal from './CalendarDayModal';
+import CompletedVisitsModal from './CompletedVisitsModal';
+import SkippedVisitsModal from './SkippedVisitsModal';
 import PlannedDayModal from './PlannedDayModal';
 import DayOverflowModal from './DayOverflowModal';
+import BirthdayModal from './BirthdayModal';
 import PlaceDetail from './PlaceDetail';
+import PersonDetail from './PersonDetail';
 import VisitLogModal from './VisitLogModal';
 import VisitDetailModal from './VisitDetailModal';
 
@@ -22,11 +25,11 @@ function monthKeyOf(date) {
 // possible buckets per visit: a rep's still-open planned route
 // (plannedGroups, one group per rep — own group opens PlannedDayModal, the
 // exact same component/read-as-you're-used-to-it-in-Route-Planner view;
-// every other rep's group opens CalendarDayModal instead), completed visits
-// (completedVisits — any rep, opens CalendarDayModal filtered to just
-// those), and skipped visits (otherVisits — the one status left once
-// planned/completed are both accounted for above — also CalendarDayModal).
-// Planned and completed are kept strictly separate buckets by design: a
+// every other rep's group opens PlannedDayModal too, read-only), completed
+// visits (completedVisits — any rep, opens CompletedVisitsModal), and
+// skipped visits (otherVisits — the one status left once planned/completed
+// are both accounted for above — opens SkippedVisitsModal). Planned and
+// completed are kept strictly separate buckets by design: a
 // visit only ever moves from one to the other by its own `status` actually
 // changing (e.g. logging a planned visit marks that same row completed —
 // see VisitLogModal), never by any special-casing here — the next load()
@@ -43,7 +46,7 @@ function splitDayVisits(dayVisits, userId) {
     if (v.status === 'planned') {
       let group = plannedByUser.get(v.user_id);
       if (!group) {
-        group = { userId: v.user_id, repName: v.rep_name, visits: [] };
+        group = { userId: v.user_id, repName: v.user_name, visits: [] };
         plannedByUser.set(v.user_id, group);
       }
       group.visits.push(v);
@@ -109,9 +112,9 @@ function buildFullDayPills(dayVisits, userId) {
 
 // The Calendar tab: a full month grid (ui/MonthCalendar.jsx, generic/
 // unbounded) fed by GET /api/visits/calendar, plus its day drill-downs
-// (PlannedDayModal for your own planned route; CalendarDayModal for
-// everything else — another rep's planned route, completed visits, skipped
-// visits) and the usual place/visit modals layered on top of those. This component
+// (PlannedDayModal for a planned route, own or another rep's;
+// CompletedVisitsModal/SkippedVisitsModal for those statuses) and the usual
+// place/visit modals layered on top of those. This component
 // owns every "which modal is open" flag for that whole stack, same division
 // of responsibility PlaceDetail uses for its own nested PersonDetail/
 // VisitDetailModal/VisitLogModal popups.
@@ -131,18 +134,25 @@ function buildFullDayPills(dayVisits, userId) {
 export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onScopeChange }) {
   const [monthCursor, setMonthCursor] = useState(() => new Date());
   const [visits, setVisits] = useState(null); // flat rows from the API, or null before the first load resolves
-  const [users, setUsers] = useState([]); // every team member, fetched once — for rep lookups if a row's own rep_name snapshot is ever missing
-  const [selectedDate, setSelectedDate] = useState(null); // iso string driving CalendarDayModal (otherVisits), or null
-  const [completedDate, setCompletedDate] = useState(null); // iso string driving CalendarDayModal (completedVisits), or null
+  const [users, setUsers] = useState([]); // every team member, fetched once — for rep lookups if a row's own user_name snapshot is ever missing
+  const [selectedDate, setSelectedDate] = useState(null); // iso string driving SkippedVisitsModal (otherVisits), or null
+  const [completedDate, setCompletedDate] = useState(null); // iso string driving CompletedVisitsModal, or null
   const [plannedRouteView, setPlannedRouteView] = useState(null); // { date, group } driving the planned-route modal (own or another rep's), or null
   const [overflowAnchor, setOverflowAnchor] = useState(null); // { date, el } driving the "+N more" popover (DayOverflowModal) — `el` is the whole day cell, so the popover can land right on top of it — or null
   const [error, setError] = useState(null); // blocks the whole tab — only for the month load itself
   const [actionError, setActionError] = useState(null); // inline banner — edit/delete-day failures, doesn't blow away the grid/modal
 
-  // The three "modal on top of the day modal" flags — mirrors PlaceDetail's
-  // own viewingVisit/editingVisit pattern.
+  // Birthdays — a separate fetch from `visits`, keyed by month only (1-12,
+  // no year: a birthday has none on file, and recurs every year by
+  // construction) and never scoped by scope/userId, since a birthday isn't
+  // rep-owned data any more than a place or person is elsewhere in this app.
+  const [birthdaysByDay, setBirthdaysByDay] = useState(new Map()); // day-of-month (1-31) -> people[]
+  const [viewingBirthdaysFor, setViewingBirthdaysFor] = useState(null); // day number driving BirthdayModal, or null
+  const [viewingPersonId, setViewingPersonId] = useState(null); // person whose full PersonDetail is open, if any
+
+  // The "modal on top of the day modal" flags — mirrors PlaceDetail's own
+  // viewingVisit/editingVisit pattern.
   const [viewingPlaceId, setViewingPlaceId] = useState(null);
-  const [loggingVisit, setLoggingVisit] = useState(null); // planned visit being turned into a completed one via VisitLogModal
   const [viewingVisit, setViewingVisit] = useState(null); // completed/skipped visit open in VisitDetailModal
   const [editingVisit, setEditingVisit] = useState(null); // visit open in VisitLogModal from VisitDetailModal's Edit
 
@@ -160,10 +170,32 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
   // The popover is anchored to a specific chip button in the grid — changing
   // months re-renders the whole grid (that button included), so close it
   // rather than leave it floating over a now-different month with a stale
-  // anchor.
+  // anchor. BirthdayModal is keyed off a plain day number, meaningless once
+  // the viewed month changes, so it closes here too.
   useEffect(() => {
     setOverflowAnchor(null);
+    setViewingBirthdaysFor(null);
   }, [monthKey]);
+
+  const birthdayMonth = monthCursor.getMonth() + 1; // 1-12
+
+  const loadBirthdays = useCallback(() => {
+    api.people.birthdays(birthdayMonth)
+      .then((rows) => {
+        const m = new Map();
+        rows.forEach((r) => {
+          const list = m.get(r.birthday_day);
+          if (list) list.push(r);
+          else m.set(r.birthday_day, [r]);
+        });
+        setBirthdaysByDay(m);
+      })
+      .catch(() => {}); // non-critical — a failed birthday fetch shouldn't block the calendar itself
+  }, [birthdayMonth]);
+
+  useEffect(() => {
+    loadBirthdays();
+  }, [loadBirthdays]);
 
   // No setVisits(null) here on purpose — same shape as Dashboard.jsx's own
   // load(): after the first successful load, later month/scope changes just
@@ -189,6 +221,16 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
     });
     return m;
   }, [visits]);
+
+  // Rare, but possible: editing a completed visit open in CompletedVisitsModal
+  // can move it off this day entirely (e.g. correcting its date) — once a
+  // reload reflects that, this day has nothing completed left to show, so
+  // close the modal instead of leaving it open on an empty list.
+  useEffect(() => {
+    if (!completedDate) return;
+    const stillHasCompleted = (byDate.get(completedDate) || []).some((v) => v.status === 'completed');
+    if (!stillHasCompleted) setCompletedDate(null);
+  }, [completedDate, byDate]);
 
   // A pill's own action — same target whether it's clicked directly off the
   // day cell or picked out of DayOverflowModal's enlarged view.
@@ -217,16 +259,37 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
     );
   }
 
+  // The day number plus its birthday badge (if any), as one row at the top
+  // of the cell — kept out of the visit-pill stack below entirely, so a
+  // birthday never eats into MAX_VISIBLE_PILLS or forces the cell to grow.
+  function renderDayTop(dateObj, iso, dayBirthdays) {
+    if (dayBirthdays.length === 0) return renderDayNum(dateObj, iso);
+    return (
+      <div className="month-calendar-day-top">
+        {renderDayNum(dateObj, iso)}
+        <button
+          type="button"
+          className="birthday-badge"
+          title={`View ${dayBirthdays.length > 1 ? `${dayBirthdays.length} birthdays` : 'birthday'} this day`}
+          onClick={() => setViewingBirthdaysFor(dateObj.getDate())}
+        >
+          🎂{dayBirthdays.length > 1 ? ` ${dayBirthdays.length}` : ''}
+        </button>
+      </div>
+    );
+  }
+
   function renderDay(dateObj, iso) {
     const dayVisits = byDate.get(iso) || [];
-    if (dayVisits.length === 0) {
+    const dayBirthdays = birthdaysByDay.get(dateObj.getDate()) || [];
+    if (dayVisits.length === 0 && dayBirthdays.length === 0) {
       return renderDayNum(dateObj, iso);
     }
     const { otherVisits } = splitDayVisits(dayVisits, userId);
     const { visible, overflow } = splitPillsForDay(dayVisits, userId);
     return (
       <>
-        {renderDayNum(dateObj, iso)}
+        {renderDayTop(dateObj, iso, dayBirthdays)}
         {visible.map((pill) => (
           <button
             key={pill.key}
@@ -320,6 +383,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
   const completedVisitsForSelected = completedDate ? splitDayVisits(byDate.get(completedDate) || [], userId).completedVisits : [];
   const isPlannedViewMine = plannedRouteView ? plannedRouteView.group.userId === userId : true;
   const fullPillsForOverflow = overflowAnchor ? buildFullDayPills(byDate.get(overflowAnchor.date) || [], userId) : [];
+  const birthdaysForSelectedDay = viewingBirthdaysFor ? birthdaysByDay.get(viewingBirthdaysFor) || [] : [];
 
   return (
     <div className="grid" style={{ gap: 16 }}>
@@ -360,6 +424,8 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
       {plannedRouteView && isPlannedViewMine && (
         <PlannedDayModal
           date={plannedRouteView.date}
+          userId={userId}
+          onChanged={load}
           onClose={() => setPlannedRouteView(null)}
           onViewPlace={(placeId) => setViewingPlaceId(placeId)}
           onEditDay={async () => {
@@ -387,27 +453,22 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
       )}
 
       {completedDate && (
-        <CalendarDayModal
+        <CompletedVisitsModal
           date={completedDate}
-          title="Completed Visits"
           visits={completedVisitsForSelected}
-          showRepName={scope === 'all'}
+          showContact={scope === 'all'}
           onClose={() => setCompletedDate(null)}
-          onViewPlace={(placeId) => setViewingPlaceId(placeId)}
-          onLogVisit={(visit) => setLoggingVisit(visit)}
           onViewVisit={(visit) => setViewingVisit(visit)}
+          onViewPlace={(placeId) => setViewingPlaceId(placeId)}
         />
       )}
 
       {selectedDate && (
-        <CalendarDayModal
+        <SkippedVisitsModal
           date={selectedDate}
-          title="Skipped Visits"
           visits={otherVisitsForSelected}
           showRepName={scope === 'all'}
           onClose={() => setSelectedDate(null)}
-          onViewPlace={(placeId) => setViewingPlaceId(placeId)}
-          onLogVisit={(visit) => setLoggingVisit(visit)}
           onViewVisit={(visit) => setViewingVisit(visit)}
         />
       )}
@@ -422,6 +483,15 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         />
       )}
 
+      {viewingBirthdaysFor && (
+        <BirthdayModal
+          label={`${MONTH_NAMES[monthCursor.getMonth()]} ${viewingBirthdaysFor}`}
+          people={birthdaysForSelectedDay}
+          onClose={() => setViewingBirthdaysFor(null)}
+          onViewPerson={(personId) => { setViewingBirthdaysFor(null); setViewingPersonId(personId); }}
+        />
+      )}
+
       {viewingPlaceId && (
         <PlaceDetail
           placeId={viewingPlaceId}
@@ -432,16 +502,14 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         />
       )}
 
-      {/* Turns an already-scheduled planned visit into a completed one —
-          passing visit_id makes VisitLogModal PATCH the existing row instead
-          of creating a new one, same as PlaceDetail/PersonDetail's own
-          editingVisit flow. No date gating: logging a late visit is allowed. */}
-      {loggingVisit && (
-        <VisitLogModal
-          visit={{ ...loggingVisit, visit_id: loggingVisit.id }}
+      {viewingPersonId && (
+        <PersonDetail
+          personId={viewingPersonId}
           userId={userId}
-          onClose={() => setLoggingVisit(null)}
-          onSaved={() => { setLoggingVisit(null); load(); }}
+          onClose={() => setViewingPersonId(null)}
+          onOpenPlace={(placeId) => { setViewingPersonId(null); setViewingPlaceId(placeId); }}
+          onChanged={loadBirthdays}
+          onDeleted={() => { setViewingPersonId(null); loadBirthdays(); }}
         />
       )}
 
@@ -449,7 +517,11 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         <VisitDetailModal
           visit={viewingVisit}
           onClose={() => setViewingVisit(null)}
-          onEdit={(v) => { setViewingVisit(null); setEditingVisit(v); }}
+          onEdit={(v) => {
+            if (v.user_id != null && v.user_id !== userId && !window.confirm("This visit is logged under a different rep's account. Edit it anyway?")) return;
+            setViewingVisit(null);
+            setEditingVisit(v);
+          }}
           onDelete={(v) => { setViewingVisit(null); removeVisit(v); }}
         />
       )}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatDate } from '../api';
+import { formatDate, VISIT_TYPE_LABELS } from '../api';
 import { OutcomeChip } from './ui/Chip';
 import Button from './ui/Button';
 
@@ -15,7 +15,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete }) {
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Visit — {visit.scheduled_date ? formatDate(visit.scheduled_date) : 'unscheduled'}</h2>
+          <h2>{visit.scheduled_date ? formatDate(visit.scheduled_date) : 'unscheduled'} · Visit</h2>
           <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body stack">
@@ -27,11 +27,10 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete }) {
           {visit.place_name && (
             <div className="tiny"><strong>Place:</strong> {visit.place_name}</div>
           )}
+          <div className="tiny"><strong>Type:</strong> {VISIT_TYPE_LABELS[visit.visit_type] || 'Visit'}</div>
           {(visit.person_name || visit.person_title || visit.person_email || visit.person_phone) && (
             <div className="tiny">
               <strong>Contact:</strong> {[visit.person_name, visit.person_title].filter(Boolean).join(', ') || '—'}
-              {visit.person_email && <div>{visit.person_email}</div>}
-              {visit.person_phone && <div>{visit.person_phone}</div>}
             </div>
           )}
           {visit.user_name && (

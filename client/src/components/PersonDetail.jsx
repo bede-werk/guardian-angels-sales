@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, formatDate } from '../api';
+import { api, formatDate, MONTH_NAMES, daysInMonth } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
@@ -42,7 +42,8 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [removingPreferences, setRemovingPreferences] = useState(false);
   const [editingBirthday, setEditingBirthday] = useState(false);
-  const [birthdayDraft, setBirthdayDraft] = useState('');
+  const [birthdayMonthDraft, setBirthdayMonthDraft] = useState('');
+  const [birthdayDayDraft, setBirthdayDayDraft] = useState('');
   const [savingBirthday, setSavingBirthday] = useState(false);
   const [removingBirthday, setRemovingBirthday] = useState(false);
 
@@ -135,10 +136,36 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const removePreferences = () =>
     removeField('preferences', "Remove these preferences? This can't be undone.", { setEditing: setEditingPreferences, setRemoving: setRemovingPreferences });
 
-  const saveBirthday = () =>
-    saveField('birthday', birthdayDraft, { setEditing: setEditingBirthday, setSaving: setSavingBirthday });
-  const removeBirthday = () =>
-    removeField('birthday', "Remove this birthday? This can't be undone.", { setEditing: setEditingBirthday, setRemoving: setRemovingBirthday });
+  // Birthday needs both fields sent together (a lone month or day is a
+  // half-set date), so unlike notes/preferences it doesn't go through the
+  // generic single-field saveField/removeField above.
+  async function saveBirthday() {
+    setSavingBirthday(true);
+    try {
+      await api.people.update(data.id, { birthday_month: birthdayMonthDraft, birthday_day: birthdayDayDraft });
+      setEditingBirthday(false);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setSavingBirthday(false);
+    }
+  }
+  async function removeBirthday() {
+    if (!window.confirm("Remove this birthday? This can't be undone.")) return;
+    setRemovingBirthday(true);
+    try {
+      await api.people.update(data.id, { birthday_month: null, birthday_day: null });
+      setEditingBirthday(false);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setRemovingBirthday(false);
+    }
+  }
 
   // The Notes card packs three independently-editable fields into one place;
   // opening one should back out of whichever of the other two is mid-edit
@@ -158,8 +185,9 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     setEditingBirthday(false);
     setAssigning(false);
   }
-  function beginEditBirthday(value) {
-    setBirthdayDraft(value);
+  function beginEditBirthday(month, day) {
+    setBirthdayMonthDraft(month || '');
+    setBirthdayDayDraft(day || '');
     setEditingBirthday(true);
     setEditingNotes(false);
     setEditingPreferences(false);
@@ -295,54 +323,6 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
             </div>
           )}
 
-          {/* Which place they belong to — or, since a person doesn't have to
-              be tied to one, a way to assign them to one. */}
-          <div className="card">
-            <div className="card-head"><h2>Place</h2></div>
-            <div className="card-body">
-              {data.place ? (
-                <div
-                  className="hover-row"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
-                  title="Open this person's place"
-                  onClick={() => onOpenPlace?.(data.place.id)}
-                >
-                  <div>
-                    <strong>{data.place.name}</strong>
-                    <div className="tiny muted">{data.place.city}, {data.place.state} {data.place.zip}</div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="small"
-                    title="Unassign from this place — they stay on file, just no longer linked here"
-                    disabled={removingFromPlace}
-                    onClick={(e) => { e.stopPropagation(); removeFromPlace(); }}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              ) : assigning ? (
-                <div className="row" style={{ alignItems: 'center' }}>
-                  <select value={placeDraft} onChange={(e) => setPlaceDraft(e.target.value)} autoFocus disabled={savingAssign}>
-                    <option value="">Select a place…</option>
-                    {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <div className="tag-list" style={{ flex: 'unset' }}>
-                    <Button size="small" title="Link this person to the selected place" onClick={assignToPlace} disabled={!placeDraft || savingAssign}>
-                      {savingAssign ? 'Saving…' : 'Save'}
-                    </Button>
-                    <Button variant="secondary" size="small" title="Close without assigning" onClick={() => { setAssigning(false); setPlaceDraft(''); }} disabled={savingAssign}>Cancel</Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="row" style={{ alignItems: 'center' }}>
-                  <EmptyState message="Not currently assigned to a place." />
-                  <Button variant="secondary" size="small" title="Link this person to a place" onClick={() => { exitFieldEdits(); setAssigning(true); }}>Assign to a place</Button>
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Durable notes/preferences about this person — persist across visits. */}
           <div className="card">
             <div className="card-head">
@@ -358,12 +338,12 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     Add preferences
                   </Button>
                 )}
-                {!data.birthday && !editingBirthday && (
+                {!data.birthday_month && !editingBirthday && (
                   <Button
                     variant="secondary"
                     size="small"
                     title="Add this person's birthday"
-                    onClick={() => beginEditBirthday('')}
+                    onClick={() => beginEditBirthday()}
                   >
                     Add birthday
                   </Button>
@@ -415,16 +395,28 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
 
               {editingBirthday ? (
                 <div className="stack">
-                  <input
-                    value={birthdayDraft}
-                    onChange={(e) => setBirthdayDraft(e.target.value)}
-                    placeholder="e.g. March 14"
-                    style={{ maxWidth: 200 }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveBirthday(); } }}
-                    autoFocus
-                  />
+                  <div className="row" style={{ maxWidth: 260 }}>
+                    <select
+                      value={birthdayMonthDraft}
+                      onChange={(e) => { setBirthdayMonthDraft(e.target.value); setBirthdayDayDraft(''); }}
+                      autoFocus
+                    >
+                      <option value="">Month</option>
+                      {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                    </select>
+                    <select
+                      value={birthdayDayDraft}
+                      onChange={(e) => setBirthdayDayDraft(e.target.value)}
+                      disabled={!birthdayMonthDraft}
+                    >
+                      <option value="">Day</option>
+                      {Array.from({ length: daysInMonth(Number(birthdayMonthDraft)) }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                    {data.birthday ? (
+                    {data.birthday_month ? (
                       <Button variant="danger" size="small" title="Delete birthday — can't be undone" onClick={removeBirthday} disabled={removingBirthday || savingBirthday}>
                         {removingBirthday ? 'Deleting…' : 'Delete'}
                       </Button>
@@ -433,15 +425,20 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                       <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingBirthday(false)} disabled={savingBirthday || removingBirthday}>
                         Cancel
                       </Button>
-                      <Button size="small" title="Save birthday" onClick={saveBirthday} disabled={savingBirthday || removingBirthday}>
+                      <Button
+                        size="small"
+                        title="Save birthday"
+                        onClick={saveBirthday}
+                        disabled={savingBirthday || removingBirthday || !birthdayMonthDraft || !birthdayDayDraft}
+                      >
                         {savingBirthday ? 'Saving…' : 'Save'}
                       </Button>
                     </div>
                   </div>
                 </div>
-              ) : data.birthday ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => beginEditBirthday(data.birthday || '')}>
-                  <strong>Birthday:</strong> {data.birthday}
+              ) : data.birthday_month ? (
+                <div className="tiny hover-row" title="Click to edit" onClick={() => beginEditBirthday(data.birthday_month, data.birthday_day)}>
+                  <strong>Birthday:</strong> {MONTH_NAMES[data.birthday_month - 1]} {data.birthday_day}
                 </div>
               ) : null}
 
@@ -475,9 +472,57 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                   {data.notes}
                 </div>
               ) : (
-                !data.preferences && !data.birthday && !editingPreferences && !editingBirthday && (
+                !data.preferences && !data.birthday_month && !editingPreferences && !editingBirthday && (
                   <EmptyState message="No notes on file for this person yet." />
                 )
+              )}
+            </div>
+          </div>
+
+          {/* Which place they belong to — or, since a person doesn't have to
+              be tied to one, a way to assign them to one. */}
+          <div className="card">
+            <div className="card-head"><h2>Place</h2></div>
+            <div className="card-body">
+              {data.place ? (
+                <div
+                  className="hover-row"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
+                  title="Open this person's place"
+                  onClick={() => onOpenPlace?.(data.place.id)}
+                >
+                  <div>
+                    <strong>{data.place.name}</strong>
+                    <div className="tiny muted">{data.place.city}, {data.place.state} {data.place.zip}</div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    title="Unassign from this place — they stay on file, just no longer linked here"
+                    disabled={removingFromPlace}
+                    onClick={(e) => { e.stopPropagation(); removeFromPlace(); }}
+                  >
+                    ✕
+                  </Button>
+                </div>
+              ) : assigning ? (
+                <div className="row" style={{ alignItems: 'center' }}>
+                  <select value={placeDraft} onChange={(e) => setPlaceDraft(e.target.value)} autoFocus disabled={savingAssign}>
+                    <option value="">Select a place…</option>
+                    {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <div className="tag-list" style={{ flex: 'unset' }}>
+                    <Button size="small" title="Link this person to the selected place" onClick={assignToPlace} disabled={!placeDraft || savingAssign}>
+                      {savingAssign ? 'Saving…' : 'Save'}
+                    </Button>
+                    <Button variant="secondary" size="small" title="Close without assigning" onClick={() => { setAssigning(false); setPlaceDraft(''); }} disabled={savingAssign}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row" style={{ alignItems: 'center' }}>
+                  <EmptyState message="Not currently assigned to a place." />
+                  <Button variant="secondary" size="small" title="Link this person to a place" onClick={() => { exitFieldEdits(); setAssigning(true); }}>Assign to a place</Button>
+                </div>
               )}
             </div>
           </div>
@@ -630,7 +675,11 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         <VisitDetailModal
           visit={viewingVisit}
           onClose={() => setViewingVisit(null)}
-          onEdit={(v) => { setViewingVisit(null); setEditingVisit(v); }}
+          onEdit={(v) => {
+            if (v.user_id != null && v.user_id !== userId && !window.confirm("This visit is logged under a different rep's account. Edit it anyway?")) return;
+            setViewingVisit(null);
+            setEditingVisit(v);
+          }}
           onDelete={(v) => { setViewingVisit(null); removeVisit(v); }}
         />
       )}

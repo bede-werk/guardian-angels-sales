@@ -5,6 +5,7 @@
 const express = require('express');
 const knex = require('../db/knex');
 const { validatePhone } = require('../services/phone');
+const { VISIT_TYPES } = require('../config/visitTypes');
 
 const router = express.Router();
 
@@ -13,6 +14,9 @@ const STATUSES = ['planned', 'completed', 'skipped'];
 
 // Fields a client is allowed to set when logging/updating a visit. Anything
 // not in this list in the request body is silently ignored (not saved).
+// visit_type is otherwise only ever set once, at route-planner commit time
+// (scheduleDraft.js) — included here so it can be corrected after the fact
+// too, same as outcome/notes/etc.
 const EDITABLE = [
   'user_id',
   'scheduled_date',
@@ -26,6 +30,7 @@ const EDITABLE = [
   'person_phone',
   'next_visit_date',
   'sort_order',
+  'visit_type',
 ];
 
 // Re-fetches a visit joined to its place's basic info, for the response
@@ -71,7 +76,13 @@ router.get('/calendar', async (req, res, next) => {
     // Left joins, not inner — same detach-not-delete precedent as fetchVisit()
     // below and dashboard.js: a visit survives its place or rep being removed.
     // v.place_name is the durable place-name snapshot (always present); the
-    // rest of the place_* fields and rep_name are honestly null if detached.
+    // rest of the place_* fields and user_name are honestly null if detached.
+    // Column list (and the `u.name as user_name` alias) deliberately mirrors
+    // places.js/people.js's own visit-history queries (`v.*` + user_name) —
+    // this feeds the same VisitDetailModal/UpcomingVisitDetailModal those do,
+    // and a differently-named or narrower select here previously meant a
+    // visit opened from the Calendar tab silently showed less than the exact
+    // same row opened from PlaceDetail/PersonDetail.
     const rows = await knex('visits as v')
       .leftJoin('places as p', 'p.id', 'v.place_id')
       .leftJoin('users as u', 'u.id', 'v.user_id')
@@ -89,13 +100,19 @@ router.get('/calendar', async (req, res, next) => {
         'p.city',
         'p.zip',
         'v.user_id',
-        'u.name as rep_name',
+        'u.name as user_name',
         'v.scheduled_date',
         'v.status',
         'v.outcome',
         'v.notes',
         'v.visit_type',
-        'v.source'
+        'v.source',
+        'v.person_id',
+        'v.person_name',
+        'v.person_title',
+        'v.person_email',
+        'v.person_phone',
+        'v.next_visit_date'
       );
 
     res.json(rows);
@@ -125,6 +142,9 @@ router.post('/', async (req, res, next) => {
     }
     if (payload.status && !STATUSES.includes(payload.status)) {
       return res.status(400).json({ error: `status must be one of ${STATUSES.join(', ')}` });
+    }
+    if (payload.visit_type && !VISIT_TYPES[payload.visit_type]) {
+      return res.status(400).json({ error: `visit_type must be one of ${Object.keys(VISIT_TYPES).join(', ')}` });
     }
 
     // user_id and person_id are both nullable FKs (a visit doesn't have to be
@@ -163,15 +183,22 @@ router.post('/', async (req, res, next) => {
 });
 
 // PATCH /api/visits/:id — log or update a visit (notes, person, outcome, etc.).
-// This is what the "Log Visit" form actually calls when saving.
+// This is what the "Log Visit" form actually calls when saving. A rep can
+// correct any already-logged (completed/skipped) visit, including one under
+// a teammate's account — the client confirms that's intentional first (see
+// the "logged under a different rep's account" confirm before opening
+// VisitLogModal in VisitsCalendar.jsx/PlaceDetail.jsx/PersonDetail.jsx), but
+// isn't blocked here. A still-`planned` visit is different: that's someone
+// else's not-yet-happened scheduled stop, not history to correct, so
+// completing/editing it stays restricted to its own owning rep.
 router.patch('/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
     const visit = await knex('visits').where({ id }).first();
     if (!visit) return res.status(404).json({ error: 'Visit not found' });
-    if (visit.user_id != null && visit.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'You can only edit visits scheduled under your own account' });
+    if (visit.status === 'planned' && visit.user_id != null && visit.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only edit a still-planned visit under your own account' });
     }
 
     const update = { updated_at: knex.fn.now() };
@@ -182,6 +209,9 @@ router.patch('/:id', async (req, res, next) => {
     }
     if (update.status && !STATUSES.includes(update.status)) {
       return res.status(400).json({ error: `status must be one of ${STATUSES.join(', ')}` });
+    }
+    if (update.visit_type && !VISIT_TYPES[update.visit_type]) {
+      return res.status(400).json({ error: `visit_type must be one of ${Object.keys(VISIT_TYPES).join(', ')}` });
     }
 
     // Same nullable-FK validation as POST above — user_id/person_id are only

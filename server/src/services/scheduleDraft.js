@@ -361,6 +361,13 @@ async function committedDateSummaries(db, userId, { today } = {}) {
 // date). Left-joins `places` for category/address/city/zip since a visit's
 // place can be detached (place_id null, or the row simply gone) — v.place_name
 // is the detach-safe snapshot, always present regardless.
+// Includes v.scheduled_date/notes/person_*/status even though every row here
+// is necessarily on `date` and status:'planned' (both already fixed by the
+// where clause) — PlannedDayModal's "View visit" action feeds a row straight
+// into UpcomingVisitDetailModal, which expects the same shape as places.js's
+// own upcomingVisits query (status included: VisitLogModal uses it to decide
+// whether its Date field is editable) and would otherwise show a blank
+// header date.
 async function committedDayVisits(db, userId, date) {
   return db('visits as v')
     .leftJoin('places as p', 'v.place_id', 'p.id')
@@ -371,6 +378,14 @@ async function committedDayVisits(db, userId, date) {
       'v.place_id',
       'v.place_name',
       'v.visit_type',
+      'v.scheduled_date',
+      'v.status',
+      'v.notes',
+      'v.person_id',
+      'v.person_name',
+      'v.person_title',
+      'v.person_email',
+      'v.person_phone',
       'p.category',
       'p.address',
       'p.city',
@@ -1169,6 +1184,23 @@ async function reopenCommittedDay({ userId, date, homeBase }) {
       visit_type: r.visit_type,
       sort_order: r.sort_order ?? i,
     }));
+
+    // One of these places can already sit on some OTHER day of this same
+    // draft (e.g. a normal-cadence revisit already proposed for later this
+    // week, generated before this earlier day was reopened) —
+    // schedule_draft_stops' unique(draft_id, place_id) forbids the same
+    // place appearing twice in one draft at all, so the plain insert below
+    // would throw a raw constraint violation. What actually happened on the
+    // day being reopened is real, already-committed history; it should win
+    // over a not-yet-committed proposal for the same place elsewhere in the
+    // draft (same "hard commitments jump the queue" precedent the ranking
+    // engine itself uses — see urgency.js), so evict any such placement
+    // first rather than let the insert crash on it.
+    await trx('schedule_draft_stops')
+      .where({ draft_id: id })
+      .whereIn('place_id', rows.map((r) => r.place_id))
+      .del();
+
     await trx('schedule_draft_stops').insert(stopRows);
 
     await trx('visits').whereIn('id', rows.map((r) => r.id)).del();
