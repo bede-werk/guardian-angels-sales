@@ -85,7 +85,7 @@ export default function Calendar({ selected, committed, proposed, minDate, maxDa
             <button
               type="button"
               key={iso}
-              className={`calendar-day ${isSelected ? 'selected' : ''} ${isCommitted ? 'committed' : ''}`.trim()}
+              className={`calendar-day ${isSelected ? 'selected' : ''} ${isCommitted ? 'committed' : ''} ${isProposed ? 'proposed' : ''}`.trim()}
               disabled={disabled}
               title={
                 isCommitted ? 'Already planned — pick a different date'

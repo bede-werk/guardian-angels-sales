@@ -1486,3 +1486,119 @@ needed one throwaway `visits` row inserted and deleted afterward (a third rep's 
 get a 3rd/4th pill; a skipped-status stop, to check that pill's color) since real data didn't
 happen to cover those cases that day. 153 tests pass throughout (no backend logic changed except
 the `upcoming_visits` add-then-revert on `people.js`, which nets to no diff), client build clean.
+
+## 2026-07-30 — Calendar/visit editing overhaul, cross-rep edit permissions, birthdays
+
+Branch `bede-working`. `CalendarDayModal` split into two dedicated components —
+`CompletedVisitsModal`/`SkippedVisitsModal` — each restyled on its own terms (place+category on
+one line, visit type below, rep+contact shown on completed rows, a lighter "View place" button,
+tier/outcome chips dropped from the Completed view). `PlannedDayModal`'s row click now opens the
+visit itself (View visit → Complete Visit) instead of jumping straight to the place; a separate
+"View place" button covers the old behavior instead.
+
+**Bugs fixed along the way:**
+- `reopenCommittedDay` could crash with a raw UNIQUE-constraint error if the place already sat
+  elsewhere in the rep's active draft — now evicts the stale placement instead, since a real
+  commitment always wins over a not-yet-committed proposal for the same place.
+- `/api/visits/calendar` and `committedDayVisits` were both missing `person_id` (only the
+  name/title/email/phone snapshot), which falsely made `VisitLogModal` think a still-linked
+  contact had been deleted for any visit opened via the Calendar tab.
+- `CompletedVisitsModal` now closes itself if editing a visit's date moves it off the day it was
+  open for, instead of silently sitting on a now-stale empty list.
+- `rep_name` renamed to `user_name` in the calendar query, matching the naming already used
+  everywhere else a visit is joined to its rep.
+
+**Visit editing, several capability gaps closed:** `visit_type` is now patchable after the fact
+(server `EDITABLE` set + bounds validation, a picker in `VisitLogModal`, shown on
+`VisitDetailModal`) — closes an item deferred back on 2026-07-15/2026-07-30's earlier review.
+`VisitLogModal` gained an editable Date field, but only when logging an ad-hoc visit or
+correcting an already-completed one — a still-planned visit's date stays fixed to whatever the
+route planner assigned it. A rep can now edit another rep's already-completed/skipped visit
+(behind a confirm dialog); a still-planned visit stays locked to its own rep either way.
+
+**New: birthdays on the Calendar.** `people.birthday` (previously free text) replaced with
+structured `birthday_month`/`birthday_day` columns (migration
+`20260730000000_split_birthday_into_month_day.js` — deliberately no backfill, since every
+existing value was test data, not real birthdays). New `GET /people/birthdays?month=<1-12>`
+(unscoped by rep, same posture as places/people generally). Month/Day pickers added to
+`PersonModal`/`PersonDetail`. A small 🎂 badge sits in its own row next to the day number on the
+Calendar tab (deliberately out of the visit-pill stack entirely, so it never competes with the
+"+N more" cap), opening a new `BirthdayModal.jsx` → `PersonDetail`.
+
+Also: `PersonDetail`'s Notes/Place card order swapped (Bede's direct request, cosmetic only).
+
+153 server tests pass, client build clean. HANDOFF.md updated the same session. Committed as
+`1c5b509`.
+
+## 2026-07-30 (continued) — Route Planner setup-form redesign, redundant-button cleanup, real bugs found along the way
+
+A long live-feedback session on the Route Planner tab, all Bede-directed, each change verified
+against the real dev server (Lisa Marks id 5, temp token, cleaned up every round) rather than
+just reasoned about from the CSS/JSX.
+
+**"Already Planned" rows lost their dead-end "✓ Planned" pill.** Bede's original ask was to
+replace it with real Edit/Discard buttons — built, then talked through from a design angle and
+reverted just as fast: the row already opens `PlannedDayModal`'s drill-down on click, which has
+the identical Edit/Discard-plan buttons, so a second copy on the row itself was pure duplication.
+Landed instead on reusing the exact plain-text style (`✓ Planned`, teal, no pill background)
+`PlannedDayModal` already uses per-visit inside the drill-down — a lighter-weight status
+indicator than a badge, consistent with an existing pattern rather than a new one. (A chevron
+affordance was tried and rejected first — Bede didn't like the look.) `PlannedDayModal`'s own
+"Delete" button was also renamed to "Discard plan" for the same wording consistency.
+
+**The setup card (starting point + date calendar) now collapses once a draft exists**, instead
+of staying permanently interactive. The problem this fixes: the full form used to sit there
+fully clickable forever, inviting edits (nudging the calendar, hitting "Change" on the starting
+point) that silently did nothing to the actual draft until a separate regenerate click — and
+that click discards whatever in-progress edits the draft already had. Collapsed state shows a
+one-line summary ("Starting from **X** · N days selected (dates)") with a small chevron-icon
+toggle button; clicking it re-expands the full form, and a successful generate/regenerate
+auto-collapses it back. The toggle went through several rounds of its own polish, all direct
+feedback: unicode ▾/▴ glyphs → replaced with a crisper inline SVG chevron (unicode rendering
+looked bad); repositioned from floating alone above both form columns to sitting inline at the
+end of the "Plan for these dates (N)" header, since a lone icon with no textual anchor was the
+single least-discoverable control on the screen; background/icon color iterated a few times
+(grey → white+blue, hover-only light-blue tint, then a `chevron-toggle-open` modifier so the
+collapse-direction button starts in the hover tint rather than looking identical to the
+expand-direction one at rest).
+
+**Header button redundancy removed.** With only one open day, "Discard all proposals"/"Accept
+all proposals" were a second copy of that same day's own card-level buttons acting on the exact
+same thing — now hidden whenever `openDays(draft).length <= 1`, appearing only once there's
+actually more than one day to act on "all" of. "Create another proposal" was renamed to
+**"Regenerate proposal(s)"** (dynamic plural) since "create another" reads as additive
+(implying a new day gets added) when what it actually does is discard every open day's current
+proposal and re-run the whole packer from scratch — same verb clash "Create proposal" already
+has the first time around, just destructive the second time. The existing confirm dialog already
+carried the real warning; this was a label-honesty fix, not new UI.
+
+**A real bug, not just wording:** the Regenerate button could get stuck permanently disabled no
+matter what got edited in the reopened setup form. Root cause: `homeBase` is deliberately
+client-side-only state (never persisted server-side), so any page reload while a draft was
+active left it `null` forever — and `canGenerate` requires a truthy `homeBase`, with nothing in
+the UI explaining why the button stayed dead. Fixed by seeding `homeBase` from the draft's own
+saved `params.homeBase` lat/lng the same way `selectedDays` already gets seeded from
+`params.days`, labeled "Saved starting point" (no human-readable address was ever round-tripped
+through the server, just coordinates) — a real "Change" click still overwrites it with a proper
+geocoded one. Caught and fixed a second bug in the same area: the button's singular/plural
+wording was reading off `openDayCount` (the existing draft's day count) instead of
+`selectedDays.length` (how many days the click is actually about to regenerate) — so adding a
+second day mid-edit wouldn't flip the label to plural. Both confirmed fixed via a scripted
+Playwright pass: editing just an existing day's hours kept it singular and enabled; adding a
+second day flipped it to plural, both correctly enabled.
+
+**Proposed dates on the calendar now render visually locked, not just functionally disabled.**
+`Calendar.jsx` already computed `isProposed` (a selected date already generated into the active
+draft, removable only via "Discard proposal") but never used it for styling — a proposed date
+looked identical to any other plain, still-toggleable selection. Added a `.calendar-day.proposed`
+class (`--blue-tint-4`, a lighter tint than the solid `.selected` blue) so a date that's locked
+in now reads visually distinct at a glance.
+
+**Smaller consistency fix:** the "Create proposal" button (shown before any draft exists) now
+also pluralizes to "Create proposals" the moment more than one date is picked, matching the
+same singular/plural pattern applied to Regenerate.
+
+Every change in this session verified live via scripted Playwright passes against Lisa Marks
+(id 5, temp `auth_token`, cleared after every round) — screenshots for the visual changes,
+programmatic button-state/label assertions for the two bug fixes. No backend/schema changes,
+no test-suite impact. Committed on `bede-working`.

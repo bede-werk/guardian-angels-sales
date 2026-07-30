@@ -656,6 +656,18 @@ export default function RoutePlanner({ userId }) {
   const [locationError, setLocationError] = useState(null);
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
 
+  // Once a draft exists, the starting-point/date-picker setup card collapses
+  // to a one-line summary — its full form was previously left permanently
+  // interactive even after generating, which invited edits (nudging the
+  // calendar, hitting "Change" on the starting point) that silently did
+  // nothing to the actual draft until a separate "Regenerate proposal"
+  // click, and that click discards whatever in-progress edits the draft
+  // itself already had. Collapsing makes "nothing happens until you
+  // deliberately reopen setup" visible instead of implied. Stays false
+  // (form expanded) whenever there's no draft yet — see showSetupForm below,
+  // computed rather than reset via effect so it can't drift out of sync.
+  const [editingSetup, setEditingSetup] = useState(false);
+
   const refreshCommittedDates = useCallback(async () => {
     setCommittedSummaries(await api.scheduleDrafts.committedDates());
   }, []);
@@ -758,10 +770,21 @@ export default function RoutePlanner({ userId }) {
   // `selectedDays` is either the user editing the calendar directly, or an
   // explicit set after a successful generate/regenerate (see generate()
   // below), never an overwrite triggered by an unrelated draft refresh.
+  // Seeds homeBase too, same one-time-on-load rule — without this, a draft
+  // loaded fresh (e.g. a page reload, since homeBase is deliberately never
+  // persisted — see its declaration above) left homeBase null forever,
+  // which silently blocked "Regenerate proposal" no matter what got edited
+  // in the reopened setup form: canGenerate requires a truthy homeBase, and
+  // there was nothing in the UI to explain why the button stayed disabled
+  // after editing hours or adding a day. The draft's own params.homeBase has
+  // real lat/lng (just no human-readable label — that's never round-tripped
+  // through the server), so this only loses the label, not the ability to
+  // regenerate; a real "Change" click still overwrites it with a proper one.
   useEffect(() => {
     if (draft && !seededFromDraft.current) {
       seededFromDraft.current = true;
       setSelectedDays(draft.params.days);
+      setHomeBase((prev) => prev ?? { lat: draft.params.homeBase.lat, lng: draft.params.homeBase.lng, label: 'Saved starting point' });
     }
   }, [draft]);
 
@@ -901,7 +924,7 @@ export default function RoutePlanner({ userId }) {
     if (!draft) return;
     const totalStops = draft.days.reduce((n, d) => n + d.stops.length, 0);
     const warning = totalStops > 0
-      ? `Discard this entire proposal? ${totalStops} proposed visit${totalStops === 1 ? '' : 's'} across every day will be lost — this can't be undone.`
+      ? `Discard this proposal? ${totalStops} proposed visit${totalStops === 1 ? '' : 's'} across every day will be lost — this can't be undone.`
       : 'Discard this proposal and start over?';
     if (!window.confirm(warning)) return;
     setError(null);
@@ -940,6 +963,7 @@ export default function RoutePlanner({ userId }) {
       });
       setDraft(next);
       setSelectedDays(next.params.days); // server-normalized (sorted) version of what we just sent
+      setEditingSetup(false);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -975,7 +999,7 @@ export default function RoutePlanner({ userId }) {
   // committing would fire a regenerate against a draft that's mid-commit).
   const busy = generating || committingAll || discarding;
   const canGenerate = !!homeBase && !generating && selectedDays.length > 0;
-  // "Create another proposal" regenerates the WHOLE draft, so it should only
+  // "Regenerate proposal" regenerates the WHOLE draft, so it should only
   // be live when something has actually changed since the last generate —
   // otherwise re-clicking it just re-runs the same generation for no reason.
   // A day already in the draft can't be removed/deselected without going
@@ -991,6 +1015,19 @@ export default function RoutePlanner({ userId }) {
     || homeBase.lat !== draft.params.homeBase.lat
     || homeBase.lng !== draft.params.homeBase.lng;
 
+  // The full setup form only has something to collapse away once a draft
+  // exists — with no draft yet there's nothing to summarize, so it always
+  // shows expanded regardless of editingSetup.
+  const showSetupForm = !draft || editingSetup;
+
+  // "...all proposals" only makes sense once there's more than one day's
+  // card actually on screen — with a single day, the header-level button and
+  // that day's own "Accept/Discard proposal" button act on the exact same
+  // thing, so the header wording drops "all" to stop implying a plural that
+  // isn't there. Same day count the cards themselves are rendered from (see
+  // openDays above), so this can't drift from what's actually on screen.
+  const openDayCount = draft ? openDays(draft).length : 0;
+
   return (
     <div className="grid" style={{ gap: 16 }}>
       {error && <div className="error-banner">{error}</div>}
@@ -1002,9 +1039,18 @@ export default function RoutePlanner({ userId }) {
           <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
             {draft ? (
               <>
-                <Button variant="danger" onClick={discardDraft} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>
-                  {discarding ? 'Discarding…' : 'Discard all proposals'}
-                </Button>
+                {/* With only one day's card on screen, these would just be a
+                    second copy of that day's own "Discard/Accept proposal"
+                    buttons acting on the exact same thing — redundant, so
+                    they only appear once there's more than one day to act
+                    on "all" of. "Regenerate proposal" stays regardless:
+                    it has no per-day equivalent (it regenerates the whole
+                    draft from the current setup). */}
+                {openDayCount > 1 && (
+                  <Button variant="danger" onClick={discardDraft} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>
+                    {discarding ? 'Discarding…' : 'Discard all proposals'}
+                  </Button>
+                )}
                 <Button
                   variant="secondary"
                   onClick={() => generate(true)}
@@ -1012,19 +1058,60 @@ export default function RoutePlanner({ userId }) {
                   title={needsRegenerate ? undefined : 'Nothing has changed since the current proposal was generated'}
                   style={{ flex: 'none', minWidth: 0 }}
                 >
-                  Create another proposal
+                  {/* selectedDays.length, not openDayCount — this pluralizes
+                      on how many days the click is ABOUT to regenerate
+                      (what's currently picked in the reopened setup form),
+                      not how many day-cards the last generate produced. */}
+                  {selectedDays.length > 1 ? 'Regenerate proposals' : 'Regenerate proposal'}
                 </Button>
-                <Button onClick={commitAllDays} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>
-                  {committingAll ? 'Accepting…' : 'Accept all proposals'}
-                </Button>
+                {openDayCount > 1 && (
+                  <Button onClick={commitAllDays} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>
+                    {committingAll ? 'Accepting…' : 'Accept all proposals'}
+                  </Button>
+                )}
               </>
             ) : (
-              <Button onClick={() => generate(false)} disabled={!canGenerate} style={{ flex: 'none', minWidth: 0 }}>Create proposal</Button>
+              <Button onClick={() => generate(false)} disabled={!canGenerate} style={{ flex: 'none', minWidth: 0 }}>
+                {selectedDays.length > 1 ? 'Create proposals' : 'Create proposal'}
+              </Button>
             )}
           </div>
         </div>
         <div className="card-body">
-          {/* Two columns — starting point on the left, the date picker on
+          {!showSetupForm ? (
+            // Collapsed one-line summary of what the active draft was
+            // generated with — see editingSetup's declaration above for why
+            // this replaces the full form once a draft exists. "Edit setup"
+            // is the only way back into the interactive calendar/starting-
+            // point form; it doesn't itself change anything, just re-expands.
+            <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div className="tiny muted">
+                {homeBase ? (
+                  <>Starting from <strong>{homeBase.label}</strong> · </>
+                ) : (
+                  // homeBase is session-only (never persisted server-side —
+                  // see its declaration above), so a fresh page load with an
+                  // already-active draft has no label to show here even
+                  // though the draft itself has real lat/lng on the server.
+                  'Starting point not set this session · '
+                )}
+                {selectedDays.length} day{selectedDays.length === 1 ? '' : 's'} selected ({selectedDays.map((d) => formatDate(d.date)).join(', ')})
+              </div>
+              <Button
+                className="chevron-toggle"
+                size="small"
+                onClick={() => setEditingSetup(true)}
+                title="Edit setup"
+                aria-label="Edit setup"
+                style={{ flex: 'none', minWidth: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </Button>
+            </div>
+          ) : (
+          /* Two columns — starting point on the left, the date picker on
               the right, split by a vertical rule (see .plan-columns) — the
               calendar/date-list content is inherently narrower than the
               card, so stacking them left the card mostly white space.
@@ -1033,7 +1120,7 @@ export default function RoutePlanner({ userId }) {
               120px }`) is meant for stretchy form-field rows (like the
               manual-address row below, which deliberately keeps the
               default), and otherwise blows a couple of short buttons up
-              into oddly wide, far-apart blocks. */}
+              into oddly wide, far-apart blocks. */
           <div className="plan-columns">
             <div className="plan-col-start">
               <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 4 }}>
@@ -1073,8 +1160,35 @@ export default function RoutePlanner({ userId }) {
             </div>
 
             <div className="plan-col-dates">
-              <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 4 }}>
-                Plan for these dates{selectedDays.length > 0 ? ` (${selectedDays.length})` : ''}
+              <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+                <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                  Plan for these dates{selectedDays.length > 0 ? ` (${selectedDays.length})` : ''}
+                </div>
+                {/* Only offered when a draft already exists AND the user got
+                    here by clicking "Edit setup" — undoes exactly that,
+                    re-collapsing back to the one-line summary. With no draft
+                    yet the form has nothing to collapse to (showSetupForm is
+                    true unconditionally in that case — see its declaration
+                    above), so this stays hidden on the very first,
+                    nothing-generated-yet visit. Sits inline with this
+                    column's own header (rather than floating alone above
+                    both columns) so it has a visual anchor, mirroring how
+                    the collapsed "Edit setup" chevron sits right next to the
+                    summary text it toggles. */}
+                {draft && (
+                  <Button
+                    className="chevron-toggle chevron-toggle-open"
+                    size="small"
+                    onClick={() => setEditingSetup(false)}
+                    title="Done editing"
+                    aria-label="Done editing"
+                    style={{ flex: 'none', minWidth: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M6 15l6-6 6 6" />
+                    </svg>
+                  </Button>
+                )}
               </div>
               <div className="plan-col-hint">Pick weekdays up to {MAX_DAYS_AHEAD} days ahead.</div>
               <div className="row" style={{ alignItems: 'flex-start', gap: 24 }}>
@@ -1135,6 +1249,7 @@ export default function RoutePlanner({ userId }) {
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
 
@@ -1151,12 +1266,15 @@ export default function RoutePlanner({ userId }) {
                     className="main hover-row"
                     title="View this day's planned visits"
                     onClick={() => setViewingDate(s.date)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingRight: 24 }}
                   >
-                    <div className="name">{formatDate(s.date)}</div>
-                    <div className="meta">{s.count} visit{s.count === 1 ? '' : 's'} planned</div>
-                  </div>
-                  <div className="actions" style={{ alignItems: 'center' }}>
-                    <span className="badge committed" style={{ flex: 'none', minWidth: 0 }}>✓ Planned</span>
+                    <div>
+                      <div className="name">{formatDate(s.date)}</div>
+                      <div className="meta">{s.count} visit{s.count === 1 ? '' : 's'} planned</div>
+                    </div>
+                    <span className="tiny" style={{ whiteSpace: 'nowrap', color: 'var(--teal-dark)', fontWeight: 600, flex: 'none' }}>
+                      ✓ Planned
+                    </span>
                   </div>
                 </li>
               ))}

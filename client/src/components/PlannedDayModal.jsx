@@ -102,7 +102,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
         ) : (
           <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
             <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove this day's planned visits">
-              {deletingDay ? 'Removing…' : 'Delete'}
+              {deletingDay ? 'Removing…' : 'Discard plan'}
             </Button>
             <div style={{ display: 'flex', gap: 10 }}>
               <Button variant="secondary" onClick={onClose}>Close</Button>

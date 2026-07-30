@@ -163,6 +163,9 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .btn.danger { background: var(--mauve-tint-1); color: var(--mauve); }
 .btn.danger:hover { background: var(--mauve-tint-2); }
 .btn.big { padding: 12px 18px; font-size: 14px; border-radius: var(--radius-md); }
+.btn.chevron-toggle { background: #fff; color: var(--blue); }
+.btn.chevron-toggle:hover { background: var(--blue-tint-2); color: var(--blue); }
+
 
 /* Inputs — every text field/dropdown/textarea in the app shares this look;
    `label.field` is the small grey caption above a field (e.g. "Contact name"). */
@@ -381,6 +384,13 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .calendar-day:disabled { color: var(--grey-tint-3); cursor: default; }
 .calendar-day.selected { background: var(--blue); color: #fff; font-weight: 700; }
 .calendar-day.committed { background: var(--teal-tint-1); color: var(--teal-dark); }
+/* A selected date that's already been generated into the active draft —
+   still "selected" in the data sense, but no longer clickable (discarding
+   the day's proposal is the only way to free it back up, see Calendar's own
+   comment above) — a lighter tint than the solid .selected blue signals
+   "locked in" rather than "still a plain, still-toggleable pick". Declared
+   after .selected so it wins the tie on a date that's both. */
+.calendar-day.proposed { background: var(--blue-tint-4); color: var(--blue-dark); font-weight: 700; }
 /* Stamped directly over the day number (not beside it) — a deliberate
    one-off exception to this app's usual "success maps to blue, never green"
    convention (see :root's --ok) — a checkmark reads as done fastest in the
