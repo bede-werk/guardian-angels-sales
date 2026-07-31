@@ -464,7 +464,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
               return (
                 <li
                   key={stop.place_id}
-                  className={`stop ${stop.overBudget ? 'attention-flag' : ''} ${overIndex === i ? 'drag-over' : ''} ${dragIndex === i ? 'dragging' : ''}`}
+                  className={`stop ${stop.overBudget || stop.alreadyVisitedToday ? 'attention-flag' : ''} ${overIndex === i ? 'drag-over' : ''} ${dragIndex === i ? 'dragging' : ''}`}
                   draggable={!rowBusy}
                   onDragStart={() => { dragIndexRef.current = i; setDragIndex(i); }}
                   onDragOver={(e) => { e.preventDefault(); setOverIndex(i); }}
@@ -491,6 +491,20 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     <div className="meta">
                       {stop.address ? `${stop.address}, ` : ''}{stop.city} {stop.zip}
                     </div>
+                    {/* Informational only — doesn't block reorder/remove/commit,
+                        just flags that a real visit already happened today for
+                        this place (routes/scheduleDraft.js's alreadyVisitedTodayPlaceIds).
+                        The draft's own persisted stops otherwise never
+                        re-check eligibility once placed, so this is the one
+                        targeted heads-up rather than a full re-validation. */}
+                    {stop.alreadyVisitedToday && (
+                      <div
+                        className="tiny"
+                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                      >
+                        Already visited today
+                      </div>
+                    )}
                   </div>
                   <div className="actions" style={{ alignItems: 'center', gap: 14 }}>
                     <select

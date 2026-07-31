@@ -71,6 +71,12 @@ export const api = {
     ).toString();
     return request(`/places/check-address${q ? `?${q}` : ''}`);
   },
+  checkDuplicatePlace: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== '' && v != null)
+    ).toString();
+    return request(`/places/check-duplicate${q ? `?${q}` : ''}`);
+  },
   createPlace: (body) => request('/places', { method: 'POST', body }),
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
@@ -96,6 +102,7 @@ export const api = {
     },
     get: (id) => request(`/people/${id}`), // a person + their place + full visit history
     listForPlace: (placeId) => request(`/places/${placeId}/people`),
+    checkDuplicate: (name) => request(`/people/check-duplicate?name=${encodeURIComponent(name)}`),
     create: (body) => request('/people', { method: 'POST', body }), // place_id in body is optional
     update: (id, body) => request(`/people/${id}`, { method: 'PATCH', body }),
     remove: (id) => request(`/people/${id}`, { method: 'DELETE' }),

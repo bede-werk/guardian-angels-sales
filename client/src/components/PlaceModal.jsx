@@ -56,13 +56,15 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
     }
   }
 
-  // Checks duplicate-name and address-validity together *before* saving —
-  // both fetched fresh right here (never from a debounced background hook,
-  // which could still be mid-flight and stale at the moment of clicking) —
-  // so if both are a problem the rep sees one combined pop-up instead of
-  // missing one. Only warn on the name when creating — editing an existing
-  // place will always "match" itself. Pops up only when "Add
-  // place"/"Save changes" is actually clicked, not while still typing.
+  // Checks duplicates (by name OR address — routes/places.js's check-duplicate,
+  // a dedicated endpoint, not the general list `search`) and address-validity
+  // together *before* saving — both fetched fresh right here (never from a
+  // debounced background hook, which could still be mid-flight and stale at
+  // the moment of clicking) — so if both are a problem the rep sees one
+  // combined pop-up instead of missing one. Only warn on duplicates when
+  // creating — editing an existing place will always "match" itself. Pops up
+  // only when "Add place"/"Save changes" is actually clicked, not while
+  // still typing.
   async function save() {
     if (!isCompletePhone(form.phone)) {
       setError('Phone must be a complete number, e.g. (402) 555-1234');
@@ -70,7 +72,9 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
     }
 
     const result = await runPreSaveCheck(setSaving, setError, () => Promise.all([
-      !place && form.name.trim().length >= 3 ? api.places({ search: form.name.trim() }) : [],
+      !place && (form.name.trim().length >= 3 || form.address.trim())
+        ? api.checkDuplicatePlace({ name: form.name.trim(), address: form.address.trim() })
+        : [],
       form.address || form.city || form.zip
         ? api.checkAddress({ address: form.address, city: form.city, state: form.state, zip: form.zip })
         : { recognized: true },

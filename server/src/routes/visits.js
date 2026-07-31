@@ -12,6 +12,29 @@ const router = express.Router();
 const OUTCOMES = ['interested', 'not_ready', 'follow_up', 'no_answer', 'left_materials'];
 const STATUSES = ['planned', 'completed', 'skipped'];
 
+// A place's very first completed visit is normally the real pre-qualification
+// conversation — VisitLogModal surfaces an extra "avg. referrals/month
+// discovered" field only then, sent here as a transient `capacity_monthly_referrals`
+// body field (not a `visits` column — EDITABLE above intentionally excludes
+// it). When present on a visit that ends up `completed`, and this genuinely
+// is the place's only completed visit (re-checked server-side, not trusted
+// from the client's own read), writes through to `places.capacity_monthly_referrals`
+// + flips `capacity_status` to 'verified' — the same fields
+// routes/places.js's PATCH lets a rep correct directly afterward (landing as
+// 'adjusted' instead, see its own comment). Silently no-ops on bad/irrelevant
+// input, same "extra field ignored" convention as the EDITABLE loops below —
+// this is a best-effort convenience, not a required part of logging a visit.
+async function maybeCapturePreQualification({ placeId, visitId, capacityMonthlyReferrals }) {
+  if (capacityMonthlyReferrals === undefined || capacityMonthlyReferrals === null || capacityMonthlyReferrals === '') return;
+  const n = Number(capacityMonthlyReferrals);
+  if (!Number.isInteger(n) || n < 0) return;
+
+  const otherCompleted = await knex('visits').where({ place_id: placeId, status: 'completed' }).whereNot('id', visitId).first();
+  if (otherCompleted) return; // not actually the first visit — don't clobber an existing capture
+
+  await knex('places').where({ id: placeId }).update({ capacity_monthly_referrals: n, capacity_status: 'verified' });
+}
+
 // Fields a client is allowed to set when logging/updating a visit. Anything
 // not in this list in the request body is silently ignored (not saved).
 // visit_type is otherwise only ever set once, at route-planner commit time
@@ -169,6 +192,35 @@ router.post('/', async (req, res, next) => {
     const phoneError = validatePhone(payload.person_phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
 
+    // Ad-hoc creation (this route) is the one visit-logging path with no
+    // collision protection — the route planner's commit flow has its own
+    // dedicated locked-elsewhere/committed-elsewhere checks (scheduleDraft.js),
+    // but a plain "Log a visit" never went through them. Warn, don't block:
+    // same override pattern as places.js's ADDRESS_UNRECOGNIZED confirm flow
+    // — surface a 409 with who/what's already there unless the client
+    // explicitly re-sends with `force: true` (VisitLogModal's "Log anyway").
+    // Scoped to any planned/completed row for the same place+date, including
+    // the SAME user's own (an accidental double-log, e.g. re-submitting after
+    // a refresh, is exactly as worth flagging as two different reps colliding)
+    // — a skipped visit doesn't really occupy the date, so that's excluded.
+    if (payload.place_id && payload.scheduled_date && !req.body.force) {
+      const collision = await knex('visits')
+        .leftJoin('users', 'users.id', 'visits.user_id')
+        .where({ 'visits.place_id': payload.place_id, 'visits.scheduled_date': payload.scheduled_date })
+        .whereIn('visits.status', ['planned', 'completed'])
+        .select('visits.status', 'visits.user_id', 'users.name as user_name')
+        .first();
+      if (collision) {
+        const isSameUser = payload.user_id && collision.user_id === payload.user_id;
+        const who = isSameUser ? 'You' : collision.user_name || 'Someone else';
+        const verb = isSameUser ? 'have' : 'has';
+        return res.status(409).json({
+          error: `${who} already ${verb} a ${collision.status} visit here on this date.`,
+          code: 'VISIT_COLLISION',
+        });
+      }
+    }
+
     // Same rule as PATCH below: a visit created already-completed (e.g. an
     // ad-hoc "log a spontaneous visit" save) gets its completed_at stamped
     // immediately, not left null.
@@ -176,6 +228,11 @@ router.post('/', async (req, res, next) => {
 
     const [inserted] = await knex('visits').insert(payload).returning('id');
     const id = knex.extractId(inserted);
+
+    if (payload.status === 'completed') {
+      await maybeCapturePreQualification({ placeId: numericPlaceId, visitId: id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
+    }
+
     res.status(201).json(await fetchVisit(id));
   } catch (err) {
     next(err);
@@ -241,6 +298,12 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     await knex('visits').where({ id }).update(update);
+
+    const finalStatus = update.status ?? visit.status;
+    if (finalStatus === 'completed') {
+      await maybeCapturePreQualification({ placeId: visit.place_id, visitId: id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
+    }
+
     res.json(await fetchVisit(id));
   } catch (err) {
     next(err);

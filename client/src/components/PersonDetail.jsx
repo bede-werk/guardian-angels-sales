@@ -326,7 +326,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
           {/* Durable notes/preferences about this person — persist across visits. */}
           <div className="card">
             <div className="card-head">
-              <h2>Notes</h2>
+              <h2>Details</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
                 {!data.preferences && !editingPreferences && (
                   <Button

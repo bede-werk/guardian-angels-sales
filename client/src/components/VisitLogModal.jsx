@@ -27,6 +27,11 @@ const CREATE_PERSON = '__create_person__'; // sentinel option value for "+ Creat
 // selection, not locked, unlike the personRecordGone case below.
 // On narrow screens this renders as a bottom slide-up sheet instead of a
 // centered modal — see the @media rule for .modal-backdrop in styles.css.
+// A place's very first completed visit also gets an extra optional
+// "Avg. referrals/month discovered at pre-qual" field (isFirstVisit below,
+// fetched from the place's own visit history) — not a real visits column,
+// it writes through server-side to places.capacity_monthly_referrals +
+// capacity_status: 'verified' (see routes/visits.js's maybeCapturePreQualification).
 export default function VisitLogModal({ visit, placeId, placeName, initialPerson, userId, onClose, onSaved }) {
   // Whichever way this modal was opened, we need to know which place it's for.
   const resolvedPlaceId = visit?.place_id || placeId;
@@ -47,6 +52,21 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false); // true after a successful save — shows the confirmation screen
+  // Set when the server reports a planned/completed visit already exists at
+  // this place on this date — either another rep's, or this same rep's own
+  // (an accidental double-log) — via routes/visits.js's collision check,
+  // ad-hoc creation only. Save becomes "Save anyway" — re-submitting with
+  // `force: true` — rather than silently blocking; this is a heads-up, not a
+  // hard rule. Cleared whenever the date changes, since that's what the
+  // collision was actually keyed on.
+  const [collisionWarning, setCollisionWarning] = useState(null);
+  // Fetched to know whether this is the place's first-ever completed visit —
+  // only then does the pre-qualification referral-estimate field show (see
+  // avgReferrals below). Not part of `form`: it's a transient side-channel
+  // value that writes through to places.capacity_monthly_referrals server-side
+  // (routes/visits.js), not a real visits column.
+  const [place, setPlace] = useState(null);
+  const [avgReferrals, setAvgReferrals] = useState('');
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const title = placeName || visit?.place_name || 'Visit';
@@ -64,6 +84,20 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     if (!resolvedPlaceId) return;
     api.people.listForPlace(resolvedPlaceId).then(setPeople).catch(() => {});
   }, [resolvedPlaceId]);
+
+  // Also load the place's own visit history, just to know whether the visit
+  // being logged here is its first completed one ever — this place fetch is
+  // otherwise unused by the rest of the form.
+  useEffect(() => {
+    if (!resolvedPlaceId) return;
+    api.place(resolvedPlaceId).then(setPlace).catch(() => {});
+  }, [resolvedPlaceId]);
+
+  // place.visits is already completed-only (see routes/places.js). Excludes
+  // the visit currently being edited (if any) from the count, so re-opening
+  // an already-completed first visit to correct its notes doesn't lose
+  // access to the referral-estimate field.
+  const isFirstVisit = Boolean(place && place.visits.filter((v) => v.id !== visit?.visit_id).length === 0);
 
   // Selecting someone from the "who did you meet?" dropdown links this visit
   // to their person record (person_id) and snapshots their saved info into
@@ -112,6 +146,12 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     setError(null);
     try {
       const payload = { ...form, person_id: form.person_id || null, status: 'completed' };
+      // Rounded client-side before it ever leaves the browser — the server
+      // silently drops a non-integer capacity_monthly_referrals (it's a real
+      // DB integer column) rather than erroring, so an un-rounded "12.5"
+      // would otherwise look saved but quietly never land.
+      if (isFirstVisit && avgReferrals !== '') payload.capacity_monthly_referrals = Math.max(0, Math.round(Number(avgReferrals)));
+      if (collisionWarning) payload.force = true; // "Save anyway" — re-submit past the warning already shown
       let saved;
       if (visit?.visit_id) {
         saved = await api.updateVisit(visit.visit_id, payload);
@@ -131,6 +171,11 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
       // auto-closing, instead of the modal just vanishing instantly.
       setTimeout(() => onClose(), 900);
     } catch (e) {
+      if (e.code === 'VISIT_COLLISION') {
+        setCollisionWarning(e.message);
+        setSaving(false);
+        return;
+      }
       setError(e.message);
       setSaving(false);
     }
@@ -160,11 +205,17 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
+          {collisionWarning && <div className="error-banner">{collisionWarning}</div>}
 
           {visit?.status !== 'planned' && (
             <div>
               <label className="field">Date</label>
-              <input type="date" value={form.scheduled_date} max={today()} onChange={set('scheduled_date')} />
+              <input
+                type="date"
+                value={form.scheduled_date}
+                max={today()}
+                onChange={(e) => { setCollisionWarning(null); set('scheduled_date')(e); }}
+              />
             </div>
           )}
 
@@ -176,6 +227,20 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
               ))}
             </select>
           </div>
+
+          {isFirstVisit && (
+            <div>
+              <label className="field">Avg. referrals/month discovered at pre-qual</label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="Optional"
+                value={avgReferrals}
+                onChange={(e) => setAvgReferrals(e.target.value)}
+              />
+            </div>
+          )}
 
           <div>
             <label className="field">Notes</label>
@@ -194,10 +259,11 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
               <label className="field">Who did you meet?</label>
               <select value={form.person_id} onChange={handlePersonSelect}>
                 <option value="">Select who you met with…</option>
+                <option value={CREATE_PERSON}>+ Create new person…</option>
+                <option disabled>──────────</option>
                 {people.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}{p.title ? ` — ${p.title}` : ''}</option>
                 ))}
-                <option value={CREATE_PERSON}>+ Create new person…</option>
               </select>
             </div>
           )}
@@ -207,11 +273,12 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             Cancel
           </Button>
           <Button
-            title={canSave ? 'Save this visit' : 'Add a note and select who you met with first'}
+            variant={collisionWarning ? 'danger' : 'primary'}
+            title={collisionWarning ? 'Log this visit anyway, despite the collision above' : canSave ? 'Save this visit' : 'Add a note and select who you met with first'}
             onClick={save}
             disabled={saving || !canSave}
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Saving…' : collisionWarning ? 'Save anyway' : 'Save'}
           </Button>
         </div>
       </div>

@@ -49,14 +49,16 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
   // debounced background hook, which could still be mid-flight and stale at
   // the moment of clicking) and pops up when Save is actually clicked, not
   // while the rep is still typing. Only warn on create — editing an existing
-  // person will always "match" itself.
+  // person will always "match" itself. Name-only (routes/people.js's
+  // check-duplicate, a dedicated endpoint — not the general list `search`,
+  // which also matches title and would false-positive on shared job titles).
   async function save() {
     if (!isCompletePhone(form.phone)) {
       setError('Phone must be a complete number, e.g. (402) 555-1234');
       return;
     }
     if (!person && form.name.trim().length >= 3) {
-      const result = await runPreSaveCheck(setSaving, setError, () => api.people.list({ search: form.name.trim() }));
+      const result = await runPreSaveCheck(setSaving, setError, () => api.people.checkDuplicate(form.name.trim()));
       if (!result.ok) return;
       const matches = result.value;
       if (matches.length > 0) {

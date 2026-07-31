@@ -176,6 +176,27 @@ router.get('/people/birthdays', async (req, res, next) => {
   }
 });
 
+// GET /api/people/check-duplicate?name=... — dry-run check for PersonModal's
+// pre-save warning, no write. Deliberately its OWN endpoint rather than
+// reusing GET /people's general `search` (which also matches `title` — a
+// duplicate check should only ever be about the person's actual name).
+// Same loose case-insensitive substring match as everywhere else in this
+// app ("similar," not exact) — org-wide, not scoped to a place, since the
+// same person can turn up at more than one place.
+router.get('/people/check-duplicate', async (req, res, next) => {
+  try {
+    const { name } = req.query;
+    if (!name || name.trim().length < 3) return res.json([]);
+    const rows = await knex('people')
+      .whereRaw('LOWER(name) LIKE ?', [`%${name.trim().toLowerCase()}%`])
+      .select('id', 'name')
+      .limit(5);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/people/:id — a person with their place, full visit history (every
 // visit where this person was the recorded contact), and every referral
 // they've sent us.

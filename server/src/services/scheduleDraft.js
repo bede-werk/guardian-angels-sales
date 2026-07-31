@@ -567,6 +567,26 @@ async function evaluateDay(stops, { homeBase, budgetMinutes }) {
 // way). Days with zero stops still appear (one per params.days entry — the
 // exact dates the user picked at generate time) rather than silently
 // vanishing.
+// Which of `placeIds` already has a completed visit dated exactly `today` —
+// by ANYONE, not just this draft's owner (an ad-hoc visit logged by another
+// rep counts too). Surfaced as `alreadyVisitedToday` on a draft stop
+// (see loadDraftView/loadDraftDayView below) so a place that got a real
+// visit today doesn't just silently keep sitting in a future day's proposal
+// with no indication — the draft's own persisted stops are never
+// re-validated against eligibility on read (only new candidate selection
+// is), so this is a deliberately narrow, targeted flag rather than a fix to
+// that broader gap. Informational only: still fully addable/removable/
+// committable, same "warn, don't block" spirit as the visits.js collision
+// check on ad-hoc creation.
+async function alreadyVisitedTodayPlaceIds(db, placeIds, today) {
+  if (!placeIds.length) return new Set();
+  const rows = await db('visits')
+    .where({ status: 'completed', scheduled_date: today })
+    .whereIn('place_id', placeIds)
+    .select('place_id');
+  return new Set(rows.map((r) => r.place_id));
+}
+
 async function loadDraftView(db, draftId) {
   const draft = await db('schedule_drafts').where({ id: draftId }).first();
   if (!draft) return null;
@@ -595,10 +615,15 @@ async function loadDraftView(db, draftId) {
   const committedByDate = {};
   for (const row of committedRows) (committedByDate[row.scheduled_date] ||= []).push(row);
 
+  // stopRows is 's.* (minus id) + p.*' — the place's own PK comes through as
+  // plain `id` (same reason toDraftStopShape below reads `row.id`, not a
+  // `place_id` that was never selected).
+  const todaySet = await alreadyVisitedTodayPlaceIds(db, stopRows.map((r) => r.id), orgToday());
+
   const days = [];
   for (const date of dates) {
     const rows = byDate[date] || [];
-    const stops = rows.map(toDraftStopShape);
+    const stops = rows.map(toDraftStopShape).map((s) => ({ ...s, alreadyVisitedToday: todaySet.has(s.place_id) }));
     const budgetMinutes = hoursPerDayByDate[date] * 60;
     const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
     days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedByDate[date] || [], ...evaluated });
@@ -621,7 +646,8 @@ async function loadDraftDayView(db, draftId, date) {
     .orderBy('s.sort_order')
     .select('s.id as stop_id', 's.visit_type', 'p.*');
 
-  const stops = rows.map(toDraftStopShape);
+  const todaySet = await alreadyVisitedTodayPlaceIds(db, rows.map((r) => r.id), orgToday());
+  const stops = rows.map(toDraftStopShape).map((s) => ({ ...s, alreadyVisitedToday: todaySet.has(s.place_id) }));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
   const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
@@ -674,6 +700,16 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
     const { max } = await trx('schedule_draft_stops').where({ draft_id: draftId, date }).max('sort_order as max').first();
     const nextSortOrder = (max ?? -1) + 1;
 
+    // Same never-visited-defaults-to-pre_qualification rule as auto-generated
+    // stops (see scheduleGenerator.js's toPackableStop) — only applied when
+    // the caller didn't explicitly pick a type, so a deliberate choice from
+    // the "add a stop" UI is never second-guessed.
+    let resolvedVisitType = visitType || null;
+    if (!resolvedVisitType) {
+      const everVisited = await trx('visits').where({ place_id: placeId, status: 'completed' }).first();
+      if (!everVisited) resolvedVisitType = 'pre_qualification';
+    }
+
     // Guards against the two-request race the pre-check above (own.has(placeId))
     // can't fully close: two near-simultaneous addStop calls for the same
     // place can both pass that SELECT before either INSERT lands. The real
@@ -683,7 +719,7 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
     // rather than letting a raw constraint error fall through as a 500. Same
     // pattern as commitDay's per-row insert loop below.
     try {
-      await trx('schedule_draft_stops').insert({ draft_id: draftId, date, place_id: placeId, visit_type: visitType || null, sort_order: nextSortOrder });
+      await trx('schedule_draft_stops').insert({ draft_id: draftId, date, place_id: placeId, visit_type: resolvedVisitType, sort_order: nextSortOrder });
     } catch (err) {
       if (isUniqueViolation(err)) {
         const dupErr = new Error('That place is already in this draft');

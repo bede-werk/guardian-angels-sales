@@ -61,7 +61,28 @@ function tierError(tier) {
 
 // Fields a client is allowed to set on an existing place via PATCH. (POST
 // below has its own inline handling since it also derives priority_score/region.)
-const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes'];
+const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes', 'capacity_monthly_referrals', 'capacity_status'];
+
+// capacity_monthly_referrals — "real number captured at pre-qual" (see the
+// migration that added it) — is nullable (null clears back to "needs
+// pre-qualification") but anything provided must be a non-negative whole
+// number (referrals/month, not a fraction).
+function capacityMonthlyReferralsError(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0) return 'capacity_monthly_referrals must be a non-negative whole number';
+  return null;
+}
+
+// estimated (never pre-qualified — the default) | adjusted (corrected
+// directly on the place card, no fresh visit) | verified (set from an actual
+// first-visit pre-qualification conversation, see routes/visits.js's PATCH).
+const CAPACITY_STATUSES = ['estimated', 'adjusted', 'verified'];
+function capacityStatusError(v) {
+  if (v === undefined) return null;
+  if (!CAPACITY_STATUSES.includes(v)) return `capacity_status must be one of: ${CAPACITY_STATUSES.join(', ')}`;
+  return null;
+}
 
 // POST /api/places — create a place (e.g. from an unmatched note in review,
 // or manually from the UI).
@@ -223,6 +244,32 @@ router.get('/check-address', async (req, res, next) => {
   }
 });
 
+// GET /api/places/check-duplicate?name=...&address=... — dry-run check for
+// PlaceModal's pre-save warning, no write. A different concern than
+// check-address above (which asks "is this address REAL," via geocoding) —
+// this asks "does a place ALREADY ON FILE look like this one," matched
+// either by name or by street address (either is enough to flag; an
+// existing place at the same address under a different name is just as much
+// a duplicate as the same name at a different address). Same loose
+// case-insensitive substring match as everywhere else in this app
+// ("similar," not exact).
+router.get('/check-duplicate', async (req, res, next) => {
+  try {
+    const { name, address } = req.query;
+    if ((!name || name.trim().length < 3) && !address) return res.json([]);
+    const rows = await knex('places')
+      .where((qb) => {
+        if (name && name.trim().length >= 3) qb.orWhereRaw('LOWER(name) LIKE ?', [`%${name.trim().toLowerCase()}%`]);
+        if (address) qb.orWhereRaw('LOWER(address) LIKE ?', [`%${address.trim().toLowerCase()}%`]);
+      })
+      .select('id', 'name')
+      .limit(5);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/places/meta/filters — distinct values for the search screen's
 // filter dropdowns (category/region), plus the full canonical category list
 // (allCategories, the categories table — see routes/categories.js) for the
@@ -338,6 +385,15 @@ router.patch('/:id', async (req, res, next) => {
     if (catError) return res.status(400).json({ error: catError });
     const tErr = tierError(update.tier);
     if (tErr) return res.status(400).json({ error: tErr });
+    const referralsErr = capacityMonthlyReferralsError(update.capacity_monthly_referrals);
+    if (referralsErr) return res.status(400).json({ error: referralsErr });
+    const statusErr = capacityStatusError(update.capacity_status);
+    if (statusErr) return res.status(400).json({ error: statusErr });
+    if (update.capacity_monthly_referrals !== undefined) {
+      update.capacity_monthly_referrals = update.capacity_monthly_referrals === '' || update.capacity_monthly_referrals === null
+        ? null
+        : Number(update.capacity_monthly_referrals);
+    }
 
     // Tier/region/priority changes need the same derived fields kept in sync
     // as at creation time. Store the coerced numeric tier (not the raw body

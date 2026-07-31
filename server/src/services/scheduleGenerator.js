@@ -26,14 +26,22 @@ const { packTimeBlock, packOptimizedTimeBlock, isGeocoded, resolveVisitType, vis
 // Shapes a ranked candidate into packTimeBlock's stop input. Keeps the
 // fields needed to read/identify the draft; packTimeBlock spreads these
 // through untouched into its output.
-function toPackableStop({ place }) {
+//
+// A place with no completed visit on record ever (lastVisitDate null, from
+// buildCandidatePool's COMPLETED-only lookup) always defaults to
+// pre_qualification, overriding any place.default_visit_type — you can't
+// skip straight to a check-in/presentation at a place nobody's actually
+// stood in front of yet. Once a place has a first completed visit, this
+// falls back to the place's own default (and from there to
+// config/visitTypes.js's DEFAULT_VISIT_TYPE) same as before.
+function toPackableStop({ place, lastVisitDate }) {
   return {
     place_id: place.id,
     place_name: place.name,
     region: place.region,
     lat: place.lat,
     lng: place.lng,
-    visitType: place.default_visit_type,
+    visitType: lastVisitDate ? place.default_visit_type : 'pre_qualification',
     capacity_level: place.capacity_level,
     capacity_status: place.capacity_status,
     relationship_level: place.relationship_level,

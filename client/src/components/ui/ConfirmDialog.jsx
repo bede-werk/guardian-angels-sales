@@ -9,7 +9,7 @@ import Button from './Button';
 // problems found — each a { title, detail } pair, in the app's existing
 // mauve "error" styling (see .error-banner in styles.css) — rendered one per
 // line with a bolded title so the rep can scan what's wrong at a glance.
-export default function ConfirmDialog({ issues, confirmLabel = 'Save anyway', onConfirm, onCancel }) {
+export default function ConfirmDialog({ issues, confirmLabel = 'Add anyway', onConfirm, onCancel }) {
   return (
     <div className="modal-backdrop" onClick={(e) => e.stopPropagation()}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>

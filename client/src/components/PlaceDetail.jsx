@@ -38,6 +38,14 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [notesDraft, setNotesDraft] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [removingNotes, setRemovingNotes] = useState(false);
+  // Pre-qualification: capacity_monthly_referrals ("real number captured at
+  // pre-qual") + capacity_status (estimated | adjusted | verified) — same
+  // click-to-edit pattern as notes above, editable directly here even though
+  // it's normally captured once via VisitLogModal's first-visit field.
+  const [editingPreQual, setEditingPreQual] = useState(false);
+  const [preQualDraft, setPreQualDraft] = useState('');
+  const [savingPreQual, setSavingPreQual] = useState(false);
+  const [removingPreQual, setRemovingPreQual] = useState(false);
 
   async function load() {
     try {
@@ -97,6 +105,42 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       window.alert(e.message);
     } finally {
       setRemovingNotes(false);
+    }
+  }
+
+  // Editing directly here (as opposed to VisitLogModal's first-visit field,
+  // which sets capacity_status: 'verified') lands as 'adjusted' — a
+  // corrected estimate, not a fresh pre-qualification conversation.
+  async function savePreQual() {
+    setSavingPreQual(true);
+    try {
+      // Rounded client-side — capacity_monthly_referrals is a real DB integer
+      // column, and the server silently drops (doesn't error on) a
+      // non-integer value rather than rejecting the save outright.
+      const rounded = Math.max(0, Math.round(Number(preQualDraft)));
+      await api.updatePlace(data.id, { capacity_monthly_referrals: rounded, capacity_status: 'adjusted' });
+      setEditingPreQual(false);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setSavingPreQual(false);
+    }
+  }
+
+  async function removePreQual() {
+    if (!window.confirm("Clear this place's pre-qualification estimate? This can't be undone.")) return;
+    setRemovingPreQual(true);
+    try {
+      await api.updatePlace(data.id, { capacity_monthly_referrals: null, capacity_status: 'estimated' });
+      setEditingPreQual(false);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setRemovingPreQual(false);
     }
   }
 
@@ -160,6 +204,8 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     e.stopPropagation();
     if (editingNotes) {
       setEditingNotes(false);
+    } else if (editingPreQual) {
+      setEditingPreQual(false);
     } else {
       onClose();
     }
@@ -198,22 +244,85 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           </div>
 
           {/* Durable notes about the organization itself — not tied to any one
-              visit or person (e.g. "front desk is picky about walk-ins"). */}
+              visit or person (e.g. "front desk is picky about walk-ins").
+              Pre-qualification (capacity_monthly_referrals/capacity_status —
+              see routes/places.js) lives in this same card as one compact
+              line, same add-then-click-to-edit interaction as notes below:
+              nothing set yet -> small muted "Needs pre-qualification" text
+              (not clickable) + an "Add pre-qualification" button up in the
+              card-head next to "Add notes"; once set -> the button's gone
+              and the line itself ("Pre-qualified · ~N referrals/month")
+              becomes the click-to-edit target, same as notes' own text once
+              it has a value. 'estimated' (default, seeded from category) vs
+              'adjusted' (edited here) vs 'verified' (captured via
+              VisitLogModal's first-visit field) collapse to the same two
+              labels — the distinction underneath is internal bookkeeping,
+              also feeds the route planner's ranking engine (a place stuck at
+              'estimated' stays in the "exploration" tier forever). */}
           <div className="card">
             <div className="card-head">
-              <h2>Notes</h2>
-              {!data.notes && !editingNotes && (
-                <Button
-                  variant="secondary"
-                  size="small"
-                  title="Add a standing note about this place"
-                  onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
-                >
-                  Add notes
-                </Button>
-              )}
+              <h2>Details</h2>
+              <div className="tag-list" style={{ flex: 'unset' }}>
+                {data.capacity_status === 'estimated' && !editingPreQual && (
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    title="Record this place's pre-qualification estimate"
+                    onClick={() => { setEditingNotes(false); setPreQualDraft(''); setEditingPreQual(true); }}
+                  >
+                    Add pre-qualification
+                  </Button>
+                )}
+                {!data.notes && !editingNotes && (
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    title="Add a standing note about this place"
+                    onClick={() => { setEditingPreQual(false); setNotesDraft(''); setEditingNotes(true); }}
+                  >
+                    Add notes
+                  </Button>
+                )}
+              </div>
             </div>
-            <div className="card-body">
+            <div className="card-body stack">
+              {editingPreQual ? (
+                <div className="tag-list" style={{ alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Referrals/month"
+                    style={{ width: 120 }}
+                    value={preQualDraft}
+                    onChange={(e) => setPreQualDraft(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); savePreQual(); } }}
+                    autoFocus
+                  />
+                  <Button size="small" title="Save this estimate" onClick={savePreQual} disabled={savingPreQual || removingPreQual || preQualDraft === ''}>
+                    {savingPreQual ? 'Saving…' : 'Save'}
+                  </Button>
+                  <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingPreQual(false)} disabled={savingPreQual || removingPreQual}>
+                    Cancel
+                  </Button>
+                  {data.capacity_status !== 'estimated' && (
+                    <Button variant="danger" size="small" title="Clear this estimate — reverts to needing pre-qualification, can't be undone" onClick={removePreQual} disabled={removingPreQual || savingPreQual}>
+                      {removingPreQual ? 'Deleting…' : 'Delete'}
+                    </Button>
+                  )}
+                </div>
+              ) : data.capacity_status !== 'estimated' ? (
+                <div
+                  className="tiny hover-row"
+                  title="Click to edit this place's pre-qualification estimate"
+                  onClick={() => { setEditingNotes(false); setPreQualDraft(data.capacity_monthly_referrals ?? ''); setEditingPreQual(true); }}
+                >
+                  Pre-qualified{data.capacity_monthly_referrals != null ? ` · ~${data.capacity_monthly_referrals} referral${data.capacity_monthly_referrals === 1 ? '' : 's'}/month` : ''}
+                </div>
+              ) : (
+                <div className="tiny muted">Needs pre-qualification</div>
+              )}
+
               {editingNotes ? (
                 <div className="stack">
                   <textarea
@@ -240,11 +349,15 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   </div>
                 </div>
               ) : data.notes ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => { setEditingPreQual(false); setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
                   {data.notes}
                 </div>
               ) : (
-                <EmptyState message="No standing notes about this place yet." />
+                // Plain small muted line, not the full illustrated EmptyState
+                // (too tall for this compact card, especially now that the
+                // pre-qualification line above already fills the "nothing
+                // set yet" role for this card).
+                <div className="tiny muted">No standing notes about this place yet.</div>
               )}
             </div>
           </div>
@@ -258,9 +371,9 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             <div className="card-head">
               <h2>People ({data.people.length})</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => { setEditingNotes(false); setAssigningPerson(true); }}>Assign person</Button>
-                <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => { setEditingNotes(false); setEditingPerson(null); }}>New person</Button>
-                <Button size="small" title="Record a referral from someone at this place" onClick={() => { setEditingNotes(false); setLoggingReferral(true); }}>Log a referral</Button>
+                <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setAssigningPerson(true); }}>Assign person</Button>
+                <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setEditingPerson(null); }}>New person</Button>
+                <Button size="small" title="Record a referral from someone at this place" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setLoggingReferral(true); }}>Log a referral</Button>
               </div>
             </div>
             <div className="card-body stack">
@@ -276,7 +389,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={p.id}
                       className="stop hover-row"
                       style={{ justifyContent: 'space-between' }}
-                      onClick={() => { setEditingNotes(false); setSelectedPersonId(p.id); }}
+                      onClick={() => { setEditingNotes(false); setEditingPreQual(false); setSelectedPersonId(p.id); }}
                     >
                       <div className="main">
                         <div className="name">{p.name}</div>
@@ -322,7 +435,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={v.id}
                       className="stack hover-row"
                       style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); setViewingUpcomingVisit(v); }}
+                      onClick={() => { setEditingNotes(false); setEditingPreQual(false); setViewingUpcomingVisit(v); }}
                     >
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                         <div className="tag-list" style={{ flex: 'unset' }}>
@@ -349,7 +462,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           <div className="card">
             <div className="card-head">
               <h2>Visit history ({data.visits.length})</h2>
-              <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setLogging(true); }}>Log a visit</Button>
+              <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setLogging(true); }}>Log a visit</Button>
             </div>
             <div className="card-body">
               {data.visits.length === 0 ? (
@@ -361,7 +474,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={v.id}
                       className="stack hover-row"
                       style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); setViewingVisit(v); }}
+                      onClick={() => { setEditingNotes(false); setEditingPreQual(false); setViewingVisit(v); }}
                     >
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                         <div className="tag-list" style={{ flex: 'unset' }}>
@@ -402,7 +515,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           >
             {deleting ? 'Deleting…' : 'Delete place'}
           </Button>
-          <Button variant="secondary" title="Edit this place's details" onClick={() => { setEditingNotes(false); setEditing(true); }}>Edit</Button>
+          <Button variant="secondary" title="Edit this place's details" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setEditing(true); }}>Edit</Button>
         </div>
       </div>
 
