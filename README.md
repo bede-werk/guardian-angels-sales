@@ -116,16 +116,17 @@ All routes below require an `Authorization: Bearer <token>` header (obtained via
 | POST | `/api/auth/change-password` · `/api/auth/logout` | Account actions |
 | GET | `/api/users` · POST `/api/users` | Team members |
 | GET | `/api/places` | List/search/filter (`search, category, tier, city, zip, neverVisited, needsAttention`) — includes each place's `referral_metrics` (`lifetime_referrals, last_referral_date, referrals_last_90_days, needs_attention`) and a preview contact |
-| GET | `/api/places/:id` | Place + full visit history + people (each with its own `referral_metrics`) + the place's own rolled-up `referral_metrics` |
+| GET | `/api/places/:id` | Place + full visit history + people (each with its own `referral_metrics`) + the place's own rolled-up `referral_metrics` + computed `relationship` (score, level, effective level, override, contributors) |
 | GET | `/api/places/meta/filters` | Distinct categories/cities/zips/tiers for dropdowns |
 | POST | `/api/places` | Create a place |
-| PATCH | `/api/places/:id` | Update a place's own fields (name, tier, notes, etc.) |
+| PATCH | `/api/places/:id` | Update a place's own fields (name, tier, notes, etc.); `relationship_level_override` sets/clears the manual relationship override (who/when stamped server-side) |
 | DELETE | `/api/places/:id` | Delete the place only — people are detached (not deleted), visits preserved via a `place_name` snapshot |
 | GET | `/api/people` | Cross-place directory (`search, placeId, category, neverContacted, needsAttention`) |
-| GET | `/api/people/:id` | Person + place + full visit history + referrals + `referral_metrics` |
+| GET | `/api/people/:id` | Person + place + full visit history + referrals + `referral_metrics` + computed `relationship` |
 | GET | `/api/places/:placeId/people` | A place's roster |
 | POST | `/api/people` | Create a person (`place_id` optional — a person can be unassigned) |
-| PATCH | `/api/people/:id` | Update a person; `place_id: null` detaches without deleting |
+| PATCH | `/api/people/:id` | Update a person; `place_id: null` detaches without deleting; `relationship_seed` sets the one-time relationship seed (decay clock stamped server-side) |
+| POST | `/api/people/seed-relationships` | Bulk relationship seeding (`[{ person_id, seed }]`), all-or-nothing, re-runnable |
 | DELETE | `/api/people/:id` | Delete a person permanently (visits they were on stay, via snapshot fields) |
 | POST | `/api/referrals` | Log a referral against a person |
 | DELETE | `/api/referrals/:id` | Delete a referral |

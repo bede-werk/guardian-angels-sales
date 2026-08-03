@@ -2,7 +2,7 @@
 // outcome, and category. This file replaced the old Badges.jsx during the
 // brand redesign — same idea, restyled with the brand tokens.
 import React from 'react';
-import { OUTCOME_LABELS } from '../../api';
+import { outcomeLabel, RELATIONSHIP_LABELS } from '../../api';
 
 // "Tier 1", "Tier 2", "Tier 3" + an optional "★ Priority" pill next to it.
 export function TierChip({ tier, isPriority }) {
@@ -14,11 +14,25 @@ export function TierChip({ tier, isPriority }) {
   );
 }
 
-// A visit's outcome (interested / not_ready / follow_up / no_answer /
-// left_materials). Renders nothing if no outcome has been logged yet.
+// A visit's outcome (substantive / introduced_new / brief / materials_only /
+// unavailable / declined). Renders nothing if no outcome has been logged yet.
+// outcomeLabel() falls back to a prettified version of the raw value, so a
+// pre-cutover outcome on an old row still reads as words rather than blank.
 export function OutcomeChip({ outcome }) {
   if (!outcome) return null;
-  return <span className={`badge o-${outcome}`}>{OUTCOME_LABELS[outcome] || outcome}</span>;
+  return <span className={`badge o-${outcome}`}>{outcomeLabel(outcome)}</span>;
+}
+
+// A place's or person's computed relationship level. `overridden` draws the
+// same pill with a marker, since an override that looks identical to a
+// computed value is exactly how a manual field goes stale unnoticed.
+export function RelationshipChip({ level, overridden }) {
+  if (!level) return null;
+  return (
+    <span className={`badge rel-${level}`} title={overridden ? 'Set manually — see the place detail for the computed value' : undefined}>
+      {RELATIONSHIP_LABELS[level] || level}{overridden ? ' ·  manual' : ''}
+    </span>
+  );
 }
 
 // A place's Source Category (Hospitals, Hospice, Physicians, etc.) as a

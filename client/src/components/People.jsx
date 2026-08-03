@@ -6,6 +6,7 @@ import PersonDetail from './PersonDetail';
 import PersonModal from './PersonModal';
 import PlaceDetail from './PlaceDetail';
 import CategoriesModal from './CategoriesModal';
+import SeedRelationshipsModal from './SeedRelationshipsModal';
 
 // Searchable / filterable directory of every person across every place —
 // the People counterpart to Places.jsx. Clicking any row opens that
@@ -21,6 +22,7 @@ export default function People({ userId }) {
   const [viewingPlaceId, setViewingPlaceId] = useState(null); // place id opened from a person's "View place" link
   const [adding, setAdding] = useState(false);
   const [managingCategories, setManagingCategories] = useState(false);
+  const [seeding, setSeeding] = useState(false); // one-time relationship-seeding screen
   // Bumped on every load() call; a response only gets applied if it's still
   // the most recent request when it resolves — guards against a slower
   // earlier keystroke's response overwriting a faster later one.
@@ -134,7 +136,20 @@ export default function People({ userId }) {
       <div className="card">
         <div className="card-head">
           <h2>{loading ? 'Loading…' : `${rows.length} people`}</h2>
-          <Button variant="secondary" size="small" title="Create a brand-new person" onClick={() => setAdding(true)}>+ Add person</Button>
+          <div className="tag-list" style={{ flex: 'unset' }}>
+            {/* Lives here rather than in the nav: it's an occasional
+                (re-runnable) bulk task over exactly this list, not a place
+                anyone needs to go day to day. */}
+            <Button
+              variant="secondary"
+              size="small"
+              title="Rate the relationships you already have, so scoring doesn't start from zero"
+              onClick={() => setSeeding(true)}
+            >
+              Seed relationships
+            </Button>
+            <Button variant="secondary" size="small" title="Create a brand-new person" onClick={() => setAdding(true)}>+ Add person</Button>
+          </div>
         </div>
         <div className="card-body" style={{ padding: 0 }}>
           <table>
@@ -207,6 +222,10 @@ export default function People({ userId }) {
 
       {managingCategories && (
         <CategoriesModal onClose={() => setManagingCategories(false)} onChanged={loadReferenceData} />
+      )}
+
+      {seeding && (
+        <SeedRelationshipsModal onClose={() => setSeeding(false)} onSaved={refresh} />
       )}
     </div>
   );

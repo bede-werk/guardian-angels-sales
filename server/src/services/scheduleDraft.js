@@ -22,6 +22,8 @@ const { rankCandidates } = require('./schedulingEngine');
 const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
+const { orgToday } = require('./orgDate');
+const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
 
 // Recognizes a unique-constraint violation across both engines this app runs
 // on (SQLite in dev, Postgres in prod) — see commitDay's per-row insert loop,
@@ -157,27 +159,11 @@ module.exports.partitionCommittableStops = partitionCommittableStops;
 
 // -- DB-touching layer --------------------------------------------------
 
-// Guardian Angels operates out of one office (Lincoln, NE — America/Chicago),
-// so "today" is computed in that fixed zone rather than raw UTC. Using UTC
-// directly caused a real bug: for several hours every evening (once UTC has
-// already rolled to the next calendar day, any time after ~7pm Central), the
-// server's idea of "today" was a day ahead of every rep's browser (which
-// computes "today" in ITS local timezone — see RoutePlanner.jsx's todayISO()) —
-// spuriously rejecting an evening plan-for-today request as "in the past."
-// A fixed IANA zone (not a client-supplied one) keeps this server-
-// authoritative rather than trusting client input for something logic-
-// relevant. formatToParts (not a locale's default format string) guarantees
-// exact YYYY-MM-DD regardless of ICU/locale quirks.
-function orgToday() {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Chicago',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const get = (type) => parts.find((p) => p.type === type).value;
-  return `${get('year')}-${get('month')}-${get('day')}`;
-}
+// orgToday (the org's "today" in America/Chicago, not UTC — see
+// services/orgDate.js for the real evening-rollover bug that pinned it to a
+// fixed zone) now lives in its own module, since services/relationship.js
+// needs the same notion of today for its decay clock. Imported at the top of
+// this file; this comment is just a signpost for anyone looking for it here.
 
 // Queries `places` plus, per place: last COMPLETED visit date, count of
 // completed visits in the trailing FATIGUE_WINDOW_DAYS before `today`, and
@@ -220,11 +206,26 @@ async function buildCandidatePool(db, { today }) {
     if (!nextVisitByPlace[v.place_id]) nextVisitByPlace[v.place_id] = v.next_visit_date;
   }
 
+  // Relationship level is computed, not stored (services/relationship.js) —
+  // fetched once for the WHOLE pool here, exactly like the three lookups
+  // above, because this function runs on every draft generation across every
+  // place. A per-place call here would be catastrophic.
+  //
+  // `asOf: today` only: the spec's per-day re-evaluation (a place's
+  // relationship decays a little further on day 5 of a plan than on day 1) is
+  // deliberately out of scope for now — computeRelationshipForPlaces already
+  // takes asOf so threading a per-day date through generateDraft later won't
+  // need to touch this call site's shape.
+  const relationshipByPlace = await computeRelationshipForPlaces(db, places.map((p) => p.id), { asOf: today });
+
   return places.map((place) => ({
     place,
     lastVisitDate: lastVisitByPlace[place.id] || null,
     recentCompletedCount: recentCounts[place.id] || 0,
     nextVisitDate: nextVisitByPlace[place.id] || null,
+    // The EFFECTIVE level — a manual override wins over the computed value,
+    // which is the whole point of the override existing.
+    relationshipLevel: relationshipFor(relationshipByPlace, place.id).effective_level,
   }));
 }
 

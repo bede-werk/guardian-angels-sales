@@ -7,6 +7,7 @@ import ReferralModal from './ReferralModal';
 import ReferralDetailModal from './ReferralDetailModal';
 import VisitDetailModal from './VisitDetailModal';
 import VisitLogModal from './VisitLogModal';
+import { PersonRelationship } from './RelationshipDetail';
 
 // Slide-in modal: a person's own detail — their place, contact info,
 // durable notes/preferences, and every visit where they were the recorded
@@ -361,6 +362,13 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               </div>
             </div>
             <div className="card-body stack">
+              {/* Relationship is measured per PERSON and rolled up to the
+                  place, so this is where the number actually originates —
+                  the place's score is a weighted sum of these. No override
+                  here: overrides live on the place, which is what the
+                  scheduler reads. */}
+              <PersonRelationship relationship={data.relationship} />
+
               {editingPreferences ? (
                 <div className="stack">
                   <textarea

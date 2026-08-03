@@ -856,3 +856,32 @@ again). 159 tests pass (146 + 13 new), client build clean.
   `git checkout bede-working`. As of this writing it's merged into `main`
   (pushed 2026-07-22) — check `git status`/`git log` for whether that's
   since drifted before assuming it's still in sync.
+
+## Relationship level is now computed (2026-08-03) — see HANDOFF.md §16
+
+The `relationship_level` half of `config/scheduling.js`'s cadence table is no longer a manual
+`places` column. It's computed live from visit history (`services/relationship.js`), measured
+per person and rolled up to the place, with a decaying one-time seed and a manual override.
+
+What matters for this document specifically:
+
+- **`buildCandidatePool` now attaches `relationshipLevel`** (the *effective* level — override
+  wins over computed) to every candidate, in bulk, alongside `lastVisitDate` /
+  `recentCompletedCount` / `nextVisitDate`. That's 4 extra queries per draft generation,
+  regardless of pool size — never make it per-place.
+- **`schedulingEngine.js`'s `urgency()` reads that**, via `effectiveRelationshipLevel()`, instead
+  of `place.relationship_level`. The cadence table itself is unchanged. The fallback to the old
+  column exists only for the one-release comparison window — delete it when the column is dropped.
+- **Per-day `asOf` is NOT threaded through yet.** `computeRelationshipForPlaces` accepts `asOf`
+  and `buildCandidatePool` passes generation-day only, so day 5 of a plan currently sees the same
+  relationship decay as day 1. Wiring a per-day date through `generateDraft` is separate work
+  (the call-site shape won't need to change).
+- **Known interaction, deliberately unfixed:** `lastVisitDate` counts all completed visits
+  regardless of quality, so a front-desk drop-off resets the urgency clock and trips
+  `HARD_FLOOR_DAYS` exactly like a substantive meeting — while contributing ~1% of the
+  relationship weight. A rep doing easy drop-offs can keep a place looking recently-visited and
+  floor-blocked while its relationship quietly decays. Two candidate fixes (quality-weight the
+  urgency clock; let ENDANGERED trigger on relationship decay, not just urgency) are both out of
+  scope so far. Don't rediscover this as a mystery bug.
+
+Full design, schema, deferred list and open judgment calls: **HANDOFF.md §16**.

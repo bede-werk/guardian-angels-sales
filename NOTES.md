@@ -1602,3 +1602,53 @@ Every change in this session verified live via scripted Playwright passes agains
 (id 5, temp `auth_token`, cleared after every round) — screenshots for the visual changes,
 programmatic button-state/label assertions for the two bug fixes. No backend/schema changes,
 no test-suite impact. Committed on `bede-working`.
+
+---
+
+## 2026-08-03 — Computed relationship level
+
+Replaced the dead `places.relationship_level` (manual, defaulted `'weak'`, no write path
+anywhere, never once edited — so one of the two axes of the route planner's cadence table did
+nothing) with a computed, decaying score. Built from Bede's own written spec in one session.
+
+**Design record: `HANDOFF.md` §16.** Route-planner-specific notes: `ROUTEPLANNER_PROGRESS.md`.
+
+Shipped: 3 migrations (`20260803000000`–`02`), `services/relationship.js` +
+`services/orgDate.js` (extracted `orgToday` out of `scheduleDraft.js` — real second consumer),
+46 new tests (154 → 200), `npm run relationship:distribution`, wiring into places/people
+GET+PATCH, a bulk `POST /api/people/seed-relationships`, `schedulingEngine.js` +
+`buildCandidatePool`, `RelationshipDetail.jsx`, `SeedRelationshipsModal.jsx`, a rewritten
+`VisitLogModal.jsx`, and the visit-outcome enum cutover.
+
+**Two behaviour changes that will surprise anyone who doesn't know about them:**
+
+1. Visit outcomes were **replaced outright** — `interested/not_ready/follow_up/no_answer/
+   left_materials` → `substantive/introduced_new/brief/materials_only/unavailable/declined`.
+   No old→new mapping was written (the old set was evaluative, the new one observational — no
+   honest 1:1). Old rows keep their string and score at a documented floor. Writing the real
+   backfill is deferred to whenever actual historical data gets imported.
+2. The pre-qualification prompt now gates on `capacity_status === 'estimated'` rather than
+   "is this the place's first visit." The old rule had a trapdoor: miss the number once and the
+   place was never asked again, leaving it stuck in the ranker's exploration tier forever.
+
+**Verified live, not just typechecked** — real browser pass (playwright-core + system Chrome,
+Lisa Marks id 5, all fixtures and the temp token cleaned up after): place/person relationship
+lines with contributor breakdowns, override editor showing the computed value alongside the
+override, conditional person picker, duration auto-fill, seeding screen. Zero console errors.
+Arithmetic checked by hand against the rendered numbers.
+
+**Post-build live-feedback round** (Bede's usual pattern — he used it and asked for changes
+immediately): added "+ Assign someone already on file…" to VisitLogModal's person picker
+(reuses `AssignPersonModal`, which now hands assigned ids back so a single assignee is
+auto-selected), and made the duration field re-suggest on visit-type change. A third reported
+issue turned out to already work correctly — verified all four options in a browser and showed
+the evidence rather than changing working code.
+
+**Still open for Bede:** the `RELATIONSHIP_THRESHOLDS.medium` 1.3-vs-1.4 judgment call (the
+spec's prose and its own constant disagree — see §16), and whether the contributors list should
+show zero-scoring people. Neither blocks anything.
+
+**Note on current data:** every relationship score reads 0/weak, which is correct — the 261
+places are real, but all people/referrals/visits are test data, and every existing visit is
+detached (`place_id` null). Don't tune thresholds off `npm run relationship:distribution` until
+after the real people import and a seeding pass.

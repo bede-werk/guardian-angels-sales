@@ -10,6 +10,7 @@ import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
 import VisitDetailModal from './VisitDetailModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
+import { PlaceRelationship } from './RelationshipDetail';
 
 // Slide-in modal: place details + people here + full visit history + "log a
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
@@ -46,6 +47,10 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [preQualDraft, setPreQualDraft] = useState('');
   const [savingPreQual, setSavingPreQual] = useState(false);
   const [removingPreQual, setRemovingPreQual] = useState(false);
+  // Manual relationship override (see RelationshipDetail.jsx). The editor's
+  // own open/closed state lives in that component; only the in-flight save
+  // needs to be known here, since this is what triggers the reload.
+  const [savingRelationship, setSavingRelationship] = useState(false);
 
   async function load() {
     try {
@@ -126,6 +131,25 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       window.alert(e.message);
     } finally {
       setSavingPreQual(false);
+    }
+  }
+
+  // Sets (or, with null, clears) the manual relationship override. The
+  // server stamps who/when — see routes/places.js — so nothing about the
+  // attribution is client-supplied. Returns false on failure so the editor
+  // stays open with the user's choice intact rather than silently closing.
+  async function saveRelationshipOverride(level) {
+    setSavingRelationship(true);
+    try {
+      await api.updatePlace(data.id, { relationship_level_override: level });
+      load();
+      onChanged?.();
+      return true;
+    } catch (e) {
+      window.alert(e.message);
+      return false;
+    } finally {
+      setSavingRelationship(false);
     }
   }
 
@@ -322,6 +346,18 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               ) : (
                 <div className="tiny muted">Needs pre-qualification</div>
               )}
+
+              {/* Computed relationship level + why. Sits alongside
+                  pre-qualification because the two together are exactly what
+                  the route planner's cadence table reads (capacity x
+                  relationship) — seeing them next to each other is what makes
+                  "why does this place keep coming up / never come up?"
+                  answerable from one screen. */}
+              <PlaceRelationship
+                relationship={data.relationship}
+                onSave={saveRelationshipOverride}
+                saving={savingRelationship}
+              />
 
               {editingNotes ? (
                 <div className="stack">

@@ -75,8 +75,12 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
     setAssigning(true);
     setError(null);
     try {
-      await Promise.all([...selected].map((id) => api.people.update(id, { place_id: placeId })));
-      onAssigned?.();
+      const ids = [...selected];
+      await Promise.all(ids.map((id) => api.people.update(id, { place_id: placeId })));
+      // Hands back WHO was assigned, so a caller that needs to act on them
+      // can (VisitLogModal auto-selects a single assignee as the person the
+      // visit was with). PlaceDetail ignores the argument and just reloads.
+      onAssigned?.(ids);
       onClose();
     } catch (e) {
       setError(e.message);

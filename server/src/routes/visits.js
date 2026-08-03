@@ -9,28 +9,53 @@ const { VISIT_TYPES } = require('../config/visitTypes');
 
 const router = express.Router();
 
-const OUTCOMES = ['interested', 'not_ready', 'follow_up', 'no_answer', 'left_materials'];
+// Outcomes are now the six observable events the relationship model scores
+// against (see services/relationship.js's OUTCOME_WEIGHT). This REPLACED the
+// original set (interested/not_ready/follow_up/no_answer/left_materials)
+// outright rather than running both: the old values were evaluative ("how did
+// it feel") where these are observational ("what happened"), so there's no
+// honest 1:1 mapping, and a two-enum period would mean every consumer
+// carrying both maps forever.
+//
+// Existing rows keep their old string. relationship.js scores an unrecognized
+// outcome at a documented floor rather than throwing, so old visits degrade
+// quietly instead of breaking anything. All current visit data is test data;
+// the real old->new backfill is Bede's to write when historical data actually
+// gets imported (tracked in HANDOFF.md).
+const OUTCOMES = ['substantive', 'introduced_new', 'brief', 'materials_only', 'unavailable', 'declined'];
 const STATUSES = ['planned', 'completed', 'skipped'];
 
-// A place's very first completed visit is normally the real pre-qualification
-// conversation — VisitLogModal surfaces an extra "avg. referrals/month
-// discovered" field only then, sent here as a transient `capacity_monthly_referrals`
-// body field (not a `visits` column — EDITABLE above intentionally excludes
-// it). When present on a visit that ends up `completed`, and this genuinely
-// is the place's only completed visit (re-checked server-side, not trusted
-// from the client's own read), writes through to `places.capacity_monthly_referrals`
-// + flips `capacity_status` to 'verified' — the same fields
-// routes/places.js's PATCH lets a rep correct directly afterward (landing as
-// 'adjusted' instead, see its own comment). Silently no-ops on bad/irrelevant
-// input, same "extra field ignored" convention as the EDITABLE loops below —
-// this is a best-effort convenience, not a required part of logging a visit.
-async function maybeCapturePreQualification({ placeId, visitId, capacityMonthlyReferrals }) {
+// WHO the rep actually spoke to — the single biggest input to relationship
+// scoring, since only 'named_person' can build an individual's score.
+const MET_WITH_TYPES = ['named_person', 'staff', 'receptionist', 'nobody'];
+
+// Captures the "avg. referrals/month discovered at pre-qual" number that
+// VisitLogModal offers on any completed visit to a place that hasn't been
+// pre-qualified yet. Sent as a transient `capacity_monthly_referrals` body
+// field (not a `visits` column — EDITABLE below intentionally excludes it);
+// writes through to `places.capacity_monthly_referrals` and flips
+// `capacity_status` to 'verified' — the same fields routes/places.js's PATCH
+// lets a rep correct directly afterward (landing as 'adjusted' instead, see
+// its own comment). Silently no-ops on bad/irrelevant input, same "extra field
+// ignored" convention as the EDITABLE loops below — this is a best-effort
+// convenience, not a required part of logging a visit.
+async function maybeCapturePreQualification({ placeId, capacityMonthlyReferrals }) {
   if (capacityMonthlyReferrals === undefined || capacityMonthlyReferrals === null || capacityMonthlyReferrals === '') return;
   const n = Number(capacityMonthlyReferrals);
   if (!Number.isInteger(n) || n < 0) return;
 
-  const otherCompleted = await knex('visits').where({ place_id: placeId, status: 'completed' }).whereNot('id', visitId).first();
-  if (otherCompleted) return; // not actually the first visit — don't clobber an existing capture
+  // Gate is capacity_status, NOT "is this the first visit." The old
+  // first-visit-only rule had a trapdoor: miss the number on visit one and
+  // the place was never asked again, so it sat on an estimated capacity
+  // forever — permanently stuck in the ranker's exploration tier. Keying off
+  // 'estimated' means the prompt keeps coming back until a real number is
+  // actually captured, and stops the moment one is.
+  //
+  // Still re-read server-side rather than trusting the client's view of the
+  // place: 'estimated' is the only state this may write over, so a second
+  // capture can never clobber a verified/adjusted number.
+  const place = await knex('places').where({ id: placeId }).first();
+  if (!place || place.capacity_status !== 'estimated') return;
 
   await knex('places').where({ id: placeId }).update({ capacity_monthly_referrals: n, capacity_status: 'verified' });
 }
@@ -54,6 +79,13 @@ const EDITABLE = [
   'next_visit_date',
   'sort_order',
   'visit_type',
+  // Relationship-model capture (see services/relationship.js).
+  // actual_duration_minutes is captured but deliberately unread by that model
+  // — it's here to start collecting real data against which
+  // config/visitTypes.js's hardcoded per-type minutes can later be calibrated.
+  'met_with_type',
+  'they_requested',
+  'actual_duration_minutes',
 ];
 
 // Re-fetches a visit joined to its place's basic info, for the response
@@ -160,6 +192,9 @@ router.post('/', async (req, res, next) => {
     // re-deriving later, even if the place is later renamed or deleted.
     const payload = { place_id: numericPlaceId, place_name: place.name };
     for (const f of EDITABLE) if (req.body[f] !== undefined) payload[f] = req.body[f];
+    if (payload.met_with_type && !MET_WITH_TYPES.includes(payload.met_with_type)) {
+      return res.status(400).json({ error: `met_with_type must be one of ${MET_WITH_TYPES.join(', ')}` });
+    }
     if (payload.outcome && !OUTCOMES.includes(payload.outcome)) {
       return res.status(400).json({ error: `outcome must be one of ${OUTCOMES.join(', ')}` });
     }
@@ -230,7 +265,7 @@ router.post('/', async (req, res, next) => {
     const id = knex.extractId(inserted);
 
     if (payload.status === 'completed') {
-      await maybeCapturePreQualification({ placeId: numericPlaceId, visitId: id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
+      await maybeCapturePreQualification({ placeId: numericPlaceId, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
     }
 
     res.status(201).json(await fetchVisit(id));
@@ -261,6 +296,9 @@ router.patch('/:id', async (req, res, next) => {
     const update = { updated_at: knex.fn.now() };
     for (const f of EDITABLE) if (req.body[f] !== undefined) update[f] = req.body[f];
 
+    if (update.met_with_type && !MET_WITH_TYPES.includes(update.met_with_type)) {
+      return res.status(400).json({ error: `met_with_type must be one of ${MET_WITH_TYPES.join(', ')}` });
+    }
     if (update.outcome && !OUTCOMES.includes(update.outcome)) {
       return res.status(400).json({ error: `outcome must be one of ${OUTCOMES.join(', ')}` });
     }
@@ -301,7 +339,7 @@ router.patch('/:id', async (req, res, next) => {
 
     const finalStatus = update.status ?? visit.status;
     if (finalStatus === 'completed') {
-      await maybeCapturePreQualification({ placeId: visit.place_id, visitId: id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
+      await maybeCapturePreQualification({ placeId: visit.place_id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
     }
 
     res.json(await fetchVisit(id));

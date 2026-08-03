@@ -107,6 +107,10 @@ export const api = {
     update: (id, body) => request(`/people/${id}`, { method: 'PATCH', body }),
     remove: (id) => request(`/people/${id}`, { method: 'DELETE' }),
     birthdays: (month) => request(`/people/birthdays?month=${month}`), // month is 1-12; Calendar tab's birthday badges
+    // One-time relationship seeding (see the Seed Relationships screen).
+    // Body: [{ person_id, seed }] — a null/'' seed clears that person's.
+    // All-or-nothing server-side; re-runnable (re-seeding resets the decay clock).
+    seedRelationships: (entries) => request('/people/seed-relationships', { method: 'POST', body: entries }),
   },
 
   // Referrals — server/src/routes/referrals.js
@@ -176,13 +180,46 @@ export const api = {
   },
 };
 
-// Display labels for the visit outcome enum (server/src/routes/visits.js's OUTCOMES).
+// Display labels for the visit outcome enum (server/src/routes/visits.js's
+// OUTCOMES). These six replaced the original evaluative set
+// (interested/not_ready/follow_up/no_answer/left_materials) — they describe
+// what OBSERVABLY happened rather than how it felt, which is what makes them
+// safe to score a relationship against without inflating over time.
+// Ordered strongest-signal-first, which is also the order they're offered in
+// the picker.
 export const OUTCOME_LABELS = {
-  interested: 'Interested',
-  not_ready: 'Not ready',
-  follow_up: 'Follow up',
-  no_answer: 'No answer',
-  left_materials: 'Left materials',
+  substantive: 'Substantive conversation',
+  introduced_new: 'Introduced to someone new',
+  brief: 'Brief exchange',
+  materials_only: 'Left materials only',
+  unavailable: 'They were unavailable',
+  declined: 'Not interested right now',
+};
+
+// Any outcome string not in the map above is a pre-cutover value still on an
+// old row. Rendered as-is (prettified) rather than blank, so historical
+// visits stay readable instead of looking corrupted.
+export function outcomeLabel(outcome) {
+  if (!outcome) return null;
+  return OUTCOME_LABELS[outcome] || String(outcome).replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+}
+
+// Who the rep actually spoke to (server/src/routes/visits.js's MET_WITH_TYPES).
+// The single biggest input to relationship scoring — only 'named_person'
+// builds an individual's score, so this is deliberately asked as a required
+// question rather than inferred from whether a person happened to be picked.
+export const MET_WITH_LABELS = {
+  named_person: 'A specific person',
+  staff: 'A staff member (name unknown)',
+  receptionist: 'Receptionist or front desk',
+  nobody: 'Nobody — drop-off',
+};
+
+// Display labels for a computed relationship level (services/relationship.js).
+export const RELATIONSHIP_LABELS = {
+  strong: 'Strong',
+  medium: 'Medium',
+  weak: 'Weak',
 };
 
 
@@ -193,6 +230,20 @@ export const VISIT_TYPE_LABELS = {
   working_visit: 'Working visit',
   presentation: 'Presentation / in-service',
   pre_qualification: 'Pre-qualification',
+};
+
+// Planned minutes per visit type — a MIRROR of server/src/config/visitTypes.js's
+// VISIT_TYPES[*].minutes, used only to prefill the "how long did it actually
+// take?" field so the rep is correcting a sensible number instead of typing
+// into a blank. Keep in sync with that file (same standing arrangement as
+// VISIT_TYPE_LABELS mirroring its keys). Nothing is computed from this
+// client-side — the server never reads it back.
+export const VISIT_TYPE_MINUTES = {
+  drop_in: 7,
+  check_in: 18,
+  working_visit: 30,
+  presentation: 60,
+  pre_qualification: 15,
 };
 
 // Today's date as 'YYYY-MM-DD', matching how dates are stored/compared everywhere else.

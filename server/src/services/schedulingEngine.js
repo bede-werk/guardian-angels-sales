@@ -63,11 +63,28 @@ function targetCadenceDays(capacityLevel, relationshipLevel, config) {
 // *effective* cadence, not the base one — this is the single source of
 // truth used both to test the tier-1 neglect threshold and to order within
 // tiers 1 and 3.
-function urgency({ place, lastVisitDate, recentCompletedCount, today, config }) {
+function urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, today, config }) {
   if (!lastVisitDate) return Infinity;
-  let cadence = targetCadenceDays(place.capacity_level, place.relationship_level, config);
+  let cadence = targetCadenceDays(place.capacity_level, effectiveRelationshipLevel({ place, relationshipLevel }), config);
   if (recentCompletedCount >= config.FATIGUE_THRESHOLD) cadence *= config.FATIGUE_MULTIPLIER;
   return daysSince(lastVisitDate, today) / cadence;
+}
+
+// Relationship level is now COMPUTED (services/relationship.js) and supplied
+// per-candidate by buildCandidatePool, rather than read off the place row —
+// places.relationship_level was a manual field that defaulted to 'weak' and
+// was never once edited, which quietly flattened this whole axis of the
+// cadence table.
+//
+// The fallback to place.relationship_level exists only for the transition:
+// places.relationship_level is deliberately still on the table for one
+// release so computed values can be compared against the old manual ones on
+// real data. In production buildCandidatePool always supplies
+// relationshipLevel, so the fallback never fires; it's what keeps this
+// module's own pure tests (which construct bare place objects) meaningful in
+// the meantime. Delete it along with the column.
+function effectiveRelationshipLevel({ place, relationshipLevel }) {
+  return relationshipLevel ?? place.relationship_level;
 }
 
 // Ordinal for "ordered among themselves by capacity level (guess)" within
@@ -100,13 +117,13 @@ function eligibility({ place, today, lastVisitDate, nextVisitDate, lockedElsewhe
 
 // [tier, withinTierValue] — lower tier sorts first; within a tier, higher
 // withinTierValue sorts first (see compareRankKeys).
-function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, today, config }) {
+function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, relationshipLevel, today, config }) {
   if (nextVisitDate && nextVisitDate <= today) {
     return [TIERS.COMMITMENT, daysSince(nextVisitDate, today)];
   }
 
   const isEstimated = place.capacity_status === 'estimated';
-  const u = urgency({ place, lastVisitDate, recentCompletedCount, today, config });
+  const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, today, config });
 
   if (!isEstimated && u >= config.NEGLECT_MULTIPLIER) {
     return [TIERS.ENDANGERED, u];
@@ -132,7 +149,7 @@ function compareRankKeys(a, b) {
   return compareDesc(a[1], b[1]);
 }
 
-// candidates: [{ place, lastVisitDate, recentCompletedCount, nextVisitDate, lockedElsewhere }]
+// candidates: [{ place, lastVisitDate, recentCompletedCount, nextVisitDate, lockedElsewhere, relationshipLevel }]
 // Filters out ineligible candidates, then sorts the rest by rankKey.
 function rankCandidates(candidates, { today, config }) {
   return candidates
@@ -145,6 +162,7 @@ module.exports = {
   TIERS,
   daysSince,
   targetCadenceDays,
+  effectiveRelationshipLevel,
   urgency,
   capacityRank,
   eligibility,

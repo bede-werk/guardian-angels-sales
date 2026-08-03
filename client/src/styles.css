@@ -179,6 +179,16 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1; min-width: 120px; }
 
+/* A checkbox with its label on one line. The width override stops the
+   global `input { width: 100% }` rule from stretching the box itself. */
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check-row input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
+
+/* A button that reads as an inline link — for a secondary action sitting
+   inside body text, where a real .btn would be too heavy. */
+.link-button { background: none; border: none; padding: 0; font: inherit; color: var(--blue); cursor: pointer; text-decoration: underline; }
+.link-button:hover { color: var(--blue-dark); }
+
 /* Chips / badges — small colored pills. See ui/Chip.jsx (TierChip/
    OutcomeChip) for which component renders which class below. */
 .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; white-space: nowrap; }
@@ -188,11 +198,26 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.star { background: var(--mauve-tint-1); color: var(--mauve); } /* ⭐ Priority flag */
 .badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* Over-budget flag on a Route Planner day/stop */
 .badge.committed { background: var(--teal-tint-2); color: var(--teal-dark); } /* Route Planner: stops already committed to real visits for this day */
+/* Visit outcomes, strongest signal first. Graded warm->neutral so a glance
+   down a visit history reads as "how much real contact happened." */
+.badge.o-substantive { background: var(--teal-tint-2); color: var(--teal-dark); }
+.badge.o-introduced_new { background: var(--teal-tint-2); color: var(--teal-dark); }
+.badge.o-brief { background: var(--blue-tint-1); color: var(--blue); }
+.badge.o-materials_only { background: var(--grey-tint-1); color: var(--grey-dark); }
+.badge.o-unavailable { background: var(--grey-tint-1); color: var(--muted); }
+.badge.o-declined { background: var(--mauve-tint-1); color: var(--warn); }
+/* Pre-cutover outcome values still on old rows (see api.js's outcomeLabel) —
+   no dedicated color, but they inherit .badge so they never render unstyled. */
 .badge.o-interested { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.o-follow_up { background: var(--blue-tint-1); color: var(--blue); }
 .badge.o-not_ready { background: var(--mauve-tint-1); color: var(--warn); }
 .badge.o-no_answer { background: var(--grey-tint-1); color: var(--muted); }
 .badge.o-left_materials { background: var(--grey-tint-1); color: var(--grey-dark); }
+
+/* Computed relationship level (services/relationship.js) — see RelationshipChip. */
+.badge.rel-strong { background: var(--teal-tint-2); color: var(--teal-dark); }
+.badge.rel-medium { background: var(--blue-tint-1); color: var(--blue); }
+.badge.rel-weak { background: var(--grey-tint-1); color: var(--muted); }
 
 /* Category chips: flat neutral style, same for every category */
 .cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--grey-tint-1); color: var(--grey-dark); }

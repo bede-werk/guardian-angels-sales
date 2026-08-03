@@ -13,6 +13,34 @@ current state, and next steps.
 If you're picking this project back up cold, read this section first — it'll reorient you
 faster than the full doc below.
 
+---
+
+### 2026-08-03 — Relationship level is now COMPUTED (new §16 at the bottom of this doc)
+
+`places.relationship_level` was a manual field that defaulted to `'weak'`, had no write path
+anywhere in the app, and had never once been edited — so every place read `'weak'` and one of
+the two axes of the route planner's cadence table was doing nothing. It's been replaced with a
+computed, decaying score (`server/src/services/relationship.js`), measured per PERSON and
+rolled up to the place, with a manual override that is always displayed next to the computed
+value it replaces. **Full design, the three new migrations, and the deferred items are in §16
+— read that before touching relationship, capacity, or visit-outcome code.**
+
+Two things it's worth knowing immediately, because both will otherwise look like bugs:
+
+1. **Visit outcomes were replaced outright.** `interested / not_ready / follow_up / no_answer /
+   left_materials` → `substantive / introduced_new / brief / materials_only / unavailable /
+   declined`. No old→new mapping was written: the old values were evaluative ("how did it
+   feel"), the new ones observational ("what happened"), so there's no honest 1:1. Existing
+   rows keep their old string and score at a documented floor rather than throwing.
+   **Writing the real backfill is a to-do for whenever actual historical data gets imported**
+   (all current visit data is test data) — see §16's deferred list.
+2. **Everything currently scores 0 / `weak`, and that is correct, not broken.** No visit in the
+   DB carries the new capture fields yet, and every existing completed visit is detached
+   (`place_id` null) from smoke-test cleanup. Run `npm run relationship:distribution` (new) to
+   see the live picture — it warns loudly when one bucket holds >90% of places, which is the
+   signal that the axis isn't separating and half-lives/thresholds need tuning before the
+   ranker leans on it. Seeding (People tab → "Seed relationships") is what makes day one honest.
+
 **What this app is, in one line:** a CRM-ish tool for Guardian Angels Homecare's sales team
 to plan visits to referral places, log who they talked to, and track referrals — built this
 year in a series of same-day feature sessions directly with Bede (the owner/primary user).
@@ -1127,3 +1155,139 @@ wire that into `scheduler.js`'s ordering in place of/alongside `clusterSort`, (d
    source of truth, phase-by-phase. All three frontend sub-slices are done and the old
    scheduler is fully retired — the route planner is the app's only route-planning surface.
 7. §14A's two critical bugs are fixed — no need to fix them again, just don't reintroduce them.
+8. Read §16 before touching relationship level, capacity, or visit outcomes — the outcome enum
+   changed and relationship is now computed, not stored.
+
+---
+
+## 16. Computed relationship level (built 2026-08-03)
+
+Replaces the manual `places.relationship_level` field. Built from Bede's own written spec;
+this section records what was built, the decisions taken along the way, and what's deliberately
+left open.
+
+### Why
+
+`relationship_level` is one of the two axes of `config/scheduling.js`'s cadence table (the other
+is `capacity_level`). It defaulted to `'weak'`, had no write path in any route or UI, and had
+never been edited — so **every place in the database read `'weak'`**, and the cadence table was
+effectively running on capacity alone. That's the same failure that killed the old
+`relationship_temp` field (§9): a manual "smart" field that needs upkeep and doesn't get it.
+
+### The model (`server/src/services/relationship.js`)
+
+Relationship is measured **per person** and rolled up to the place — a relationship is with
+Sharon at Tabitha, not with Tabitha. Nothing is stored; it's computed live on every read, same
+convention as referral metrics (§9).
+
+- **Per-visit weight** = who you met × what happened. `named_person` 1.0 / `staff` 0.35 /
+  `receptionist` 0.15 / `nobody` 0.05, times `substantive` 1.0 / `introduced_new` 1.0 /
+  `brief` 0.6 / `materials_only` 0.25 / `unavailable` 0.15 / `declined` 0.1. A real sit-down
+  scores 1.0; a front-desk brochure drop scores 0.0125 — an ~80× spread, which is the point.
+- **Decay**: every visit's weight halves every half-life. 30 days for fast-moving categories
+  (`Assisted Living & Senior Living`, `Community Partners`, `Hospice`, `Hospitals`,
+  `Physical Therapy`, `Physicians`, `Rehabilitation Centers`, `Legal & Trust`), 60 days for
+  everything else including any category added later. Exact strings must match the seeded
+  `categories` table — a near-miss silently falls through to the default, so there's a test
+  guarding precisely that.
+- **Reciprocity multiplier** measures *their* investment, not the rep's: +0.0625 per known
+  personal detail (birthday, preferences, email, phone), ×1.15 if they've ever referred,
+  ×1.1 if they asked us for something within the trailing half-life. Capped at ×1.6.
+- **Place rollup**: people sorted by score, each worth half the last (`p0 + 0.5·p1 + 0.25·p2…`),
+  plus a floor from visits that never met a named person. One champion beats six lukewarm
+  contacts; a zero-scoring contact contributes exactly zero at any position, so extra weak
+  contacts can never dilute a strong one.
+- **Buckets**: strong ≥ 3.4, medium ≥ 1.3, else weak — category-independent by design, since
+  steady-state score depends only on the *ratio* of visit cadence to half-life.
+
+**Axis separation is load-bearing.** Relationship must never read referral *volume* — that's the
+capacity axis. If both axes read the same signal they collapse into one and the deliberate
+inversion that makes the cadence table valuable (high-capacity + weak-relationship gets visited
+most often) stops working, because that cell empties out by construction. "Has ever referred" is
+allowed as a **binary**; the referral query selects `DISTINCT person_id` and never a `COUNT`
+specifically so the model has no access to volume.
+
+### Seeding
+
+Without intervention every place reads `weak` on day one. `people.relationship_seed` holds a
+one-time converged score value (Champion 4.0 / Solid 2.0 / Acquaintance 0.8) that **decays on
+the same clock as real visit weight** — ~3% of original after five months on a 30-day category.
+No expiry logic, no cleanup task: a real relationship gets visited and earns genuine score as
+the seed fades; an optimistic seed never followed up decays to nothing, which is the honest
+answer. *A seed is a claim with an expiration date attached; an override is a claim that is
+silently wrong forever.* UI: People tab → "Seed relationships". Re-runnable — re-seeding
+overwrites the value and resets the decay clock.
+
+### Override
+
+`places.relationship_level_override` + `_at` + `_by`. The effective level is
+`override ?? computed`, and that's what the scheduler reads. The UI **always shows the computed
+value next to an override when they disagree** ("Set manually by Bede on 8/3 — computed: weak").
+That visible divergence is the entire anti-rot mechanism; an override that silently looks like a
+computed value is exactly how a manual field goes stale unnoticed. Who/when are stamped
+server-side from the bearer token, never taken from the request body.
+
+### Schema (3 migrations, `20260803000000`–`20260803000002`)
+
+- `visits`: `met_with_type`, `they_requested`, `actual_duration_minutes`
+- `people`: `relationship_seed`, `relationship_seeded_at`
+- `places`: `relationship_level_override`, `relationship_override_at`, `relationship_override_by`
+
+`places.relationship_level` is **deliberately still on the table** as a read-only legacy column
+for one release, so computed values can be compared against the old manual ones on real data.
+Drop it in a follow-up once that comparison is done. `schedulingEngine.js`'s
+`effectiveRelationshipLevel()` has a fallback to it that exists only for that transition —
+delete the fallback along with the column.
+
+*(Migration note, since the project convention here is easy to over-apply: adding a **new**
+nullable FK column uses a plain `.alterTable()`. The `rebuildSqliteTable` dance from
+`20260709000000` is only needed when CHANGING or DROPPING a column that already carries an FK.
+Verified against the real dev SQLite — the new FK landed with `ON DELETE SET NULL` intact.)*
+
+### Two decisions recorded here because the spec asked for them
+
+1. **Visit outcomes: replaced outright, no dual-running.** See §0's summary. The old→new
+   backfill is deferred to real-data-import time; unrecognized outcomes score at
+   `OUTCOME_WEIGHT.declined` (0.1) rather than 0 or `NaN`, so old rows degrade quietly.
+2. **`maybeCapturePreQualification` now gates on `capacity_status === 'estimated'`,
+   not "is this the first visit."** The old rule had a trapdoor: miss the number on visit one
+   and the place was never asked again, leaving it stuck on an estimated capacity forever —
+   which meant permanently stuck in the ranker's exploration tier. The prompt now returns on
+   every completed visit until a real number is captured, and stops the moment one is.
+
+### Deliberately deferred — do NOT rediscover these as mystery bugs
+
+- **Quality-weighted urgency clock.** `lastVisitDate` counts *all* completed visits regardless
+  of quality, so a front-desk drop-off resets the urgency clock and trips the 5-day hard floor
+  exactly like a substantive meeting — while contributing ~1% of the relationship weight. A rep
+  doing easy drop-offs can therefore keep a place looking recently-visited and floor-blocked
+  while its relationship score quietly decays. Two possible fixes, both out of scope here:
+  weight the urgency clock by visit quality, and/or let the ENDANGERED tier trigger on
+  relationship decay rather than urgency alone.
+- **Old→new visit-outcome backfill**, and what `visit_weight` should resolve to for a
+  backfilled visit whose outcome doesn't map cleanly. Both punted because all current visit
+  data is test data.
+- **Per-day `asOf` in the route planner.** `computeRelationshipForPlaces` already accepts
+  `asOf`; `buildCandidatePool` passes generation-day only. Threading a per-day date through
+  `generateDraft` (so day 5 of a plan sees slightly more decay than day 1) is separate work.
+- **`capacity_level` is still never written by anything.** Seeded once by keyword-match against
+  category in `20260712000000` and never touched since — so any place created after that
+  migration has `capacity_level: null` and silently falls back to the `medium` cadence row.
+  Pre-existing gap, unrelated to this work, but it's the *other* axis of the same table.
+- **Threshold judgment call**: the spec's prose calls "visited at half the half-life rate" the
+  *weak* boundary, but its own threshold constant (`medium: 1.3`) puts that case in **medium** —
+  the true converged value is 1.3333, clearing 1.3 by only 0.033. Implemented per the explicit
+  constant. If the prose was the real intent, `RELATIONSHIP_THRESHOLDS.medium` needs to move
+  above 1.3333 (≈1.4). Flagged in `relationship.test.js` too.
+
+### Testing
+
+`server/src/services/relationship.test.js` — 46 tests (suite total: 154 → 200). Mostly pure
+math, **plus a real in-memory SQLite database** (migrated, seeded, torn down) for the bulk query
+paths. That's deliberate: the pure suite cannot catch a bad column name or a mis-keyed groupBy,
+which is exactly the bug that shipped once before in this subsystem (a `r.place_id` that was
+really `r.id`, which 154 pure tests sailed past and only a live run caught).
+
+`npm run relationship:distribution` prints the live bucket distribution and warns when one
+bucket holds >90% of places. Run it before letting the ranker lean on these values, and again
+after any seeding pass.

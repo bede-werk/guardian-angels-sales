@@ -8,6 +8,7 @@ const { geocodeAddress } = require('../services/geocoding');
 const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, referralMetricsByPlaceId, metricsFor, EMPTY_METRICS } = require('../services/referralMetrics');
 const { compareDatesAsc } = require('../services/sortHelpers');
+const { computeRelationshipForPlaces, relationshipFor, LEVELS: RELATIONSHIP_LEVELS } = require('../services/relationship');
 
 const router = express.Router();
 
@@ -78,6 +79,19 @@ function capacityMonthlyReferralsError(v) {
 // directly on the place card, no fresh visit) | verified (set from an actual
 // first-visit pre-qualification conversation, see routes/visits.js's PATCH).
 const CAPACITY_STATUSES = ['estimated', 'adjusted', 'verified'];
+
+// relationship_level_override is the manual "I know this one, trust me over
+// the math" escape hatch on the otherwise-computed relationship level (see
+// services/relationship.js). null/'' clears it and returns the place to
+// computed control; anything else must be one of the three real levels.
+// Deliberately NOT in EDITABLE — it can't be a plain passthrough field
+// because setting it also has to stamp who did it and when, which is what
+// makes the override visible rather than silently authoritative.
+function relationshipOverrideError(v) {
+  if (v === undefined || v === null || v === '') return null;
+  if (!RELATIONSHIP_LEVELS.includes(v)) return `relationship_level_override must be one of: ${RELATIONSHIP_LEVELS.join(', ')}`;
+  return null;
+}
 function capacityStatusError(v) {
   if (v === undefined) return null;
   if (!CAPACITY_STATUSES.includes(v)) return `capacity_status must be one of: ${CAPACITY_STATUSES.join(', ')}`;
@@ -214,12 +228,23 @@ router.get('/', async (req, res, next) => {
     // every place at once so the directory doesn't need N+1 requests.
     const metricsByPlace = await referralMetricsByPlaceId(knex, ids);
 
-    let decorated = places.map((p) => ({
-      ...decorate(p),
-      visit_count: Number(p.visit_count) || 0,
-      person: personByPlace[p.id] || null,
-      referral_metrics: metricsFor(metricsByPlace, p.id),
-    }));
+    // Relationship: the list only needs the effective level and the raw score
+    // (for a badge and for sorting) — never the full object. `contributors`
+    // alone would balloon this payload by a row per person per place, and
+    // nothing in the directory view renders it.
+    const relationshipByPlace = await computeRelationshipForPlaces(knex, ids);
+
+    let decorated = places.map((p) => {
+      const rel = relationshipFor(relationshipByPlace, p.id);
+      return {
+        ...decorate(p),
+        visit_count: Number(p.visit_count) || 0,
+        person: personByPlace[p.id] || null,
+        referral_metrics: metricsFor(metricsByPlace, p.id),
+        relationship_level: rel.effective_level,
+        relationship_score: rel.score,
+      };
+    });
     decorated = sortPlaces(decorated, sort);
 
     res.json(decorated);
@@ -353,12 +378,18 @@ router.get('/:id', async (req, res, next) => {
       { ...EMPTY_METRICS }
     );
 
+    // The full relationship object here (unlike the list view): the detail
+    // screen is exactly where "why is this place weak?" has to be answerable,
+    // which is what contributors/components/last_meaningful_visit are for.
+    const relationshipByPlace = await computeRelationshipForPlaces(knex, [place.id]);
+
     res.json({
       ...decorate(place),
       visits,
       upcoming_visits: upcomingVisits,
       people: peopleWithMetrics,
       referral_metrics: referralMetrics,
+      relationship: relationshipFor(relationshipByPlace, place.id),
     });
   } catch (err) {
     next(err);
@@ -389,6 +420,24 @@ router.patch('/:id', async (req, res, next) => {
     if (referralsErr) return res.status(400).json({ error: referralsErr });
     const statusErr = capacityStatusError(update.capacity_status);
     if (statusErr) return res.status(400).json({ error: statusErr });
+
+    // Relationship override — handled outside EDITABLE because who set it and
+    // when are stamped here, server-side, from the bearer token rather than
+    // taken from the body. The UI's whole anti-rot contract is that an
+    // override is shown next to the computed value with attribution
+    // ("Strong — set manually by Bede, Jul 12 — computed: weak"), which only
+    // works if that attribution can't be forged or omitted by the client.
+    if (req.body.relationship_level_override !== undefined) {
+      const overrideErr = relationshipOverrideError(req.body.relationship_level_override);
+      if (overrideErr) return res.status(400).json({ error: overrideErr });
+      const clearing = req.body.relationship_level_override === null || req.body.relationship_level_override === '';
+      // Reverting to computed control clears all three columns together —
+      // a stale "set by" on a place with no override would be a lie.
+      update.relationship_level_override = clearing ? null : req.body.relationship_level_override;
+      update.relationship_override_at = clearing ? null : knex.fn.now();
+      update.relationship_override_by = clearing ? null : req.user.id;
+    }
+
     if (update.capacity_monthly_referrals !== undefined) {
       update.capacity_monthly_referrals = update.capacity_monthly_referrals === '' || update.capacity_monthly_referrals === null
         ? null

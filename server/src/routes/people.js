@@ -9,6 +9,8 @@ const knex = require('../db/knex');
 const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, summarizeReferralDates, metricsFor } = require('../services/referralMetrics');
 const { compareDatesAsc } = require('../services/sortHelpers');
+const { computeRelationshipForPeople } = require('../services/relationship');
+const { orgToday } = require('../services/orgDate');
 
 const router = express.Router();
 
@@ -38,6 +40,23 @@ function validate(payload) {
   if (payload.birthday_day != null && (payload.birthday_day < 1 || payload.birthday_day > 31)) {
     return 'birthday_day must be between 1 and 31';
   }
+  return null;
+}
+
+// relationship_seed is a converged SCORE value (see migration
+// 20260803000001), not a bucket and not a multiplier — a rep's one-time
+// judgment of an existing relationship, which then decays on the same clock as
+// real visit weight. Null clears it. Deliberately not in EDITABLE: setting it
+// also stamps relationship_seeded_at server-side, since that date is the
+// origin of the decay clock and a client-supplied one could park a seed at
+// full strength forever.
+const MAX_RELATIONSHIP_SEED = 10;
+
+function relationshipSeedError(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return 'relationship_seed must be a non-negative number';
+  if (n > MAX_RELATIONSHIP_SEED) return `relationship_seed must be ${MAX_RELATIONSHIP_SEED} or less`;
   return null;
 }
 
@@ -224,12 +243,19 @@ router.get('/people/:id', async (req, res, next) => {
       .orderBy('referral_date', 'desc')
       .orderBy('id', 'desc');
 
+    // Full relationship object — this screen is where "why does this person
+    // read weak?" has to be answerable (last meaningful visit, how much of the
+    // score is still a fading initial estimate, what the reciprocity
+    // multiplier is doing).
+    const relationshipByPerson = await computeRelationshipForPeople(knex, [person.id]);
+
     res.json({
       ...person,
       place,
       visits,
       referrals,
       referral_metrics: summarizeReferralDates(referrals.map((r) => r.referral_date)),
+      relationship: relationshipByPerson.get(person.id) || null,
     });
   } catch (err) {
     next(err);
@@ -288,6 +314,61 @@ router.post('/people', async (req, res, next) => {
   }
 });
 
+// POST /api/people/seed-relationships — bulk one-time relationship seeding
+// (see the seeding screen). Body: [{ person_id, seed }], where a null/''
+// seed clears that person's seed instead of setting one.
+//
+// Re-runnable by design: re-seeding a person overwrites their value and resets
+// relationship_seeded_at to today, restarting the decay clock. That's the
+// intended way to correct a seed you got wrong, so this deliberately does not
+// refuse to touch an already-seeded person.
+//
+// All-or-nothing in one transaction — a half-applied seeding pass would be
+// worse than none, since there'd be no way to tell which half landed.
+router.post('/people/seed-relationships', async (req, res, next) => {
+  try {
+    const entries = req.body;
+    if (!Array.isArray(entries)) return res.status(400).json({ error: 'body must be an array of { person_id, seed }' });
+    if (!entries.length) return res.json({ updated: 0 });
+
+    // Validate everything BEFORE writing anything, so a bad row at the end
+    // can't leave the first half of the pass applied.
+    const writes = [];
+    for (const entry of entries) {
+      const personId = Number(entry?.person_id);
+      if (!Number.isInteger(personId)) return res.status(400).json({ error: 'each entry needs a numeric person_id' });
+      const seedErr = relationshipSeedError(entry.seed);
+      if (seedErr) return res.status(400).json({ error: `person ${personId}: ${seedErr}` });
+      const clearing = entry.seed === null || entry.seed === undefined || entry.seed === '';
+      writes.push({
+        id: personId,
+        relationship_seed: clearing ? null : Number(entry.seed),
+        relationship_seeded_at: clearing ? null : orgToday(),
+      });
+    }
+
+    const ids = writes.map((w) => w.id);
+    const found = await knex('people').whereIn('id', ids).select('id');
+    if (found.length !== new Set(ids).size) {
+      return res.status(400).json({ error: 'one or more people not found' });
+    }
+
+    await knex.transaction(async (trx) => {
+      for (const w of writes) {
+        await trx('people').where({ id: w.id }).update({
+          relationship_seed: w.relationship_seed,
+          relationship_seeded_at: w.relationship_seeded_at,
+          updated_at: trx.fn.now(),
+        });
+      }
+    });
+
+    res.json({ updated: writes.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/people/:id — update any editable field.
 router.patch('/people/:id', async (req, res, next) => {
   try {
@@ -313,6 +394,19 @@ router.patch('/people/:id', async (req, res, next) => {
         if (!place) return res.status(400).json({ error: 'place not found' });
         update.place_id = numericPlaceId;
       }
+    }
+
+    // relationship_seed, like place_id above, isn't a straight copy: writing
+    // it also (re)starts the decay clock, so relationship_seeded_at is stamped
+    // here rather than trusted from the body. Re-seeding the same person
+    // overwrites the value AND resets the clock, which is what makes the
+    // seeding screen safely re-runnable.
+    if (req.body.relationship_seed !== undefined) {
+      const seedErr = relationshipSeedError(req.body.relationship_seed);
+      if (seedErr) return res.status(400).json({ error: seedErr });
+      const clearing = req.body.relationship_seed === null || req.body.relationship_seed === '';
+      update.relationship_seed = clearing ? null : Number(req.body.relationship_seed);
+      update.relationship_seeded_at = clearing ? null : orgToday();
     }
 
     const validationError = validate(update);
