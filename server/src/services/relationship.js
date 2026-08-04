@@ -30,8 +30,9 @@
 //    is why the referral query below deliberately selects DISTINCT person_id
 //    and never a COUNT.
 
-const { daysSince } = require('./schedulingEngine');
+const { daysSince, urgency } = require('./schedulingEngine');
 const { orgToday } = require('./orgDate');
+const schedulingConfig = require('../config/scheduling');
 
 // --- Weights -------------------------------------------------------------
 
@@ -189,6 +190,117 @@ function levelForScore(score) {
   return 'weak';
 }
 
+// --- Trend (heating up / cooling down) ------------------------------------
+//
+// Purely a display signal — it never feeds back into score/level, so it's
+// bolted on as one extra field rather than woven into the scoring functions
+// above. Two INDEPENDENT mechanisms, not one — they answer different
+// questions and neither can stand in for the other:
+//
+// HEATING UP asks "did something real just happen" — today's score vs. the
+// same computation re-run as of a past reference date. Decay is the only
+// thing that ever pulls a score down between two evaluations of one visit
+// history, so a higher score today than at the reference date can only mean
+// something real (a visit, a fresh referral, a newly-live reciprocity
+// signal) outpaced decay in between. This is deliberately a SHORT-lived
+// burst signal: once decay catches back up, it goes quiet on its own.
+//
+// COOLING DOWN asks "has too much time passed since we last showed up" —
+// answered against a target cadence, not a score ratio. A ratio-vs-N-days-
+// ago comparison can never represent open-ended neglect: exponential decay
+// is self-similar, so once nothing new has happened for a while, the ratio
+// between "now" and "N days ago" locks onto a fixed constant and simply
+// stops changing, forever — it can say "quiet recently" but never "quiet for
+// a long time." Elapsed time since the last (meaningful) contact, compared
+// against how often this relationship is EXPECTED to be nurtured, has no
+// such ceiling: the longer it's ignored, the further past the line it gets.
+const TREND_RELATIVE_THRESHOLD = 0.1; // must move >=10% to read as a real HEATING UP move, not noise
+const TREND_EPSILON = 0.01; // both sides at/below this = "no history at either point," not a trend
+
+// The heating-up lookback scales with the category's own half-life — same
+// "one scale, two clocks" idea the LEVEL thresholds above already use — so a
+// fast-decay category gets flagged on a shorter lookback than a slow one.
+// Deliberately SHORT (not half the half-life): pure decay with nothing new
+// must itself stay inside the +/-10% band above, or "heating up" would never
+// be able to go quiet on its own — see the derivation in the trend-design
+// conversation. 0.5^(0.12) ~= 0.917 for the fast clock, 0.5^(0.12) again for
+// the default clock (the ratio only depends on the FRACTION, not the
+// half-life itself) — comfortably inside the +/-10% band with margin to
+// spare against integer-day rounding.
+const TREND_WINDOW_FRACTION = 0.12; // ~4d fast-decay categories, ~7d default
+
+// Cooling down (PLACE): flagged once a place is this many times past its own
+// target cadence (see schedulingEngine.js's targetCadenceDays/urgency — the
+// exact function the route planner itself uses to decide when a place is
+// overdue for a rescue visit). Deliberately EARLIER than NEGLECT_MULTIPLIER
+// (2.0, config/scheduling.js) — an early warning that shows before the
+// scheduler's own "endangered" tier kicks in, not a duplicate of it.
+const COOLING_THRESHOLD = 1.25;
+
+// Cooling down (PERSON): flagged once it's been this fraction of the
+// category's half-life since their last MEANINGFUL visit (not just any
+// visit — a front-desk drop-off shouldn't reset this clock). Half of the
+// half-life, per Bede: the score has decayed by ~29% at that point, not yet
+// halved — an earlier nudge than waiting for the full half-life.
+const PERSON_COOLING_HALF_LIFE_FRACTION = 0.5;
+
+function trendWindowDays(halfLifeDays) {
+  return Math.round(halfLifeDays * TREND_WINDOW_FRACTION);
+}
+
+// 'YYYY-MM-DD' n days before `dateStr` — UTC-safe, same convention as
+// schedulingEngine.js's daysSince.
+function daysBefore(dateStr, n) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d) - n * 86400000).toISOString().slice(0, 10);
+}
+
+function isHeatingUp(current, historical) {
+  if (current <= TREND_EPSILON && historical <= TREND_EPSILON) return false;
+  return current > historical * (1 + TREND_RELATIVE_THRESHOLD);
+}
+
+// today - lastVisitDate, as a multiple of this place's own target cadence
+// (capacity x relationship, fatigue-stretched the same way the scheduler
+// itself stretches it — see schedulingEngine.js's urgency). A never-visited
+// place (lastVisitDate null) has nothing to be overdue FROM, so it's never
+// "cooling" — that's what EMPTY/no-history already communicates.
+function isPlaceCoolingDown({ place, lastVisitDate, recentCompletedCount, relationshipLevel, today }) {
+  if (!lastVisitDate) return false;
+  const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, today, config: schedulingConfig });
+  return u > COOLING_THRESHOLD;
+}
+
+// Same idea, person-scoped: no cadence table at the person level, so this
+// compares straight against the category half-life instead of a capacity x
+// relationship lookup.
+function isPersonCoolingDown({ lastMeaningfulVisit, halfLifeDays, today }) {
+  if (!lastMeaningfulVisit) return false;
+  return daysSince(lastMeaningfulVisit, today) > halfLifeDays * PERSON_COOLING_HALF_LIFE_FRACTION;
+}
+
+// Re-runs computePersonRelationship as of a past date, seeing only the
+// visits and seed that existed by then. Filtering happens HERE, on the
+// inputs, rather than inside computePersonRelationship itself — that
+// function's own "a future-dated visit clamps to full weight, never decays
+// upward" defensive behavior (see its tests) is for asOf-is-today callers and
+// would wrongly give full credit to a visit that, from referenceDate's
+// vantage point, hadn't happened yet.
+function personScoreAsOf({ person, visits, hasReferral, halfLifeDays, referenceDate }) {
+  const visibleVisits = visits.filter((v) => v.scheduled_date <= referenceDate);
+  const visiblePerson =
+    person.relationship_seeded_at && person.relationship_seeded_at > referenceDate
+      ? { ...person, relationship_seed: null, relationship_seeded_at: null }
+      : person;
+  return computePersonRelationship({
+    person: visiblePerson,
+    visits: visibleVisits,
+    hasReferral,
+    halfLifeDays,
+    asOf: referenceDate,
+  }).score;
+}
+
 // --- Person --------------------------------------------------------------
 
 // person_score = (raw visit score x reciprocity) + decayed seed.
@@ -338,7 +450,14 @@ function groupBy(rows, key) {
 // assigned place's category (left-joined, so an unassigned person still
 // resolves — to the default). Moving a person between places therefore changes
 // their decay rate; that's intentional, not a bug to guard against.
-async function computeRelationshipForPeople(knex, personIds, { asOf } = {}) {
+// `includeTrend` defaults to false: trend is a second full pass over the
+// same data (a historical re-run of the score), and the only two callers
+// that ever render it are the single-person and single-place detail routes.
+// Every bulk caller — the Places/People directories, the route planner's
+// candidate pool, the relationship-distribution script — asks for many rows
+// at once and never shows trend, so they get the cheap path for free just by
+// not opting in.
+async function computeRelationshipForPeople(knex, personIds, { asOf, includeTrend = false } = {}) {
   const out = new Map();
   if (!personIds.length) return out;
   const date = asOf || orgToday();
@@ -358,23 +477,34 @@ async function computeRelationshipForPeople(knex, personIds, { asOf } = {}) {
   const visitsByPerson = groupBy(visits, 'person_id');
 
   for (const person of people) {
-    out.set(
-      person.id,
-      computePersonRelationship({
-        person,
-        visits: visitsByPerson.get(person.id) || [],
-        hasReferral: referred.has(person.id),
-        halfLifeDays: halfLifeForCategory(person.place_category),
-        asOf: date,
-      })
-    );
+    const halfLifeDays = halfLifeForCategory(person.place_category);
+    const personVisits = visitsByPerson.get(person.id) || [];
+    const hasReferral = referred.has(person.id);
+
+    const current = computePersonRelationship({ person, visits: personVisits, hasReferral, halfLifeDays, asOf: date });
+
+    let trend = null;
+    if (includeTrend) {
+      const referenceDate = daysBefore(date, trendWindowDays(halfLifeDays));
+      const historicalScore = personScoreAsOf({ person, visits: personVisits, hasReferral, halfLifeDays, referenceDate });
+      if (isHeatingUp(current.score, historicalScore)) {
+        trend = 'up';
+      } else if (isPersonCoolingDown({ lastMeaningfulVisit: current.last_meaningful_visit, halfLifeDays, today: date })) {
+        trend = 'down';
+      }
+    }
+
+    out.set(person.id, { ...current, trend });
   }
   return out;
 }
 
 // place_id -> PlaceRelationship. Four queries total regardless of how many
-// places are asked for.
-async function computeRelationshipForPlaces(knex, placeIds, { asOf } = {}) {
+// places are asked for. `includeTrend` defaults to false — see the comment
+// on computeRelationshipForPeople; the same reasoning applies here, and this
+// is the function the Places directory (261 rows on every load) and the
+// route planner's candidate pool both call in bulk.
+async function computeRelationshipForPlaces(knex, placeIds, { asOf, includeTrend = false } = {}) {
   const out = new Map();
   if (!placeIds.length) return out;
   const date = asOf || orgToday();
@@ -382,7 +512,7 @@ async function computeRelationshipForPlaces(knex, placeIds, { asOf } = {}) {
   const places = await knex('places as p')
     .leftJoin('users as u', 'u.id', 'p.relationship_override_by')
     .whereIn('p.id', placeIds)
-    .select('p.id', 'p.category', 'p.relationship_level_override', 'p.relationship_override_at', 'p.relationship_override_by')
+    .select('p.id', 'p.category', 'p.capacity_level', 'p.relationship_level_override', 'p.relationship_override_at', 'p.relationship_override_by')
     .select('u.name as override_by_name');
 
   const people = await knex('people').whereIn('place_id', placeIds).select(PERSON_FIELDS);
@@ -401,8 +531,10 @@ async function computeRelationshipForPlaces(knex, placeIds, { asOf } = {}) {
   for (const place of places) {
     const placeVisits = visitsByPlace.get(place.id) || [];
     const halfLifeDays = halfLifeForCategory(place.category);
+    const placePeople = peopleByPlace.get(place.id) || [];
+    const floorVisits = placeVisits.filter((v) => !creditsPerson(v));
 
-    const personEntries = (peopleByPlace.get(place.id) || []).map((person) => ({
+    const personEntries = placePeople.map((person) => ({
       person,
       relationship: computePersonRelationship({
         person,
@@ -415,16 +547,56 @@ async function computeRelationshipForPlaces(knex, placeIds, { asOf } = {}) {
       }),
     }));
 
-    out.set(
-      place.id,
-      rollUpPlace({
+    const current = rollUpPlace({ place, personEntries, floorVisits, asOf: date, overrideUserName: place.override_by_name });
+
+    // Trend is suppressed under a manual override — the override IS the
+    // answer at that point, and a computed "cooling down" next to a pinned
+    // "Strong" would just read as a contradiction nobody asked for.
+    let trend = null;
+    if (includeTrend && !current.is_overridden) {
+      const referenceDate = daysBefore(date, trendWindowDays(halfLifeDays));
+      const historicalPersonEntries = placePeople.map((person) => ({
+        person,
+        relationship: {
+          score: personScoreAsOf({
+            person,
+            visits: visitsByPerson.get(person.id) || [],
+            hasReferral: referred.has(person.id),
+            halfLifeDays,
+            referenceDate,
+          }),
+        },
+      }));
+      const historicalFloorVisits = floorVisits.filter((v) => v.scheduled_date <= referenceDate);
+      const historical = rollUpPlace({
         place,
-        personEntries,
-        floorVisits: placeVisits.filter((v) => !creditsPerson(v)),
-        asOf: date,
+        personEntries: historicalPersonEntries,
+        floorVisits: historicalFloorVisits,
+        asOf: referenceDate,
         overrideUserName: place.override_by_name,
-      })
-    );
+      });
+
+      if (isHeatingUp(current.score, historical.score)) {
+        trend = 'up';
+      } else {
+        // "Last visit" and "recent volume" for the overdue check are ANY
+        // completed visit (matching urgency()'s own semantics in the
+        // scheduler), not just visits that credited a named person — floor
+        // visits count toward "we showed up here" just as they do for score.
+        // Recent volume counts DISTINCT DAYS, not rows, for the same reason
+        // buildCandidatePool does (see its comment): one row is one person
+        // met, so a single multi-contact trip must not read as several visits.
+        const lastVisitDate = placeVisits.reduce((max, v) => (!max || v.scheduled_date > max ? v.scheduled_date : max), null);
+        const recentCompletedCount = new Set(
+          placeVisits.filter((v) => daysSince(v.scheduled_date, date) <= schedulingConfig.FATIGUE_WINDOW_DAYS).map((v) => v.scheduled_date)
+        ).size;
+        if (isPlaceCoolingDown({ place, lastVisitDate, recentCompletedCount, relationshipLevel: current.level, today: date })) {
+          trend = 'down';
+        }
+      }
+    }
+
+    out.set(place.id, { ...current, trend });
   }
   return out;
 }
@@ -439,6 +611,7 @@ const EMPTY_PLACE_RELATIONSHIP = {
   people_component: 0,
   floor_component: 0,
   contributors: [],
+  trend: null,
 };
 
 function relationshipFor(byId, id) {
@@ -456,6 +629,11 @@ module.exports = {
   MAX_RECIPROCITY,
   LEVELS,
   EMPTY_PLACE_RELATIONSHIP,
+  TREND_WINDOW_FRACTION,
+  TREND_RELATIVE_THRESHOLD,
+  TREND_EPSILON,
+  COOLING_THRESHOLD,
+  PERSON_COOLING_HALF_LIFE_FRACTION,
   // pure
   halfLifeForCategory,
   decayFactor,
@@ -467,6 +645,12 @@ module.exports = {
   computePersonRelationship,
   rollUpPlace,
   relationshipFor,
+  trendWindowDays,
+  daysBefore,
+  isHeatingUp,
+  isPlaceCoolingDown,
+  isPersonCoolingDown,
+  personScoreAsOf,
   // bulk DB
   computeRelationshipForPeople,
   computeRelationshipForPlaces,

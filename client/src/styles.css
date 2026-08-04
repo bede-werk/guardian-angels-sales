@@ -184,6 +184,26 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .check-row input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
 
+/* The "who did you meet" / "which people" checklists in VisitLogModal — one
+   visit row is written per encounter ticked across them. Scrolls rather than
+   growing without bound, since a big place's roster would otherwise push the
+   rest of the form off-screen. */
+.person-checklist {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 8px 10px; max-height: 168px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 6px;
+}
+
+/* One encounter's own "what happened" block in VisitLogModal. Boxed so the
+   per-person answers read as separate units rather than one long column of
+   controls whose labels are easy to mis-associate. */
+.encounter-row {
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 10px 12px; background: var(--bg);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.encounter-row .encounter-name { font-size: 13px; font-weight: 600; }
+
 /* A button that reads as an inline link — for a secondary action sitting
    inside body text, where a real .btn would be too heavy. */
 .link-button { background: none; border: none; padding: 0; font: inherit; color: var(--blue); cursor: pointer; text-decoration: underline; }
@@ -218,6 +238,14 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.rel-strong { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.rel-medium { background: var(--blue-tint-1); color: var(--blue); }
 .badge.rel-weak { background: var(--grey-tint-1); color: var(--muted); }
+
+/* Relationship trend badge (see RelationshipDetail.jsx) — mauve for heating
+   up, blue for cooling down. A temperature metaphor, not this app's usual
+   good/bad color convention (mauve is --warn elsewhere): text only, no
+   background pill, so it doesn't compete with the level chip next to it. */
+.trend-indicator { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.trend-indicator.trend-up { color: var(--mauve-dark); }
+.trend-indicator.trend-down { color: var(--blue-dark); }
 
 /* Category chips: flat neutral style, same for every category */
 .cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--grey-tint-1); color: var(--grey-dark); }

@@ -253,17 +253,35 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         </div>
         <div className="modal-body">
           {loadError && <div className="error-banner">{loadError}</div>}
-          <div className="stack" style={{ background: 'var(--bg)', borderRadius: 'var(--radius-md)', padding: '12px 16px' }}>
-            <div className="tiny">
-              {data.address && <div>{data.address}</div>}
-              <div>{data.city}, {data.state} {data.zip} · <strong>{data.region}</strong></div>
-              {data.phone && <div>{data.phone}</div>}
+          {/* Address/contact on the left, relationship status on the right —
+              two half-width cards side by side rather than one full-width
+              block stacked above the other. */}
+          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+              <div className="card-head"><h2>Contact Info</h2></div>
+              <div className="card-body stack">
+                <div className="tiny">
+                  {data.address && <div>{data.address}</div>}
+                  <div>{data.city}, {data.state} {data.zip} · <strong>{data.region}</strong></div>
+                  {data.phone && <div>{data.phone}</div>}
+                </div>
+                <div className="tag-list">
+                  <Button variant="secondary" size="small" title="Open directions to this address in Google Maps" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
+                  {/* Call button only shows if this place has a phone number on file
+                      (not populated from the original Excel import — added manually). */}
+                  {data.phone && <a className="btn secondary small" title={`Call ${data.phone}`} href={`tel:${data.phone}`}>Call</a>}
+                </div>
+              </div>
             </div>
-            <div className="tag-list">
-              <Button variant="secondary" size="small" title="Open directions to this address in Google Maps" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
-              {/* Call button only shows if this place has a phone number on file
-                  (not populated from the original Excel import — added manually). */}
-              {data.phone && <a className="btn secondary small" title={`Call ${data.phone}`} href={`tel:${data.phone}`}>Call</a>}
+            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+              <div className="card-head"><h2>Relationship</h2></div>
+              <div className="card-body stack">
+                <PlaceRelationship
+                  relationship={data.relationship}
+                  onSave={saveRelationshipOverride}
+                  saving={savingRelationship}
+                />
+              </div>
             </div>
           </div>
 
@@ -346,18 +364,6 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               ) : (
                 <div className="tiny muted">Needs pre-qualification</div>
               )}
-
-              {/* Computed relationship level + why. Sits alongside
-                  pre-qualification because the two together are exactly what
-                  the route planner's cadence table reads (capacity x
-                  relationship) — seeing them next to each other is what makes
-                  "why does this place keep coming up / never come up?"
-                  answerable from one screen. */}
-              <PlaceRelationship
-                relationship={data.relationship}
-                onSave={saveRelationshipOverride}
-                saving={savingRelationship}
-              />
 
               {editingNotes ? (
                 <div className="stack">

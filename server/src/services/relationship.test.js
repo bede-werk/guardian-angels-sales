@@ -18,6 +18,10 @@ const {
   rollUpPlace,
   computeRelationshipForPeople,
   computeRelationshipForPlaces,
+  isHeatingUp,
+  isPlaceCoolingDown,
+  isPersonCoolingDown,
+  personScoreAsOf,
 } = require('./relationship');
 
 const ASOF = '2026-08-03';
@@ -136,6 +140,88 @@ describe('decay math', () => {
     close(score, 1.3333, 0.02);
     assert.equal(levelForScore(score), 'medium');
     assert.ok(score - 1.3 < 0.04, 'it clears the medium threshold by a very thin margin');
+  });
+});
+
+describe('trend (heating up / cooling down)', () => {
+  test('isHeatingUp is false when both sides are effectively zero — no history either way', () => {
+    assert.equal(isHeatingUp(0, 0), false);
+    assert.equal(isHeatingUp(0.005, 0.008), false);
+  });
+
+  test('isHeatingUp requires clearing the relative threshold — small moves read as noise', () => {
+    assert.equal(isHeatingUp(1.05, 1.0), false, 'a 5% bump does not clear the 10% threshold');
+    assert.equal(isHeatingUp(1.11, 1.0), true);
+  });
+
+  test('isHeatingUp treats a real score appearing from nothing as heating up', () => {
+    assert.equal(isHeatingUp(0.955, 0), true);
+  });
+
+  test('pure decay alone (no new visit) never registers as heating up, for any half-life', () => {
+    // The property the window size was chosen around: with nothing new,
+    // current == historical * 0.5^(TREND_WINDOW_FRACTION), independent of
+    // the half-life itself. That ratio (~0.92) must stay under the 1.1
+    // "real move" line, or a place with no activity at all would spuriously
+    // read as heating up.
+    const pureDecayRatio = 0.5 ** 0.12;
+    assert.equal(isHeatingUp(pureDecayRatio, 1.0), false);
+  });
+
+  test('isPlaceCoolingDown is false with no visit history at all — nothing to be overdue from', () => {
+    assert.equal(
+      isPlaceCoolingDown({ place: { capacity_level: 'medium' }, lastVisitDate: null, recentCompletedCount: 0, relationshipLevel: 'medium', today: ASOF }),
+      false
+    );
+  });
+
+  test('isPlaceCoolingDown fires once elapsed time clears COOLING_THRESHOLD x the target cadence', () => {
+    // capacity 'medium' x relationship 'medium' -> a 21-day target cadence
+    // (config/scheduling.js CADENCE_DAYS). 1.25 x 21 = 26.25.
+    const place = { capacity_level: 'medium' };
+    assert.equal(
+      isPlaceCoolingDown({ place, lastVisitDate: daysBefore(ASOF, 20), recentCompletedCount: 0, relationshipLevel: 'medium', today: ASOF }),
+      false,
+      '20 days is still under the 26.25-day line'
+    );
+    assert.equal(
+      isPlaceCoolingDown({ place, lastVisitDate: daysBefore(ASOF, 27), recentCompletedCount: 0, relationshipLevel: 'medium', today: ASOF }),
+      true,
+      '27 days clears it'
+    );
+  });
+
+  test('isPersonCoolingDown is false with no meaningful visit at all', () => {
+    assert.equal(isPersonCoolingDown({ lastMeaningfulVisit: null, halfLifeDays: HALF_LIFE_FAST, today: ASOF }), false);
+  });
+
+  test('isPersonCoolingDown fires once elapsed time clears half the half-life', () => {
+    assert.equal(isPersonCoolingDown({ lastMeaningfulVisit: daysBefore(ASOF, 14), halfLifeDays: HALF_LIFE_FAST, today: ASOF }), false, '14 days is under half of a 30-day half-life');
+    assert.equal(isPersonCoolingDown({ lastMeaningfulVisit: daysBefore(ASOF, 16), halfLifeDays: HALF_LIFE_FAST, today: ASOF }), true, '16 days clears it');
+  });
+
+  test('personScoreAsOf excludes a visit that had not happened yet as of the reference date', () => {
+    const visits = [visit(daysBefore(ASOF, 5)), visit(daysBefore(ASOF, 40))];
+    const referenceDate = daysBefore(ASOF, 20);
+    const asOfPast = personScoreAsOf({
+      person: barePerson(), visits, hasReferral: false, halfLifeDays: HALF_LIFE_DEFAULT, referenceDate,
+    });
+    // Only the 40-day-ago visit existed by referenceDate; unlike
+    // computePersonRelationship's own "future visit clamps to full weight"
+    // behavior (asOf-is-today callers), a visit outside the visible window is
+    // excluded outright rather than credited at age zero.
+    const expected = computePersonRelationship({
+      person: barePerson(), visits: [visit(daysBefore(ASOF, 40))], hasReferral: false, halfLifeDays: HALF_LIFE_DEFAULT, asOf: referenceDate,
+    }).score;
+    close(asOfPast, expected);
+  });
+
+  test('personScoreAsOf excludes a seed planted after the reference date', () => {
+    const person = barePerson({ relationship_seed: 4.0, relationship_seeded_at: daysBefore(ASOF, 5) });
+    const asOfPast = personScoreAsOf({
+      person, visits: [], hasReferral: false, halfLifeDays: HALF_LIFE_DEFAULT, referenceDate: daysBefore(ASOF, 20),
+    });
+    assert.equal(asOfPast, 0, 'the seed did not exist 20 days ago if it was only planted 5 days ago');
   });
 });
 
@@ -620,6 +706,82 @@ describe('bulk DB paths', () => {
     assert.equal(r.override.by_name, 'Test Rep');
     assert.equal(r.level, 'weak', 'the computed value must survive alongside the override');
     assert.notEqual(r.level, r.effective_level, 'the divergence must be visible to the UI');
+    await db('places').where({ id: 1 }).update({
+      relationship_level_override: null, relationship_override_at: null, relationship_override_by: null,
+    });
+  });
+
+  test('includeTrend defaults to false — the bulk/list path never computes it', async () => {
+    const r = (await computeRelationshipForPlaces(db, [1], { asOf: ASOF })).get(1);
+    assert.equal(r.trend, null);
+    const p = (await computeRelationshipForPeople(db, [1], { asOf: ASOF })).get(1);
+    assert.equal(p.trend, null);
+  });
+
+  test('a place with a recent (even non-meaningful) visit is neither heating nor cooling', async () => {
+    // Place 1's most recent completed visit — of ANY kind, including the
+    // receptionist drop-off — was 5 days ago, well inside its ~21-day target
+    // cadence (medium capacity default x weak relationship). Cooling down
+    // cares about "did we show up," not "did we meet someone," so this must
+    // NOT read as cooling just because its named-person contacts are stale.
+    const r = (await computeRelationshipForPlaces(db, [1], { asOf: ASOF, includeTrend: true })).get(1);
+    assert.equal(r.trend, null);
+  });
+
+  test('a place well past its own target cadence reads as cooling down', async () => {
+    await db('places').insert({ id: 5, name: 'Overdue Place', category: 'Hospice', tier: 3, priority_score: 25, capacity_level: 'medium' });
+    // A single old, unremarkable visit: enough to give the place a
+    // (barely-nonzero, 'weak') score and a lastVisitDate, without any
+    // named-person contact to make it 'heating up' territory. 40 days on a
+    // medium/weak 21-day cadence is 1.9x — well past the 1.25x line.
+    await db('visits').insert({
+      place_id: 5, person_id: null, user_id: 1, status: 'completed',
+      scheduled_date: daysBefore(ASOF, 40), met_with_type: 'receptionist', outcome: 'materials_only', place_name: 'Overdue Place',
+    });
+    const r = (await computeRelationshipForPlaces(db, [5], { asOf: ASOF, includeTrend: true })).get(5);
+    assert.equal(r.level, 'weak');
+    assert.equal(r.trend, 'down');
+  });
+
+  test('a never-visited place is not cooling down — there is nothing to be overdue from', async () => {
+    const r = (await computeRelationshipForPlaces(db, [3], { asOf: ASOF, includeTrend: true })).get(3);
+    assert.equal(r.score, 0);
+    assert.equal(r.trend, null);
+  });
+
+  test('a fresh visit inside the heating-up window reads as heating up, for both the person and the place', async () => {
+    await db('places').insert({ id: 4, name: 'Fresh Place', category: 'Hospice', tier: 1, priority_score: 75 });
+    await db('people').insert({ id: 4, place_id: 4, name: 'New Contact' });
+    // A substantive visit just 2 days ago, inside the ~4-day heating-up
+    // window for a 30-day (Hospice) half-life — there was no relationship at
+    // all as of the reference date, so this must register as a real gain.
+    await db('visits').insert({
+      place_id: 4, person_id: 4, user_id: 1, status: 'completed',
+      scheduled_date: daysBefore(ASOF, 2), met_with_type: 'named_person', outcome: 'substantive', place_name: 'Fresh Place',
+    });
+
+    const place = (await computeRelationshipForPlaces(db, [4], { asOf: ASOF, includeTrend: true })).get(4);
+    assert.equal(place.trend, 'up');
+    const person = (await computeRelationshipForPeople(db, [4], { asOf: ASOF, includeTrend: true })).get(4);
+    assert.equal(person.trend, 'up');
+  });
+
+  test('a person\'s own cooldown is independent of their place — it does not inherit the place\'s status', async () => {
+    // Marcus (person 2, at Fast Place/Hospice) has one 'brief' visit 30 days
+    // ago — his last MEANINGFUL visit — which is past half of Hospice's
+    // 30-day half-life (15 days), so HE reads as cooling down even though
+    // Fast Place itself (person 1's more recent activity) does not.
+    const marcus = (await computeRelationshipForPeople(db, [2], { asOf: ASOF, includeTrend: true })).get(2);
+    assert.equal(marcus.trend, 'down');
+  });
+
+  test('trend is suppressed under a manual override', async () => {
+    await db('places').where({ id: 1 }).update({
+      relationship_level_override: 'strong', relationship_override_at: new Date().toISOString(), relationship_override_by: 1,
+    });
+    const r = (await computeRelationshipForPlaces(db, [1], { asOf: ASOF, includeTrend: true })).get(1);
+    assert.equal(r.is_overridden, true);
+    assert.equal(r.trend, null, 'an override is the answer — a computed direction alongside it would just contradict it');
     await db('places').where({ id: 1 }).update({
       relationship_level_override: null, relationship_override_at: null, relationship_override_by: null,
     });

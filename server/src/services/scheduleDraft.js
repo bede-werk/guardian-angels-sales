@@ -187,12 +187,24 @@ async function buildCandidatePool(db, { today }) {
     if (!lastVisitByPlace[v.place_id]) lastVisitByPlace[v.place_id] = v.scheduled_date;
   }
 
+  // Fatigue counts DISTINCT DAYS visited, not visit rows. One visit row is one
+  // person met, so meeting three contacts at a place in a single afternoon
+  // writes three rows — counting rows would burn three quarters of the
+  // 4-visit fatigue budget for what was actually one trip, stretching that
+  // place's cadence as if it were being over-serviced and pushing it DOWN the
+  // priority list. Fatigue is about how often we show up, not how many
+  // conversations happened once we were there.
   const fatigueCutoff = daysBeforeUTC(today, defaultSchedulingConfig.FATIGUE_WINDOW_DAYS);
-  const recentCounts = {};
+  const recentDaysByPlace = {};
   for (const v of completedVisits) {
     if (v.scheduled_date >= fatigueCutoff && v.scheduled_date <= today) {
-      recentCounts[v.place_id] = (recentCounts[v.place_id] || 0) + 1;
+      if (!recentDaysByPlace[v.place_id]) recentDaysByPlace[v.place_id] = new Set();
+      recentDaysByPlace[v.place_id].add(v.scheduled_date);
     }
+  }
+  const recentCounts = {};
+  for (const [placeId, days] of Object.entries(recentDaysByPlace)) {
+    recentCounts[placeId] = days.size;
   }
 
   const nextDateVisits = await db('visits')

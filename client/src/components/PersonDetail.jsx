@@ -311,18 +311,36 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         </div>
         <div className="modal-body">
           {loadError && <div className="error-banner">{loadError}</div>}
-          {(data.phone || data.email) && (
-            <div className="stack" style={{ background: 'var(--bg)', borderRadius: 'var(--radius-md)', padding: '12px 16px' }}>
-              <div className="tiny">
-                {data.phone && <div>{data.phone}</div>}
-                {data.email && <div>{data.email}</div>}
-              </div>
-              <div className="tag-list">
-                {data.phone && <a className="btn secondary small" title={`Call ${data.phone}`} href={`tel:${data.phone}`}>Call</a>}
-                {data.email && <a className="btn secondary small" title={`Email ${data.email}`} href={`mailto:${data.email}`}>Email</a>}
+          {/* Contact info on the left, relationship status on the right —
+              two half-width cards side by side rather than one full-width
+              block stacked above the other. */}
+          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+              <div className="card-head"><h2>Contact Info</h2></div>
+              <div className="card-body stack">
+                {data.phone || data.email ? (
+                  <>
+                    <div className="tiny">
+                      {data.phone && <div>{data.phone}</div>}
+                      {data.email && <div>{data.email}</div>}
+                    </div>
+                    <div className="tag-list">
+                      {data.phone && <a className="btn secondary small" title={`Call ${data.phone}`} href={`tel:${data.phone}`}>Call</a>}
+                      {data.email && <a className="btn secondary small" title={`Email ${data.email}`} href={`mailto:${data.email}`}>Email</a>}
+                    </div>
+                  </>
+                ) : (
+                  <div className="tiny muted">No contact info on file.</div>
+                )}
               </div>
             </div>
-          )}
+            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+              <div className="card-head"><h2>Relationship</h2></div>
+              <div className="card-body stack">
+                <PersonRelationship relationship={data.relationship} />
+              </div>
+            </div>
+          </div>
 
           {/* Durable notes/preferences about this person — persist across visits. */}
           <div className="card">
@@ -362,13 +380,6 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               </div>
             </div>
             <div className="card-body stack">
-              {/* Relationship is measured per PERSON and rolled up to the
-                  place, so this is where the number actually originates —
-                  the place's score is a weighted sum of these. No override
-                  here: overrides live on the place, which is what the
-                  scheduler reads. */}
-              <PersonRelationship relationship={data.relationship} />
-
               {editingPreferences ? (
                 <div className="stack">
                   <textarea

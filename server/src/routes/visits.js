@@ -29,6 +29,43 @@ const STATUSES = ['planned', 'completed', 'skipped'];
 // scoring, since only 'named_person' can build an individual's score.
 const MET_WITH_TYPES = ['named_person', 'staff', 'receptionist', 'nobody'];
 
+// One visit ROW is one ENCOUNTER — a single who/what/did-they-ask triple.
+// A trip where the rep met a named contact AND got gatekept by the front desk
+// is two encounters, so it writes two rows sharing the same place, date,
+// notes and duration but each carrying its own met_with_type, person_id,
+// outcome and they_requested.
+//
+// This is what makes the relationship model reachable from the form: the
+// named-contact row scores toward THAT PERSON's relationship, while the
+// receptionist row scores (much lower) toward the place's floor — see
+// services/relationship.js's creditsPerson/visitWeight. Collapsing a trip
+// into one row would force the rep to pick one and silently discard the other.
+//
+// The fan-out happens HERE rather than as N calls from the browser for two
+// reasons: the collision check below must run ONCE for the trip (N separate
+// POSTs would have rows 2..N colliding with row 1 and falsely warning "you
+// already have a visit here"), and all-or-nothing insertion needs one
+// transaction. Fatigue counting already treats these as a single trip — see
+// buildCandidatePool's distinct-day counting in services/scheduleDraft.js.
+const MAX_ENCOUNTERS_PER_VISIT = 20; // sanity guard, not a real-world limit
+
+// Trip-level fields are shared by every row; everything else is per-encounter.
+const ENCOUNTER_FIELDS = ['met_with_type', 'person_id', 'outcome', 'they_requested'];
+
+// Snapshot fields are read from the people table per person rather than
+// trusted from the request body: with several people in play the client would
+// have to send a parallel array of contact details, and any mismatch would
+// silently mis-attribute one person's phone/email onto another's visit row.
+function snapshotFromPerson(person) {
+  return {
+    person_id: person.id,
+    person_name: person.name || null,
+    person_title: person.title || null,
+    person_email: person.email || null,
+    person_phone: person.phone || null,
+  };
+}
+
 // Captures the "avg. referrals/month discovered at pre-qual" number that
 // VisitLogModal offers on any completed visit to a place that hasn't been
 // pre-qualified yet. Sent as a transient `capacity_monthly_referrals` body
@@ -224,6 +261,65 @@ router.post('/', async (req, res, next) => {
       payload.person_id = numericPersonId;
     }
 
+    // Several encounters on one trip (see MAX_ENCOUNTERS_PER_VISIT above).
+    // Fully validated up front, before any insert, so one bad entry can't
+    // leave a half-written trip behind.
+    let encounters = null;
+    if (req.body.encounters !== undefined) {
+      if (!Array.isArray(req.body.encounters)) {
+        return res.status(400).json({ error: 'encounters must be an array' });
+      }
+      if (req.body.encounters.length > MAX_ENCOUNTERS_PER_VISIT) {
+        return res.status(400).json({ error: `A single visit can record at most ${MAX_ENCOUNTERS_PER_VISIT} encounters` });
+      }
+      if (req.body.encounters.length) {
+        const seenPersonIds = new Set();
+        const built = [];
+        for (const raw of req.body.encounters) {
+          if (!raw || typeof raw !== 'object') return res.status(400).json({ error: 'each encounter must be an object' });
+          const e = {};
+          for (const f of ENCOUNTER_FIELDS) if (raw[f] !== undefined) e[f] = raw[f];
+
+          if (!MET_WITH_TYPES.includes(e.met_with_type)) {
+            return res.status(400).json({ error: `met_with_type must be one of ${MET_WITH_TYPES.join(', ')}` });
+          }
+          if (!OUTCOMES.includes(e.outcome)) {
+            return res.status(400).json({ error: `outcome must be one of ${OUTCOMES.join(', ')}` });
+          }
+          e.they_requested = Boolean(e.they_requested);
+
+          if (e.met_with_type === 'named_person') {
+            const personId = Number(e.person_id);
+            if (!Number.isInteger(personId)) return res.status(400).json({ error: 'person not found' });
+            // The same person twice in one trip would double-count their
+            // relationship score for a single conversation.
+            if (seenPersonIds.has(personId)) {
+              return res.status(400).json({ error: 'the same person cannot be recorded twice on one visit' });
+            }
+            seenPersonIds.add(personId);
+            e.person_id = personId;
+          } else {
+            // Only a named_person encounter may carry a person — anything
+            // else is by definition "we didn't meet anyone identifiable,"
+            // and a stray person_id here would wrongly credit them.
+            e.person_id = null;
+          }
+          built.push(e);
+        }
+
+        // One query for every named person, rather than one per encounter.
+        if (seenPersonIds.size) {
+          const rows = await knex('people').whereIn('id', [...seenPersonIds]);
+          if (rows.length !== seenPersonIds.size) return res.status(400).json({ error: 'person not found' });
+          const byId = new Map(rows.map((r) => [r.id, r]));
+          for (const e of built) {
+            if (e.person_id != null) Object.assign(e, snapshotFromPerson(byId.get(e.person_id)));
+          }
+        }
+        encounters = built;
+      }
+    }
+
     const phoneError = validatePhone(payload.person_phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
 
@@ -261,14 +357,34 @@ router.post('/', async (req, res, next) => {
     // immediately, not left null.
     if (payload.status === 'completed') payload.completed_at = knex.fn.now();
 
-    const [inserted] = await knex('visits').insert(payload).returning('id');
-    const id = knex.extractId(inserted);
+    // One row per encounter (or exactly one row when the caller sent no
+    // `encounters` at all — the original single-encounter body shape is
+    // unchanged, which is what the PATCH-driven edit path and any older
+    // caller still use). All-or-nothing: a failure partway through must not
+    // leave a trip half-recorded.
+    const rowsToInsert = encounters && encounters.length
+      ? encounters.map((e) => ({ ...payload, ...e }))
+      : [payload];
+
+    const ids = await knex.transaction(async (trx) => {
+      const out = [];
+      for (const row of rowsToInsert) {
+        const [inserted] = await trx('visits').insert(row).returning('id');
+        out.push(knex.extractId(inserted));
+      }
+      return out;
+    });
 
     if (payload.status === 'completed') {
       await maybeCapturePreQualification({ placeId: numericPlaceId, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
     }
 
-    res.status(201).json(await fetchVisit(id));
+    // Responds with the FIRST row's full visit object — the same shape
+    // single-encounter callers have always received, so nothing downstream had
+    // to change — plus the ids of every row written, for a caller that wants
+    // to know a trip produced several.
+    const body = await fetchVisit(ids[0]);
+    res.status(201).json(ids.length > 1 ? { ...body, visit_ids: ids } : body);
   } catch (err) {
     next(err);
   }

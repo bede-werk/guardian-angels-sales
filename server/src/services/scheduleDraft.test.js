@@ -1,6 +1,8 @@
-const { test, describe } = require('node:test');
+const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const path = require('node:path');
+const knexLib = require('knex');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, buildCandidatePool, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 
 describe('mergeLockedElsewhereIds', () => {
   test('unions committed and other-draft rows', () => {
@@ -162,10 +164,8 @@ describe('validateDays', () => {
 });
 
 describe('deleteCommittedDay', () => {
-  // deleteCommittedDay isn't pure (it issues a real `visits` delete), and
-  // nothing in this codebase's service-level tests spins up a real/mock Knex
-  // DB (scheduleDraft.test.js and its siblings only exercise pure functions).
-  // A minimal fake db that records the filter handed to `.where()` and lets
+  // deleteCommittedDay isn't pure (it issues a real `visits` delete). A
+  // minimal fake db that records the filter handed to `.where()` and lets
   // `.del()` return a controllable count is enough to assert on the query
   // shape without standing up sqlite — mirroring the query itself
   // (`db('visits').where({...}).del()`) closely enough that a regression to
@@ -209,5 +209,65 @@ describe('deleteCommittedDay', () => {
     const db = makeFakeDb(3);
     const result = await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
     assert.equal(result, 3);
+  });
+});
+
+describe('buildCandidatePool fatigue counting', () => {
+  let db;
+  const TODAY = '2026-08-03';
+
+  before(async () => {
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
+
+    // Place 1: ONE trip, four people met that day -> four visit rows.
+    // Place 2: four separate trips on four different days.
+    // Both have four completed rows; only place 2 was actually visited often.
+    await db('places').insert([
+      { id: 1, name: 'One Big Meeting', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 2, name: 'Four Real Trips', category: 'Hospice', tier: 1, priority_score: 75 },
+    ]);
+    await db('people').insert([
+      { id: 1, place_id: 1, name: 'A' }, { id: 2, place_id: 1, name: 'B' },
+      { id: 3, place_id: 1, name: 'C' }, { id: 4, place_id: 1, name: 'D' },
+    ]);
+
+    const sameDay = '2026-07-30';
+    await db('visits').insert([1, 2, 3, 4].map((personId) => ({
+      place_id: 1, person_id: personId, user_id: 1, status: 'completed',
+      scheduled_date: sameDay, met_with_type: 'named_person', outcome: 'substantive', place_name: 'One Big Meeting',
+    })));
+    await db('visits').insert(['2026-07-10', '2026-07-17', '2026-07-24', '2026-07-31'].map((d) => ({
+      place_id: 2, person_id: null, user_id: 1, status: 'completed',
+      scheduled_date: d, met_with_type: 'receptionist', outcome: 'materials_only', place_name: 'Four Real Trips',
+    })));
+  });
+
+  after(async () => {
+    await db.destroy();
+  });
+
+  test('four people met on ONE day counts as one visit, not four', async () => {
+    const pool = await buildCandidatePool(db, { today: TODAY });
+    const place = pool.find((c) => c.place.id === 1);
+    assert.equal(place.recentCompletedCount, 1, 'one trip is one visit regardless of how many contacts were met');
+  });
+
+  test('four visits on four separate days still counts as four', async () => {
+    const pool = await buildCandidatePool(db, { today: TODAY });
+    const place = pool.find((c) => c.place.id === 2);
+    assert.equal(place.recentCompletedCount, 4, 'genuinely frequent visits must still trigger fatigue');
+  });
+
+  test('lastVisitDate is unaffected by the distinct-day change', async () => {
+    const pool = await buildCandidatePool(db, { today: TODAY });
+    assert.equal(pool.find((c) => c.place.id === 1).lastVisitDate, '2026-07-30');
+    assert.equal(pool.find((c) => c.place.id === 2).lastVisitDate, '2026-07-31');
   });
 });

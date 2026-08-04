@@ -246,8 +246,10 @@ router.get('/people/:id', async (req, res, next) => {
     // Full relationship object — this screen is where "why does this person
     // read weak?" has to be answerable (last meaningful visit, how much of the
     // score is still a fading initial estimate, what the reciprocity
-    // multiplier is doing).
-    const relationshipByPerson = await computeRelationshipForPeople(knex, [person.id]);
+    // multiplier is doing). includeTrend: true — this is one of only two
+    // callers that ever render it (see relationship.js's
+    // computeRelationshipForPeople comment).
+    const relationshipByPerson = await computeRelationshipForPeople(knex, [person.id], { includeTrend: true });
 
     res.json({
       ...person,

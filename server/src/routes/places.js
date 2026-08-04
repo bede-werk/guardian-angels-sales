@@ -381,7 +381,9 @@ router.get('/:id', async (req, res, next) => {
     // The full relationship object here (unlike the list view): the detail
     // screen is exactly where "why is this place weak?" has to be answerable,
     // which is what contributors/components/last_meaningful_visit are for.
-    const relationshipByPlace = await computeRelationshipForPlaces(knex, [place.id]);
+    // includeTrend: true — this is one of only two callers that ever render
+    // it (see relationship.js's computeRelationshipForPlaces comment).
+    const relationshipByPlace = await computeRelationshipForPlaces(knex, [place.id], { includeTrend: true });
 
     res.json({
       ...decorate(place),

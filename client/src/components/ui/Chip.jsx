@@ -23,14 +23,15 @@ export function OutcomeChip({ outcome }) {
   return <span className={`badge o-${outcome}`}>{outcomeLabel(outcome)}</span>;
 }
 
-// A place's or person's computed relationship level. `overridden` draws the
-// same pill with a marker, since an override that looks identical to a
-// computed value is exactly how a manual field goes stale unnoticed.
+// A place's or person's computed relationship level. `overridden` is still
+// passed through for the tooltip — the caller's subtext line (see
+// RelationshipDetail.jsx) is what actually discloses "manually set" now, so
+// the pill itself no longer repeats it as text.
 export function RelationshipChip({ level, overridden }) {
   if (!level) return null;
   return (
-    <span className={`badge rel-${level}`} title={overridden ? 'Set manually — see the place detail for the computed value' : undefined}>
-      {RELATIONSHIP_LABELS[level] || level}{overridden ? ' ·  manual' : ''}
+    <span className={`badge rel-${level}`} title={overridden ? 'Set manually — see the subtext below for the computed value' : undefined}>
+      {RELATIONSHIP_LABELS[level] || level}
     </span>
   );
 }
