@@ -22,13 +22,12 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete })
             <div className="tiny"><strong>Place:</strong> {visit.place_name}</div>
           )}
           <div className="tiny"><strong>Type:</strong> {VISIT_TYPE_LABELS[visit.visit_type] || 'Visit'}</div>
-          {(visit.person_name || visit.person_title || visit.person_email || visit.person_phone) && (
-            <div className="tiny">
-              <strong>Contact:</strong> {[visit.person_name, visit.person_title].filter(Boolean).join(', ') || '—'}
-              {visit.person_email && <div>{visit.person_email}</div>}
-              {visit.person_phone && <div>{visit.person_phone}</div>}
-            </div>
-          )}
+          {/* No contact line here on purpose. Who was met lives in a visit's
+              `encounters`, which only get written when the visit is logged —
+              a planned stop having none is its normal state, not missing
+              data, so this says so outright rather than rendering an empty
+              "Contact:" row. The completed equivalent is VisitDetailModal. */}
+          <div className="tiny muted">Nobody recorded yet — who you meet is captured when you log this visit.</div>
           {visit.user_name && (
             <div className="tiny"><strong>Rep:</strong> {visit.user_name}</div>
           )}

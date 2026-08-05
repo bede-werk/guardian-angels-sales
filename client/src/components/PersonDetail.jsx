@@ -5,9 +5,21 @@ import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
 import ReferralModal from './ReferralModal';
 import ReferralDetailModal from './ReferralDetailModal';
-import VisitDetailModal from './VisitDetailModal';
+import VisitDetailModal, { encounterLabel, joinNames } from './VisitDetailModal';
 import VisitLogModal from './VisitLogModal';
 import { PersonRelationship } from './RelationshipDetail';
+
+// Everyone ELSE on a trip this person was part of. A visit is a trip, not a
+// one-to-one meeting, so their history here can list a visit that also took in
+// the receptionist and two colleagues — saying so is the difference between
+// "we sat down with them" and "we were in the building". Matched by id, not
+// name — routes/people.js's GET /:id asks for person_id alongside the usual
+// name-only summary specifically so two people sharing a name at one place
+// don't fold together here.
+function otherAttendees(encounters, personId) {
+  if (!encounters) return [];
+  return encounters.filter((e) => !(e.met_with_type === 'named_person' && e.person_id === personId));
+}
 
 // Slide-in modal: a person's own detail — their place, contact info,
 // durable notes/preferences, and every visit where they were the recorded
@@ -239,10 +251,11 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     }
   }
 
-  // Deletes a visit entirely — it's the same underlying row PlaceDetail
-  // reads too, so removing it here also removes it there on next load.
+  // Deletes the whole TRIP, not just this person's part in it — anyone else
+  // met on the same visit is deleted along with it. Dropping only this person
+  // from a trip is VisitDetailModal's per-encounter ✕.
   async function removeVisit(visit) {
-    if (!window.confirm("Delete this visit? This can't be undone.")) return;
+    if (!window.confirm("Delete this visit? Everyone recorded on it — not just this person — goes with it. This can't be undone.")) return;
     setRemovingVisitId(visit.id);
     try {
       await api.deleteVisit(visit.id);
@@ -589,10 +602,12 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
             </div>
           </div>
 
-          {/* Every visit where this person was the recorded contact, most
-              recent first — the "last time we spoke with them" history. This
-              survives even if the place it happened at is later deleted or
-              this person is moved to a different place. */}
+          {/* Every visit this person was met on, most recent first — the "last
+              time we spoke with them" history. One row per TRIP, so a visit
+              that also took in their colleagues appears once, naming them;
+              opening it shows the same full trip PlaceDetail would, whoever
+              you came in from. This survives even if the place it happened at
+              is later deleted or this person is moved to a different place. */}
           <div className="card">
             <div className="card-head">
               <h2>Visit history ({data.visits.length})</h2>
@@ -605,37 +620,45 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                 <EmptyState message="No visits logged with this person yet." />
               ) : (
                 <ul className="list">
-                  {data.visits.map((v) => (
-                    <li
-                      key={v.id}
-                      className="stack hover-row"
-                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { exitFieldEdits(); setViewingVisit(v); }}
-                    >
-                      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                        <div className="tag-list" style={{ flex: 'unset' }}>
-                          <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
-                          {/* "Bede Fulton at Guardian Angels (Test)" — who visited, then where. */}
-                          {(v.user_name || v.place_name) && (
-                            <span className="tiny muted">
-                              · {[v.user_name, v.place_name && `at ${v.place_name}`].filter(Boolean).join(' ')}
-                            </span>
-                          )}
+                  {data.visits.map((v) => {
+                    const others = otherAttendees(v.encounters, data.id);
+                    return (
+                      <li
+                        key={v.id}
+                        className="stack hover-row"
+                        style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
+                        onClick={() => { exitFieldEdits(); setViewingVisit(v); }}
+                      >
+                        <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                          <div className="tag-list" style={{ flex: 'unset' }}>
+                            <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
+                            {/* "Bede Fulton at Guardian Angels (Test)" — who visited, then where. */}
+                            {(v.user_name || v.place_name) && (
+                              <span className="tiny muted">
+                                · {[v.user_name, v.place_name && `at ${v.place_name}`].filter(Boolean).join(' ')}
+                              </span>
+                            )}
+                          </div>
+                          <Button
+                            variant="danger"
+                            size="small"
+                            title="Delete this whole visit, everyone on it included"
+                            disabled={removingVisitId === v.id}
+                            onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
+                          >
+                            ✕
+                          </Button>
                         </div>
-                        <Button
-                          variant="danger"
-                          size="small"
-                          title="Delete this visit"
-                          disabled={removingVisitId === v.id}
-                          onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
-                        >
-                          ✕
-                        </Button>
-                      </div>
-                      {v.notes && <div className="tiny">{v.notes}</div>}
-                      {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
-                    </li>
-                  ))}
+                        {/* Only when the trip took in someone else — on a
+                            one-person visit there's nothing to disclose. */}
+                        {others.length > 0 && (
+                          <div className="tiny muted">Also met {joinNames(others.map(encounterLabel))}</div>
+                        )}
+                        {v.notes && <div className="tiny">{v.notes}</div>}
+                        {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
@@ -694,6 +717,9 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         <VisitDetailModal
           visit={viewingVisit}
           onClose={() => setViewingVisit(null)}
+          /* Removing a person from a trip can drop this visit out of this
+             person's history entirely (or delete the trip), so reload. */
+          onChanged={() => { load(); onChanged?.(); }}
           onEdit={(v) => {
             if (v.user_id != null && v.user_id !== userId && !window.confirm("This visit is logged under a different rep's account. Edit it anyway?")) return;
             setViewingVisit(null);

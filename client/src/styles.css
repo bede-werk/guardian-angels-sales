@@ -179,30 +179,66 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1; min-width: 120px; }
 
-/* A checkbox with its label on one line. The width override stops the
-   global `input { width: 100% }` rule from stretching the box itself. */
-.check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
-.check-row input[type="checkbox"] { width: auto; margin: 0; cursor: pointer; }
+/* A toggleable option row — VisitLogModal's stand-in for a checkbox. The row
+   itself is the hit target regardless, greying on hover and turning light
+   blue once selected. Multiple rows can be selected at once (this is styling
+   only — the multi- vs single-select logic lives in each caller's toggle
+   handler), so it reads as "tap to include," not a radio. Most uses (the
+   Who did you meet / Which people checklists) skip the checkbox square
+   entirely — the bordered list container around them already signals
+   they're selectable. A standalone toggle with no such container (e.g.
+   "They asked me for something") adds `.check-box-visual` as a purely
+   decorative first child so it doesn't rely on that container for the same
+   signal; the row's own onClick/onKeyDown remains the single toggle path. */
+.select-row {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer;
+  padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid transparent;
+}
+.select-row:hover { background: var(--grey-tint-1); }
+.select-row.selected { background: var(--blue-tint-3); border-color: var(--blue-tint-6); color: var(--blue-dark); font-weight: 600; }
+.select-row.selected:hover { background: var(--blue-tint-4); border-color: var(--blue-tint-6); }
+
+.check-box-visual {
+  width: 15px; height: 15px; flex: none; border-radius: 4px;
+  border: 1px solid var(--grey-tint-3); background: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.select-row.selected .check-box-visual {
+  background: var(--blue); border-color: var(--blue);
+}
+.select-row.selected .check-box-visual::after {
+  content: '✓'; color: #fff; font-size: 10px; font-weight: 700; line-height: 1;
+}
 
 /* The "who did you meet" / "which people" checklists in VisitLogModal — one
-   visit row is written per encounter ticked across them. Scrolls rather than
-   growing without bound, since a big place's roster would otherwise push the
-   rest of the form off-screen. */
+   encounter is written on the visit per row ticked across them. Scrolls rather
+   than growing without bound, since a big place's roster would otherwise push
+   the rest of the form off-screen. */
 .person-checklist {
   border: 1px solid var(--border); border-radius: var(--radius-md);
   padding: 8px 10px; max-height: 168px; overflow-y: auto;
-  display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 2px;
 }
 
-/* One encounter's own "what happened" block in VisitLogModal. Boxed so the
-   per-person answers read as separate units rather than one long column of
-   controls whose labels are easy to mis-associate. */
+/* One encounter's own block — its "what happened" answers in VisitLogModal,
+   its recorded detail in VisitDetailModal. Boxed so the per-person answers
+   read as separate units rather than one long column of controls whose labels
+   are easy to mis-associate. */
 .encounter-row {
   border: 1px solid var(--border); border-radius: var(--radius-md);
   padding: 10px 12px; background: var(--bg);
   display: flex; flex-direction: column; gap: 8px;
 }
 .encounter-row .encounter-name { font-size: 13px; font-weight: 600; }
+
+/* The column of encounter-rows itself. Same reasoning as .person-checklist
+   above: one more row gets appended every time another person/category is
+   ticked in "Who did you meet?", and without a cap the whole modal kept
+   growing (and re-centering) on every click — capped + scrolling here instead
+   keeps the modal's height stable while multiple selections are being made.
+   VisitDetailModal reuses it for the same reason: expanding one person's
+   detail there shouldn't resize the modal around it. */
+.encounter-list { max-height: 260px; overflow-y: auto; padding-right: 2px; }
 
 /* A button that reads as an inline link — for a secondary action sitting
    inside body text, where a real .btn would be too heavy. */

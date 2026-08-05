@@ -1,51 +1,234 @@
-import React from 'react';
-import { formatDate, VISIT_TYPE_LABELS } from '../api';
+import React, { useEffect, useState } from 'react';
+import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
 import { OutcomeChip } from './ui/Chip';
 import Button from './ui/Button';
+import EmptyState from './ui/EmptyState';
 
-// Read-only popup with everything on file for one visit, plus a way into
-// editing it (VisitLogModal, opened by the parent via onEdit). PersonDetail's
-// and PlaceDetail's Visit history rows only show date + who/where + notes to
-// stay uncluttered (per an earlier request) — this is where the rest of it
-// (outcome, logged-by rep, full contact snapshot) still lives. No status
-// chip here: Visit history only ever lists completed visits, so the date
-// already says it happened — see routes/places.js and routes/people.js.
-export default function VisitDetailModal({ visit, onClose, onEdit, onDelete }) {
+// Short, joinable labels for a non-named encounter — MET_WITH_LABELS in api.js
+// reads as a form option ("A staff member (name unknown)"), too long to sit
+// inline in "with X, Y and Z". Exported (with the two helpers below) because
+// PlaceDetail and PersonDetail describe the same `encounters` arrays in their
+// visit-history rows; keeping one spelling of "a staff member" in the place
+// that owns encounter rendering beats three drifting copies.
+export const ENCOUNTER_SHORT_LABELS = {
+  staff: 'a staff member',
+  receptionist: 'the receptionist',
+  // Only ever appears alone — 'nobody' is mutually exclusive with every other
+  // met_with_type at log time (see VisitLogModal's toggleMetType) — so it
+  // never has to read well mid-list.
+  nobody: 'nobody',
+};
+
+// One encounter as a name: the person if there is one, otherwise the category.
+export function encounterLabel(encounter) {
+  if (encounter.met_with_type === 'named_person') return encounter.person_name || 'someone';
+  return ENCOUNTER_SHORT_LABELS[encounter.met_with_type] || 'someone';
+}
+
+// "Flibber Gibblits", "Flibber Gibblits and the receptionist", or
+// "Flibber Gibblits, New Guy and a staff member".
+export function joinNames(names) {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+// Everything on file for one visit — a TRIP: place, date, rep, notes, and the
+// list of people/categories met on it (`encounters`). The list endpoints that
+// feed the callers here only return name + category per encounter, so this
+// modal always refetches the trip through GET /api/visits/:id, which is the
+// only call that returns each encounter's outcome/contact snapshot/"they asked
+// for something". That's also why it takes the trip's id and not the row it
+// was handed: PlaceDetail and PersonDetail pass different shapes of the same
+// trip, and both should show the identical, complete picture.
+//
+// The encounter list is the interactive part: each person expands in place to
+// show what happened with THEM, and can be removed on its own — one person
+// being mis-logged shouldn't cost the whole visit.
+//
+// `onChanged` (optional) fires whenever an encounter was removed, so the
+// parent can reload its own list; when the removal took the trip with it (see
+// removeEncounter) the modal closes itself as well, since there's nothing
+// left to show.
+export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onChanged }) {
+  const [trip, setTrip] = useState(null); // GET /api/visits/:id — the full trip + every encounter field
+  const [loadError, setLoadError] = useState(null);
+  const [openEncounterId, setOpenEncounterId] = useState(null); // which encounter's detail is expanded, if any
+  const [removingEncounterId, setRemovingEncounterId] = useState(null); // encounter currently being deleted (disables its row)
+
+  async function load() {
+    try {
+      setLoadError(null);
+      setTrip(await api.visit(visit.id));
+    } catch (e) {
+      setLoadError(e.message);
+    }
+  }
+  useEffect(() => {
+    load();
+  }, [visit.id]);
+
+  // Removing the last encounter from an already-logged trip deletes the trip
+  // server-side — a completed visit where nobody was met isn't a record of
+  // anything. That cascade is invisible from the row being clicked, so the
+  // confirm has to name what actually goes with it. next_visit_date
+  // especially: it's what puts this place in the route planner's commitment
+  // tier, so losing it silently would quietly un-schedule a promised return.
+  function lastEncounterConfirm(encounter) {
+    const losses = [];
+    if (trip.notes) losses.push('its notes');
+    if (trip.next_visit_date) losses.push(`the follow-up scheduled for ${formatDate(trip.next_visit_date)}`);
+    return (
+      `Removing ${encounterLabel(encounter)} leaves nobody on this visit, so the whole visit will be deleted` +
+      (losses.length ? ` — including ${joinNames(losses)}` : '') +
+      '.' +
+      (trip.next_visit_date
+        ? ' That follow-up date is what keeps this place scheduled for a return, and it will be gone too.'
+        : '') +
+      " This can't be undone. Continue?"
+    );
+  }
+
+  async function removeEncounter(encounter) {
+    // A PLANNED trip legitimately holds no encounters at all — that's its
+    // normal pre-completion state — so emptying one doesn't delete it. Every
+    // other status is treated as cascading: over-warning costs a sentence in a
+    // confirm, under-warning costs a follow-up date nobody knew they lost.
+    const deletesTrip = trip.encounters.length === 1 && trip.status !== 'planned';
+    const message = deletesTrip
+      ? lastEncounterConfirm(encounter)
+      : `Remove ${encounterLabel(encounter)} from this visit? The rest of the visit stays. This can't be undone.`;
+    if (!window.confirm(message)) return;
+    setRemovingEncounterId(encounter.id);
+    try {
+      await api.deleteVisitEncounter(trip.id, encounter.id);
+      onChanged?.();
+      if (deletesTrip) {
+        onClose();
+        return;
+      }
+      await load();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setRemovingEncounterId(null);
+    }
+  }
+
+  if (!trip) {
+    return (
+      <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+        <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+          {loadError ? (
+            <div className="stack" style={{ padding: 20 }}>
+              <div className="error-banner">{loadError}</div>
+              <Button variant="secondary" onClick={onClose}>Close</Button>
+            </div>
+          ) : (
+            <div className="loading">Loading…</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
-      <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{visit.scheduled_date ? formatDate(visit.scheduled_date) : 'unscheduled'} · Visit</h2>
+          <h2>{trip.scheduled_date ? formatDate(trip.scheduled_date) : 'unscheduled'} · Visit</h2>
           <button className="close" title="Close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body stack">
-          {visit.outcome && (
-            <div className="tag-list">
-              <OutcomeChip outcome={visit.outcome} />
-            </div>
+          {loadError && <div className="error-banner">{loadError}</div>}
+
+          {/* The trip's own facts — true of the whole visit, stated once,
+              however many people it covered. */}
+          {trip.place_name && <div className="tiny"><strong>Place:</strong> {trip.place_name}</div>}
+          <div className="tiny"><strong>Type:</strong> {VISIT_TYPE_LABELS[trip.visit_type] || 'Visit'}</div>
+          {trip.user_name && <div className="tiny"><strong>Logged by:</strong> {trip.user_name}</div>}
+          <div className="tiny"><strong>Notes:</strong> {trip.notes || '—'}</div>
+          {trip.actual_duration_minutes != null && (
+            <div className="tiny"><strong>Took:</strong> {trip.actual_duration_minutes} min</div>
           )}
-          {visit.place_name && (
-            <div className="tiny"><strong>Place:</strong> {visit.place_name}</div>
+          {trip.next_visit_date && (
+            <div className="tiny"><strong>Next visit:</strong> {formatDate(trip.next_visit_date)}</div>
           )}
-          <div className="tiny"><strong>Type:</strong> {VISIT_TYPE_LABELS[visit.visit_type] || 'Visit'}</div>
-          {(visit.person_name || visit.person_title || visit.person_email || visit.person_phone) && (
-            <div className="tiny">
-              <strong>Contact:</strong> {[visit.person_name, visit.person_title].filter(Boolean).join(', ') || '—'}
-            </div>
-          )}
-          {visit.user_name && (
-            <div className="tiny"><strong>Logged by:</strong> {visit.user_name}</div>
-          )}
-          <div className="tiny"><strong>Notes:</strong> {visit.notes || '—'}</div>
-          {visit.next_visit_date && (
-            <div className="tiny"><strong>Next visit:</strong> {formatDate(visit.next_visit_date)}</div>
-          )}
+
+          {/* Who was met. Click a name to see what happened with THEM — the
+              outcome and the contact details as they stood that day are facts
+              about one encounter, not about the trip, and flattening them into
+              the block above is exactly what this split exists to stop. */}
+          <div>
+            <label className="field">Who was met ({trip.encounters.length})</label>
+            {trip.encounters.length === 0 ? (
+              <EmptyState
+                message={
+                  trip.status === 'planned'
+                    ? "Nobody recorded yet — this visit hasn't been logged."
+                    : 'Nobody was recorded on this visit.'
+                }
+              />
+            ) : (
+              <div className="stack encounter-list" style={{ gap: 10 }}>
+                {trip.encounters.map((e) => {
+                  const open = openEncounterId === e.id;
+                  return (
+                    <div key={e.id} className="encounter-row">
+                      <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div
+                          className="encounter-name hover-row"
+                          title={open ? 'Hide what happened' : 'Show what happened with them'}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setOpenEncounterId(open ? null : e.id)}
+                          onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpenEncounterId(open ? null : e.id); } }}
+                        >
+                          {open ? '▾' : '▸'} {encounterLabel(e)}
+                          {e.person_title ? <span className="muted"> — {e.person_title}</span> : null}
+                        </div>
+                        <Button
+                          variant="danger"
+                          size="small"
+                          title="Remove this person from this visit"
+                          disabled={removingEncounterId === e.id}
+                          onClick={() => removeEncounter(e)}
+                        >
+                          ✕
+                        </Button>
+                      </div>
+                      {open && (
+                        <div className="stack" style={{ gap: 6 }}>
+                          {e.outcome ? (
+                            <div className="tag-list"><OutcomeChip outcome={e.outcome} /></div>
+                          ) : (
+                            <div className="tiny muted">No outcome recorded.</div>
+                          )}
+                          {(e.person_email || e.person_phone) && (
+                            <div className="tiny">
+                              {e.person_email && <div>{e.person_email}</div>}
+                              {e.person_phone && <div>{e.person_phone}</div>}
+                            </div>
+                          )}
+                          {/* Only worth stating when it happened — "no" is the
+                              default for every encounter and says nothing. */}
+                          {e.they_requested && <div className="tiny">They asked us for something.</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
         <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
-          <Button variant="danger" title="Delete this visit" onClick={() => onDelete?.(visit)}>Delete</Button>
+          <Button variant="danger" title="Delete this visit and everyone on it" onClick={() => onDelete?.(trip)}>Delete</Button>
           <div style={{ display: 'flex', gap: 10 }}>
             <Button variant="secondary" onClick={onClose}>Close</Button>
-            <Button title="Edit this visit's details" onClick={() => onEdit?.(visit)}>Edit</Button>
+            {/* Hands the FULL trip up, not the row the parent opened this
+                with, so VisitLogModal starts from every encounter already on
+                file instead of the list endpoint's name-only summary. */}
+            <Button title="Edit this visit's details" onClick={() => onEdit?.(trip)}>Edit</Button>
           </div>
         </div>
       </div>

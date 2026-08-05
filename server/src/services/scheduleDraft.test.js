@@ -212,6 +212,19 @@ describe('deleteCommittedDay', () => {
   });
 });
 
+// One logged visit is a TRIP row plus one row per person/category met
+// (20260806000000_split_visit_encounters.js). Same helper as
+// relationship.test.js's, kept local rather than shared through a new module
+// — six lines each is cheaper than a file nothing else would import.
+async function insertVisit(db, { encounters = [], ...trip }) {
+  const [row] = await db('visits').insert(trip).returning('id');
+  const visitId = row && row.id ? row.id : row;
+  for (const e of encounters) {
+    await db('visit_encounters').insert({ ...e, visit_id: visitId });
+  }
+  return visitId;
+}
+
 describe('buildCandidatePool fatigue counting', () => {
   let db;
   const TODAY = '2026-08-03';
@@ -226,12 +239,16 @@ describe('buildCandidatePool fatigue counting', () => {
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
 
-    // Place 1: ONE trip, four people met that day -> four visit rows.
+    // Place 1: ONE trip, four people met that day -> one visit, four encounters.
     // Place 2: four separate trips on four different days.
-    // Both have four completed rows; only place 2 was actually visited often.
+    // Place 3: TWO separate trips on the SAME day (a morning drop-off and an
+    //          afternoon meeting — legitimate, and the case the distinct-day
+    //          dedup below still has to collapse now that a multi-contact
+    //          trip is no longer expressed as several rows).
     await db('places').insert([
       { id: 1, name: 'One Big Meeting', category: 'Hospice', tier: 1, priority_score: 75 },
       { id: 2, name: 'Four Real Trips', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 3, name: 'Twice In A Day', category: 'Hospice', tier: 1, priority_score: 75 },
     ]);
     await db('people').insert([
       { id: 1, place_id: 1, name: 'A' }, { id: 2, place_id: 1, name: 'B' },
@@ -239,14 +256,22 @@ describe('buildCandidatePool fatigue counting', () => {
     ]);
 
     const sameDay = '2026-07-30';
-    await db('visits').insert([1, 2, 3, 4].map((personId) => ({
-      place_id: 1, person_id: personId, user_id: 1, status: 'completed',
-      scheduled_date: sameDay, met_with_type: 'named_person', outcome: 'substantive', place_name: 'One Big Meeting',
-    })));
-    await db('visits').insert(['2026-07-10', '2026-07-17', '2026-07-24', '2026-07-31'].map((d) => ({
-      place_id: 2, person_id: null, user_id: 1, status: 'completed',
-      scheduled_date: d, met_with_type: 'receptionist', outcome: 'materials_only', place_name: 'Four Real Trips',
-    })));
+    await insertVisit(db, {
+      place_id: 1, user_id: 1, status: 'completed', scheduled_date: sameDay, place_name: 'One Big Meeting',
+      encounters: [1, 2, 3, 4].map((personId) => ({ person_id: personId, met_with_type: 'named_person', outcome: 'substantive' })),
+    });
+    for (const d of ['2026-07-10', '2026-07-17', '2026-07-24', '2026-07-31']) {
+      await insertVisit(db, {
+        place_id: 2, user_id: 1, status: 'completed', scheduled_date: d, place_name: 'Four Real Trips',
+        encounters: [{ person_id: null, met_with_type: 'receptionist', outcome: 'materials_only' }],
+      });
+    }
+    for (const notes of ['Morning drop-off', 'Afternoon meeting']) {
+      await insertVisit(db, {
+        place_id: 3, user_id: 1, status: 'completed', scheduled_date: sameDay, place_name: 'Twice In A Day', notes,
+        encounters: [{ person_id: null, met_with_type: 'receptionist', outcome: 'materials_only' }],
+      });
+    }
   });
 
   after(async () => {
@@ -257,6 +282,15 @@ describe('buildCandidatePool fatigue counting', () => {
     const pool = await buildCandidatePool(db, { today: TODAY });
     const place = pool.find((c) => c.place.id === 1);
     assert.equal(place.recentCompletedCount, 1, 'one trip is one visit regardless of how many contacts were met');
+  });
+
+  test('two separate trips on the same day still count as one visited DAY', async () => {
+    // The distinct-scheduled_date dedup is no longer load-bearing for the
+    // multi-contact case (that's one row now), but it is still the only thing
+    // standing between two genuine same-day trips and a double fatigue hit.
+    const pool = await buildCandidatePool(db, { today: TODAY });
+    const place = pool.find((c) => c.place.id === 3);
+    assert.equal(place.recentCompletedCount, 1, 'fatigue counts days shown up, not rows');
   });
 
   test('four visits on four separate days still counts as four', async () => {

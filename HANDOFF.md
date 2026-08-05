@@ -402,11 +402,17 @@ guardian-angels-sales/
   as referral metrics). `visits` also gained a nullable `visit_type` the same day, so a draft's
   visit-type choice has somewhere to land at commit. See `ROUTEPLANNER_PROGRESS.md` for the
   full schema/design — not duplicated here.
-- **visits** — one planned/completed/skipped touchpoint by a user on a place for a date.
-  Fields: `status, sort_order, outcome, notes, next_visit_date, source, completed_at`, plus
-  **snapshot fields** (`place_name`, `person_name/title/email/phone`) captured at creation time
-  so a visit's history stays fully readable even after the live place/person is deleted.
-  `source` = `manual` (in-app) or `imported_note` (from the notes spreadsheet).
+- **visits** — one planned/completed/skipped TRIP by a user to a place on a date. Fields:
+  `status, sort_order, notes, next_visit_date, actual_duration_minutes, visit_type, source,
+  completed_at`, plus the `place_name` **snapshot** captured at creation time so a visit stays
+  readable after the live place is deleted. `source` = `manual` (in-app) or `imported_note`.
+  **Restructured 2026-08-05 (§17)** — who was met moved out to `visit_encounters`.
+- **visit_encounters** — one row per person/category met on a trip (`visit_id` FK
+  `ON DELETE CASCADE`, `person_id` FK `ON DELETE SET NULL`, the `person_name/title/email/phone`
+  snapshot, `met_with_type, outcome, they_requested`). A trip where a rep met a named contact
+  AND got gatekept by the front desk is one `visits` row with two encounters. A partial unique
+  index `(visit_id, person_id) WHERE person_id IS NOT NULL` stops the same person being
+  recorded twice on one trip. A still-`planned` visit legitimately has ZERO encounters. See §17.
 - **referrals** — one referral, attributed to a `person_id` plus a `place_id` snapshot (both
   `ON DELETE SET NULL` — a referral outlives the person/place it came from, orphaned but
   preserved), with `referral_date` and `notes`. Nothing about relationship strength is
@@ -1291,3 +1297,103 @@ really `r.id`, which 154 pure tests sailed past and only a live run caught).
 `npm run relationship:distribution` prints the live bucket distribution and warns when one
 bucket holds >90% of places. Run it before letting the ranker lean on these values, and again
 after any seeding pass.
+
+---
+
+## 17. Visits split into trips + encounters (2026-08-05)
+
+**The change:** `visits` used to be one row per PERSON MET. A trip where a rep met three
+people wrote three rows sharing place/date/rep/notes/duration, each carrying its own
+`person_id`/`met_with_type`/`outcome`/`they_requested`. There was no real identifier for "the
+trip" — only an implicit one, recoverable by matching the shared fields across rows, which is
+what the client was doing purely for display.
+
+Now `visits` IS the trip and the new `visit_encounters` holds one row per person/category met
+(see §4). Migration: `20260806000000_split_visit_encounters.js`.
+
+### Why, and what it bought
+
+The encounter-level model itself was right and is unchanged — `services/relationship.js` has
+to score "substantive with Sharon" and "gatekept by the front desk" separately, which a single
+flat row can't express. What was wrong was that the TRIP had no identity, so anything
+visit-specific (vs. encounter-specific) had nowhere to live and every consumer had to re-derive
+trip grouping for itself. It also silently caused a real bug: `routes/dashboard.js`'s "completed
+this week" counted rows, so one 3-person trip read as 3 completed visits.
+
+### Two traps this migration hit, both worth not re-learning
+
+1. **Don't group pre-split rows by matching trip fields alone.** Two genuinely separate visits
+   (a morning drop-off and an afternoon meeting at the same place, same day) with `notes` and
+   `actual_duration_minutes` both NULL match on every field and would wrongly collapse into one
+   — irreversibly; `down()` cannot recover it. The migration keys on `created_at` instead (one
+   multi-encounter POST inserts its rows in one transaction, so they land in the same second)
+   and uses the shared fields only to VETO a merge, never to propose one.
+2. **A NULL `place_id` is not an identity.** The route planner commits a whole DAY in one
+   transaction, so a dozen stops at a dozen DIFFERENT places share a `created_at` to the second.
+   Where those places were later deleted, `place_id` is NULL on all of them (detach-not-delete),
+   and a naive key read 13 unrelated planned stops as one 13-person trip. Caught while
+   rehearsing against the real dev DB. Merging is now restricted to rows that could actually
+   have come from the multi-encounter POST fan-out: `place_id NOT NULL AND source='manual' AND
+   status='completed'`. Every merge is logged to stdout.
+
+Third trap, in the migration mechanics: `visit_encounters.visit_id` is `ON DELETE CASCADE`, and
+the SQLite reshape of `visits` DROPs the table. With foreign keys on, that cascade silently
+emptied `visit_encounters` while the backfill reported success. Both `up()` and `down()` now
+read the old rows into memory and finish every change to `visits` BEFORE the child table exists
+or is repopulated.
+
+### Rules that came out of it
+
+- **A completed trip must have at least one encounter** — POST and PATCH both reject
+  `status:'completed'` with an empty encounter set, and deleting the last encounter of a
+  completed trip deletes the trip. A `planned` trip with zero encounters is normal and exempt.
+- **Deleting the last encounter is warned about specifically.** The trip carries `notes` and
+  `next_visit_date`, and `next_visit_date` is load-bearing — it's what puts a place in the
+  COMMITMENT tier in `schedulingEngine.js`. The confirm dialog names what else is being
+  destroyed rather than showing a generic prompt.
+- **`PATCH /api/visits/:id` upserts encounters BY ID**, it does not delete-all-then-reinsert.
+  `VisitDetailModal` holds encounter ids for its per-encounter delete buttons; a blanket replace
+  would 404 every one of them after any unrelated trip-level save.
+- **Encounter id/timestamp churn does NOT affect scoring.** `relationship.js` decays against the
+  TRIP's `scheduled_date`, never `visit_encounters.created_at`. Don't "fix" encounter timestamps
+  believing scoring depends on them.
+- **`visits_place_date_active_unique`** (the partial index from `20260715000002`, scoped to
+  `source='planner'`) now means what it always claimed to: one trip per place per day. It was
+  never widened beyond `source='planner'` — extending it to manual logging is a separate
+  decision, and manual same-day double-logging is still a deliberate capability behind the
+  collision warning's "Save anyway".
+
+### API shape
+
+`GET /api/visits/:id` is new and returns the full trip with every encounter field — it's the
+only call that does. List endpoints (`/calendar`, place/person visit history, dashboard) return
+one row per trip with a lightweight `encounters: [{person_name, met_with_type}]` summary, so a
+summary line renders without a second fetch. `people.js`'s `GET /:id` asks for `person_id` too
+on top of that summary — it's the one caller that needs to tell "this person's own encounter"
+apart from an attendee who merely shares their name (see PersonDetail.jsx's `otherAttendees`).
+`DELETE /api/visits/:id/encounters/:encounterId` removes one person from a trip.
+
+**Permission rule for the encounter endpoints matches `PATCH /:id`, not `DELETE /:id`:**
+removing one encounter (or editing a trip's encounters via PATCH) is a correction any rep can
+make cross-rep once the trip is completed/skipped — same as correcting notes or an outcome.
+Only a still-`planned` stop stays locked to its own rep. Deleting the WHOLE visit outright
+(`DELETE /:id`) is the stricter, owner-only rule; that asymmetry is deliberate; encounter-level
+edits and whole-visit deletion are different acts.
+
+`VisitLogModal` no longer has separate create vs. edit UIs — creating an ad-hoc visit,
+completing a planned route-planner stop, and editing an existing trip all use the same
+multi-encounter flow, which deleted a large parallel code path rather than adding one.
+
+### Known gap, deliberately deferred — read before touching skip functionality
+
+`VisitDetailModal.jsx`'s `deletesTrip` check reads `trip.status !== 'planned'`, but the server
+only actually auto-deletes the trip (in `DELETE /:id/encounters/:encounterId`) when
+`visit.status === 'completed'`. A `skipped` visit that somehow carries encounters falls into the
+gap: the client would show the destructive "whole visit will be deleted" warning, the server
+would leave the trip standing, and the client would close the modal believing it was gone.
+
+**Currently unreachable** — nothing in the app sets a visit's status to `skipped` today (only
+`VisitLogModal` calls `updateVisit`, always with `status: 'completed'`), but `SkippedVisitsModal.jsx`
+already exists reading that status, so a skip feature is clearly intended. Bede: fix this as
+part of building that feature properly, not in isolation — the right fix depends on what a
+skipped-with-encounters trip is even supposed to mean once that exists.

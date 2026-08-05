@@ -6,6 +6,7 @@ const dayjs = require('dayjs');
 const isoWeek = require('dayjs/plugin/isoWeek'); // adds Monday-start-of-week helpers to dayjs
 const knex = require('../db/knex');
 const { priorityLabel } = require('../services/priority');
+const { attachEncounters } = require('../services/visitEncounters');
 
 dayjs.extend(isoWeek);
 
@@ -24,6 +25,15 @@ router.get('/', async (req, res, next) => {
 
     const [completedThisWeek, neverVisited, totals] =
       await Promise.all([
+        // One row per completed TRIP. This used to be one row per encounter,
+        // which counted a visit where the rep met three people as three
+        // visits — "12 visits this week" has to mean twelve times a rep drove
+        // somewhere, not twelve conversations.
+        //
+        // No `outcome` column: a trip now has one per person met, so a single
+        // field for it can only ever be a lie. The lightweight `encounters`
+        // summary attached below is what the card shows instead.
+        //
         // Left join, not inner — a completed visit is history that should
         // survive its place being deleted later (detach-not-delete). Prefer
         // the durable v.place_name snapshot for the name; city/tier have no
@@ -38,7 +48,6 @@ router.get('/', async (req, res, next) => {
           .select(
             'v.id as visit_id',
             'v.scheduled_date',
-            'v.outcome',
             knex.raw('COALESCE(v.place_name, p.name) as name'),
             'p.city',
             'p.tier'
@@ -55,12 +64,17 @@ router.get('/', async (req, res, next) => {
         knex('places').count({ c: '*' }).first(),
       ]);
 
+    // One extra query for the week's trips, grouped in JS — never one per row.
+    // Sequenced after the Promise.all rather than inside it because it needs
+    // the visit ids that query returns.
+    const completedWithEncounters = await attachEncounters(knex, completedThisWeek, { idKey: 'visit_id' });
+
     res.json({
       date,
       week: { start: weekStart, end: weekEnd },
       completed_this_week: {
-        count: completedThisWeek.length,
-        visits: completedThisWeek,
+        count: completedWithEncounters.length,
+        visits: completedWithEncounters,
       },
       never_visited: {
         count: neverVisited.length,

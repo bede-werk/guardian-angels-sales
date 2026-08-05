@@ -426,7 +426,41 @@ function rollUpPlace({ place, personEntries, floorVisits, asOf, overrideUserName
 // all pass today — retrofitting it later would mean touching every call site.
 
 const PERSON_FIELDS = ['id', 'place_id', 'name', 'email', 'phone', 'preferences', 'birthday_month', 'birthday_day', 'relationship_seed', 'relationship_seeded_at'];
-const VISIT_FIELDS = ['place_id', 'person_id', 'met_with_type', 'outcome', 'scheduled_date', 'they_requested'];
+
+// One row here is one ENCOUNTER — which is exactly what every scoring
+// function below already assumed, back when one flat `visits` row WAS one
+// encounter (see 20260806000000_split_visit_encounters.js). The split moved
+// the who/what half onto `visit_encounters` and left the where/when half on
+// `visits`, so the same field set now comes from a join instead of a single
+// table. Nothing downstream of this select changed: same column names, same
+// one-row-per-encounter cardinality, therefore identical scores. The
+// scoring-parity test in relationship.test.js asserts precisely that.
+//
+// DECAY READS THE TRIP'S scheduled_date, NEVER visit_encounters.created_at.
+// created_at is when the row was *written* — a visit backdated at logging
+// time, or an encounter added to an existing trip days later, would decay
+// from the wrong clock. The date the rep actually stood in the building is
+// the only honest age for this model, and it lives on `visits`.
+const ENCOUNTER_SELECT = [
+  'v.place_id',
+  'v.scheduled_date',
+  've.person_id',
+  've.met_with_type',
+  've.outcome',
+  've.they_requested',
+];
+
+// The shared half of both bulk queries below. Still one query per call — the
+// join replaces a table scan with a table scan, it does not turn either
+// function into a per-row lookup (computeRelationshipForPlaces runs over all
+// 261 places on every Places-directory load and inside the route planner's
+// candidate pool).
+function completedEncounters(knex) {
+  return knex('visit_encounters as ve')
+    .join('visits as v', 'v.id', 've.visit_id')
+    .where('v.status', 'completed')
+    .select(ENCOUNTER_SELECT);
+}
 
 // person_id -> true. DISTINCT only, never a count — see the axis-separation
 // rule in this file's header. The model must not have access to volume.
@@ -468,10 +502,7 @@ async function computeRelationshipForPeople(knex, personIds, { asOf, includeTren
     .select(PERSON_FIELDS.map((f) => `pe.${f}`))
     .select('p.category as place_category');
 
-  const visits = await knex('visits')
-    .where({ status: 'completed' })
-    .whereIn('person_id', personIds)
-    .select(VISIT_FIELDS);
+  const visits = await completedEncounters(knex).whereIn('ve.person_id', personIds);
 
   const referred = await referredPersonIds(knex, personIds);
   const visitsByPerson = groupBy(visits, 'person_id');
@@ -517,10 +548,7 @@ async function computeRelationshipForPlaces(knex, placeIds, { asOf, includeTrend
 
   const people = await knex('people').whereIn('place_id', placeIds).select(PERSON_FIELDS);
 
-  const visits = await knex('visits')
-    .where({ status: 'completed' })
-    .whereIn('place_id', placeIds)
-    .select(VISIT_FIELDS);
+  const visits = await completedEncounters(knex).whereIn('v.place_id', placeIds);
 
   const referred = await referredPersonIds(knex, people.map((p) => p.id));
 

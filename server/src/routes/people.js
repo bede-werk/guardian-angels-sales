@@ -10,6 +10,7 @@ const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, summarizeReferralDates, metricsFor } = require('../services/referralMetrics');
 const { compareDatesAsc } = require('../services/sortHelpers');
 const { computeRelationshipForPeople } = require('../services/relationship');
+const { attachEncounters, SUMMARY_COLUMNS } = require('../services/visitEncounters');
 const { orgToday } = require('../services/orgDate');
 
 const router = express.Router();
@@ -111,25 +112,31 @@ router.get('/people', async (req, res, next) => {
     const { search, placeId, category, sort } = req.query;
 
     // Last *completed* visit per person, same "only a finished call counts"
-    // rule used for places (see places.js's lastVisit subquery).
-    const lastVisit = knex('visits')
-      .where('status', 'completed')
-      .whereNotNull('person_id')
-      .select('person_id')
-      .max('scheduled_date as last_visit_date')
-      .groupBy('person_id')
+    // rule used for places (see places.js's lastVisit subquery). Who was met
+    // lives on `visit_encounters` now, so this joins through it; the DATE
+    // still comes from the trip, which is the only place it exists. Inner
+    // join, not left — an encounter without its visit can't happen (NOT NULL
+    // FK, cascade delete).
+    const lastVisit = knex('visit_encounters as ve')
+      .join('visits as v', 'v.id', 've.visit_id')
+      .where('v.status', 'completed')
+      .whereNotNull('ve.person_id')
+      .select('ve.person_id')
+      .max('v.scheduled_date as last_visit_date')
+      .groupBy('ve.person_id')
       .as('lv');
 
     // Same, but scoped to only the logged-in rep's own visits — lets
     // "last contacted by me" answer "have I personally talked to this
     // person" separately from "has anyone on the team."
-    const myLastVisit = knex('visits')
-      .where('status', 'completed')
-      .where('user_id', req.user.id)
-      .whereNotNull('person_id')
-      .select('person_id')
-      .max('scheduled_date as my_last_visit_date')
-      .groupBy('person_id')
+    const myLastVisit = knex('visit_encounters as ve')
+      .join('visits as v', 'v.id', 've.visit_id')
+      .where('v.status', 'completed')
+      .where('v.user_id', req.user.id)
+      .whereNotNull('ve.person_id')
+      .select('ve.person_id')
+      .max('v.scheduled_date as my_last_visit_date')
+      .groupBy('ve.person_id')
       .as('mlv');
 
     // Left join, not inner — a person can now be unassigned (place_id null),
@@ -217,7 +224,7 @@ router.get('/people/check-duplicate', async (req, res, next) => {
 });
 
 // GET /api/people/:id — a person with their place, full visit history (every
-// visit where this person was the recorded contact), and every referral
+// completed trip on which they were one of the people met), and every referral
 // they've sent us.
 router.get('/people/:id', async (req, res, next) => {
   try {
@@ -229,14 +236,27 @@ router.get('/people/:id', async (req, res, next) => {
     const place = await knex('places').where({ id: person.place_id }).first();
 
     // Visit history is for what actually happened — a still-planned or
-    // skipped visit doesn't belong here.
-    const visits = await knex('visits as v')
+    // skipped visit doesn't belong here. "This person's visits" are the trips
+    // that have an encounter with them on it; a person can only appear once
+    // per trip (visit_encounters_unique_person enforces it), so this inner
+    // join can't duplicate a trip and needs no dedup pass.
+    //
+    // The attached encounters are the WHOLE trip's, not just this person's —
+    // that's what lets the client say "you and two others" instead of
+    // pretending the rep drove out to see one person alone.
+    const visitRows = await knex('visits as v')
+      .join('visit_encounters as ve', 've.visit_id', 'v.id')
       .leftJoin('users as u', 'u.id', 'v.user_id')
-      .where('v.person_id', person.id)
+      .where('ve.person_id', person.id)
       .where('v.status', 'completed')
       .orderBy('v.scheduled_date', 'desc')
       .orderBy('v.id', 'desc')
       .select('v.*', 'u.name as user_name');
+    // + person_id, on top of the usual name-only summary: PersonDetail.jsx
+    // needs it to tell "this person's own encounter" apart from an
+    // attendee who merely shares their name, rather than matching on the
+    // name string itself.
+    const visits = await attachEncounters(knex, visitRows, { columns: [...SUMMARY_COLUMNS, 'person_id'] });
 
     const referrals = await knex('referrals')
       .where({ person_id: person.id })
@@ -426,8 +446,8 @@ router.patch('/people/:id', async (req, res, next) => {
 });
 
 // DELETE /api/people/:id — permanently remove a person record. Their visit
-// history survives (visits.person_id -> null via ON DELETE SET NULL, with
-// the person_name/etc. snapshot keeping it readable), but their referrals
+// history survives (visit_encounters.person_id -> null via ON DELETE SET NULL,
+// with the person_name/etc. snapshot keeping it readable), but their referrals
 // are deleted along with them rather than left floating with no one to
 // attribute them to — a referral only makes sense tied to the person who
 // sent it, unlike a visit which is meaningful on its own as a record of

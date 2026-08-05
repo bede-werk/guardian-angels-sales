@@ -3,6 +3,7 @@ import { formatDate, VISIT_TYPE_LABELS } from '../api';
 import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import { encounterLabel, joinNames } from './VisitDetailModal';
 
 // A day's completed visits — the Calendar tab's "Completed Visits" pill
 // (VisitsCalendar.jsx). Every row here is always `status: 'completed'` (the
@@ -13,11 +14,11 @@ import EmptyState from './ui/EmptyState';
 // place" button is the way into full PlaceDetail (onViewPlace) — same
 // main/actions split as PlannedDayModal, so the row click (visit) and the
 // button (place) never fight over the same click. `showContact`, when true,
-// folds the rep who logged it and who they met with into the same line as
-// the visit type ("{rep} · with {contact}") — same user_name/person_name
-// pairing PlaceDetail.jsx's own visit-history rows use. Both are gated by
-// the same flag: in "Mine" scope the rep is redundant (you're already
-// looking at your own visits), so neither identifying detail shows.
+// folds the rep who logged it and who they met into the same line as the
+// visit type ("{rep} · with {who}") — the same phrasing PlaceDetail.jsx's own
+// visit-history rows use, built from the trip's `encounters` summary. Both
+// are gated by the same flag: in "Mine" scope the rep is redundant (you're
+// already looking at your own visits), so neither identifying detail shows.
 export default function CompletedVisitsModal({ date, visits, showContact, onClose, onViewVisit, onViewPlace }) {
   return (
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
@@ -43,7 +44,10 @@ export default function CompletedVisitsModal({ date, visits, showContact, onClos
                     <div className="tiny muted">
                       {[
                         VISIT_TYPE_LABELS[v.visit_type] || 'Visit',
-                        showContact && [v.user_name, `with ${v.person_name || 'Unknown contact'}`].filter(Boolean).join(' '),
+                        showContact &&
+                          [v.user_name, v.encounters?.length && `with ${joinNames(v.encounters.map(encounterLabel))}`]
+                            .filter(Boolean)
+                            .join(' '),
                       ]
                         .filter(Boolean)
                         .join(' · ')}

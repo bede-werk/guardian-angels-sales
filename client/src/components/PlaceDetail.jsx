@@ -8,9 +8,20 @@ import PlaceModal from './PlaceModal';
 import AssignPersonModal from './AssignPersonModal';
 import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
-import VisitDetailModal from './VisitDetailModal';
+import VisitDetailModal, { encounterLabel, joinNames } from './VisitDetailModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 import { PlaceRelationship } from './RelationshipDetail';
+
+// Who was met on one trip, as a single inline phrase: "with Flibber Gibblits,
+// New Guy and a staff member". The visit list endpoint returns a name-only
+// summary of each trip's encounters (full per-encounter detail needs
+// GET /api/visits/:id — see VisitDetailModal), which is exactly enough for
+// this. A planned trip has no encounters yet and gets no phrase at all rather
+// than an empty "with".
+function encounterSummary(encounters) {
+  if (!encounters || encounters.length === 0) return null;
+  return `with ${joinNames(encounters.map(encounterLabel))}`;
+}
 
 // Slide-in modal: place details + people here + full visit history + "log a
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
@@ -185,10 +196,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // Deletes a visit entirely — it's the same underlying row PersonDetail
-  // reads too, so removing it here also removes it there on next load.
+  // Deletes a whole trip — every encounter on it goes with it (the FK
+  // cascades server-side), and it's the same trip PersonDetail reads, so
+  // removing it here removes it there on next load too. Dropping only ONE
+  // person from a trip is VisitDetailModal's per-encounter ✕, not this.
   async function removeVisit(visit) {
-    if (!window.confirm("Delete this visit? This can't be undone.")) return;
+    if (!window.confirm("Delete this visit? Everyone recorded on it goes with it. This can't be undone.")) return;
     setRemovingVisitId(visit.id);
     try {
       await api.deleteVisit(visit.id);
@@ -482,9 +495,11 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                         <div className="tag-list" style={{ flex: 'unset' }}>
                           <strong className="tiny">{formatDate(v.scheduled_date)}</strong>
-                          {(v.user_name || v.person_name) && (
+                          {/* A planned stop normally has no encounters yet, so
+                              this is usually just the rep's name. */}
+                          {(v.user_name || v.encounters?.length) && (
                             <span className="tiny muted">
-                              · {[v.user_name, v.person_name && `with ${v.person_name}`].filter(Boolean).join(' ')}
+                              · {[v.user_name, encounterSummary(v.encounters)].filter(Boolean).join(' ')}
                             </span>
                           )}
                         </div>
@@ -500,7 +515,11 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             </div>
           </div>
 
-          {/* Every visit ever logged on this place, most recent first. */}
+          {/* Every visit ever logged on this place, most recent first. One row
+              per TRIP: the server groups the encounters (see routes/visits.js),
+              so a visit where three people were met is one entry here listing
+              all three, not three entries. Clicking it opens the trip, where
+              each person can be opened on their own. */}
           <div className="card">
             <div className="card-head">
               <h2>Visit history ({data.visits.length})</h2>
@@ -518,22 +537,27 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
                       onClick={() => { setEditingNotes(false); setEditingPreQual(false); setViewingVisit(v); }}
                     >
-                      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                        <div className="tag-list" style={{ flex: 'unset' }}>
+                      {/* nowrap + minWidth:0 so a long "with A, B and C" line
+                          wraps within its own column instead of pushing the
+                          delete button onto a line of its own. */}
+                      <div className="tag-list" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+                        <div className="tag-list" style={{ minWidth: 0 }}>
                           <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
-                          {/* "Bede Fulton with Lionel Messi" — who visited, then who they met. */}
-                          {(v.user_name || v.person_name) && (
+                          {/* "Lisa Marks with Flibber Gibblits, New Guy and a
+                              staff member" — who visited, then everyone they met. */}
+                          {(v.user_name || v.encounters?.length) && (
                             <span className="tiny muted">
-                              · {[v.user_name, v.person_name && `with ${v.person_name}`].filter(Boolean).join(' ')}
+                              · {[v.user_name, encounterSummary(v.encounters)].filter(Boolean).join(' ')}
                             </span>
                           )}
                         </div>
                         <Button
                           variant="danger"
                           size="small"
-                          title="Delete this visit"
+                          title="Delete this whole visit, everyone on it included"
                           disabled={removingVisitId === v.id}
                           onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
+                          style={{ flexShrink: 0 }}
                         >
                           ✕
                         </Button>
@@ -628,6 +652,10 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         <VisitDetailModal
           visit={viewingVisit}
           onClose={() => setViewingVisit(null)}
+          /* Removing one person from a trip changes this list (and can delete
+             the trip outright), so the history has to be reloaded even though
+             nothing here initiated it. */
+          onChanged={() => { load(); onChanged?.(); }}
           onEdit={(v) => {
             if (v.user_id != null && v.user_id !== userId && !window.confirm("This visit is logged under a different rep's account. Edit it anyway?")) return;
             setViewingVisit(null);

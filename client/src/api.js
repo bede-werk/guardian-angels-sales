@@ -82,9 +82,18 @@ export const api = {
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
 
   // Visits (logging a call) — server/src/routes/visits.js
+  // A visit is a TRIP (place, date, rep, notes); who was met lives in its
+  // `encounters` array. List endpoints return a lightweight summary of that
+  // array; `visit(id)` is the only call that returns every encounter in full.
+  visit: (id) => request(`/visits/${id}`),
   createVisit: (body) => request('/visits', { method: 'POST', body }),
   updateVisit: (id, body) => request(`/visits/${id}`, { method: 'PATCH', body }),
   deleteVisit: (id) => request(`/visits/${id}`, { method: 'DELETE' }),
+  // Removes ONE person/category from a trip. If it was the last encounter on
+  // a completed trip the server deletes the trip too — callers must confirm
+  // that with the user first (see VisitDetailModal).
+  deleteVisitEncounter: (visitId, encounterId) =>
+    request(`/visits/${visitId}/encounters/${encounterId}`, { method: 'DELETE' }),
   visitsCalendar: (month, userId) => request(`/visits/calendar?month=${month}${userId ? `&userId=${userId}` : ''}`),
 
   // Dashboard rollup — server/src/routes/dashboard.js

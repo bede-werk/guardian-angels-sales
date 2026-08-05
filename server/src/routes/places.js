@@ -9,6 +9,7 @@ const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, referralMetricsByPlaceId, metricsFor, EMPTY_METRICS } = require('../services/referralMetrics');
 const { compareDatesAsc } = require('../services/sortHelpers');
 const { computeRelationshipForPlaces, relationshipFor, LEVELS: RELATIONSHIP_LEVELS } = require('../services/relationship');
+const { attachEncounters } = require('../services/visitEncounters');
 
 const router = express.Router();
 
@@ -326,8 +327,11 @@ router.get('/:id', async (req, res, next) => {
     if (!place) return res.status(404).json({ error: 'Place not found' });
 
     // Visit history is for what actually happened — a still-planned or
-    // skipped visit doesn't belong here.
-    const visits = await knex('visits as v')
+    // skipped visit doesn't belong here. One row per TRIP: a visit where the
+    // rep met three people is one entry with three encounters, not three
+    // entries (the grouping the client used to do by hand is now a fact of the
+    // schema — see 20260806000000_split_visit_encounters.js).
+    const visitRows = await knex('visits as v')
       .leftJoin('users as u', 'u.id', 'v.user_id')
       .where('v.place_id', place.id)
       .where('v.status', 'completed')
@@ -337,14 +341,22 @@ router.get('/:id', async (req, res, next) => {
 
     // The mirror image of visit history: still-open route-planner-committed
     // visits, soonest first — see the "Upcoming Visits" card in
-    // PlaceDetail.jsx.
-    const upcomingVisits = await knex('visits as v')
+    // PlaceDetail.jsx. These normally carry NO encounters at all (nobody's
+    // been met yet), which is why `encounters` is an empty array here rather
+    // than missing.
+    const upcomingRows = await knex('visits as v')
       .leftJoin('users as u', 'u.id', 'v.user_id')
       .where('v.place_id', place.id)
       .where('v.status', 'planned')
       .orderBy('v.scheduled_date', 'asc')
       .orderBy('v.sort_order', 'asc')
       .select('v.*', 'u.name as user_name');
+
+    // One extra query per list, grouped in JS — never one per visit.
+    const [visits, upcomingVisits] = await Promise.all([
+      attachEncounters(knex, visitRows),
+      attachEncounters(knex, upcomingRows),
+    ]);
 
     const people = await knex('people')
       .where({ place_id: place.id })

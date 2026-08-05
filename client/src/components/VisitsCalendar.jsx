@@ -523,6 +523,10 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
             setEditingVisit(v);
           }}
           onDelete={(v) => { setViewingVisit(null); removeVisit(v); }}
+          // Removing one person from a trip can change what the grid shows —
+          // and can delete the trip outright when it was the last encounter —
+          // so the month has to be refetched, not just the open modal.
+          onChanged={load}
         />
       )}
 

@@ -1,9 +1,32 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api, formatDate } from '../api';
-import { TierChip, OutcomeChip, CategoryChip } from './ui/Chip';
+import { TierChip, CategoryChip } from './ui/Chip';
 import StatTile from './ui/StatTile';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
+
+// Short, inline forms of met_with_type. MET_WITH_LABELS in api.js reads as a
+// form option ("A staff member (name unknown)") — far too long for a one-line
+// list row, so it's shortened here the same way PlaceDetail.jsx shortens it
+// for its own visit history.
+const ENCOUNTER_SHORT_LABELS = { staff: 'a staff member', receptionist: 'the receptionist' };
+
+// A trip's `encounters` summary as one short line. The list endpoints only
+// return name + category per encounter (full per-encounter detail needs
+// GET /api/visits/:id), and a row here has one line to spend, so this names
+// the first person met and counts the rest rather than listing them all.
+function encounterSummary(encounters) {
+  if (!encounters || encounters.length === 0) return null;
+  // 'nobody' is mutually exclusive with every other type at log time (see
+  // VisitLogModal), so it can only ever appear alone — and "with nobody"
+  // doesn't read as English.
+  if (encounters[0].met_with_type === 'nobody') return 'nobody in';
+  const [first, ...rest] = encounters;
+  const who = first.met_with_type === 'named_person'
+    ? first.person_name || 'someone'
+    : ENCOUNTER_SHORT_LABELS[first.met_with_type] || 'someone';
+  return `with ${who}${rest.length > 0 ? ` +${rest.length}` : ''}`;
+}
 
 // At-a-glance: visits completed this week and places never visited. This
 // whole screen is driven by one request: GET /api/dashboard (see
@@ -58,13 +81,18 @@ export default function Dashboard({ date, userId }) {
             <EmptyState message="Nothing completed yet this week." />
           ) : (
             <ul className="list">
+              {/* One row per TRIP, not per encounter — a single outcome chip
+                  used to sit on the right, but a trip that met three people
+                  has three outcomes, so there's no one value to chip. Who was
+                  met folds into the meta line instead. */}
               {data.completed_this_week.visits.map((v) => (
                 <li key={v.visit_id} className="stop">
                   <div className="main">
                     <div className="name tiny">{v.name}</div>
-                    <div className="meta">{formatDate(v.scheduled_date)}{v.city ? ` · ${v.city}` : ''}</div>
+                    <div className="meta">
+                      {[formatDate(v.scheduled_date), v.city, encounterSummary(v.encounters)].filter(Boolean).join(' · ')}
+                    </div>
                   </div>
-                  <OutcomeChip outcome={v.outcome} />
                 </li>
               ))}
             </ul>
