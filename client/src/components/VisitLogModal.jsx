@@ -1,8 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { api, today, VISIT_TYPE_MINUTES, OUTCOME_LABELS, MET_WITH_LABELS } from '../api';
+import { api, today, formatDate, VISIT_TYPE_MINUTES, OUTCOME_LABELS, MET_WITH_LABELS } from '../api';
 import Button from './ui/Button';
 import PersonModal from './PersonModal';
 import AssignPersonModal from './AssignPersonModal';
+
+// Per-type message templates (collision spec §3.1) for the structured
+// conflicts the server's pre-save check returns (see
+// server/src/services/conflictDetection.js's Conflict shape). SAME_DATE_VISIT
+// keeps the server's own sentence — it already knows "you" vs a name and the
+// visit's status — the rest are built from the structured fields here.
+function conflictMessage(conflict, sameDateFallback) {
+  switch (conflict.type) {
+    case 'SAME_DATE_VISIT':
+      return sameDateFallback;
+    case 'FLOOR_COMPLETED': {
+      const days = conflict.daysApart;
+      return `Visited by ${conflict.otherUserName || 'someone'} on ${formatDate(conflict.otherDate)} — ${days} day${days === 1 ? '' : 's'} ago.`;
+    }
+    case 'FLOOR_PLANNED':
+      return `Visit already planned by ${conflict.otherUserName || 'someone'} for ${formatDate(conflict.otherDate)}.`;
+    case 'DRAFT_ELSEWHERE':
+      return `In ${conflict.otherUserName || 'another rep'}'s draft for ${formatDate(conflict.otherDate)}.`;
+    default:
+      return sameDateFallback;
+  }
+}
 
 // Modal for logging a visit. All three ways in — a brand-new ad-hoc visit, a
 // route-planner stop being completed, and an existing visit being corrected —
@@ -116,14 +138,28 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false); // true after a successful save — shows the confirmation screen
-  // Set when the server reports a planned/completed visit already exists at
-  // this place on this date — either another rep's, or this same rep's own
-  // (an accidental double-log) — via routes/visits.js's collision check,
-  // ad-hoc creation only. Save becomes "Save anyway" — re-submitting with
-  // `force: true` — rather than silently blocking; this is a heads-up, not a
-  // hard rule. Cleared whenever the date changes, since that's what the
-  // collision was actually keyed on.
-  const [collisionWarning, setCollisionWarning] = useState(null);
+  // Every applicable conflict from the server's collision check (routes/
+  // visits.js, via services/conflictDetection.js) — same-date collision,
+  // hard-floor recency, or a place sitting in another rep's open draft.
+  // Populated from two different response shapes: a same-date collision
+  // rejects outright (409, nothing saved), while the informational findings
+  // (hard-floor recency, another rep's open draft) come back on a genuine
+  // 200 — the server already created nothing to reject, so the confirmation
+  // step is entirely this modal's own decision, not a server-enforced gate
+  // (see save()). Either way this replaces the old two-notice split this
+  // modal used to have (a blocking collisionWarning shown pre-save, and a
+  // cross-rep floor warning shown only AFTER a successful save, easy to
+  // miss and too late to act on): all conflicts now render together, in the
+  // same place, none collapsed, before anything is actually written. Save
+  // becomes "Save anyway" — re-submitting with `force: true` — rather than
+  // silently blocking; this is a heads-up, not a hard rule. Cleared whenever
+  // the date changes, since every conflict here is keyed on it.
+  const [conflicts, setConflicts] = useState([]);
+  // The server's own personalized sentence for a SAME_DATE_VISIT conflict
+  // (it already knows "you" vs a name, and the other visit's status) —
+  // conflictMessage() uses this instead of re-deriving that one type's
+  // wording client-side.
+  const [collisionMessage, setCollisionMessage] = useState('');
   // Fetched to know whether this place still needs pre-qualifying (see the
   // module comment). Not part of `form`: it's a transient side-channel value
   // that writes through to places.capacity_monthly_referrals server-side.
@@ -355,7 +391,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
       // DB integer column) rather than erroring, so an un-rounded "12.5"
       // would otherwise look saved but quietly never land.
       if (needsPreQual && avgReferrals !== '') payload.capacity_monthly_referrals = Math.max(0, Math.round(Number(avgReferrals)));
-      if (collisionWarning) payload.force = true; // "Save anyway" — re-submit past the warning already shown
+      if (conflicts.length > 0) payload.force = true; // "Save anyway" — re-submit past the warnings already shown
       let saved;
       if (isEditing) {
         saved = await api.updateVisit(visit.visit_id, payload);
@@ -369,14 +405,29 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
           ...payload,
         });
       }
+      // A 200 with `conflicts` and no `id` means the server found
+      // informational findings (FLOOR_COMPLETED/DRAFT_ELSEWHERE) and, per
+      // routes/visits.js, deliberately created nothing yet — a 409 there
+      // would misrepresent an informational finding as a rejection to any
+      // other consumer of that endpoint. Show them exactly like a blocking
+      // 409 would (same `conflicts` state, same "Save anyway" button below)
+      // and stop here: nothing to close or report saved.
+      if (!isEditing && !saved.id && saved.conflicts) {
+        setConflicts(saved.conflicts);
+        setSaving(false);
+        return;
+      }
       onSaved?.(saved);
       setDone(true);
       // Show the "Visit logged. Well done." confirmation briefly before
-      // auto-closing, instead of the modal just vanishing instantly.
+      // auto-closing. Any conflict worth reading was already shown (and
+      // acknowledged, via "Save anyway") pre-save above — nothing left to
+      // hold the modal open for here.
       setTimeout(() => onClose(), 900);
     } catch (e) {
       if (e.code === 'VISIT_COLLISION') {
-        setCollisionWarning(e.message);
+        setConflicts(e.conflicts || []);
+        setCollisionMessage(e.message);
         setSaving(false);
         return;
       }
@@ -386,7 +437,8 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   }
 
   // After a successful save, swap the whole modal for a brief confirmation
-  // message (see the setTimeout above that closes it).
+  // message (see the setTimeout above that closes it). Any conflict worth
+  // reading was already shown, pre-save, above — see `conflicts`.
   if (done) {
     return (
       <div className="modal-backdrop">
@@ -418,7 +470,13 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
         ) : (
           <div className="modal-body">
             {error && <div className="error-banner">{error}</div>}
-            {collisionWarning && <div className="error-banner">{collisionWarning}</div>}
+            {conflicts.length > 0 && (
+              <div className="stack" style={{ gap: 6 }}>
+                {conflicts.map((c, i) => (
+                  <div key={`${c.type}:${i}`} className="error-banner">{conflictMessage(c, collisionMessage)}</div>
+                ))}
+              </div>
+            )}
 
             {status !== 'planned' && (
               <div>
@@ -427,7 +485,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                   type="date"
                   value={form.scheduled_date}
                   max={today()}
-                  onChange={(e) => { setCollisionWarning(null); set('scheduled_date')(e); }}
+                  onChange={(e) => { setConflicts([]); set('scheduled_date')(e); }}
                 />
               </div>
             )}
@@ -590,10 +648,10 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             Cancel
           </Button>
           <Button
-            variant={collisionWarning ? 'danger' : 'primary'}
+            variant={conflicts.length > 0 ? 'danger' : 'primary'}
             title={
-              collisionWarning
-                ? 'Log this visit anyway, despite the collision above'
+              conflicts.length > 0
+                ? 'Log this visit anyway, despite the notice(s) above'
                 : canSave
                   ? 'Save this visit'
                   : 'Fill in who you met, what happened, and a note first'
@@ -601,7 +659,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             onClick={save}
             disabled={saving || !canSave}
           >
-            {saving ? 'Saving…' : collisionWarning ? 'Save anyway' : 'Save'}
+            {saving ? 'Saving…' : conflicts.length > 0 ? 'Save anyway' : 'Save'}
           </Button>
         </div>
       </div>

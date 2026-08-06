@@ -30,10 +30,16 @@ async function request(path, options = {}) {
     // fall back to the plain HTTP status text if the body isn't JSON.
     let msg = res.statusText;
     let code;
+    let conflicts;
     try {
       const j = await res.json();
       msg = j.error || msg;
       code = j.code;
+      // Structured, named/dated collision detail (see
+      // server/src/services/conflictDetection.js's Conflict shape) — carried
+      // by addStop/POST-visits 409s so a caller can render every applicable
+      // notice instead of just the one summary string in `error`.
+      conflicts = j.conflicts;
     } catch (_) {
       /* ignore */
     }
@@ -45,6 +51,7 @@ async function request(path, options = {}) {
     }
     const err = new Error(msg);
     if (code) err.code = code;
+    if (conflicts) err.conflicts = conflicts;
     throw err;
   }
   if (res.status === 204) return null; // no body (e.g. a successful DELETE)

@@ -27,18 +27,14 @@
 // to tier 3 the moment capacity_status leaves 'estimated', and can visit
 // tier 1 from tier 3 if it's neglected long enough.
 
-const TIERS = { COMMITMENT: 0, ENDANGERED: 1, EXPLORATION: 2, MAINTENANCE: 3 };
+// daysSince/isCommitmentDue/isFloorConflict now live in conflictDetection.js
+// (the shared floor/collision rule module — see its header) and are
+// re-exported below unchanged, so existing consumers of this module's
+// daysSince (crossRepFloorWarning.js, relationship.js) don't need to change
+// their require() at all.
+const { daysSince, isCommitmentDue, isFloorConflict } = require('./conflictDetection');
 
-// Integer day count between two 'YYYY-MM-DD' strings (today - dateStr).
-// Parsed as UTC calendar dates (not Date.parse) so this is immune to the
-// host machine's local timezone.
-function daysSince(dateStr, today) {
-  const [y1, m1, d1] = dateStr.split('-').map(Number);
-  const [y2, m2, d2] = today.split('-').map(Number);
-  const a = Date.UTC(y1, m1 - 1, d1);
-  const b = Date.UTC(y2, m2 - 1, d2);
-  return Math.round((b - a) / 86400000);
-}
+const TIERS = { COMMITMENT: 0, ENDANGERED: 1, EXPLORATION: 2, MAINTENANCE: 3 };
 
 // Days between visits this capacity/relationship combination should target.
 // Deliberately inverted: high-capacity + weak-relationship gets the
@@ -105,11 +101,11 @@ function capacityRank(capacityLevel) {
 function eligibility({ place, today, lastVisitDate, nextVisitDate, lockedElsewhere, config }) {
   if (place.do_not_visit) return { eligible: false, reason: 'do_not_visit' };
 
-  const commitmentDue = Boolean(nextVisitDate && nextVisitDate <= today);
+  const commitmentDue = isCommitmentDue({ nextVisitDate, today });
 
   if (place.snooze_until && place.snooze_until >= today) return { eligible: false, reason: 'snoozed' };
   if (lockedElsewhere) return { eligible: false, reason: 'locked_elsewhere' };
-  if (!commitmentDue && lastVisitDate && daysSince(lastVisitDate, today) < config.HARD_FLOOR_DAYS) {
+  if (!commitmentDue && isFloorConflict({ lastVisitDate, today, config })) {
     return { eligible: false, reason: 'hard_floor' };
   }
   return { eligible: true, reason: null };

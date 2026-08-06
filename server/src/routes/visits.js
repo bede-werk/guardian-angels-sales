@@ -7,6 +7,7 @@ const express = require('express');
 const knex = require('../db/knex');
 const { VISIT_TYPES } = require('../config/visitTypes');
 const { attachEncounters } = require('../services/visitEncounters');
+const { detectConflicts } = require('../services/conflictDetection');
 
 const router = express.Router();
 
@@ -396,32 +397,41 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'A completed visit needs at least one encounter' });
     }
 
-    // Ad-hoc creation (this route) is the one visit-logging path with no
-    // collision protection — the route planner's commit flow has its own
-    // dedicated locked-elsewhere/committed-elsewhere checks (scheduleDraft.js),
-    // but a plain "Log a visit" never went through them. Warn, don't block:
-    // same override pattern as places.js's ADDRESS_UNRECOGNIZED confirm flow
-    // — surface a 409 with who/what's already there unless the client
-    // explicitly re-sends with `force: true` (VisitLogModal's "Log anyway").
-    // Scoped to any planned/completed row for the same place+date, including
-    // the SAME user's own (an accidental double-log, e.g. re-submitting after
-    // a refresh, is exactly as worth flagging as two different reps colliding)
-    // — a skipped visit doesn't really occupy the date, so that's excluded.
+    // Ad-hoc creation (this route) now runs through the same detector
+    // addStop uses (services/conflictDetection.js) instead of its own
+    // narrower exact-date-only check — that used to mean this was the one
+    // visit-logging path with no floor protection at all: a rep could log a
+    // second visit to the same place two days after their own completed one
+    // with zero warning, since the floor only ever applied to the
+    // auto-generator. Deliberately does NOT exclude the same rep the way
+    // crossRepFloorWarning does elsewhere — a rep's own back-to-back visits
+    // are exactly the case this exists to catch.
+    //
+    // Only SAME_DATE_VISIT actually blocks (409, unchanged — same override
+    // pattern as places.js's ADDRESS_UNRECOGNIZED confirm flow: re-send with
+    // `force: true` to proceed). FLOOR_COMPLETED/DRAFT_ELSEWHERE are
+    // informational findings, not errors — a 409 for those would misrepresent
+    // the result to any consumer of this endpoint besides VisitLogModal
+    // (there is other integration surface here). Nothing is created yet
+    // either, so 201 would be just as wrong a claim — 200 with the findings
+    // is the honest response: request succeeded, nothing rejected, nothing
+    // written. The client decides whether that's worth a confirmation click
+    // before re-sending with `force: true` to actually create it.
     if (payload.place_id && payload.scheduled_date && !req.body.force) {
-      const collision = await knex('visits')
-        .leftJoin('users', 'users.id', 'visits.user_id')
-        .where({ 'visits.place_id': payload.place_id, 'visits.scheduled_date': payload.scheduled_date })
-        .whereIn('visits.status', ['planned', 'completed'])
-        .select('visits.status', 'visits.user_id', 'users.name as user_name')
-        .first();
-      if (collision) {
-        const isSameUser = payload.user_id && collision.user_id === payload.user_id;
-        const who = isSameUser ? 'You' : collision.user_name || 'Someone else';
+      const conflicts = await detectConflicts(knex, payload.place_id, payload.scheduled_date, { userId: payload.user_id });
+      const sameDateConflict = conflicts.find((c) => c.type === 'SAME_DATE_VISIT');
+      if (sameDateConflict) {
+        const isSameUser = payload.user_id && sameDateConflict.otherUserId === payload.user_id;
+        const who = isSameUser ? 'You' : sameDateConflict.otherUserName || 'Someone else';
         const verb = isSameUser ? 'have' : 'has';
         return res.status(409).json({
-          error: `${who} already ${verb} a ${collision.status} visit here on this date.`,
+          error: `${who} already ${verb} a ${sameDateConflict.status} visit here on this date.`,
           code: 'VISIT_COLLISION',
+          conflicts,
         });
+      }
+      if (conflicts.length > 0) {
+        return res.status(200).json({ conflicts });
       }
     }
 

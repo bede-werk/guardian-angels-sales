@@ -19,6 +19,7 @@ const defaultDriveConfig = require('../config/driveTime');
 const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { rankCandidates } = require('./schedulingEngine');
+const { detectConflicts, detectConflictsPure } = require('./conflictDetection');
 const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
@@ -133,10 +134,25 @@ function validateDays(rawDays, { today, committedDates }) {
 // returns the unioned Set of place ids locked for that date. A place used
 // elsewhere in the SAME user's own draft (any date) is a separate concern
 // (own-draft dedupe), not folded in here — see ownDraftPlaceIds below.
+// Derives its answer from conflictDetection.js's detectConflictsPure — the
+// same SAME_DATE_VISIT/DRAFT_ELSEWHERE rules addStop and the manual
+// visit-log route (routes/visits.js) now flag with, rather than a second,
+// independently-maintained "union means locked" rule living only here. A
+// place present in either row list produces exactly one hard conflict
+// (SAME_DATE_VISIT and/or DRAFT_ELSEWHERE) either way, so the returned Set
+// is unchanged from before this — only how the decision gets made.
 function mergeLockedElsewhereIds({ committedRows = [], otherDraftRows = [] }) {
+  const committedIds = new Set(committedRows.map((r) => r.place_id));
+  const draftIds = new Set(otherDraftRows.map((r) => r.place_id));
   const ids = new Set();
-  for (const row of committedRows) ids.add(row.place_id);
-  for (const row of otherDraftRows) ids.add(row.place_id);
+  for (const placeId of new Set([...committedIds, ...draftIds])) {
+    const conflicts = detectConflictsPure({
+      placeId,
+      sameDateVisit: committedIds.has(placeId) ? { scheduledDate: null } : null,
+      draftElsewhere: draftIds.has(placeId) ? { date: null } : null,
+    });
+    if (conflicts.length > 0) ids.add(placeId);
+  }
   return ids;
 }
 
@@ -305,24 +321,30 @@ async function lockedElsewherePlaceIds(db, { date, userId }) {
 // window has no way to be excluded from day 3 without the caller running
 // this per date anyway.
 async function lockedElsewherePlaceIdsByDate(db, { dates, userId }) {
-  const byDate = {};
-  for (const date of dates) byDate[date] = new Set();
-  if (dates.length === 0) return byDate;
+  const rowsByDate = {};
+  for (const date of dates) rowsByDate[date] = { committedRows: [], otherDraftRows: [] };
+  if (dates.length === 0) return {};
 
   // Same status filter as lockedElsewherePlaceIds/committedElsewherePlaceIds
   // above — this is the bulk sibling that feeds real multi-day generation
   // (generateAndPersistDraft), so a skipped visit incorrectly blocking a
   // date here matters more than the other two, not less.
   const committedRows = await db('visits').whereIn('scheduled_date', dates).whereNotNull('place_id').whereIn('status', ['planned', 'completed']).select('scheduled_date', 'place_id');
-  for (const row of committedRows) byDate[row.scheduled_date].add(row.place_id);
+  for (const row of committedRows) rowsByDate[row.scheduled_date].committedRows.push(row);
 
   const otherDraftRows = await db('schedule_draft_stops as s')
     .join('schedule_drafts as d', 'd.id', 's.draft_id')
     .whereIn('s.date', dates)
     .whereNot('d.user_id', userId)
     .select('s.date', 's.place_id');
-  for (const row of otherDraftRows) byDate[row.date].add(row.place_id);
+  for (const row of otherDraftRows) rowsByDate[row.date].otherDraftRows.push(row);
 
+  // Per-date union via mergeLockedElsewhereIds (now detector-backed) instead
+  // of building each date's Set by hand — same reasoning as
+  // lockedElsewherePlaceIds/committedElsewherePlaceIds: one decision
+  // function, not a third copy of "union means locked".
+  const byDate = {};
+  for (const date of dates) byDate[date] = mergeLockedElsewhereIds(rowsByDate[date]);
   return byDate;
 }
 
@@ -690,8 +712,12 @@ async function loadDraftDayView(db, draftId, date) {
 // Rejects (409) a place already used anywhere else in this user's own draft,
 // or locked elsewhere (committed by anyone, or on another user's active
 // draft) for this specific date — both checked fresh, not against whatever
-// was true when the draft was generated.
+// was true when the draft was generated. Also flags — but does not reject —
+// a place visited within the hard floor: see conflictDetection.js. Both the
+// reject and the flag now run through the one shared detector, not two
+// separately-maintained checks (see the 2026-08 remediation ticket).
 async function addStop({ draftId, userId, date, placeId, visitType }) {
+  let floorConflicts = [];
   await knex.transaction(async (trx) => {
     const draft = await assertOwnsDraft(trx, draftId, userId);
     const draftParams = JSON.parse(draft.params_json);
@@ -701,19 +727,23 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
       throw err;
     }
 
-    const own = await ownDraftPlaceIds(trx, draftId);
-    if (own.has(placeId)) {
+    const conflicts = await detectConflicts(trx, placeId, date, { userId, excludeDraftId: draftId });
+
+    if (conflicts.some((c) => c.type === 'OWN_DRAFT_DUPLICATE')) {
       const err = new Error('That place is already in this draft');
       err.status = 409;
       throw err;
     }
 
-    const locked = await lockedElsewherePlaceIds(trx, { date, userId });
-    if (locked.has(placeId)) {
+    const blocking = conflicts.filter((c) => c.type === 'SAME_DATE_VISIT' || c.type === 'DRAFT_ELSEWHERE');
+    if (blocking.length > 0) {
       const err = new Error('That place is already booked elsewhere for this date');
       err.status = 409;
+      err.conflicts = blocking; // named/dated — see conflictDetection.js's Conflict shape
       throw err;
     }
+
+    floorConflicts = conflicts.filter((c) => c.type === 'FLOOR_COMPLETED');
 
     const place = await trx('places').where({ id: placeId }).first();
     if (!place) {
@@ -760,7 +790,14 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
     }
   });
 
-  return loadDraftDayView(knex, draftId, date);
+  const dayView = await loadDraftDayView(knex, draftId, date);
+  // Additive: existing consumers of this response only ever read the fields
+  // loadDraftDayView already returned. addedStopConflicts is new — the
+  // just-added stop's FLOOR_COMPLETED conflict(s), if any, for the client to
+  // badge (see RoutePlanner.jsx). Not persisted, not recomputed on later
+  // reads of this day — same "informational, no upkeep" scope as the rest of
+  // this step (see the ticket's "explicitly deferred" render-recompute item).
+  return { ...dayView, addedStopConflicts: floorConflicts };
 }
 
 async function removeStop({ draftId, userId, date, placeId }) {

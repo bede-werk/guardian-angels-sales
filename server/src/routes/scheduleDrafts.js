@@ -15,12 +15,20 @@ const router = express.Router();
 // Routes below throw errors carrying a `status` (404/403/409) for expected
 // failure cases (not found, not yours, collision) — this wrapper respects
 // that instead of always falling through to the generic 500 handler.
+// addStop's collision rejections also carry `.conflicts` (see
+// scheduleDraft.js's addStop and services/conflictDetection.js's Conflict
+// shape) — forwarded when present so the client can name the other
+// user/date instead of showing the generic error string alone.
 function handle(fn) {
   return async (req, res, next) => {
     try {
       await fn(req, res);
     } catch (err) {
-      if (err.status) return res.status(err.status).json({ error: err.message });
+      if (err.status) {
+        const body = { error: err.message };
+        if (err.conflicts) body.conflicts = err.conflicts;
+        return res.status(err.status).json(body);
+      }
       next(err);
     }
   };

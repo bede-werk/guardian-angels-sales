@@ -28,6 +28,20 @@ function splitHoursPerDay(hoursPerDay) {
   return { hours: Math.floor(totalMinutes / 60), minutes: totalMinutes % 60 };
 }
 const MAX_PLAN_DATES = 10; // mirrors scheduleDraft.js's MAX_PLAN_DATES
+
+// addStop's 409 rejections (SAME_DATE_VISIT/DRAFT_ELSEWHERE) now carry
+// structured conflicts (see services/conflictDetection.js's Conflict shape)
+// alongside the generic error string — this names the other rep and date
+// for DRAFT_ELSEWHERE instead of the old flat "already booked elsewhere"
+// message. SAME_DATE_VISIT already gets a personalized sentence from the
+// server (it knows "you" vs a name), so that one's error message is used as-is.
+function addStopErrorMessage(err) {
+  const conflict = err.conflicts && err.conflicts[0];
+  if (conflict && conflict.type === 'DRAFT_ELSEWHERE') {
+    return `In ${conflict.otherUserName || 'another rep'}'s draft for ${formatDate(conflict.otherDate)}.`;
+  }
+  return err.message;
+}
 const MAX_DAYS_AHEAD = 7; // mirrors scheduleDraft.js's MAX_DAYS_AHEAD
 
 // 'YYYY-MM-DD' in the browser's local timezone.
@@ -222,7 +236,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
       setAddingOpen(false);
       markEdited();
     } catch (e) {
-      onError(e.message);
+      onError(addStopErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -254,7 +268,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
       setSuggestions((prev) => prev.filter((x) => x.place_id !== s.place_id));
       markEdited();
     } catch (e) {
-      onError(e.message);
+      onError(addStopErrorMessage(e));
     } finally {
       setAddingSuggestionId(null);
     }
@@ -505,6 +519,25 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         Already visited today
                       </div>
                     )}
+                    {/* addStop's response carries a hard-floor flag for the
+                        stop JUST added (services/conflictDetection.js) —
+                        addStop allows it (unlike a same-date/other-draft
+                        collision, which it rejects), so this is the surfaced
+                        heads-up. One-shot: it's on this response only, not
+                        recomputed on later reorder/remove/etc. responses, so
+                        it naturally disappears once the day view is next
+                        refreshed by something else. */}
+                    {(day.addedStopConflicts || [])
+                      .filter((c) => c.placeId === stop.place_id)
+                      .map((c) => (
+                        <div
+                          key={c.type}
+                          className="tiny"
+                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                        >
+                          Visited by {c.otherUserName || 'someone'} on {formatDate(c.otherDate)} — {c.daysApart} day{c.daysApart === 1 ? '' : 's'} ago
+                        </div>
+                      ))}
                   </div>
                   <div className="actions" style={{ alignItems: 'center', gap: 14 }}>
                     <select
