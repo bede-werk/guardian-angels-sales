@@ -34,6 +34,14 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete })
           {visit.notes && (
             <div className="tiny"><strong>Notes:</strong> {visit.notes}</div>
           )}
+          {visit.crossRepFloorWarning && (
+            <div
+              className="tiny"
+              style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+            >
+              Also visited by {visit.crossRepFloorWarning.userName} on {formatDate(visit.crossRepFloorWarning.scheduledDate)}
+            </div>
+          )}
         </div>
         <div className="modal-foot">
           <Button variant="secondary" onClick={onClose}>Close</Button>

@@ -111,7 +111,7 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Seed relationships</h2>
+          <h2>Seed Relationships</h2>
           <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">

@@ -10,6 +10,8 @@ const { referralMetricsByPersonId, referralMetricsByPlaceId, metricsFor, EMPTY_M
 const { compareDatesAsc } = require('../services/sortHelpers');
 const { computeRelationshipForPlaces, relationshipFor, LEVELS: RELATIONSHIP_LEVELS } = require('../services/relationship');
 const { attachEncounters } = require('../services/visitEncounters');
+const { crossRepVisitsByPlace, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
+const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
 
@@ -353,10 +355,18 @@ router.get('/:id', async (req, res, next) => {
       .select('v.*', 'u.name as user_name');
 
     // One extra query per list, grouped in JS — never one per visit.
-    const [visits, upcomingVisits] = await Promise.all([
+    const [visitsWithEncounters, upcomingVisitsWithEncounters] = await Promise.all([
       attachEncounters(knex, visitRows),
       attachEncounters(knex, upcomingRows),
     ]);
+
+    // Cross-rep hard-floor warning (informational only — see
+    // crossRepFloorWarning.js): one batched query for this place, applied to
+    // both lists so a rep sees it whether they're looking at history or an
+    // upcoming stop.
+    const crossRepByPlace = await crossRepVisitsByPlace(knex, [place.id]);
+    const visits = attachCrossRepFloorWarnings(visitsWithEncounters, crossRepByPlace, schedulingConfig);
+    const upcomingVisits = attachCrossRepFloorWarnings(upcomingVisitsWithEncounters, crossRepByPlace, schedulingConfig);
 
     const people = await knex('people')
       .where({ place_id: place.id })

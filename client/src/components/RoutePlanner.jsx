@@ -519,6 +519,18 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         Already visited today
                       </div>
                     )}
+                    {/* Same cross-rep hard-floor warning shown on already-committed
+                        visits (PlaceDetail/VisitDetailModal/PlannedDayModal/
+                        CompletedVisitsModal) — surfaced here too so a rep can pick
+                        a different stop BEFORE committing, not just find out after. */}
+                    {stop.crossRepFloorWarning && (
+                      <div
+                        className="tiny"
+                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                      >
+                        Also visited by {stop.crossRepFloorWarning.userName} on {formatDate(stop.crossRepFloorWarning.scheduledDate)}
+                      </div>
+                    )}
                     {/* addStop's response carries a hard-floor flag for the
                         stop JUST added (services/conflictDetection.js) —
                         addStop allows it (unlike a same-date/other-draft
@@ -610,6 +622,14 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                   <div>
                     <strong>{s.name}</strong>
                     <div className="tiny muted">{s.category ? `${s.category} · ` : ''}{s.city}{s.region ? ` · ${s.region}` : ''}</div>
+                    {s.crossRepFloorWarning && (
+                      <div
+                        className="tiny"
+                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                      >
+                        Also visited by {s.crossRepFloorWarning.userName} on {formatDate(s.crossRepFloorWarning.scheduledDate)}
+                      </div>
+                    )}
                   </div>
                   <Button size="small" onClick={() => addSuggestion(s)} disabled={addingSuggestionId === s.place_id} style={{ flex: 'none', minWidth: 0 }}>Add</Button>
                 </div>
@@ -895,6 +915,14 @@ export default function RoutePlanner({ userId }) {
     if (result.skippedCollisions.length > 0) {
       parts.push(`Skipped ${result.skippedCollisions.length} (already booked elsewhere by then): ${result.skippedCollisions.map((c) => c.place_name).join(', ')}.`);
     }
+    // Checked fresh at the actual moment of commit (see commitDay in
+    // scheduleDraft.js) — catches a same-window collision even if this
+    // screen was loaded before another rep's commit landed, which the
+    // draft view's own read-time warning can miss.
+    if (result.crossRepWarnings.length > 0) {
+      const names = result.crossRepWarnings.map((w) => `${w.place_name} (also ${w.warning.userName}, ${formatDate(w.warning.scheduledDate)})`).join(', ');
+      parts.push(`Heads up — also visited by another rep nearby in time: ${names}.`);
+    }
     if (parts.length === 0) parts.push(`Nothing to accept for ${formatDate(date)}.`);
     setNotice(parts.join(' '));
     load();
@@ -922,6 +950,13 @@ export default function RoutePlanner({ userId }) {
     }
     if (skipped > 0) {
       parts.push(`Skipped ${skipped} (already booked elsewhere).`);
+    }
+    // Same fresh-at-commit check as the single-day accept — rolled up to a
+    // count here, same convention `skipped` above uses, since per-day detail
+    // isn't available once every card has already closed.
+    const crossRepCount = results.reduce((n, r) => n + r.crossRepWarnings.length, 0);
+    if (crossRepCount > 0) {
+      parts.push(`Heads up — ${crossRepCount} also visited by another rep nearby in time.`);
     }
     if (parts.length === 0) parts.push('Nothing to accept.');
     return parts.join(' ');

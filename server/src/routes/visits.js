@@ -7,7 +7,9 @@ const express = require('express');
 const knex = require('../db/knex');
 const { VISIT_TYPES } = require('../config/visitTypes');
 const { attachEncounters } = require('../services/visitEncounters');
+const { crossRepVisitsByPlace, findCrossRepFloorWarning, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
 const { detectConflicts } = require('../services/conflictDetection');
+const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
 
@@ -268,6 +270,15 @@ async function fetchVisit(id) {
     .first();
   if (!visit) return visit;
   const [withEncounters] = await attachEncounters(knex, [visit], { columns: ENCOUNTER_DETAIL_COLUMNS });
+
+  // Cross-rep hard-floor warning (informational only — see
+  // crossRepFloorWarning.js). No place, no floor to check against.
+  if (withEncounters.place_id) {
+    const byPlace = await crossRepVisitsByPlace(knex, [withEncounters.place_id]);
+    withEncounters.crossRepFloorWarning = findCrossRepFloorWarning(withEncounters, byPlace.get(withEncounters.place_id) || [], schedulingConfig);
+  } else {
+    withEncounters.crossRepFloorWarning = null;
+  }
   return withEncounters;
 }
 
@@ -338,7 +349,15 @@ router.get('/calendar', async (req, res, next) => {
       );
 
     // One extra query for the whole month, grouped in JS — never one per row.
-    res.json(await attachEncounters(knex, rows));
+    const withEncounters = await attachEncounters(knex, rows);
+
+    // Cross-rep hard-floor warning (informational only — see
+    // crossRepFloorWarning.js). Batched once across every distinct place in
+    // the month, not once per row — VisitsCalendar.jsx passes these rows
+    // straight into VisitDetailModal/CompletedVisitsModal with no refetch,
+    // so this is required for the tag to reach the Calendar tab at all.
+    const crossRepByPlace = await crossRepVisitsByPlace(knex, withEncounters.map((r) => r.place_id));
+    res.json(attachCrossRepFloorWarnings(withEncounters, crossRepByPlace, schedulingConfig));
   } catch (err) {
     next(err);
   }

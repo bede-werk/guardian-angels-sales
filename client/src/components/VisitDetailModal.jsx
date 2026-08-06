@@ -153,6 +153,14 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
           {trip.next_visit_date && (
             <div className="tiny"><strong>Next visit:</strong> {formatDate(trip.next_visit_date)}</div>
           )}
+          {trip.crossRepFloorWarning && (
+            <div
+              className="tiny"
+              style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+            >
+              Also visited by {trip.crossRepFloorWarning.userName} on {formatDate(trip.crossRepFloorWarning.scheduledDate)}
+            </div>
+          )}
 
           {/* Who was met. Click a name to see what happened with THEM — the
               outcome and the contact details as they stood that day are facts

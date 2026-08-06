@@ -82,6 +82,14 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
                       {v.category && <CategoryChip category={v.category} />}
                     </div>
                     <div className="tiny muted">{VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}</div>
+                    {v.crossRepFloorWarning && (
+                      <div
+                        className="tiny"
+                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                      >
+                        Also visited by {v.crossRepFloorWarning.userName} on {formatDate(v.crossRepFloorWarning.scheduledDate)}
+                      </div>
+                    )}
                   </div>
                   <div className="actions" style={{ alignItems: 'center' }}>
                     {v.place_id && (

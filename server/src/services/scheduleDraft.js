@@ -20,6 +20,7 @@ const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { rankCandidates } = require('./schedulingEngine');
 const { detectConflicts, detectConflictsPure } = require('./conflictDetection');
+const { crossRepVisitsByPlace, findCrossRepFloorWarning } = require('./crossRepFloorWarning');
 const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
@@ -422,7 +423,7 @@ async function committedDateSummaries(db, userId, { today } = {}) {
 // the same visit once per person met and duplicate rows in a list whose
 // whole contract is "one row per planned visit".
 async function committedDayVisits(db, userId, date) {
-  return db('visits as v')
+  const rows = await db('visits as v')
     .leftJoin('places as p', 'v.place_id', 'p.id')
     .where({ 'v.user_id': userId, 'v.scheduled_date': date, 'v.status': 'planned' })
     .orderBy('v.sort_order')
@@ -434,11 +435,25 @@ async function committedDayVisits(db, userId, date) {
       'v.scheduled_date',
       'v.status',
       'v.notes',
+      'v.user_id',
       'p.category',
       'p.address',
       'p.city',
       'p.zip'
     );
+
+  // Cross-rep hard-floor warning (informational only — see
+  // crossRepFloorWarning.js), for the "Already Planned" day drill-down
+  // (PlannedDayModal.jsx). Batched once across this day's distinct places.
+  const byPlace = await crossRepVisitsByPlace(db, rows.map((r) => r.place_id));
+  return rows.map((r) => ({
+    ...r,
+    crossRepFloorWarning: findCrossRepFloorWarning(
+      { id: r.visit_id, user_id: r.user_id, place_id: r.place_id, scheduled_date: r.scheduled_date, status: r.status },
+      byPlace.get(r.place_id) || [],
+      defaultSchedulingConfig
+    ),
+  }));
 }
 
 async function committedDatesForUser(db, userId, { today } = {}) {
@@ -672,10 +687,27 @@ async function loadDraftView(db, draftId) {
   // `place_id` that was never selected).
   const todaySet = await alreadyVisitedTodayPlaceIds(db, stopRows.map((r) => r.id), orgToday());
 
+  // Cross-rep hard-floor warning, on PROPOSED stops too (see
+  // crossRepFloorWarning.js) — not just already-committed visits. This is
+  // the highest-value place to show it: a rep can see the collision and
+  // pick a different stop BEFORE committing, rather than only finding out
+  // after. The stop isn't a real visit yet, so there's no visit id to
+  // exclude (`id: null` never matches a real row) and the date comes from
+  // the proposal, not a scheduled_date column.
+  const crossRepByPlace = await crossRepVisitsByPlace(db, stopRows.map((r) => r.id));
+
   const days = [];
   for (const date of dates) {
     const rows = byDate[date] || [];
-    const stops = rows.map(toDraftStopShape).map((s) => ({ ...s, alreadyVisitedToday: todaySet.has(s.place_id) }));
+    const stops = rows.map(toDraftStopShape).map((s) => ({
+      ...s,
+      alreadyVisitedToday: todaySet.has(s.place_id),
+      crossRepFloorWarning: findCrossRepFloorWarning(
+        { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
+        crossRepByPlace.get(s.place_id) || [],
+        defaultSchedulingConfig
+      ),
+    }));
     const budgetMinutes = hoursPerDayByDate[date] * 60;
     const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
     days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedByDate[date] || [], ...evaluated });
@@ -699,7 +731,16 @@ async function loadDraftDayView(db, draftId, date) {
     .select('s.id as stop_id', 's.visit_type', 'p.*');
 
   const todaySet = await alreadyVisitedTodayPlaceIds(db, rows.map((r) => r.id), orgToday());
-  const stops = rows.map(toDraftStopShape).map((s) => ({ ...s, alreadyVisitedToday: todaySet.has(s.place_id) }));
+  const crossRepByPlace = await crossRepVisitsByPlace(db, rows.map((r) => r.id));
+  const stops = rows.map(toDraftStopShape).map((s) => ({
+    ...s,
+    alreadyVisitedToday: todaySet.has(s.place_id),
+    crossRepFloorWarning: findCrossRepFloorWarning(
+      { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
+      crossRepByPlace.get(s.place_id) || [],
+      defaultSchedulingConfig
+    ),
+  }));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
   const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
@@ -1079,12 +1120,23 @@ async function getSuggestions({ draftId, userId, date, limit = 5 }) {
   const inZone = dayView?.zone ? ranked.filter((c) => c.place.region === dayView.zone) : ranked;
   const top = (inZone.length > 0 ? inZone : ranked).slice(0, limit);
 
+  // Cross-rep hard-floor warning (see crossRepFloorWarning.js), shown on a
+  // SUGGESTION itself before it's even added — same synthetic-visit
+  // approach loadDraftView/loadDraftDayView use for a proposed-but-not-yet-
+  // committed stop.
+  const crossRepByPlace = await crossRepVisitsByPlace(knex, top.map((c) => c.place.id));
+
   return top.map((c) => ({
     place_id: c.place.id,
     name: c.place.name,
     region: c.place.region,
     city: c.place.city,
     category: c.place.category,
+    crossRepFloorWarning: findCrossRepFloorWarning(
+      { id: null, user_id: userId, place_id: c.place.id, scheduled_date: date, status: 'planned' },
+      crossRepByPlace.get(c.place.id) || [],
+      defaultSchedulingConfig
+    ),
   }));
 }
 
@@ -1192,10 +1244,35 @@ async function commitDay({ draftId, userId, date }) {
       ...raceCollisions.map((r) => ({ place_id: r.place_id, place_name: r.place_name })),
     ];
 
+    // Cross-rep hard-floor warning, checked FRESH at the literal moment of
+    // commit (inside this same transaction) — not relying on whatever the
+    // draft view last showed on screen. The pre-commit draft-view warning
+    // (loadDraftView/loadDraftDayView) is read-time only: two reps racing to
+    // commit within moments of each other can each be looking at a screen
+    // fetched before the other's commit landed, exactly like what actually
+    // happened live (two commits 13 seconds apart, see scheduleDraft
+    // progress notes). This is still informational only — never blocks,
+    // matches the same "warn, don't block" philosophy as the rest of this
+    // feature — but it's the one check guaranteed to see the true DB state
+    // at commit time, same guarantee committedElsewherePlaceIds already has
+    // for the same-date case above.
+    let crossRepWarnings = [];
+    if (committedRows.length > 0) {
+      const crossRepByPlace = await crossRepVisitsByPlace(trx, committedRows.map((r) => r.place_id));
+      crossRepWarnings = committedRows
+        .map((r) => ({
+          place_id: r.place_id,
+          place_name: r.place_name,
+          warning: findCrossRepFloorWarning(r, crossRepByPlace.get(r.place_id) || [], defaultSchedulingConfig),
+        }))
+        .filter((r) => r.warning);
+    }
+
     return {
       date,
       committed: committedRows,
       skippedCollisions,
+      crossRepWarnings,
     };
   });
 }

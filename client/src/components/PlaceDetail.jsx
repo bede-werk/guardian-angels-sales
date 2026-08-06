@@ -508,6 +508,14 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                         </span>
                       </div>
                       {v.notes && <div className="tiny">{v.notes}</div>}
+                      {v.crossRepFloorWarning && (
+                        <div
+                          className="tiny"
+                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+                        >
+                          Also visited by {v.crossRepFloorWarning.userName} on {formatDate(v.crossRepFloorWarning.scheduledDate)}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -564,6 +572,14 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       </div>
                       {v.notes && <div className="tiny">{v.notes}</div>}
                       {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
+                      {v.crossRepFloorWarning && (
+                        <div
+                          className="tiny"
+                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+                        >
+                          Also visited by {v.crossRepFloorWarning.userName} on {formatDate(v.crossRepFloorWarning.scheduledDate)}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
