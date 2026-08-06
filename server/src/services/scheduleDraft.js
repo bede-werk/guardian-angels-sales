@@ -284,7 +284,10 @@ function isWeekendUTC(dateStr) {
 // lockedElsewherePlaceIdsByDate instead (see its header for why a single
 // date isn't enough there).
 async function lockedElsewherePlaceIds(db, { date, userId }) {
-  const committedRows = await db('visits').where({ scheduled_date: date }).whereNotNull('place_id').select('place_id');
+  // Status-filtered the same way visits.js's own same-date collision check
+  // is (see routes/visits.js's POST /visits) — a skipped visit never
+  // happened, so it must not block the date for anyone else either.
+  const committedRows = await db('visits').where({ scheduled_date: date }).whereNotNull('place_id').whereIn('status', ['planned', 'completed']).select('place_id');
   const otherDraftRows = await db('schedule_draft_stops as s')
     .join('schedule_drafts as d', 'd.id', 's.draft_id')
     .where('s.date', date)
@@ -306,7 +309,11 @@ async function lockedElsewherePlaceIdsByDate(db, { dates, userId }) {
   for (const date of dates) byDate[date] = new Set();
   if (dates.length === 0) return byDate;
 
-  const committedRows = await db('visits').whereIn('scheduled_date', dates).whereNotNull('place_id').select('scheduled_date', 'place_id');
+  // Same status filter as lockedElsewherePlaceIds/committedElsewherePlaceIds
+  // above — this is the bulk sibling that feeds real multi-day generation
+  // (generateAndPersistDraft), so a skipped visit incorrectly blocking a
+  // date here matters more than the other two, not less.
+  const committedRows = await db('visits').whereIn('scheduled_date', dates).whereNotNull('place_id').whereIn('status', ['planned', 'completed']).select('scheduled_date', 'place_id');
   for (const row of committedRows) byDate[row.scheduled_date].add(row.place_id);
 
   const otherDraftRows = await db('schedule_draft_stops as s')
@@ -328,7 +335,9 @@ async function lockedElsewherePlaceIdsByDate(db, { dates, userId }) {
 // lock. An uncommitted draft is a proposal, not a claim; first to actually
 // commit is the only real lock, so this only looks at `visits`.
 async function committedElsewherePlaceIds(db, { date }) {
-  const rows = await db('visits').where({ scheduled_date: date }).whereNotNull('place_id').select('place_id');
+  // Same status filter as lockedElsewherePlaceIds above, for the same
+  // reason: a skipped visit releases the date immediately, it doesn't hold it.
+  const rows = await db('visits').where({ scheduled_date: date }).whereNotNull('place_id').whereIn('status', ['planned', 'completed']).select('place_id');
   return new Set(rows.map((r) => r.place_id));
 }
 
