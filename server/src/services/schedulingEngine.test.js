@@ -129,6 +129,55 @@ describe('eligibility() guards', () => {
     assert.equal(result.eligible, false);
     assert.equal(result.reason, 'locked_elsewhere');
   });
+
+  // Step 3 of the 2026-08 remediation ticket: a planned (not yet happened)
+  // visit consumes the hard floor exactly like a completed one, via its own
+  // field — lastVisitDate stays null/whatever it already was, so ranking
+  // (urgency/cadence) never sees it, only eligibility does.
+  describe('plannedVisitDates guard (FLOOR_PLANNED)', () => {
+    test('a planned visit within the floor makes an otherwise-never-visited place ineligible', () => {
+      const p = place();
+      const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, plannedVisitDates: [daysAgo(2)], lockedElsewhere: false, config });
+      assert.equal(result.eligible, false);
+      assert.equal(result.reason, 'hard_floor');
+    });
+
+    test('eligible at and beyond the boundary, same threshold as a completed visit', () => {
+      const p = place();
+      assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, plannedVisitDates: [daysAgo(config.HARD_FLOOR_DAYS)], lockedElsewhere: false, config }).eligible, true);
+      assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, plannedVisitDates: [daysAgo(config.HARD_FLOOR_DAYS + 1)], lockedElsewhere: false, config }).eligible, true);
+    });
+
+    // The actual bug this ticket had to avoid: a planned visit is routinely
+    // dated AFTER `today` (this candidate is being ranked for an earlier day
+    // in the window than the place's own planned date). An unsigned day-gap
+    // there is a large negative number, which used to satisfy `< HARD_FLOOR_DAYS`
+    // unconditionally and would have wrongly blocked every place with ANY
+    // planned visit anywhere in the future, no matter how far out.
+    test('a planned visit far in the future does not block an otherwise-eligible place', () => {
+      const p = place();
+      const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, plannedVisitDates: [daysAgo(-30)], lockedElsewhere: false, config });
+      assert.equal(result.eligible, true);
+    });
+
+    test('a planned visit within the floor, but in the future, still blocks (bidirectional)', () => {
+      const p = place();
+      const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, plannedVisitDates: [daysAgo(-2)], lockedElsewhere: false, config });
+      assert.equal(result.eligible, false);
+      assert.equal(result.reason, 'hard_floor');
+    });
+
+    test('a due commitment suppresses FLOOR_PLANNED the same way it suppresses a completed floor conflict', () => {
+      const p = place();
+      const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, nextVisitDate: TODAY, plannedVisitDates: [daysAgo(2)], lockedElsewhere: false, config });
+      assert.equal(result.eligible, true);
+    });
+
+    test('defaults to [] when omitted — every existing caller/test that never mentions plannedVisitDates is unaffected', () => {
+      const p = place();
+      assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, true);
+    });
+  });
 });
 
 describe('hard commitments jump the queue', () => {

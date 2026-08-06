@@ -428,8 +428,8 @@ router.post('/', async (req, res, next) => {
     //
     // Only SAME_DATE_VISIT actually blocks (409, unchanged — same override
     // pattern as places.js's ADDRESS_UNRECOGNIZED confirm flow: re-send with
-    // `force: true` to proceed). FLOOR_COMPLETED/DRAFT_ELSEWHERE are
-    // informational findings, not errors — a 409 for those would misrepresent
+    // `force: true` to proceed). FLOOR_COMPLETED/FLOOR_PLANNED/DRAFT_ELSEWHERE
+    // are informational findings, not errors — a 409 for those would misrepresent
     // the result to any consumer of this endpoint besides VisitLogModal
     // (there is other integration surface here). Nothing is created yet
     // either, so 201 would be just as wrong a claim — 200 with the findings

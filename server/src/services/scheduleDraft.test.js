@@ -2,7 +2,7 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, buildCandidatePool, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, buildCandidatePool, loadDraftView, loadDraftDayView, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 
 describe('mergeLockedElsewhereIds', () => {
   test('unions committed and other-draft rows', () => {
@@ -303,5 +303,162 @@ describe('buildCandidatePool fatigue counting', () => {
     const pool = await buildCandidatePool(db, { today: TODAY });
     assert.equal(pool.find((c) => c.place.id === 1).lastVisitDate, '2026-07-30');
     assert.equal(pool.find((c) => c.place.id === 2).lastVisitDate, '2026-07-31');
+  });
+});
+
+// Step 3 of the 2026-08 remediation ticket: buildCandidatePool must feed
+// plannedVisitDates to eligibility() as its OWN field — never widen
+// lastVisitByPlace's status filter to include 'planned', since that field
+// also drives urgency()/rankKey's cadence math (a place that only LOOKS
+// recently serviced because a visit is merely planned, not completed, would
+// rank as less urgent than it actually is).
+describe('buildCandidatePool plannedVisitDates', () => {
+  let db;
+  const TODAY = '2026-08-03';
+
+  before(async () => {
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
+    await db('places').insert([
+      { id: 1, name: 'Planned Only', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 2, name: 'Planned And Completed', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 3, name: 'Two Planned Visits', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 4, name: 'Neither', category: 'Hospice', tier: 1, priority_score: 75 },
+    ]);
+
+    await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', scheduled_date: '2026-08-05', place_name: 'Planned Only' });
+
+    await db('visits').insert({ place_id: 2, user_id: 1, status: 'completed', scheduled_date: '2026-07-20', place_name: 'Planned And Completed' });
+    await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', scheduled_date: '2026-08-05', place_name: 'Planned And Completed' });
+
+    await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', scheduled_date: '2026-08-05', place_name: 'Two Planned Visits' });
+    await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', scheduled_date: '2026-08-20', place_name: 'Two Planned Visits' });
+  });
+
+  after(async () => {
+    await db.destroy();
+  });
+
+  test('a place with ONLY a planned visit gets plannedVisitDates, but lastVisitDate stays null', async () => {
+    const pool = await buildCandidatePool(db, { today: TODAY });
+    const place = pool.find((c) => c.place.id === 1);
+    assert.deepEqual(place.plannedVisitDates, ['2026-08-05']);
+    assert.equal(place.lastVisitDate, null, 'a planned visit must never make an unvisited place look visited for cadence/urgency purposes');
+  });
+
+  test('a place with both keeps them as two separate fields, not merged', async () => {
+    const pool = await buildCandidatePool(db, { today: TODAY });
+    const place = pool.find((c) => c.place.id === 2);
+    assert.equal(place.lastVisitDate, '2026-07-20', 'lastVisitDate must stay COMPLETED-only — the planned visit must not overwrite it');
+    assert.deepEqual(place.plannedVisitDates, ['2026-08-05']);
+  });
+
+  test('more than one planned visit -> every date is kept, not just the nearest', async () => {
+    const pool = await buildCandidatePool(db, { today: TODAY });
+    const place = pool.find((c) => c.place.id === 3);
+    assert.deepEqual(place.plannedVisitDates.sort(), ['2026-08-05', '2026-08-20']);
+  });
+
+  test('a place with neither gets an empty array, not null/undefined', async () => {
+    const pool = await buildCandidatePool(db, { today: TODAY });
+    const place = pool.find((c) => c.place.id === 4);
+    assert.deepEqual(place.plannedVisitDates, []);
+  });
+});
+
+// The required knock-on the ticket calls out by name: "Verify loadDraftView
+// recomputes the full detector, not just same-date locks. If it doesn't,
+// this passes audit and fails in the field." Before Step 3, loadDraftView/
+// loadDraftDayView only ever recomputed alreadyVisitedToday and
+// crossRepFloorWarning for a draft's already-placed stops — never
+// SAME_DATE_VISIT/FLOOR_COMPLETED/FLOOR_PLANNED/DRAFT_ELSEWHERE. This proves
+// the fix end-to-end: build a draft, THEN have another rep commit a
+// colliding visit, THEN reload the SAME draft and confirm the collision
+// shows up without the draft itself ever being touched.
+//
+// global.fetch is mocked to fail fast (falls back to the haversine
+// evaluateTimeBlock — see driveTime.js) so this runs offline and fast, same
+// convention as routeOptimizer.test.js. Test places carry lat/lng because
+// evaluateTimeBlock silently drops ungeocoded stops from its packed output
+// (see driveTime.js's isGeocoded/packStops) — without it, the very stop this
+// test needs to inspect would never appear in `day.stops` at all.
+describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 required knock-on)', () => {
+  let db;
+  const originalFetch = global.fetch;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+
+  before(async () => {
+    global.fetch = async () => ({ ok: false, json: async () => ({}) });
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert([
+      { id: 1, name: 'Bede', email: 'bede@test.local' },
+      { id: 2, name: 'Sarah', email: 'sarah@test.local' },
+    ]);
+    await db('places').insert([
+      { id: 1, name: 'Same Day Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Nearby Day Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+    ]);
+  });
+
+  after(async () => {
+    global.fetch = originalFetch;
+    await db.destroy();
+  });
+
+  test('loadDraftView: a same-date visit another rep commits AFTER the draft was built shows up on the next read', async () => {
+    const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 1, date: DATE_A, sort_order: 0 });
+
+    const before1 = await loadDraftView(db, draftId);
+    const stopBefore = before1.days[0].stops.find((s) => s.place_id === 1);
+    assert.ok(stopBefore, 'the stop must actually appear in the packed day');
+    assert.deepEqual(stopBefore.conflicts, [], 'clean baseline — nothing has collided yet');
+
+    // Another rep commits a real visit to the SAME place, SAME date — after
+    // the draft above was already built. Nothing about the draft itself
+    // changes.
+    await db('visits').insert({ place_id: 1, user_id: 2, status: 'planned', scheduled_date: DATE_A, place_name: 'Same Day Place' });
+
+    const after1 = await loadDraftView(db, draftId);
+    const stopAfter = after1.days[0].stops.find((s) => s.place_id === 1);
+    assert.equal(stopAfter.conflicts.length, 1);
+    assert.equal(stopAfter.conflicts[0].type, 'SAME_DATE_VISIT');
+    assert.equal(stopAfter.conflicts[0].otherUserName, 'Sarah');
+  });
+
+  test('loadDraftDayView: a nearby-day PLANNED visit committed after the fact produces FLOOR_PLANNED on reload', async () => {
+    const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 2, date: DATE_A, sort_order: 0 });
+
+    const before1 = await loadDraftDayView(db, draftId, DATE_A);
+    assert.deepEqual(before1.stops.find((s) => s.place_id === 2).conflicts, []);
+
+    // Another rep commits a PLANNED visit to the same place two days later —
+    // still within the hard floor, but NOT the same date, so this is the
+    // FLOOR_PLANNED path specifically, not SAME_DATE_VISIT.
+    await db('visits').insert({ place_id: 2, user_id: 2, status: 'planned', scheduled_date: '2026-08-12', place_name: 'Nearby Day Place' });
+
+    const after1 = await loadDraftDayView(db, draftId, DATE_A);
+    const stopAfter = after1.stops.find((s) => s.place_id === 2);
+    assert.equal(stopAfter.conflicts.length, 1);
+    assert.equal(stopAfter.conflicts[0].type, 'FLOOR_PLANNED');
+    assert.equal(stopAfter.conflicts[0].daysApart, 2);
   });
 });

@@ -42,6 +42,36 @@ function addStopErrorMessage(err) {
   }
   return err.message;
 }
+
+// Per-type message for a stop's `conflicts` (see services/scheduleDraft.js's
+// loadDraftView/loadDraftDayView — every draft stop is re-checked against
+// the shared detector on every read, not just at the moment it was added).
+// Mirrors VisitLogModal.jsx's conflictMessage; no shared module between the
+// two yet, same as addStopErrorMessage above already duplicating a line of
+// DRAFT_ELSEWHERE's phrasing rather than reaching for one. `viewerId` names
+// the SAME_DATE_VISIT case correctly when it's the viewer's own other visit
+// (detectConflictsForStops doesn't exclude the caller the way DRAFT_ELSEWHERE
+// does — a rep's own duplicate is exactly as worth naming as anyone else's).
+function stopConflictMessage(c, viewerId) {
+  switch (c.type) {
+    case 'SAME_DATE_VISIT': {
+      const isViewer = viewerId != null && c.otherUserId === viewerId;
+      const who = isViewer ? 'You' : c.otherUserName || 'Someone else';
+      const verb = isViewer ? 'have' : 'has';
+      return `${who} already ${verb} a ${c.status || 'planned'} visit here on ${formatDate(c.otherDate)}.`;
+    }
+    case 'FLOOR_COMPLETED': {
+      const days = c.daysApart;
+      return `Visited by ${c.otherUserName || 'someone'} on ${formatDate(c.otherDate)} — ${days} day${days === 1 ? '' : 's'} ago.`;
+    }
+    case 'FLOOR_PLANNED':
+      return `Visit already planned by ${c.otherUserName || 'someone'} for ${formatDate(c.otherDate)}.`;
+    case 'DRAFT_ELSEWHERE':
+      return `In ${c.otherUserName || 'another rep'}'s draft for ${formatDate(c.otherDate)}.`;
+    default:
+      return null;
+  }
+}
 const MAX_DAYS_AHEAD = 7; // mirrors scheduleDraft.js's MAX_DAYS_AHEAD
 
 // 'YYYY-MM-DD' in the browser's local timezone.
@@ -508,9 +538,11 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     {/* Informational only — doesn't block reorder/remove/commit,
                         just flags that a real visit already happened today for
                         this place (routes/scheduleDraft.js's alreadyVisitedTodayPlaceIds).
-                        The draft's own persisted stops otherwise never
-                        re-check eligibility once placed, so this is the one
-                        targeted heads-up rather than a full re-validation. */}
+                        Narrower and older than the stop.conflicts detector
+                        badge below (exact-today only, any status) — kept
+                        separate rather than folded in since it answers a
+                        different question ("did this already happen today")
+                        than the detector's ("does this collide"). */}
                     {stop.alreadyVisitedToday && (
                       <div
                         className="tiny"
@@ -531,25 +563,25 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         Also visited by {stop.crossRepFloorWarning.userName} on {formatDate(stop.crossRepFloorWarning.scheduledDate)}
                       </div>
                     )}
-                    {/* addStop's response carries a hard-floor flag for the
-                        stop JUST added (services/conflictDetection.js) —
-                        addStop allows it (unlike a same-date/other-draft
-                        collision, which it rejects), so this is the surfaced
-                        heads-up. One-shot: it's on this response only, not
-                        recomputed on later reorder/remove/etc. responses, so
-                        it naturally disappears once the day view is next
-                        refreshed by something else. */}
-                    {(day.addedStopConflicts || [])
-                      .filter((c) => c.placeId === stop.place_id)
-                      .map((c) => (
-                        <div
-                          key={c.type}
-                          className="tiny"
-                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
-                        >
-                          Visited by {c.otherUserName || 'someone'} on {formatDate(c.otherDate)} — {c.daysApart} day{c.daysApart === 1 ? '' : 's'} ago
-                        </div>
-                      ))}
+                    {/* The shared detector, re-run fresh every time this day is
+                        loaded (services/scheduleDraft.js's loadDraftView/
+                        loadDraftDayView) — not just at the moment this stop
+                        was added. Another rep can commit a colliding visit at
+                        any point after that, and this is what catches it: a
+                        stop sitting in a Thursday draft that someone else's
+                        Tuesday commit has since invalidated. Informational —
+                        addStop allows a floor conflict through; only a same-
+                        date/other-draft collision is rejected outright, at
+                        add time, before it can ever reach here. */}
+                    {(stop.conflicts || []).map((c) => (
+                      <div
+                        key={c.type}
+                        className="tiny"
+                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                      >
+                        {stopConflictMessage(c, userId)}
+                      </div>
+                    ))}
                   </div>
                   <div className="actions" style={{ alignItems: 'center', gap: 14 }}>
                     <select

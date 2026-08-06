@@ -19,7 +19,7 @@ const defaultDriveConfig = require('../config/driveTime');
 const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { rankCandidates } = require('./schedulingEngine');
-const { detectConflicts, detectConflictsPure } = require('./conflictDetection');
+const { detectConflicts, detectConflictsPure, detectConflictsForStops } = require('./conflictDetection');
 const { crossRepVisitsByPlace, findCrossRepFloorWarning } = require('./crossRepFloorWarning');
 const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
@@ -183,9 +183,12 @@ module.exports.partitionCommittableStops = partitionCommittableStops;
 // this file; this comment is just a signpost for anyone looking for it here.
 
 // Queries `places` plus, per place: last COMPLETED visit date, count of
-// completed visits in the trailing FATIGUE_WINDOW_DAYS before `today`, and
-// next_visit_date off the most recent visit (any status) that set one.
-// Shapes rows into rankCandidates' expected input, minus `lockedElsewhere`
+// completed visits in the trailing FATIGUE_WINDOW_DAYS before `today`,
+// next_visit_date off the most recent visit (any status) that set one, and
+// every OTHER open PLANNED visit's date (Step 3 of the 2026-08 remediation
+// ticket — see plannedDatesByPlace below for why this is a separate field,
+// not folded into lastVisitDate). Shapes rows into rankCandidates' expected
+// input, minus `lockedElsewhere`
 // (date-specific — attached separately, see generateAndPersistDraft/
 // getSuggestions). Reduces multiple queries to one-row-per-place in JS
 // rather than correlated subqueries — more portable across SQLite/Postgres.
@@ -235,6 +238,23 @@ async function buildCandidatePool(db, { today }) {
     if (!nextVisitByPlace[v.place_id]) nextVisitByPlace[v.place_id] = v.next_visit_date;
   }
 
+  // Every place's OTHER open planned visits — fed to eligibility() as its
+  // own field (plannedVisitDates), never merged into lastVisitByPlace above.
+  // lastVisitByPlace also drives urgency()/rankKey's cadence math; a planned
+  // visit hasn't happened yet and must not make a place look more-recently-
+  // serviced than it is (see conflictDetection.js's FLOOR_PLANNED and the
+  // 2026-08 remediation ticket's Step 3). A place can have more than one
+  // planned visit on the books (nothing prevented two reps from each
+  // planning it before this ticket), so this keeps every date, not just one.
+  const plannedVisits = await db('visits')
+    .where({ status: 'planned' })
+    .whereNotNull('place_id')
+    .select('place_id', 'scheduled_date');
+  const plannedDatesByPlace = {};
+  for (const v of plannedVisits) {
+    (plannedDatesByPlace[v.place_id] ||= []).push(v.scheduled_date);
+  }
+
   // Relationship level is computed, not stored (services/relationship.js) —
   // fetched once for the WHOLE pool here, exactly like the three lookups
   // above, because this function runs on every draft generation across every
@@ -252,6 +272,7 @@ async function buildCandidatePool(db, { today }) {
     lastVisitDate: lastVisitByPlace[place.id] || null,
     recentCompletedCount: recentCounts[place.id] || 0,
     nextVisitDate: nextVisitByPlace[place.id] || null,
+    plannedVisitDates: plannedDatesByPlace[place.id] || [],
     // The EFFECTIVE level — a manual override wins over the computed value,
     // which is the whole point of the override existing.
     relationshipLevel: relationshipFor(relationshipByPlace, place.id).effective_level,
@@ -696,6 +717,21 @@ async function loadDraftView(db, draftId) {
   // the proposal, not a scheduled_date column.
   const crossRepByPlace = await crossRepVisitsByPlace(db, stopRows.map((r) => r.id));
 
+  // Full detector, re-run fresh on every read (Step 3 of the 2026-08
+  // remediation ticket) — not just alreadyVisitedToday/crossRepFloorWarning
+  // above. Before this, a stop already sitting in the draft was never
+  // re-checked against SAME_DATE_VISIT/FLOOR_COMPLETED/FLOOR_PLANNED/
+  // DRAFT_ELSEWHERE after being added — another rep could commit a
+  // colliding visit and the draft would keep showing the stop as if nothing
+  // had changed, right up until commit time. One batched call for the
+  // WHOLE draft (every date at once), not one per stop — see
+  // detectConflictsForStops's header.
+  const conflictsByStop = await detectConflictsForStops(
+    db,
+    stopRows.map((r) => ({ placeId: r.id, date: r.date })),
+    { userId: draft.user_id, excludeDraftId: draftId }
+  );
+
   const days = [];
   for (const date of dates) {
     const rows = byDate[date] || [];
@@ -707,6 +743,7 @@ async function loadDraftView(db, draftId) {
         crossRepByPlace.get(s.place_id) || [],
         defaultSchedulingConfig
       ),
+      conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
     }));
     const budgetMinutes = hoursPerDayByDate[date] * 60;
     const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
@@ -732,6 +769,13 @@ async function loadDraftDayView(db, draftId, date) {
 
   const todaySet = await alreadyVisitedTodayPlaceIds(db, rows.map((r) => r.id), orgToday());
   const crossRepByPlace = await crossRepVisitsByPlace(db, rows.map((r) => r.id));
+  // Full detector, fresh on every read — see loadDraftView's identical
+  // comment; this is its one-day sibling.
+  const conflictsByStop = await detectConflictsForStops(
+    db,
+    rows.map((r) => ({ placeId: r.id, date })),
+    { userId: draft.user_id, excludeDraftId: draftId }
+  );
   const stops = rows.map(toDraftStopShape).map((s) => ({
     ...s,
     alreadyVisitedToday: todaySet.has(s.place_id),
@@ -740,6 +784,7 @@ async function loadDraftDayView(db, draftId, date) {
       crossRepByPlace.get(s.place_id) || [],
       defaultSchedulingConfig
     ),
+    conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
   }));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
@@ -753,12 +798,17 @@ async function loadDraftDayView(db, draftId, date) {
 // Rejects (409) a place already used anywhere else in this user's own draft,
 // or locked elsewhere (committed by anyone, or on another user's active
 // draft) for this specific date — both checked fresh, not against whatever
-// was true when the draft was generated. Also flags — but does not reject —
-// a place visited within the hard floor: see conflictDetection.js. Both the
-// reject and the flag now run through the one shared detector, not two
-// separately-maintained checks (see the 2026-08 remediation ticket).
+// was true when the draft was generated. A place visited OR already planned
+// within the hard floor (FLOOR_COMPLETED/FLOOR_PLANNED) is allowed through,
+// not rejected — a human deliberately adding a stop is trusted to have a
+// reason a screen can't see; the floor blocks GENERATION from proposing it,
+// not this. loadDraftDayView's own fresh read below (every stop's `conflicts`
+// field, recomputed on every load — see its header) is what surfaces the
+// flag, so there's no separate one-shot signal to carry out of this
+// function. The reject and the flag both run through the one shared
+// detector, not several separately-maintained checks (see the 2026-08
+// remediation ticket).
 async function addStop({ draftId, userId, date, placeId, visitType }) {
-  let floorConflicts = [];
   await knex.transaction(async (trx) => {
     const draft = await assertOwnsDraft(trx, draftId, userId);
     const draftParams = JSON.parse(draft.params_json);
@@ -783,8 +833,6 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
       err.conflicts = blocking; // named/dated — see conflictDetection.js's Conflict shape
       throw err;
     }
-
-    floorConflicts = conflicts.filter((c) => c.type === 'FLOOR_COMPLETED');
 
     const place = await trx('places').where({ id: placeId }).first();
     if (!place) {
@@ -831,14 +879,7 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
     }
   });
 
-  const dayView = await loadDraftDayView(knex, draftId, date);
-  // Additive: existing consumers of this response only ever read the fields
-  // loadDraftDayView already returned. addedStopConflicts is new — the
-  // just-added stop's FLOOR_COMPLETED conflict(s), if any, for the client to
-  // badge (see RoutePlanner.jsx). Not persisted, not recomputed on later
-  // reads of this day — same "informational, no upkeep" scope as the rest of
-  // this step (see the ticket's "explicitly deferred" render-recompute item).
-  return { ...dayView, addedStopConflicts: floorConflicts };
+  return loadDraftDayView(knex, draftId, date);
 }
 
 async function removeStop({ draftId, userId, date, placeId }) {

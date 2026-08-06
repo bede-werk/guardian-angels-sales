@@ -98,15 +98,29 @@ function capacityRank(capacityLevel) {
 // the justification the floor exists to protect against overriding -> every
 // other guard (snooze, locked-elsewhere, and the floor itself when there's
 // no due commitment) applies normally.
-function eligibility({ place, today, lastVisitDate, nextVisitDate, lockedElsewhere, config }) {
+//
+// plannedVisitDates (Step 3 of the 2026-08 remediation ticket): every OTHER
+// planned visit this place already has on the books, checked against the
+// SAME hard floor a completed visit is — a planned visit is a real
+// commitment already made, and proposing this place again nearby in time is
+// exactly the double-booking risk the floor exists to prevent. Deliberately
+// NOT folded into lastVisitDate: that field also drives urgency()/rankKey's
+// cadence math below, and a planned-but-not-yet-happened visit must not
+// affect how overdue a place LOOKS — only whether it's eligible at all.
+function eligibility({ place, today, lastVisitDate, nextVisitDate, plannedVisitDates = [], lockedElsewhere, config }) {
   if (place.do_not_visit) return { eligible: false, reason: 'do_not_visit' };
 
   const commitmentDue = isCommitmentDue({ nextVisitDate, today });
 
   if (place.snooze_until && place.snooze_until >= today) return { eligible: false, reason: 'snoozed' };
   if (lockedElsewhere) return { eligible: false, reason: 'locked_elsewhere' };
-  if (!commitmentDue && isFloorConflict({ lastVisitDate, today, config })) {
-    return { eligible: false, reason: 'hard_floor' };
+  if (!commitmentDue) {
+    if (isFloorConflict({ lastVisitDate, today, config })) {
+      return { eligible: false, reason: 'hard_floor' };
+    }
+    if (plannedVisitDates.some((date) => isFloorConflict({ lastVisitDate: date, today, config }))) {
+      return { eligible: false, reason: 'hard_floor' };
+    }
   }
   return { eligible: true, reason: null };
 }
@@ -145,11 +159,11 @@ function compareRankKeys(a, b) {
   return compareDesc(a[1], b[1]);
 }
 
-// candidates: [{ place, lastVisitDate, recentCompletedCount, nextVisitDate, lockedElsewhere, relationshipLevel }]
+// candidates: [{ place, lastVisitDate, recentCompletedCount, nextVisitDate, plannedVisitDates, lockedElsewhere, relationshipLevel }]
 // Filters out ineligible candidates, then sorts the rest by rankKey.
 function rankCandidates(candidates, { today, config }) {
   return candidates
-    .filter((c) => eligibility({ place: c.place, today, lastVisitDate: c.lastVisitDate, nextVisitDate: c.nextVisitDate, lockedElsewhere: c.lockedElsewhere, config }).eligible)
+    .filter((c) => eligibility({ place: c.place, today, lastVisitDate: c.lastVisitDate, nextVisitDate: c.nextVisitDate, plannedVisitDates: c.plannedVisitDates, lockedElsewhere: c.lockedElsewhere, config }).eligible)
     .map((c) => ({ ...c, rankKey: rankKey({ ...c, today, config }) }))
     .sort((a, b) => compareRankKeys(a.rankKey, b.rankKey));
 }

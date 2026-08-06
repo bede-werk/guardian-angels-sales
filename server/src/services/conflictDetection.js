@@ -47,11 +47,21 @@ function isCommitmentDue({ nextVisitDate, today }) {
 }
 
 // Ported verbatim from schedulingEngine.js's eligibility() hard-floor
-// comparison (`daysSince(lastVisitDate, today) < config.HARD_FLOOR_DAYS`).
+// comparison (`daysSince(lastVisitDate, today) < config.HARD_FLOOR_DAYS`),
+// with one generalization: Math.abs on the gap. A completed visit is always
+// dated on or before `today` in practice, so this was a no-op for
+// FLOOR_COMPLETED. It stops being a no-op for FLOOR_PLANNED (Step 3) — a
+// planned visit is routinely dated AFTER `today` (a place planned for day 1
+// of a window, evaluated again as a candidate for day 5), and an unsigned
+// gap there would read as an enormous negative number, which is always
+// `< HARD_FLOOR_DAYS` and would wrongly flag every future planned visit,
+// no matter how far out, as a floor conflict. Same fix already proven
+// correct next door in crossRepFloorWarning.js's findCrossRepFloorWarning,
+// which has compared gaps with Math.abs since it was written.
 // Returns null (no conflict) or { daysApart }.
 function isFloorConflict({ lastVisitDate, today, config }) {
   if (!lastVisitDate) return null;
-  const daysApart = daysSince(lastVisitDate, today);
+  const daysApart = Math.abs(daysSince(lastVisitDate, today));
   if (daysApart >= config.HARD_FLOOR_DAYS) return null;
   return { daysApart };
 }
@@ -96,9 +106,9 @@ function detectConflictsPure(input) {
     });
   }
 
-  // Commitment exemption suppresses FLOOR_COMPLETED (and, from Step 3,
-  // FLOOR_PLANNED) — never SAME_DATE_VISIT, which is a same-day fact, not a
-  // recency guess a commitment could override.
+  // Commitment exemption suppresses FLOOR_COMPLETED and FLOOR_PLANNED —
+  // never SAME_DATE_VISIT, which is a same-day fact, not a recency guess a
+  // commitment could override.
   const commitmentDue = isCommitmentDue({ nextVisitDate: input.nextVisitDate, today });
   if (!commitmentDue) {
     const floor = isFloorConflict({ lastVisitDate: input.lastVisitDate, today, config });
@@ -116,9 +126,33 @@ function detectConflictsPure(input) {
       });
     }
 
-    // FLOOR_PLANNED is intentionally not implemented yet — planned visits
-    // don't consume the floor until Step 3 of the remediation ticket. This
-    // function always returns [] worth of FLOOR_PLANNED conflicts for now.
+    // input.plannedVisits: every OTHER planned visit at this place (the one
+    // exactly on `today`, if any, is already SAME_DATE_VISIT's job — callers
+    // exclude it so the two conflicts don't both fire for the same row).
+    // More than one can exist in theory (nothing before this ticket stopped
+    // two reps from independently planning the same place on different
+    // dates), so this reports the SINGLE nearest violator, same "one named
+    // conflict per type" shape as FLOOR_COMPLETED's single lastVisitDate.
+    let nearestPlanned = null;
+    for (const v of input.plannedVisits || []) {
+      const planned = isFloorConflict({ lastVisitDate: v.scheduledDate, today, config });
+      if (planned && (!nearestPlanned || planned.daysApart < nearestPlanned.daysApart)) {
+        nearestPlanned = { ...v, daysApart: planned.daysApart };
+      }
+    }
+    if (nearestPlanned) {
+      conflicts.push({
+        type: 'FLOOR_PLANNED',
+        severity: 'hard',
+        placeId,
+        otherUserId: nearestPlanned.userId ?? null,
+        otherUserName: nearestPlanned.userName ?? null,
+        otherDate: nearestPlanned.scheduledDate,
+        daysApart: nearestPlanned.daysApart,
+        sourceId: nearestPlanned.visitId ?? null,
+        sourceKind: 'visit',
+      });
+    }
   }
 
   if (input.draftElsewhere) {
@@ -211,6 +245,18 @@ async function detectConflicts(db, placeId, targetDate, ctx = {}) {
     .select('next_visit_date as nextVisitDate')
     .first();
 
+  // FLOOR_PLANNED's candidates (Step 3): every OTHER planned visit at this
+  // place — excludes exactly `targetDate` since a planned visit dated there
+  // is already sameDateVisitRow's job (see detectConflictsPure's comment).
+  // Every row within HARD_FLOOR_DAYS gets reduced to the single nearest by
+  // the pure layer, not here.
+  const plannedRows = await db('visits as v')
+    .leftJoin('users as u', 'u.id', 'v.user_id')
+    .where({ 'v.place_id': placeId, 'v.status': 'planned' })
+    .whereNot('v.scheduled_date', targetDate)
+    .modify((qb) => { if (excludeVisitId) qb.whereNot('v.id', excludeVisitId); })
+    .select('v.id as visitId', 'v.user_id as userId', 'u.name as userName', 'v.scheduled_date as scheduledDate');
+
   const draftElsewhereRow = await db('schedule_draft_stops as s')
     .join('schedule_drafts as d', 'd.id', 's.draft_id')
     .leftJoin('users as u', 'u.id', 'd.user_id')
@@ -246,11 +292,103 @@ async function detectConflicts(db, placeId, targetDate, ctx = {}) {
     lastVisitUserId: lastCompletedRow ? lastCompletedRow.userId : null,
     lastVisitUserName: lastCompletedRow ? lastCompletedRow.userName : null,
     nextVisitDate: nextVisitRow ? nextVisitRow.nextVisitDate : null,
+    plannedVisits: plannedRows,
     draftElsewhere: draftElsewhereRow
       ? { stopId: draftElsewhereRow.stopId, userId: draftElsewhereRow.userId, userName: draftElsewhereRow.userName, date: draftElsewhereRow.date }
       : null,
     ownDraftDuplicate,
   });
+}
+
+// Batched sibling of detectConflicts: the same rules, for MANY place+date
+// pairs in one pass, instead of one detectConflicts call (5 queries) per
+// pair. Built for loadDraftView/loadDraftDayView (scheduleDraft.js) — a
+// draft's own already-placed stops need re-checking against the detector on
+// every read (another rep can commit a colliding visit at any time after a
+// stop was added), and calling detectConflicts once per stop would turn
+// "load a draft" into an O(stops) burst of queries, the exact N+1 pattern
+// this codebase's other batched lookups (buildCandidatePool,
+// crossRepVisitsByPlace, lockedElsewherePlaceIdsByDate) all exist to avoid.
+//
+// `stops`: [{ placeId, date }] — a draft's own stops (or a single day's).
+// Returns Map<`${placeId}|${date}`, Conflict[]>.
+//
+// Does not check OWN_DRAFT_DUPLICATE: every stop passed in is already
+// legitimately placed (own-draft dedupe already ran at addStop time), so
+// there is nothing to detect there on a read — unlike detectConflicts,
+// which runs BEFORE a placement to decide whether to allow it.
+async function detectConflictsForStops(db, stops, ctx = {}) {
+  const { userId, excludeDraftId = null } = ctx;
+  const config = ctx.config || defaultSchedulingConfig;
+
+  const result = new Map();
+  const placeIds = [...new Set(stops.map((s) => s.placeId))];
+  if (placeIds.length === 0) return result;
+
+  // Every status: sameDateVisit/lastVisitDate/plannedVisits each need their
+  // own status filter (see detectConflicts above), and next_visit_date can
+  // come off a skipped visit — so this fetches everything for these places
+  // and lets the per-stop loop below filter, exactly like detectConflicts'
+  // five separate single-place queries, just gathered as one multi-place
+  // query instead of five.
+  const visitRows = await db('visits as v')
+    .leftJoin('users as u', 'u.id', 'v.user_id')
+    .whereIn('v.place_id', placeIds)
+    .select('v.id as visitId', 'v.place_id as placeId', 'v.user_id as userId', 'u.name as userName', 'v.scheduled_date as scheduledDate', 'v.status', 'v.next_visit_date as nextVisitDate');
+  const visitsByPlace = new Map();
+  for (const row of visitRows) {
+    if (!visitsByPlace.has(row.placeId)) visitsByPlace.set(row.placeId, []);
+    visitsByPlace.get(row.placeId).push(row);
+  }
+
+  const draftRows = await db('schedule_draft_stops as s')
+    .join('schedule_drafts as d', 'd.id', 's.draft_id')
+    .leftJoin('users as u', 'u.id', 'd.user_id')
+    .whereIn('s.place_id', placeIds)
+    .modify((qb) => {
+      if (userId != null) qb.whereNot('d.user_id', userId);
+      if (excludeDraftId) qb.whereNot('d.id', excludeDraftId);
+    })
+    .select('s.place_id as placeId', 's.date', 's.id as stopId', 'd.user_id as userId', 'u.name as userName');
+  const draftsByPlace = new Map();
+  for (const row of draftRows) {
+    if (!draftsByPlace.has(row.placeId)) draftsByPlace.set(row.placeId, []);
+    draftsByPlace.get(row.placeId).push(row);
+  }
+
+  for (const { placeId, date } of stops) {
+    const visits = visitsByPlace.get(placeId) || [];
+    const sameDateVisit = visits.find((v) => v.scheduledDate === date && (v.status === 'planned' || v.status === 'completed')) || null;
+    const completed = visits.filter((v) => v.status === 'completed');
+    const lastCompleted = completed.length
+      ? completed.reduce((a, b) => (a.scheduledDate > b.scheduledDate ? a : b))
+      : null;
+    const planned = visits.filter((v) => v.status === 'planned' && v.scheduledDate !== date);
+    const withCommitment = visits
+      .filter((v) => v.nextVisitDate)
+      .reduce((a, b) => (!a || b.scheduledDate > a.scheduledDate ? b : a), null);
+    const draftElsewhere = (draftsByPlace.get(placeId) || []).find((d) => d.date === date) || null;
+
+    const conflicts = detectConflictsPure({
+      placeId,
+      today: date,
+      config,
+      sameDateVisit: sameDateVisit
+        ? { visitId: sameDateVisit.visitId, userId: sameDateVisit.userId, userName: sameDateVisit.userName, status: sameDateVisit.status, scheduledDate: date }
+        : null,
+      lastVisitDate: lastCompleted ? lastCompleted.scheduledDate : null,
+      lastVisitId: lastCompleted ? lastCompleted.visitId : null,
+      lastVisitUserId: lastCompleted ? lastCompleted.userId : null,
+      lastVisitUserName: lastCompleted ? lastCompleted.userName : null,
+      nextVisitDate: withCommitment ? withCommitment.nextVisitDate : null,
+      plannedVisits: planned.map((v) => ({ visitId: v.visitId, userId: v.userId, userName: v.userName, scheduledDate: v.scheduledDate })),
+      draftElsewhere: draftElsewhere
+        ? { stopId: draftElsewhere.stopId, userId: draftElsewhere.userId, userName: draftElsewhere.userName, date: draftElsewhere.date }
+        : null,
+    });
+    result.set(`${placeId}|${date}`, conflicts);
+  }
+  return result;
 }
 
 module.exports = {
@@ -259,4 +397,5 @@ module.exports = {
   isFloorConflict,
   detectConflictsPure,
   detectConflicts,
+  detectConflictsForStops,
 };

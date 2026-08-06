@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
 const config = require('../config/scheduling');
-const { daysSince, isCommitmentDue, isFloorConflict, detectConflictsPure, detectConflicts } = require('./conflictDetection');
+const { daysSince, isCommitmentDue, isFloorConflict, detectConflictsPure, detectConflicts, detectConflictsForStops } = require('./conflictDetection');
 
 const TODAY = '2026-07-10';
 
@@ -43,6 +43,23 @@ describe('isFloorConflict', () => {
   });
   test('reports daysApart', () => {
     assert.equal(isFloorConflict({ lastVisitDate: daysAgo(2), today: TODAY, config }).daysApart, 2);
+  });
+
+  // Step 3: this same function now also backs FLOOR_PLANNED, where the
+  // "other" date routinely falls AFTER today, not just before — see the
+  // header comment on the Math.abs fix.
+  describe('bidirectional (Step 3 — FLOOR_PLANNED can be dated after today)', () => {
+    test('a future date within the floor still conflicts', () => {
+      const conflict = isFloorConflict({ lastVisitDate: daysAgo(-2), today: TODAY, config });
+      assert.ok(conflict);
+      assert.equal(conflict.daysApart, 2);
+    });
+    test('a future date at/beyond the boundary does not conflict', () => {
+      assert.equal(isFloorConflict({ lastVisitDate: daysAgo(-config.HARD_FLOOR_DAYS), today: TODAY, config }), null);
+    });
+    test('without Math.abs this would have wrongly fired for ANY future date, no matter how far — regression guard', () => {
+      assert.equal(isFloorConflict({ lastVisitDate: daysAgo(-30), today: TODAY, config }), null);
+    });
   });
 });
 
@@ -93,9 +110,74 @@ describe('detectConflictsPure', () => {
     assert.deepEqual(conflicts.map((c) => c.type), ['SAME_DATE_VISIT']);
   });
 
-  test('FLOOR_PLANNED is not implemented yet (Step 3 stub) — a planned-only signal produces no conflict', () => {
+  test('no plannedVisits input -> no FLOOR_PLANNED', () => {
     const conflicts = detectConflictsPure({ placeId: 1, today: TODAY, config });
     assert.ok(!conflicts.some((c) => c.type === 'FLOOR_PLANNED'));
+  });
+
+  describe('FLOOR_PLANNED (Step 3)', () => {
+    test('named, with daysApart, dated AFTER today (the common case — planned means not-yet-happened)', () => {
+      const conflicts = detectConflictsPure({
+        placeId: 1,
+        today: TODAY,
+        config,
+        plannedVisits: [{ visitId: 11, userId: 4, userName: 'Priya', scheduledDate: daysAgo(-2) }],
+      });
+      assert.equal(conflicts.length, 1);
+      assert.equal(conflicts[0].type, 'FLOOR_PLANNED');
+      assert.equal(conflicts[0].otherUserName, 'Priya');
+      assert.equal(conflicts[0].otherDate, daysAgo(-2));
+      assert.equal(conflicts[0].daysApart, 2);
+    });
+
+    test('a planned visit outside the floor produces no conflict', () => {
+      const conflicts = detectConflictsPure({
+        placeId: 1,
+        today: TODAY,
+        config,
+        plannedVisits: [{ visitId: 11, userId: 4, userName: 'Priya', scheduledDate: daysAgo(-30) }],
+      });
+      assert.ok(!conflicts.some((c) => c.type === 'FLOOR_PLANNED'));
+    });
+
+    test('more than one planned visit -> reports only the nearest', () => {
+      const conflicts = detectConflictsPure({
+        placeId: 1,
+        today: TODAY,
+        config,
+        plannedVisits: [
+          { visitId: 11, userId: 4, userName: 'Priya', scheduledDate: daysAgo(-4) },
+          { visitId: 12, userId: 5, userName: 'Marcus', scheduledDate: daysAgo(-1) },
+        ],
+      });
+      assert.equal(conflicts.length, 1);
+      assert.equal(conflicts[0].sourceId, 12);
+      assert.equal(conflicts[0].otherUserName, 'Marcus');
+      assert.equal(conflicts[0].daysApart, 1);
+    });
+
+    test('suppressed by a due commitment, same as FLOOR_COMPLETED', () => {
+      const conflicts = detectConflictsPure({
+        placeId: 1,
+        today: TODAY,
+        config,
+        nextVisitDate: TODAY,
+        plannedVisits: [{ visitId: 11, userId: 4, userName: 'Priya', scheduledDate: daysAgo(-2) }],
+      });
+      assert.deepEqual(conflicts, []);
+    });
+
+    test('FLOOR_COMPLETED and FLOOR_PLANNED can both fire at once, for different other visits', () => {
+      const conflicts = detectConflictsPure({
+        placeId: 1,
+        today: TODAY,
+        config,
+        lastVisitDate: daysAgo(2),
+        lastVisitUserName: 'Marcus',
+        plannedVisits: [{ visitId: 11, userId: 4, userName: 'Priya', scheduledDate: daysAgo(-2) }],
+      });
+      assert.deepEqual(conflicts.map((c) => c.type).sort(), ['FLOOR_COMPLETED', 'FLOOR_PLANNED']);
+    });
   });
 
   test('DRAFT_ELSEWHERE: named, dated', () => {
@@ -170,6 +252,7 @@ describe('detectConflicts (real DB)', () => {
       { id: 4, name: 'Skipped Same Date Place', category: 'Hospice', tier: 1, priority_score: 75 },
       { id: 5, name: 'Commitment Exempt Place', category: 'Hospice', tier: 1, priority_score: 75 },
       { id: 6, name: 'Untouched Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 7, name: 'Floor Planned Place', category: 'Hospice', tier: 1, priority_score: 75 },
     ]);
 
     // Place 1: Bede himself completed a visit 2 days before TARGET_DATE —
@@ -199,6 +282,11 @@ describe('detectConflicts (real DB)', () => {
     // a due commitment (next_visit_date <= TARGET_DATE) from that same visit
     // — FLOOR_COMPLETED must be suppressed.
     await db('visits').insert({ place_id: 5, user_id: 1, status: 'completed', scheduled_date: '2026-08-08', next_visit_date: TARGET_DATE, place_name: 'Commitment Exempt Place' });
+
+    // Place 7: Sarah has a PLANNED (not yet happened) visit 2 days AFTER
+    // TARGET_DATE — Step 3's own case. Dated after, not before, on purpose:
+    // this is what the Math.abs fix in isFloorConflict exists for.
+    await db('visits').insert({ place_id: 7, user_id: 2, status: 'planned', scheduled_date: '2026-08-12', place_name: 'Floor Planned Place' });
   });
 
   after(async () => {
@@ -246,8 +334,113 @@ describe('detectConflicts (real DB)', () => {
     assert.ok(!conflicts.some((c) => c.type === 'FLOOR_COMPLETED'), 'a human asking us back overrides the floor, same as eligibility()');
   });
 
+  test('FLOOR_PLANNED (Step 3): named, dated, even though the planned visit is AFTER the target date', async () => {
+    const conflicts = await detectConflicts(db, 7, TARGET_DATE, { userId: 1 });
+    const floorPlanned = conflicts.find((c) => c.type === 'FLOOR_PLANNED');
+    assert.ok(floorPlanned, 'a future-dated planned visit within the floor must still be caught');
+    assert.equal(floorPlanned.otherUserName, 'Sarah');
+    assert.equal(floorPlanned.otherDate, '2026-08-12');
+    assert.equal(floorPlanned.daysApart, 2);
+  });
+
+  test('a planned visit EXACTLY on the target date is SAME_DATE_VISIT, not also FLOOR_PLANNED', async () => {
+    const conflicts = await detectConflicts(db, 2, TARGET_DATE, { userId: 1 });
+    assert.ok(!conflicts.some((c) => c.type === 'FLOOR_PLANNED'), 'the exact-date row is sameDateVisitRow\'s job — it must not double-count as FLOOR_PLANNED too');
+  });
+
   test('no signals at all -> no conflicts', async () => {
     const conflicts = await detectConflicts(db, 999, TARGET_DATE, { userId: 1 });
     assert.deepEqual(conflicts, []);
+  });
+});
+
+// detectConflictsForStops: the batched sibling that loadDraftView/
+// loadDraftDayView (scheduleDraft.js) call once per draft-read instead of
+// N detectConflicts calls, one per already-placed stop. Own DB fixture,
+// separate from the block above, scoped to exactly what a draft's stops
+// re-check needs: SAME_DATE_VISIT/FLOOR_COMPLETED/FLOOR_PLANNED/
+// DRAFT_ELSEWHERE, batched across several place+date pairs at once.
+describe('detectConflictsForStops (real DB, batched)', () => {
+  let db;
+  const DATE_A = '2026-08-10';
+  const DATE_B = '2026-08-12';
+
+  before(async () => {
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert([
+      { id: 1, name: 'Bede', email: 'bede@test.local' },
+      { id: 2, name: 'Sarah', email: 'sarah@test.local' },
+    ]);
+    await db('places').insert([
+      { id: 1, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 2, name: 'Same Date Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 3, name: 'Floor Completed Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 4, name: 'Floor Planned Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 5, name: 'Draft Elsewhere Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 6, name: 'Own Draft Place', category: 'Hospice', tier: 1, priority_score: 75 },
+    ]);
+
+    // Bede's own draft — the "draft being loaded" whose conflicts get
+    // re-checked. Has its own stop, at place 6, on DATE_A, so excludeDraftId
+    // has something real to exclude in the test below.
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify({ days: [{ date: DATE_A, hoursPerDay: 4 }] }) }).returning('id');
+    db.bedeDraftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: db.bedeDraftId, place_id: 6, date: DATE_A, sort_order: 0 });
+
+    // Place 2: Sarah commits a real visit on DATE_A AFTER Bede's stop was
+    // already drafted there — this is the exact scenario the ticket names:
+    // "another rep committing Tuesday invalidates a stop sitting in my
+    // Thursday draft."
+    await db('visits').insert({ place_id: 2, user_id: 2, status: 'planned', scheduled_date: DATE_A, place_name: 'Same Date Place' });
+
+    // Place 3: Bede himself completed a visit 2 days before DATE_A.
+    await db('visits').insert({ place_id: 3, user_id: 1, status: 'completed', scheduled_date: '2026-08-08', place_name: 'Floor Completed Place' });
+
+    // Place 4: Sarah has a planned visit 2 days after DATE_A.
+    await db('visits').insert({ place_id: 4, user_id: 2, status: 'planned', scheduled_date: DATE_B, place_name: 'Floor Planned Place' });
+
+    // Place 5: Sarah has an open draft stop at this place, also on DATE_A.
+    const [sarahDraftRow] = await db('schedule_drafts').insert({ user_id: 2, params_json: JSON.stringify({ days: [{ date: DATE_A, hoursPerDay: 4 }] }) }).returning('id');
+    const sarahDraftId = sarahDraftRow && sarahDraftRow.id ? sarahDraftRow.id : sarahDraftRow;
+    await db('schedule_draft_stops').insert({ draft_id: sarahDraftId, place_id: 5, date: DATE_A, sort_order: 0 });
+  });
+
+  after(async () => {
+    await db.destroy();
+  });
+
+  test('batches conflicts for every stop in one call, keyed by placeId|date', async () => {
+    const stops = [1, 2, 3, 4, 5].map((placeId) => ({ placeId, date: DATE_A }));
+    const byStop = await detectConflictsForStops(db, stops, { userId: 1, excludeDraftId: db.bedeDraftId });
+
+    assert.deepEqual(byStop.get(`1|${DATE_A}`), [], 'a clean place has no conflicts');
+    assert.equal(byStop.get(`2|${DATE_A}`)[0].type, 'SAME_DATE_VISIT');
+    assert.equal(byStop.get(`3|${DATE_A}`)[0].type, 'FLOOR_COMPLETED');
+    assert.equal(byStop.get(`4|${DATE_A}`)[0].type, 'FLOOR_PLANNED');
+    assert.equal(byStop.get(`4|${DATE_A}`)[0].otherDate, DATE_B);
+    assert.equal(byStop.get(`5|${DATE_A}`)[0].type, 'DRAFT_ELSEWHERE');
+  });
+
+  test('excludeDraftId keeps the caller\'s OWN draft from producing a false DRAFT_ELSEWHERE against itself, independent of the userId filter', async () => {
+    // userId deliberately omitted here — isolates excludeDraftId's own
+    // effect from the (already-redundant, in the normal single-user-owns-
+    // one-draft case) userId exclusion the query also applies.
+    const stops = [{ placeId: 6, date: DATE_A }];
+    const withExclude = await detectConflictsForStops(db, stops, { excludeDraftId: db.bedeDraftId });
+    assert.deepEqual(withExclude.get(`6|${DATE_A}`), []);
+
+    const withoutExclude = await detectConflictsForStops(db, stops, {});
+    assert.equal(withoutExclude.get(`6|${DATE_A}`)[0].type, 'DRAFT_ELSEWHERE', 'sanity check: without the exclusion this same stop DOES flag — proves the first assertion is excludeDraftId doing real work, not a query that never would have matched');
+  });
+
+  test('empty stops -> empty map, no query', async () => {
+    const byStop = await detectConflictsForStops(db, [], { userId: 1 });
+    assert.equal(byStop.size, 0);
   });
 });
