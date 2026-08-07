@@ -369,6 +369,21 @@ describe('explorationRank() — spec §8.2', () => {
     assert.equal(explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS * 5, config }), 0);
   });
 
+  // A tightened CAPACITY_STALE_DAYS can make confidence flip to 'stale'
+  // before a place's already-stamped exploration_eligible_since date
+  // arrives (see the migration's header) — daysWaiting comes out negative
+  // for a little while in that window. A negative wait must never make the
+  // rank WORSE than baseRank (no credit yet is not the same as being
+  // pushed backward) — this is the input clamp, distinct from the output
+  // clamp the test above covers.
+  test('a negative daysWaiting behaves exactly like zero, never penalizes the rank further', () => {
+    assert.equal(
+      explorationRank({ level: 'medium', confidence: 'stale', daysWaiting: -30, config }),
+      explorationRank({ level: 'medium', confidence: 'stale', daysWaiting: 0, config })
+    );
+    assert.equal(explorationRank({ level: 'high', confidence: 'unknown', daysWaiting: -1000, config }), 0);
+  });
+
   test('a low/unknown place waiting a full aging cycle sorts above a high place waiting 0 days; at daysWaiting=0 for both, ordering is pure capacity', () => {
     const waitedLow = explorationRank({ level: 'low', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS * 2, config });
     const freshHigh = explorationRank({ level: 'high', confidence: 'unknown', daysWaiting: 0, config });

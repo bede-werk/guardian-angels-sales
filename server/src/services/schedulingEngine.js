@@ -150,9 +150,26 @@ function effectiveCapacityConfidence({ place, capacityConfidence }) {
 // candidate (e.g. right after import, when every place shares one
 // created_at), this term is inert and ordering is pure capacity guess — see
 // the spec's own worked example.
+//
+// daysWaiting is clamped to >= 0 HERE, on the input, not just on the final
+// return value below. A negative daysWaiting is possible: places.
+// exploration_eligible_since is stamped once, at observation-insert time,
+// using CAPACITY_STALE_DAYS as it stood THAT day (deliberately — see the
+// migration's own header, this is what keeps a later threshold retune from
+// retroactively reshuffling everyone already waiting). If that threshold is
+// ever tightened, a place's live-computed confidence can flip to 'stale'
+// before its already-stamped eligible_since date arrives, so
+// daysSince(eligible_since, today) comes out negative for a little while.
+// Without this clamp, floor(negative / AGING_DAYS) is a negative integer,
+// which makes `baseRank - floor(...)` LARGER — i.e. worse, sorting the place
+// further back — the opposite of "no aging credit yet." The final
+// `Math.max(0, ...)` below only floors the RESULT at the front of the tier;
+// it does nothing to stop a negative daysWaiting from pushing a place
+// backward first.
 function explorationRank({ level, confidence, daysWaiting, config }) {
   const baseRank = ({ high: 0, medium: 1, low: 2 }[level] ?? 2) + (confidence === 'stale' ? 3 : 0);
-  return Math.max(0, baseRank - Math.floor(daysWaiting / config.EXPLORATION_AGING_DAYS));
+  const waited = Math.max(0, daysWaiting);
+  return Math.max(0, baseRank - Math.floor(waited / config.EXPLORATION_AGING_DAYS));
 }
 
 // The guard gate, applied before ranking. Returns { eligible, reason }

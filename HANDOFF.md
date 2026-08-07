@@ -1588,6 +1588,30 @@ actually shows the shift; both were checked.) A same-zone/home-base draft was al
 each snapshot as a secondary check — differs snapshot to snapshot as expected, since the pool
 actually entering rank 0 changes.
 
+Ordering itself (not just rank-0 composition) was verified empirically too: at day 0, the ordered
+tier is all 65 `high` places first (id ascending within `priority_score` ties, `priority_score`
+descending across ties), THEN all 90 `medium` places begin — including a `medium` place with
+`priority_score: 100` sorting strictly after a `high` place with `priority_score: 25`.
+`explorationRank` is confirmed the primary key; `priority_score`/`place.id` only ever break a tie
+within one rank, never override it.
+
+**Known, deliberately-not-fixed consequence of day 180's all-260-at-rank-0 state — the aging guard
+is a cliff, not a fade, and that's structural, not a bug.** Because every one of the 259 bulk-import
+places shares the exact same `created_at` (2026-07-06), and none has been individually
+pre-qualified, they all cross `EXPLORATION_AGING_DAYS`'s multiples on the same calendar day. §8.2's
+per-place aging is working exactly as designed — it's the INPUT (one shared import date across
+nearly the whole territory) that produces a step function instead of a gradual staggering. Once
+every place reaches rank 0, `explorationRank` has no more capacity signal left to offer and ordering
+falls through entirely to `priority_score` then `place.id` — meaning `is_priority` places, which
+already dominate the front of the tier from day 0 (see the ordering check above), are ALL that's
+left steering EXPLORATION by day 180 if nothing has been pre-qualified by then. This will self-heal
+naturally as real pre-qual answers land (each one moves a place to `declared`/`measured`
+`levelSource` and out of `category_seed`, so it stops being part of the undifferentiated mass and
+gets its own real `exploration_eligible_since` going forward, staggered by whenever it was actually
+asked) — but until enough real answers exist, the cliff is real. Left as-is deliberately: fixing it
+now would mean guessing at a staggering scheme with no real sweep-rate data yet to tune it against.
+Revisit once the real pre-qualification pace is known.
+
 **The dual-write bridge was removed as the final part of this step**, once the above was verified:
 `routes/visits.js`'s `maybeCapturePreQualification` no longer writes
 `capacity_monthly_referrals`/`capacity_status` to `places` at all — nothing ranking-related reads
