@@ -111,7 +111,18 @@ function detectConflictsPure(input) {
   // commitment could override.
   const commitmentDue = isCommitmentDue({ nextVisitDate: input.nextVisitDate, today });
   if (!commitmentDue) {
-    const floor = isFloorConflict({ lastVisitDate: input.lastVisitDate, today, config });
+    // Same guard as plannedVisits below: SAME_DATE_VISIT is always dated
+    // exactly `today` (see detectConflicts/detectConflictsForStops), so if
+    // the most recent completed visit is ALSO dated today, that fact is
+    // already fully reported by SAME_DATE_VISIT — don't report it again as
+    // a floor conflict too. Compared by date, not by visit id: a place can
+    // easily have more than one completed trip on the same day (a rep
+    // logging a third stop there after two earlier ones), in which case the
+    // "same date" and "most recent completed" queries are free to each pick
+    // a DIFFERENT row that both happen to fall on today — an id match would
+    // miss that, but they're the same day either way.
+    const todayAlreadyCovered = input.sameDateVisit && input.lastVisitDate === today;
+    const floor = todayAlreadyCovered ? null : isFloorConflict({ lastVisitDate: input.lastVisitDate, today, config });
     if (floor) {
       conflicts.push({
         type: 'FLOOR_COMPLETED',

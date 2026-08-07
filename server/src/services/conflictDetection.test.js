@@ -98,6 +98,39 @@ describe('detectConflictsPure', () => {
     assert.equal(conflicts[0].daysApart, 2);
   });
 
+  test('FLOOR_COMPLETED is suppressed when the most recent completed visit is dated today — same day already reported as SAME_DATE_VISIT, one collision, one warning', () => {
+    const conflicts = detectConflictsPure({
+      placeId: 1,
+      today: TODAY,
+      config,
+      sameDateVisit: { visitId: 9, userId: 2, userName: 'Sarah', status: 'completed', scheduledDate: TODAY },
+      lastVisitDate: TODAY,
+      lastVisitId: 9,
+      lastVisitUserId: 2,
+      lastVisitUserName: 'Sarah',
+    });
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0].type, 'SAME_DATE_VISIT');
+  });
+
+  test('FLOOR_COMPLETED is suppressed even when SAME_DATE_VISIT and the most recent completed visit are DIFFERENT rows that both happen to be dated today — two trips logged today, logging a third', () => {
+    const conflicts = detectConflictsPure({
+      placeId: 1,
+      today: TODAY,
+      config,
+      // Two different visit ids, same date — e.g. the "same date" query and
+      // the "most recent completed" query each picked a different one of two
+      // trips already logged today.
+      sameDateVisit: { visitId: 9, userId: 2, userName: 'Sarah', status: 'completed', scheduledDate: TODAY },
+      lastVisitDate: TODAY,
+      lastVisitId: 11,
+      lastVisitUserId: 2,
+      lastVisitUserName: 'Sarah',
+    });
+    assert.equal(conflicts.length, 1);
+    assert.equal(conflicts[0].type, 'SAME_DATE_VISIT');
+  });
+
   test('FLOOR_COMPLETED is suppressed by a due commitment; SAME_DATE_VISIT is not', () => {
     const conflicts = detectConflictsPure({
       placeId: 1,
@@ -253,6 +286,7 @@ describe('detectConflicts (real DB)', () => {
       { id: 5, name: 'Commitment Exempt Place', category: 'Hospice', tier: 1, priority_score: 75 },
       { id: 6, name: 'Untouched Place', category: 'Hospice', tier: 1, priority_score: 75 },
       { id: 7, name: 'Floor Planned Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 8, name: 'Two Trips Today Place', category: 'Hospice', tier: 1, priority_score: 75 },
     ]);
 
     // Place 1: Bede himself completed a visit 2 days before TARGET_DATE —
@@ -287,6 +321,14 @@ describe('detectConflicts (real DB)', () => {
     // TARGET_DATE — Step 3's own case. Dated after, not before, on purpose:
     // this is what the Math.abs fix in isFloorConflict exists for.
     await db('visits').insert({ place_id: 7, user_id: 2, status: 'planned', scheduled_date: '2026-08-12', place_name: 'Floor Planned Place' });
+
+    // Place 8: Bede already completed TWO separate trips here today (two
+    // distinct visit rows, same date) — the reported bug: logging a third
+    // showed both SAME_DATE_VISIT and FLOOR_COMPLETED, because the "same
+    // date" query and the "most recent completed" query are free to each
+    // pick a DIFFERENT one of these two rows.
+    await db('visits').insert({ place_id: 8, user_id: 1, status: 'completed', scheduled_date: TARGET_DATE, place_name: 'Two Trips Today Place' });
+    await db('visits').insert({ place_id: 8, user_id: 1, status: 'completed', scheduled_date: TARGET_DATE, place_name: 'Two Trips Today Place' });
   });
 
   after(async () => {
@@ -332,6 +374,11 @@ describe('detectConflicts (real DB)', () => {
   test('a due commitment suppresses FLOOR_COMPLETED', async () => {
     const conflicts = await detectConflicts(db, 5, TARGET_DATE, { userId: 1 });
     assert.ok(!conflicts.some((c) => c.type === 'FLOOR_COMPLETED'), 'a human asking us back overrides the floor, same as eligibility()');
+  });
+
+  test('logging a THIRD visit at a place with two already-completed trips today reports only SAME_DATE_VISIT — reproduces the "two red warnings" bug', async () => {
+    const conflicts = await detectConflicts(db, 8, TARGET_DATE, { userId: 1 });
+    assert.deepEqual(conflicts.map((c) => c.type), ['SAME_DATE_VISIT']);
   });
 
   test('FLOOR_PLANNED (Step 3): named, dated, even though the planned visit is AFTER the target date', async () => {
