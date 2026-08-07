@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
 const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, buildCandidatePool, loadDraftView, loadDraftDayView, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const { estimateDriveMinutes } = require('./driveTime');
 
 describe('mergeLockedElsewhereIds', () => {
   test('unions committed and other-draft rows', () => {
@@ -418,7 +419,7 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
     await db.destroy();
   });
 
-  test('loadDraftView: a same-date visit another rep commits AFTER the draft was built shows up on the next read', async () => {
+  test('loadDraftView: a same-date visit another rep commits AFTER the draft was built drops the stop from the proposal on the next read', async () => {
     const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
     const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
     const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
@@ -434,11 +435,14 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
     // changes.
     await db('visits').insert({ place_id: 1, user_id: 2, status: 'planned', scheduled_date: DATE_A, place_name: 'Same Day Place' });
 
+    // A SAME_DATE_VISIT conflict isn't just informational like FLOOR_*/
+    // DRAFT_ELSEWHERE below — the place already has a real visit that exact
+    // day, so proposing it again is never correct. loadDraftView drops the
+    // stop entirely rather than surfacing it with a warning banner (see
+    // hasSameDateVisitConflict in scheduleDraft.js).
     const after1 = await loadDraftView(db, draftId);
     const stopAfter = after1.days[0].stops.find((s) => s.place_id === 1);
-    assert.equal(stopAfter.conflicts.length, 1);
-    assert.equal(stopAfter.conflicts[0].type, 'SAME_DATE_VISIT');
-    assert.equal(stopAfter.conflicts[0].otherUserName, 'Sarah');
+    assert.equal(stopAfter, undefined, 'a same-date real visit must remove the stop from the proposal, not just flag it');
   });
 
   test('loadDraftDayView: a nearby-day PLANNED visit committed after the fact produces FLOOR_PLANNED on reload', async () => {
@@ -460,5 +464,185 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
     assert.equal(stopAfter.conflicts.length, 1);
     assert.equal(stopAfter.conflicts[0].type, 'FLOOR_PLANNED');
     assert.equal(stopAfter.conflicts[0].daysApart, 2);
+  });
+
+  // loadDraftDayView's own copy of the same drop-not-just-flag behavior
+  // covered above for loadDraftView — a separate function, separate query,
+  // so it gets its own test rather than assuming the two stay in sync.
+  // COMPLETED (not planned) here, so both real-visit statuses that trigger
+  // SAME_DATE_VISIT are covered across the two tests.
+  test('loadDraftDayView: a same-date COMPLETED visit drops the stop from the proposal', async () => {
+    const DATE_B = '2026-08-11';
+    const params = { days: [{ date: DATE_B, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 1, date: DATE_B, sort_order: 0 });
+
+    const before1 = await loadDraftDayView(db, draftId, DATE_B);
+    assert.ok(before1.stops.find((s) => s.place_id === 1), 'clean baseline — the stop starts out present');
+
+    await db('visits').insert({ place_id: 1, user_id: 2, status: 'completed', scheduled_date: DATE_B, place_name: 'Same Day Place' });
+
+    const after1 = await loadDraftDayView(db, draftId, DATE_B);
+    assert.equal(after1.stops.find((s) => s.place_id === 1), undefined, 'a same-date completed visit must remove the stop, not just flag it');
+  });
+});
+
+// day.committed feeds RoutePlanner.jsx's "Already Planned"/"Planned" list,
+// which renders every row under a hardcoded "✓ Planned" badge — so
+// committedVisitsQuery must only ever return status:'planned' rows, the same
+// scope committedDayVisits (PlannedDayModal's own query) already uses. Before
+// this fix it had no status filter at all: a completed (or skipped) visit
+// sharing the date leaked in and rendered as a second, mislabeled "✓
+// Planned" entry for a trip that already happened.
+describe('loadDraftView / loadDraftDayView — day.committed is planned-only', () => {
+  let db;
+  const originalFetch = global.fetch;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+
+  before(async () => {
+    global.fetch = async () => ({ ok: false, json: async () => ({}) });
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
+    await db('places').insert({ id: 1, name: 'Guardian Angels (Test)', category: 'Community Partners', tier: 1, priority_score: 50, lat: 41.9, lng: -87.6 });
+  });
+
+  after(async () => {
+    global.fetch = originalFetch;
+    await db.destroy();
+  });
+
+  test('loadDraftView: two completed visits at the same place/date never appear in day.committed', async () => {
+    const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+
+    // Two separate completed trips, same rep, same place, same day — exactly
+    // the "logged twice while testing" shape that surfaced this bug.
+    await db('visits').insert([
+      { place_id: 1, user_id: 1, status: 'completed', scheduled_date: DATE_A, place_name: 'Guardian Angels (Test)', notes: 'This was great' },
+      { place_id: 1, user_id: 1, status: 'completed', scheduled_date: DATE_A, place_name: 'Guardian Angels (Test)', notes: 'test' },
+    ]);
+
+    const view = await loadDraftView(db, draftId);
+    assert.deepEqual(view.days[0].committed, [], 'completed visits must not appear in day.committed at all — that list is planned-only');
+  });
+
+  test('loadDraftView: a genuinely planned visit still appears in day.committed', async () => {
+    const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+
+    await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', scheduled_date: DATE_A, place_name: 'Guardian Angels (Test)' });
+
+    const view = await loadDraftView(db, draftId);
+    assert.equal(view.days[0].committed.length, 1);
+    assert.equal(view.days[0].committed[0].status, 'planned');
+  });
+
+  test('loadDraftDayView: same planned-only scope as loadDraftView', async () => {
+    // Its own date — DATE_A already carries a leftover 'planned' visit from
+    // the previous test in this shared in-memory db (same before()-not-
+    // beforeEach() pattern the rest of this file uses), which is correct and
+    // irrelevant here, but would collide with this test's own "must be empty"
+    // assertion if reused.
+    const DATE_C = '2026-08-12';
+    const params = { days: [{ date: DATE_C, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+
+    await db('visits').insert([
+      { place_id: 1, user_id: 1, status: 'completed', scheduled_date: DATE_C, place_name: 'Guardian Angels (Test)' },
+      { place_id: 1, user_id: 1, status: 'skipped', scheduled_date: DATE_C, place_name: 'Guardian Angels (Test)' },
+    ]);
+
+    const view = await loadDraftDayView(db, draftId, DATE_C);
+    assert.deepEqual(view.committed, [], 'completed and skipped visits must not appear in day.committed');
+  });
+});
+
+// evaluateDay's committed-segment fix: a day's already-planned real visits
+// must count against the budget AND shift where the first proposed stop's
+// drive time is measured from — see evaluateDay's own header for the full
+// rationale. global.fetch is mocked to fail (forces the haversine fallback)
+// so this is deterministic and offline, same convention as the describe
+// blocks above.
+describe('evaluateDay via loadDraftView — committed visits count against the budget and shift the drive-time start point', () => {
+  let db;
+  const originalFetch = global.fetch;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+  const PLACE_A = { lat: 41.9, lng: -87.6 }; // committed visit's place
+  const PLACE_B = { lat: 42.0, lng: -87.9 }; // proposed stop's place — far enough from PLACE_A, in a different direction from homeBase, that "drive from home" and "drive from PLACE_A" can't coincidentally match
+
+  before(async () => {
+    global.fetch = async () => ({ ok: false, json: async () => ({}) });
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
+    await db('places').insert([
+      { id: 1, name: 'Committed Place', category: 'Hospice', tier: 1, priority_score: 75, lat: PLACE_A.lat, lng: PLACE_A.lng },
+      { id: 2, name: 'Proposed Place', category: 'Hospice', tier: 1, priority_score: 75, lat: PLACE_B.lat, lng: PLACE_B.lng },
+    ]);
+  });
+
+  after(async () => {
+    global.fetch = originalFetch;
+    await db.destroy();
+  });
+
+  test("a committed visit's time counts against the day total, and the proposed stop's drive time starts from it, not homeBase", async () => {
+    const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 2, date: DATE_A, sort_order: 0, visit_type: 'drop_in' });
+    await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', scheduled_date: DATE_A, place_name: 'Committed Place', visit_type: 'presentation' });
+
+    const view = await loadDraftView(db, draftId);
+    const day = view.days[0];
+
+    // Committed segment: home -> Place A, presentation (60) + prep(3) + dataEntry(5).
+    const committedDrive = estimateDriveMinutes(HOME_BASE, PLACE_A);
+    const committedBlock = committedDrive + 60 + 3 + 5;
+
+    // The whole point of this fix: the proposed stop's drive time must
+    // originate from Place A (where the committed visit leaves the rep),
+    // not homeBase.
+    const driveFromCommitted = estimateDriveMinutes(PLACE_A, PLACE_B);
+    const driveFromHome = estimateDriveMinutes(HOME_BASE, PLACE_B);
+    assert.notEqual(driveFromCommitted, driveFromHome, 'test coordinates must actually produce different drive times, or this assertion proves nothing');
+
+    const proposedStop = day.stops.find((s) => s.place_id === 2);
+    assert.equal(proposedStop.driveMinutes, driveFromCommitted);
+
+    const proposedBlock = driveFromCommitted + 7 /* drop_in */ + 3 + 5;
+    assert.equal(day.totalMinutes, committedBlock + proposedBlock, 'totalMinutes must be the WHOLE day (committed + proposed), not just the proposal');
+    assert.equal(day.remainingMinutes, 4 * 60 - (committedBlock + proposedBlock));
+  });
+
+  test('committed visits alone can already exceed the budget, with zero proposed stops', async () => {
+    const DATE_B = '2026-08-11';
+    const params = { days: [{ date: DATE_B, hoursPerDay: 1 }], homeBase: HOME_BASE, zoneOverrides: {} }; // 60-minute budget
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', scheduled_date: DATE_B, place_name: 'Committed Place', visit_type: 'presentation' });
+
+    const view = await loadDraftView(db, draftId);
+    const day = view.days[0];
+    assert.equal(day.stops.length, 0, 'nothing proposed for this day');
+    assert.ok(day.totalMinutes > 60, 'the committed presentation alone already exceeds a 1-hour budget');
+    assert.equal(day.overBudget, true);
   });
 });

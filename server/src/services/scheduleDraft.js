@@ -606,10 +606,20 @@ function toDraftStopShape(row) {
 // this draft UI. `place_id` can be null (detach-not-delete) — the left join
 // and the `place_name` snapshot column both exist specifically to survive
 // that.
+//
+// status: 'planned' only — same scope committedDayVisits/committedDateSummaries
+// above already use for this exact "Already Planned" concept, and the same
+// reason: RoutePlanner.jsx renders every row here under a hardcoded "✓
+// Planned" badge, so a completed (or skipped) visit that happens to share
+// the date would show up mislabeled as still-planned, duplicated once per
+// real visit row logged that day at that place. A completed visit isn't
+// "still open on the books" — it already happened; it has no business in a
+// list whose whole point is "what's already committed for this day that the
+// proposal below doesn't need to re-suggest."
 function committedVisitsQuery(db, { userId }) {
   return db('visits as v')
     .leftJoin('places as p', 'p.id', 'v.place_id')
-    .where({ 'v.user_id': userId })
+    .where({ 'v.user_id': userId, 'v.status': 'planned' })
     .orderBy('v.sort_order')
     .select(
       'v.id as visit_id',
@@ -628,24 +638,80 @@ function committedVisitsQuery(db, { userId }) {
       'p.tier',
       'p.address',
       'p.city',
-      'p.zip'
+      'p.zip',
+      // lat/lng: needed so evaluateDay can route the committed segment for
+      // real (see its header) — not previously selected because nothing
+      // read them before that fix.
+      'p.lat',
+      'p.lng'
     );
 }
 
-// Real-first, haversine-fallback time evaluation for a day's stops IN THEIR
-// CURRENT ORDER — never resequences (see routeOptimizer.js's
+// Real-first, haversine-fallback time evaluation for a day's PROPOSED stops
+// IN THEIR CURRENT ORDER — never resequences (see routeOptimizer.js's
 // getRouteLegMinutes header for why that matters for live-edit recalc).
-async function evaluateDay(stops, { homeBase, budgetMinutes }) {
-  if (stops.length === 0) {
-    return { stops: [], totalMinutes: 0, remainingMinutes: budgetMinutes, overBudget: false };
+//
+// `committed` (this day's already-planned real visits, from
+// committedVisitsQuery) is packed FIRST, in its existing order, to work out
+// how much of the day's budget and drive time they've already spent, and
+// where they leave the rep — the proposed stops below are then evaluated
+// against what's LEFT of the budget, starting from THAT location instead of
+// always homeBase. Before this, a day with real committed visits still
+// reported the full budgetMinutes as available and every proposed stop's
+// drive time as if the day started fresh from home — harmless while
+// committed-alongside-proposed was a rare edge case, but wrong on both
+// counts, more so once one-at-a-time commits become the normal flow.
+//
+// This assumes committed always happens BEFORE every proposed stop — true
+// today (a day is only ever partially committed as a whole batch, e.g. one
+// day of a multi-day draft accepted while others stay open), but not
+// necessarily true anymore once a single visit can be committed for later in
+// the day while earlier stops are still just proposed. Not solved here —
+// there's no time-of-day field yet for anything in a day, only list order,
+// so "committed-then-proposed" is the only ordering the data can actually
+// support. A committed stop missing coordinates (isGeocoded) is skipped for
+// routing purposes, same as everywhere else in this file — its time still
+// counts, it just can't contribute a drive leg.
+async function evaluateDay(stops, { homeBase, budgetMinutes, committed = [] }) {
+  const committedStops = committed.filter(isGeocoded).map((c) => ({ place_id: c.place_id, lat: c.lat, lng: c.lng, visitType: c.visit_type }));
+
+  let committedMinutes = 0;
+  let start = homeBase;
+  if (committedStops.length > 0) {
+    // Unbounded budget here on purpose — this pass exists to learn the
+    // committed segment's true total time and end point, not to flag it as
+    // over/under anything itself (it's already real, not a proposal to
+    // trim). The day's actual overBudget verdict comes from the combined
+    // total against the real budgetMinutes, below.
+    const committedLegs = await getRouteLegMinutes({ start: homeBase, stops: committedStops });
+    const committedResult = committedLegs
+      ? evaluateOptimizedTimeBlock(committedStops, committedLegs.legMinutes, { start: homeBase, budgetMinutes: Infinity })
+      : evaluateTimeBlock(committedStops, { start: homeBase, budgetMinutes: Infinity });
+    committedMinutes = committedResult.totalMinutes;
+    const last = committedResult.stops[committedResult.stops.length - 1];
+    start = { lat: last.lat, lng: last.lng };
   }
 
-  const legs = await getRouteLegMinutes({ start: homeBase, stops });
-  const result = legs
-    ? evaluateOptimizedTimeBlock(stops, legs.legMinutes, { start: homeBase, budgetMinutes })
-    : evaluateTimeBlock(stops, { start: homeBase, budgetMinutes });
+  const proposedBudget = budgetMinutes - committedMinutes;
 
-  return { ...result, overBudget: result.remainingMinutes < 0 };
+  if (stops.length === 0) {
+    return { stops: [], totalMinutes: committedMinutes, remainingMinutes: proposedBudget, overBudget: proposedBudget < 0 };
+  }
+
+  const legs = await getRouteLegMinutes({ start, stops });
+  const result = legs
+    ? evaluateOptimizedTimeBlock(stops, legs.legMinutes, { start, budgetMinutes: proposedBudget })
+    : evaluateTimeBlock(stops, { start, budgetMinutes: proposedBudget });
+
+  // result.remainingMinutes already came out of packStops as
+  // `proposedBudget - result.totalMinutes`, which — since proposedBudget is
+  // itself `budgetMinutes - committedMinutes` — already equals
+  // `budgetMinutes - (committedMinutes + result.totalMinutes)`: the correct
+  // whole-day remaining figure. Only totalMinutes needs combining explicitly,
+  // so the UI's "~Xm of Yh" reads as the WHOLE day's usage (committed +
+  // proposed), not just the still-open proposal.
+  const totalMinutes = committedMinutes + result.totalMinutes;
+  return { ...result, totalMinutes, overBudget: result.remainingMinutes < 0 };
 }
 
 // Full recalculated draft (every day) — the "live workspace" read. Nothing
@@ -673,6 +739,21 @@ async function alreadyVisitedTodayPlaceIds(db, placeIds, today) {
     .whereIn('place_id', placeIds)
     .select('place_id');
   return new Set(rows.map((r) => r.place_id));
+}
+
+// A draft stop whose place already has a real `visits` row (planned or
+// completed) dated exactly the stop's OWN date is stale, not just
+// warning-worthy: eligibility was satisfied when the stop was added, but a
+// real visit has since landed on this exact place+date (logged outside this
+// draft, via another draft's commit, or by another rep) — showing "propose a
+// visit here" next to a place that already has one that day is never
+// correct, unlike the softer FLOOR_*/DRAFT_ELSEWHERE conflicts a rep might
+// reasonably keep and override. detectConflictsForStops already computes
+// SAME_DATE_VISIT for exactly this case (see conflictDetection.js); this
+// just acts on it — drops the stop — instead of only rendering it as a
+// warning banner next to a proposal that's already spoken for.
+function hasSameDateVisitConflict(conflicts) {
+  return (conflicts || []).some((c) => c.type === 'SAME_DATE_VISIT');
 }
 
 async function loadDraftView(db, draftId) {
@@ -744,10 +825,11 @@ async function loadDraftView(db, draftId) {
         defaultSchedulingConfig
       ),
       conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
-    }));
+    })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
+    const committedForDay = committedByDate[date] || [];
     const budgetMinutes = hoursPerDayByDate[date] * 60;
-    const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
-    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedByDate[date] || [], ...evaluated });
+    const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed: committedForDay });
+    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedForDay, ...evaluated });
   }
 
   return { id: draft.id, userId: draft.user_id, params, days };
@@ -785,11 +867,11 @@ async function loadDraftDayView(db, draftId, date) {
       defaultSchedulingConfig
     ),
     conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
-  }));
+  })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
-  const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes });
   const committed = await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date);
+  const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed });
 
   return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, ...evaluated };
 }
