@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
+import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import { getCurrentPosition } from '../geolocation';
 import { TierChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
@@ -31,14 +31,17 @@ const MAX_PLAN_DATES = 10; // mirrors scheduleDraft.js's MAX_PLAN_DATES
 
 // addStop's 409 rejections (SAME_DATE_VISIT/DRAFT_ELSEWHERE) now carry
 // structured conflicts (see services/conflictDetection.js's Conflict shape)
-// alongside the generic error string — this names the other rep and date
-// for DRAFT_ELSEWHERE instead of the old flat "already booked elsewhere"
-// message. SAME_DATE_VISIT already gets a personalized sentence from the
-// server (it knows "you" vs a name), so that one's error message is used as-is.
-function addStopErrorMessage(err) {
+// alongside the generic error string — this names the other rep and date for
+// both types instead of the old flat "already booked elsewhere" message.
+// Delegates to stopConflictMessage (defined below, hoisted) rather than
+// re-deriving the same "you" vs a name logic a second time — the two used to
+// diverge here: this function used err.message as-is for SAME_DATE_VISIT,
+// which is only personalized on the manual "Log a visit" route, not here, so
+// it silently rendered the generic server string instead.
+function addStopErrorMessage(err, viewerId) {
   const conflict = err.conflicts && err.conflicts[0];
-  if (conflict && conflict.type === 'DRAFT_ELSEWHERE') {
-    return `In ${conflict.otherUserName || 'another rep'}'s draft for ${formatDate(conflict.otherDate)}.`;
+  if (conflict && (conflict.type === 'DRAFT_ELSEWHERE' || conflict.type === 'SAME_DATE_VISIT')) {
+    return stopConflictMessage(conflict, viewerId);
   }
   return err.message;
 }
@@ -47,11 +50,12 @@ function addStopErrorMessage(err) {
 // loadDraftView/loadDraftDayView — every draft stop is re-checked against
 // the shared detector on every read, not just at the moment it was added).
 // Mirrors VisitLogModal.jsx's conflictMessage; no shared module between the
-// two yet, same as addStopErrorMessage above already duplicating a line of
-// DRAFT_ELSEWHERE's phrasing rather than reaching for one. `viewerId` names
-// the SAME_DATE_VISIT case correctly when it's the viewer's own other visit
-// (detectConflictsForStops doesn't exclude the caller the way DRAFT_ELSEWHERE
-// does — a rep's own duplicate is exactly as worth naming as anyone else's).
+// two yet. addStopErrorMessage above calls this directly for its own
+// DRAFT_ELSEWHERE/SAME_DATE_VISIT 409s rather than duplicating it.
+// `viewerId` names the SAME_DATE_VISIT case correctly when it's the viewer's
+// own other visit (detectConflictsForStops doesn't exclude the caller the
+// way DRAFT_ELSEWHERE does — a rep's own duplicate is exactly as worth
+// naming as anyone else's).
 function stopConflictMessage(c, viewerId) {
   switch (c.type) {
     case 'SAME_DATE_VISIT': {
@@ -266,7 +270,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
       setAddingOpen(false);
       markEdited();
     } catch (e) {
-      onError(addStopErrorMessage(e));
+      onError(addStopErrorMessage(e, userId));
     } finally {
       setBusy(false);
     }
@@ -298,7 +302,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
       setSuggestions((prev) => prev.filter((x) => x.place_id !== s.place_id));
       markEdited();
     } catch (e) {
-      onError(addStopErrorMessage(e));
+      onError(addStopErrorMessage(e, userId));
     } finally {
       setAddingSuggestionId(null);
     }
@@ -554,13 +558,21 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     {/* Same cross-rep hard-floor warning shown on already-committed
                         visits (PlaceDetail/VisitDetailModal/PlannedDayModal/
                         CompletedVisitsModal) — surfaced here too so a rep can pick
-                        a different stop BEFORE committing, not just find out after. */}
-                    {stop.crossRepFloorWarning && (
+                        a different stop BEFORE committing, not just find out after.
+                        Suppressed when stop.conflicts already names the same
+                        underlying visit (matched by id, not just name/date) —
+                        crossRepFloorWarning and FLOOR_COMPLETED/FLOOR_PLANNED
+                        are two independently-computed views of the same fact
+                        for a different rep, and rendering both stacked the
+                        identical name+date twice under different wording. */}
+                    {stop.crossRepFloorWarning && !(stop.conflicts || []).some(
+                      (c) => c.sourceKind === 'visit' && c.sourceId === stop.crossRepFloorWarning.visitId
+                    ) && (
                       <div
                         className="tiny"
                         style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
                       >
-                        Also visited by {stop.crossRepFloorWarning.userName} on {formatDate(stop.crossRepFloorWarning.scheduledDate)}
+                        {crossRepFloorWarningText(stop.crossRepFloorWarning)}
                       </div>
                     )}
                     {/* The shared detector, re-run fresh every time this day is
@@ -659,7 +671,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         className="tiny"
                         style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
                       >
-                        Also visited by {s.crossRepFloorWarning.userName} on {formatDate(s.crossRepFloorWarning.scheduledDate)}
+                        {crossRepFloorWarningText(s.crossRepFloorWarning)}
                       </div>
                     )}
                   </div>
@@ -950,10 +962,15 @@ export default function RoutePlanner({ userId }) {
     // Checked fresh at the actual moment of commit (see commitDay in
     // scheduleDraft.js) — catches a same-window collision even if this
     // screen was loaded before another rep's commit landed, which the
-    // draft view's own read-time warning can miss.
+    // draft view's own read-time warning can miss. Per-warning tense
+    // (planned vs visited) matters here as much as it does on the
+    // crossRepFloorWarning pill elsewhere — this banner used to always say
+    // "visited" even when the other rep's visit was only planned.
     if (result.crossRepWarnings.length > 0) {
-      const names = result.crossRepWarnings.map((w) => `${w.place_name} (also ${w.warning.userName}, ${formatDate(w.warning.scheduledDate)})`).join(', ');
-      parts.push(`Heads up — also visited by another rep nearby in time: ${names}.`);
+      const names = result.crossRepWarnings
+        .map((w) => `${w.place_name} (${w.warning.status === 'planned' ? 'also planned by' : 'also visited by'} ${w.warning.userName}, ${formatDate(w.warning.scheduledDate)})`)
+        .join(', ');
+      parts.push(`Heads up — another rep is close in time at: ${names}.`);
     }
     if (parts.length === 0) parts.push(`Nothing to accept for ${formatDate(date)}.`);
     setNotice(parts.join(' '));

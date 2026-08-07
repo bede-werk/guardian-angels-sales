@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatDate, VISIT_TYPE_LABELS } from '../api';
+import { formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 
 // Read-only popup for a still-upcoming (planned) visit — the "Upcoming
@@ -39,7 +39,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete })
               className="tiny"
               style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
             >
-              Also visited by {visit.crossRepFloorWarning.userName} on {formatDate(visit.crossRepFloorWarning.scheduledDate)}
+              {crossRepFloorWarningText(visit.crossRepFloorWarning)}
             </div>
           )}
         </div>

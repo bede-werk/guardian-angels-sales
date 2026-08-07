@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, navigateUrl, formatDate, VISIT_TYPE_LABELS } from '../api';
+import { api, navigateUrl, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
@@ -513,7 +513,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                           className="tiny"
                           style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
                         >
-                          Also visited by {v.crossRepFloorWarning.userName} on {formatDate(v.crossRepFloorWarning.scheduledDate)}
+                          {crossRepFloorWarningText(v.crossRepFloorWarning)}
                         </div>
                       )}
                     </li>
@@ -527,7 +527,13 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               per TRIP: the server groups the encounters (see routes/visits.js),
               so a visit where three people were met is one entry here listing
               all three, not three entries. Clicking it opens the trip, where
-              each person can be opened on their own. */}
+              each person can be opened on their own.
+
+              No crossRepFloorWarning pill here (unlike the Upcoming Visits
+              card above) — this list is always status: 'completed' (see
+              routes/places.js), and the warning exists to help a rep pick a
+              different stop before it happens. Once it's already happened,
+              there's nothing left to act on. */}
           <div className="card">
             <div className="card-head">
               <h2>Visit history ({data.visits.length})</h2>
@@ -572,14 +578,6 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       </div>
                       {v.notes && <div className="tiny">{v.notes}</div>}
                       {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
-                      {v.crossRepFloorWarning && (
-                        <div
-                          className="tiny"
-                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
-                        >
-                          Also visited by {v.crossRepFloorWarning.userName} on {formatDate(v.crossRepFloorWarning.scheduledDate)}
-                        </div>
-                      )}
                     </li>
                   ))}
                 </ul>

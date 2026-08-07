@@ -19,6 +19,8 @@ import { encounterLabel, joinNames } from './VisitDetailModal';
 // visit-history rows use, built from the trip's `encounters` summary. Both
 // are gated by the same flag: in "Mine" scope the rep is redundant (you're
 // already looking at your own visits), so neither identifying detail shows.
+// No crossRepFloorWarning pill, for the same reason VisitDetailModal drops
+// it: every row here already happened, so there's nothing left to act on.
 export default function CompletedVisitsModal({ date, visits, showContact, onClose, onViewVisit, onViewPlace }) {
   return (
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
@@ -52,14 +54,6 @@ export default function CompletedVisitsModal({ date, visits, showContact, onClos
                         .filter(Boolean)
                         .join(' · ')}
                     </div>
-                    {v.crossRepFloorWarning && (
-                      <div
-                        className="tiny"
-                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
-                      >
-                        Also visited by {v.crossRepFloorWarning.userName} on {formatDate(v.crossRepFloorWarning.scheduledDate)}
-                      </div>
-                    )}
                   </div>
                   <div className="actions" style={{ alignItems: 'center' }}>
                     {v.place_id && (

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
+import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
@@ -87,7 +87,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
                         className="tiny"
                         style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
                       >
-                        Also visited by {v.crossRepFloorWarning.userName} on {formatDate(v.crossRepFloorWarning.scheduledDate)}
+                        {crossRepFloorWarningText(v.crossRepFloorWarning)}
                       </div>
                     )}
                   </div>

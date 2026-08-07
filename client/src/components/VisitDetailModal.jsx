@@ -153,14 +153,11 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
           {trip.next_visit_date && (
             <div className="tiny"><strong>Next visit:</strong> {formatDate(trip.next_visit_date)}</div>
           )}
-          {trip.crossRepFloorWarning && (
-            <div
-              className="tiny"
-              style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
-            >
-              Also visited by {trip.crossRepFloorWarning.userName} on {formatDate(trip.crossRepFloorWarning.scheduledDate)}
-            </div>
-          )}
+          {/* No crossRepFloorWarning pill — this modal only ever shows an
+              already-completed or already-skipped trip (see VisitsCalendar.jsx;
+              a still-planned one is UpcomingVisitDetailModal's job), and the
+              warning exists to help a rep pick a different stop before it
+              happens. Nothing to act on once it already has. */}
 
           {/* Who was met. Click a name to see what happened with THEM — the
               outcome and the contact details as they stood that day are facts

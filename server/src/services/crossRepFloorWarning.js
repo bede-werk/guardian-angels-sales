@@ -41,6 +41,12 @@ async function crossRepVisitsByPlace(db, placeIds) {
 // schedulingEngine.js's own hard-floor boundary (daysSince(...) <
 // config.HARD_FLOOR_DAYS) exactly. Returns the nearest match (smallest gap)
 // or null.
+//
+// `status` rides along on the result (not just used to find the match) so
+// callers can phrase "visited" (completed, past) differently from "planned"
+// (still upcoming) — without it, the client can't tell those apart and the
+// same "Also visited by X on Y" sentence gets used for a visit that hasn't
+// happened yet, which reads as a false claim.
 function findCrossRepFloorWarning(visit, placeVisits, config) {
   if (!visit || !visit.user_id || !visit.scheduled_date || visit.status === 'skipped') return null;
   let best = null;
@@ -50,10 +56,10 @@ function findCrossRepFloorWarning(visit, placeVisits, config) {
     if (!other.scheduled_date || other.status === 'skipped') continue;
     const gap = Math.abs(daysSince(other.scheduled_date, visit.scheduled_date));
     if (gap < config.HARD_FLOOR_DAYS && (!best || gap < best.gap)) {
-      best = { userName: other.user_name || 'another rep', scheduledDate: other.scheduled_date, visitId: other.id, gap };
+      best = { userName: other.user_name || 'another rep', scheduledDate: other.scheduled_date, visitId: other.id, status: other.status, gap };
     }
   }
-  return best ? { userName: best.userName, scheduledDate: best.scheduledDate, visitId: best.visitId } : null;
+  return best ? { userName: best.userName, scheduledDate: best.scheduledDate, visitId: best.visitId, status: best.status } : null;
 }
 
 // Thin pure wrapper — maps findCrossRepFloorWarning over a list of visits

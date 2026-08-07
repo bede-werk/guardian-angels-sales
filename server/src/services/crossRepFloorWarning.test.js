@@ -23,7 +23,7 @@ describe('findCrossRepFloorWarning', () => {
 
     const warning = findCrossRepFloorWarning(target, [target, other], config);
 
-    assert.deepEqual(warning, { userName: 'Jane Rep', scheduledDate: '2026-07-08', visitId: 2 });
+    assert.deepEqual(warning, { userName: 'Jane Rep', scheduledDate: '2026-07-08', visitId: 2, status: 'planned' });
   });
 
   test('same-rep, any gap -> never flags', () => {
@@ -78,6 +78,14 @@ describe('findCrossRepFloorWarning', () => {
 
     const warning = findCrossRepFloorWarning(target, [target, far, near], config);
     assert.equal(warning.userName, 'Near Rep');
+  });
+
+  test('carries the other visit\'s status -> lets callers tell planned from completed', () => {
+    const target = visit({ id: 1, user_id: 1, scheduled_date: '2026-07-10' });
+    const other = visit({ id: 2, user_id: 2, user_name: 'Jane Rep', scheduled_date: '2026-07-08', status: 'completed' });
+
+    const warning = findCrossRepFloorWarning(target, [target, other], config);
+    assert.equal(warning.status, 'completed');
   });
 
   test('missing user_id or scheduled_date on the target -> returns null', () => {

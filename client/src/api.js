@@ -295,6 +295,20 @@ export function formatDate(dateStr) {
   return `${Number(month)}/${Number(day)}/${year}`;
 }
 
+// Phrases a `crossRepFloorWarning` ({ userName, scheduledDate, status }) —
+// shared by every surface that renders one (PlaceDetail, VisitDetailModal,
+// PlannedDayModal, CompletedVisitsModal, UpcomingVisitDetailModal,
+// RoutePlanner) so the tense always matches reality: a completed visit is a
+// past fact ("visited... on"), a planned one is still upcoming
+// ("planned... for") — using one sentence for both misrepresents whichever
+// one it doesn't match.
+export function crossRepFloorWarningText(warning) {
+  if (!warning) return '';
+  return warning.status === 'planned'
+    ? `Also planned by ${warning.userName} for ${formatDate(warning.scheduledDate)}`
+    : `Also visited by ${warning.userName} on ${formatDate(warning.scheduledDate)}`;
+}
+
 // Shared by Login.jsx (first-time password setup) and ChangePassword.jsx.
 // Returns an error string, or null if the new/confirm pair is valid.
 export const MIN_PASSWORD_LENGTH = 6;
