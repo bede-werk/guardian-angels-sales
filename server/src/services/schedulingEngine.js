@@ -6,26 +6,33 @@
 //
 // Ranking model (see the route-planner plan for the full rationale): a
 // lexicographic 4-tier sort, not an additive score. Lower tier always wins;
-// within a tier, candidates are ordered by that tier's own value, descending.
+// within a tier, candidates are ordered by that tier's own value(s).
 //
 //   0. Hard commitments   — nextVisitDate <= today. Most overdue promise first.
-//   1. Endangered verified — capacity_status !== 'estimated' AND urgency >=
+//   1. Endangered verified — capacity confidence 'fresh' AND urgency >=
 //      NEGLECT_MULTIPLIER (real measured neglect rescues a verified place
 //      that exploration would otherwise bury — rescue is urgency-based only,
 //      never capacity-based, so a low-capacity verified place can jump this
 //      tier just as easily as a high-capacity one).
-//   2. Exploration        — capacity_status === 'estimated'. Ordered by
-//      capacity-level guess (high > medium > low), NOT by urgency — learning
-//      beats maintaining during the pre-qualification era.
-//   3. Everything else     — verified/adjusted places below the neglect
-//      threshold. Ordered by urgency, descending. Never-visited is Infinity
-//      urgency, but a never-visited place is essentially always still
-//      'estimated', so in practice it lands in tier 2, not here.
+//   2. Exploration        — capacity confidence 'unknown' or 'stale' (spec
+//      capacity-computation-spec.md §8, step 7). Ordered by explorationRank
+//      (capacity-level guess, stale ranked below unknown, aged down toward 0
+//      the longer a place has waited — see explorationRank below), then
+//      priority_score descending, then place.id ascending as a final
+//      deterministic tiebreak (spec §8.1) — NOT by urgency; learning beats
+//      maintaining during the pre-qualification era.
+//   3. Everything else     — fresh places below the neglect threshold.
+//      Ordered by urgency, descending. Never-visited is Infinity urgency,
+//      but a never-visited place is essentially always still
+//      unknown/stale, so in practice it lands in tier 2, not here.
 //
 // This is what makes "one formula, two eras, no mode switch" true: every
 // place's tier is computed the same way, always — it just moves from tier 2
-// to tier 3 the moment capacity_status leaves 'estimated', and can visit
-// tier 1 from tier 3 if it's neglected long enough.
+// to tier 3 the moment its declared observation goes (or stays) fresh, and
+// can visit tier 1 from tier 3 if it's neglected long enough. Unlike the old
+// one-way capacity_status latch this replaced, a FRESH place can re-enter
+// tier 2 later if its declared observation ages past CAPACITY_STALE_DAYS —
+// deliberate, see capacity.js's confidence model.
 
 // daysSince/isCommitmentDue/isFloorConflict now live in conflictDetection.js
 // (the shared floor/collision rule module — see its header) and are
@@ -98,9 +105,54 @@ function effectiveCapacityLevel({ place, capacityLevel }) {
 }
 
 // Ordinal for "ordered among themselves by capacity level (guess)" within
-// the exploration tier — higher sorts first.
+// the exploration tier — higher sorts first. Superseded by explorationRank
+// below (step 7) for actual ranking; kept/exported only because
+// scheduleDraft.test.js and older fixtures may still reference it directly.
 function capacityRank(capacityLevel) {
   return { high: 2, medium: 1, low: 0 }[capacityLevel] ?? -1;
+}
+
+// Same transition pattern once more, step 7: EXPLORATION tier MEMBERSHIP is
+// now governed by the computed capacity service's `confidence`, not the old
+// one-way `capacity_status` latch (estimated -> verified, never revisited).
+// A place whose declared observation ages past CAPACITY_STALE_DAYS now
+// correctly RE-ENTERS exploration — impossible under the old latch, and
+// exactly what capacity.js's confidence model exists to enable (spec §6.6,
+// §8).
+//
+// The fallback maps the OLD status values to their nearest confidence
+// equivalent so this module's own bare-place-object tests keep meaning
+// something: 'estimated' (never verified) -> 'unknown' (still in
+// exploration); anything else ('verified'/'adjusted') -> 'fresh' (out of
+// exploration) — exactly the old gate's own boolean, just re-expressed.
+// Production always supplies capacityConfidence from buildCandidatePool, so
+// this fallback never fires there. Delete it once the legacy column is
+// dropped (spec step 9).
+function effectiveCapacityConfidence({ place, capacityConfidence }) {
+  if (capacityConfidence) return capacityConfidence;
+  return place.capacity_status === 'estimated' ? 'unknown' : 'fresh';
+}
+
+// Spec §8.2 — how candidates are ordered AMONG THEMSELVES within the
+// EXPLORATION tier. Lower explorationRank sorts FIRST (opposite convention
+// from every other tier's within-tier value — see rankKey/compareRankKeys
+// below for how the sign flip reconciles this within one comparator).
+//
+// baseRank: capacity-level guess, high/medium/low, with a stale observation
+// penalized below unknown — "never-asked outranks re-asked" (spec's own
+// phrase): a place we've never even tried to ask deserves the benefit of
+// the doubt over one whose number we know is old.
+//
+// Aging then pulls the rank down toward 0 the longer a place has waited
+// (daysWaiting / EXPLORATION_AGING_DAYS, floored) — the starvation guard:
+// without it, a low-capacity or stale place would sit at the bottom of
+// EXPLORATION forever and never get re-asked. At daysWaiting = 0 for every
+// candidate (e.g. right after import, when every place shares one
+// created_at), this term is inert and ordering is pure capacity guess — see
+// the spec's own worked example.
+function explorationRank({ level, confidence, daysWaiting, config }) {
+  const baseRank = ({ high: 0, medium: 1, low: 2 }[level] ?? 2) + (confidence === 'stale' ? 3 : 0);
+  return Math.max(0, baseRank - Math.floor(daysWaiting / config.EXPLORATION_AGING_DAYS));
 }
 
 // The guard gate, applied before ranking. Returns { eligible, reason }
@@ -139,29 +191,41 @@ function eligibility({ place, today, lastVisitDate, nextVisitDate, plannedVisitD
   return { eligible: true, reason: null };
 }
 
-// [tier, withinTierValue] — lower tier sorts first; within a tier, higher
-// withinTierValue sorts first (see compareRankKeys).
+// [tier, ...withinTierValues] — lower tier sorts first; within a tier, each
+// subsequent value sorts higher-first (see compareRankKeys) — EXPLORATION's
+// explorationRank/place.id are negated at construction so their intended
+// ascending order comes out of the same higher-first comparator every other
+// tier already uses, rather than teaching compareRankKeys per-index
+// direction.
 //
-// isEstimated still reads place.capacity_status directly, NOT the computed
-// capacity service's `confidence` — that's capacity-computation-spec.md step
-// 7's swap (the EXPLORATION tier rework), not step 6's. Step 6 is scoped to
-// the cadence-lookup/capacityRank consumers of capacity LEVEL only; the tier
-// gate itself is untouched here on purpose. capacity_status is kept current
-// by routes/visits.js's dual-write bridge in the meantime (see that
-// function's own comment) — it survives through step 7, not just step 6.
-function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, relationshipLevel, capacityLevel, today, config }) {
+// EXPLORATION membership now reads the computed capacity service's
+// `confidence` (step 7), not place.capacity_status directly — step 6 only
+// swapped the cadence-lookup/capacityRank consumers of capacity LEVEL, this
+// is what finally retires place.capacity_status as a ranking input.
+// routes/visits.js's dual-write bridge (kept it current in the meantime)
+// should be deleted now that this has landed and been verified — see that
+// function's own comment.
+function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, relationshipLevel, capacityLevel, capacityConfidence, today, config }) {
   if (nextVisitDate && nextVisitDate <= today) {
     return [TIERS.COMMITMENT, daysSince(nextVisitDate, today)];
   }
 
-  const isEstimated = place.capacity_status === 'estimated';
+  const confidence = effectiveCapacityConfidence({ place, capacityConfidence });
+  const inExploration = confidence !== 'fresh';
   const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today, config });
 
-  if (!isEstimated && u >= config.NEGLECT_MULTIPLIER) {
+  if (!inExploration && u >= config.NEGLECT_MULTIPLIER) {
     return [TIERS.ENDANGERED, u];
   }
-  if (isEstimated) {
-    return [TIERS.EXPLORATION, capacityRank(effectiveCapacityLevel({ place, capacityLevel }))];
+  if (inExploration) {
+    const level = effectiveCapacityLevel({ place, capacityLevel });
+    const daysWaiting = daysSince(place.exploration_eligible_since, today);
+    const rank = explorationRank({ level, confidence, daysWaiting, config });
+    // Spec §8.1: explorationRank ascending, priority_score descending,
+    // place.id ascending — the first and third are negated so a single
+    // higher-first comparator (compareDesc, applied elementwise by
+    // compareRankKeys) produces the right order for all three at once.
+    return [TIERS.EXPLORATION, -rank, place.priority_score ?? 0, -place.id];
   }
   return [TIERS.MAINTENANCE, u];
 }
@@ -176,12 +240,22 @@ function compareDesc(a, b) {
   return b - a;
 }
 
+// Generalized beyond a fixed [tier, value] pair (step 7's EXPLORATION tier
+// needs 3 within-tier values, every other tier still needs just 1) — same
+// tier-then-descending-elementwise comparison either way. Two rankKeys are
+// only ever compared when both came from candidates, so within a tier both
+// arrays are always the same length; the `?? 0` is just defensive, not a
+// real cross-tier-length case.
 function compareRankKeys(a, b) {
   if (a[0] !== b[0]) return a[0] - b[0];
-  return compareDesc(a[1], b[1]);
+  for (let i = 1; i < Math.max(a.length, b.length); i++) {
+    const cmp = compareDesc(a[i] ?? 0, b[i] ?? 0);
+    if (cmp !== 0) return cmp;
+  }
+  return 0;
 }
 
-// candidates: [{ place, lastVisitDate, recentCompletedCount, nextVisitDate, plannedVisitDates, lockedElsewhere, relationshipLevel, capacityLevel }]
+// candidates: [{ place, lastVisitDate, recentCompletedCount, nextVisitDate, plannedVisitDates, lockedElsewhere, relationshipLevel, capacityLevel, capacityConfidence }]
 // Filters out ineligible candidates, then sorts the rest by rankKey.
 function rankCandidates(candidates, { today, config }) {
   return candidates
@@ -196,8 +270,10 @@ module.exports = {
   targetCadenceDays,
   effectiveRelationshipLevel,
   effectiveCapacityLevel,
+  effectiveCapacityConfidence,
   urgency,
   capacityRank,
+  explorationRank,
   eligibility,
   rankKey,
   compareRankKeys,

@@ -9,6 +9,7 @@ const {
   measuredFloorByPlace,
   computeCapacityForPlaces,
   computeCapacityForPlace,
+  nextExplorationEligibleSince,
 } = require('./capacity');
 const config = require('../config/scheduling');
 
@@ -88,6 +89,18 @@ describe('bucketForMonthlyReferrals — boundaries', () => {
     assert.equal(bucketForMonthlyReferrals(15, config.CAPACITY_THRESHOLDS), 'medium');
     assert.equal(bucketForMonthlyReferrals(16, config.CAPACITY_THRESHOLDS), 'high');
     assert.equal(bucketForMonthlyReferrals(0, config.CAPACITY_THRESHOLDS), 'low');
+  });
+});
+
+// Step 7 (capacity-computation-spec.md §8.2's own migration): the value
+// stamped onto places.exploration_eligible_since at observation-insert time
+// — the date THIS observation goes stale, not derived later at read time.
+// See the migration's own header for why a live `?? created_at` fallback
+// was rejected.
+describe('nextExplorationEligibleSince — step 7 dual-write stamp', () => {
+  test('is exactly observedAt + CAPACITY_STALE_DAYS, independent of asOf', () => {
+    const observedAt = '2026-01-01';
+    assert.equal(nextExplorationEligibleSince(observedAt, config), daysBefore(observedAt, -config.CAPACITY_STALE_DAYS));
   });
 });
 

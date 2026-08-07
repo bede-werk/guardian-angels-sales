@@ -287,6 +287,10 @@ async function buildCandidatePool(db, { today }) {
     // which is the whole point of the override existing.
     relationshipLevel: relationshipFor(relationshipByPlace, place.id).effective_level,
     capacityLevel: capacityByPlace.get(place.id)?.level ?? null,
+    // EXPLORATION tier membership (step 7) — 'unknown'/'stale' means still
+    // in EXPLORATION, 'fresh' means out. See schedulingEngine.js's
+    // effectiveCapacityConfidence/rankKey.
+    capacityConfidence: capacityByPlace.get(place.id)?.confidence ?? null,
   }));
 }
 

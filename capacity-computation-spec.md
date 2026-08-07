@@ -1,7 +1,7 @@
 # Capacity — Computation Spec
 
 Target: Guardian Angels Sales Scheduler
-Status: Implementation spec — steps 1–6 built 2026-08-07 (see HANDOFF.md §18 and `project_capacity_spec_2026-08-07.md`), steps 7–9 not started
+Status: Implementation spec — steps 1–7 built 2026-08-07 (see HANDOFF.md §18 and `project_capacity_spec_2026-08-07.md`), steps 8–9 not started
 Companion to: relationship-computation-spec.md (the other cadence axis, folded into HANDOFF.md §16 — never saved standalone either)
 Replaces: manual `places.capacity_level`, frozen `capacity_monthly_referrals`, latched `capacity_status`
 Also folds in: EXPLORATION tier tie-break (launch blocker), ENDANGERED referral drop-off trigger
@@ -109,7 +109,7 @@ Stored separately from the computed value, same pattern as the relationship over
 - `places.capacity_level` — same.
 - `places.capacity_status` — replaced by derived confidence (§6). Keep the column until every consumer is migrated, then drop. Do not add values to its enum.
 
-> **2026-08-07 addendum (temporary, delete at step 7):** "stop writing immediately" above is not literally true for `capacity_monthly_referrals`/`capacity_status` — `routes/visits.js`'s `maybeCapturePreQualification` dual-writes both columns alongside the new `capacity_observations` insert, because the EXPLORATION tier gate (`rankKey`'s `isEstimated` check) still reads `place.capacity_status` directly. Without the bridge, a pre-qualified place never leaves EXPLORATION. Step 6 only swaps the cadence-lookup/`capacityRank` consumers of capacity LEVEL — `capacity_status` isn't touched until step 7's EXPLORATION tier rework, so the bridge survives step 6 and must stay live through it. **Corrected 2026-08-07**: an earlier version of this note said "delete at step 6" — wrong, the bridge's only reason to exist (the `capacity_status` consumer) isn't retired until step 7. See the bridge's own comment in `routes/visits.js` for the exact mechanics; delete the block once step 7 lands, not before.
+> **2026-08-07 addendum, RESOLVED:** for steps 5–6, "stop writing immediately" above was not literally true for `capacity_monthly_referrals`/`capacity_status` — `routes/visits.js`'s `maybeCapturePreQualification` dual-wrote both columns alongside the new `capacity_observations` insert, because the EXPLORATION tier gate (`rankKey`'s `isEstimated` check) still read `place.capacity_status` directly. Without the bridge, a pre-qualified place would never leave EXPLORATION. (An earlier version of this note said "delete at step 6" — wrong; step 6 only swapped the cadence-lookup/`capacityRank` consumers of capacity LEVEL, not `capacity_status`, so the bridge had to survive it.) **The bridge was removed 2026-08-07 once step 7 landed and the swap was verified** (see HANDOFF.md §18's "Step 7" subsection) — `capacity_monthly_referrals`/`capacity_status` are now genuinely unread by anything ranking-related, exactly as this section originally intended.
 
 ## 6. `services/capacity.js`
 
@@ -211,7 +211,7 @@ Before wiring this into the ranker, produce a distribution readout — count of 
 
 The bug. The EXPLORATION tier (tier 3 of the four-tier lexicographic ranker) is ordered by guessed capacity level alone — three possible values across ~280 places. After the eRSP import nearly everything is unverified, so the tier is effectively unordered. Because zone selection reads `ranked[0].place.region`, an arbitrary tie picks the region for an entire day. Days get misrouted by tie-break noise.
 
-**Not started as of 2026-08-07.**
+**Done 2026-08-07.** See HANDOFF.md §18's "Step 7" subsection for the full build record, simulation results, and the one deliberate architecture change from this section's own literal wording (`rankKey` now returns a 4-element tuple for EXPLORATION instead of the single scalar every other tier uses — `compareRankKeys` was generalized to compare elementwise rather than reduce the 3 keys below into one scalar).
 
 ### 8.1 New ordering key
 
@@ -221,6 +221,8 @@ Sorted lexicographically within the tier:
 2. `priority_score` (descending) — already maintained, already blends tier and `is_priority`, and currently ignored by the ranker entirely. This is where human judgment about which places matter finally reaches route generation.
 3. `place.id` (ascending) — final deterministic tiebreak. Never leave ordering to row insertion order; identical inputs must produce identical routes.
 
+> **2026-08-07 note:** implemented as `rankKey`'s EXPLORATION branch returning `[TIERS.EXPLORATION, -explorationRank, priority_score, -place.id]` — the ascending keys (1 and 3) are negated so the existing single higher-first comparator (already used by every other tier's urgency/daysSince value) produces the right order for all three without needing per-index direction logic. `compareRankKeys` was generalized from a fixed `[tier, value]` pair to loop elementwise over however many within-tier values a tier's key carries.
+
 ### 8.2 explorationRank — capacity guess with a starvation guard
 
 ```js
@@ -229,10 +231,12 @@ EXPLORATION_AGING_DAYS: 90,
 const baseRank = { high: 0, medium: 1, low: 2 }[level]
                + (confidence === 'stale' ? 3 : 0);   // never-asked outranks re-asked
 
-const daysWaiting = asOf - (place.exploration_eligible_since ?? place.created_at);
+const daysWaiting = asOf - place.exploration_eligible_since;
 
 explorationRank = Math.max(0, baseRank - Math.floor(daysWaiting / EXPLORATION_AGING_DAYS));
 ```
+
+> **2026-08-07 correction — `exploration_eligible_since` is REQUIRED, not `?? place.created_at`.** The original pseudocode above fell back to `created_at` at read time whenever this value was missing. Caught before it shipped: a place that's been fresh for months and then goes stale re-enters EXPLORATION — but with no real `exploration_eligible_since` ever recorded, the fallback would hand it `created_at`, often a year old, as its aging anchor. That backdates its waiting clock by most of a year and jumps it to rank 0 the day it goes stale, ahead of places that have genuinely never been pre-qualified and have been waiting honestly the whole time. Fixed by adding `places.exploration_eligible_since` as a real, always-populated column (migration `20260807000002`) instead: stamped to `created_at` at backfill/place-creation (nothing observed yet — eligible immediately), and to `observed_at + CAPACITY_STALE_DAYS` the moment any capacity_observations row is written (this place will next become eligible when THAT observation goes stale — computable and stamped immediately, not derived later, so a future `CAPACITY_STALE_DAYS` retune doesn't retroactively reshuffle every place already waiting in the tier). See `services/capacity.js`'s `stampExplorationEligibility`.
 
 Two things this does:
 
@@ -375,9 +379,9 @@ If eRSP will only export one thing, take dated referrals over contact records. C
 2. `services/capacity.js` with tests. Do not wire to anything yet. — **done**
 3. Distribution readout (§7). Confirm the buckets separate before the ranker consumes them. — **done**
 4. Wire into GET endpoints; PlaceDetail display. — **done**
-5. VisitLogModal pre-qual gate change + observation write path. — **done**, plus a temporary dual-write bridge to the legacy columns (see §5 addendum) so pre-qualified places don't get stranded in EXPLORATION — survives through step 7, see that addendum's 2026-08-07 correction
-6. Swap `schedulingEngine.js` cadence lookup to the computed level. Compare computed vs. legacy `capacity_level` across all places and eyeball the diff before switching. — **done 2026-08-07**: diff was 260/261 unchanged (the 1 move was the internal test place's own manual override, exercised and confirmed end to end, then cleared); before/after draft generation confirmed byte-identical on the same seed/date/zone. `targetCadenceDays`/`capacityRank` now read the computed level via `buildCandidatePool`'s new `capacityLevel` field (`effectiveCapacityLevel()` in `schedulingEngine.js`, same fallback-to-column pattern as `effectiveRelationshipLevel`). The `capacity_status`/`isEstimated` tier gate is explicitly NOT touched — that's step 7.
-7. EXPLORATION tier ordering (§8). Stop and report — this changes generated routes visibly and should be reviewed against a real draft before proceeding. Also the step that retires the `capacity_status` dual-write bridge (§5 addendum) and swaps the tier gate off `place.capacity_status` — **not started**
+5. VisitLogModal pre-qual gate change + observation write path. — **done**; ran with a temporary dual-write bridge to the legacy columns (see §5 addendum) through steps 6 and 7, removed once step 7 verified
+6. Swap `schedulingEngine.js` cadence lookup to the computed level. Compare computed vs. legacy `capacity_level` across all places and eyeball the diff before switching. — **done 2026-08-07**: diff was 260/261 unchanged (the 1 move was the internal test place's own manual override, exercised and confirmed end to end, then cleared); before/after draft generation confirmed byte-identical on the same seed/date/zone. `targetCadenceDays`/`capacityRank` now read the computed level via `buildCandidatePool`'s new `capacityLevel` field (`effectiveCapacityLevel()` in `schedulingEngine.js`, same fallback-to-column pattern as `effectiveRelationshipLevel`). The `capacity_status`/`isEstimated` tier gate was explicitly NOT touched here — that was step 7.
+7. EXPLORATION tier ordering (§8). — **done 2026-08-07**: `rankKey`'s tier gate now reads computed `confidence`, not `place.capacity_status` (`effectiveCapacityConfidence()`); within-tier order is `explorationRank` (§8.2) then `priority_score` then `place.id`, via a generalized `compareRankKeys`. Added `places.exploration_eligible_since` as a real, always-stamped column per §8.2's 2026-08-07 correction. Simulated at day 0/90/180 on real data before finalizing — see HANDOFF.md §18's "Step 7" subsection for the full numbers; matched the spec's own prediction exactly (inert at 0, medium joins rank 0 at 90, low at 180). Dual-write bridge (§5 addendum) removed after this was verified.
 8. Drop-off detector (§9), shipped behind `DROPOFF_DETECTOR_ENABLED = false`. Must read `referrals.place_id` directly per §9.1's 2026-08-07 amendment, never `referralMetrics.js`'s place rollup — see HANDOFF.md's logged bug in that rollup first. — **not started**
 9. Drop `capacity_monthly_referrals`, `capacity_level`, `capacity_status` in a follow-up migration once verified. — **not started**
 

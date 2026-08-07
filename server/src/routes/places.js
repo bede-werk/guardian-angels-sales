@@ -11,7 +11,7 @@ const { compareDatesAsc } = require('../services/sortHelpers');
 const { computeRelationshipForPlaces, relationshipFor, LEVELS: RELATIONSHIP_LEVELS } = require('../services/relationship');
 const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
-const { computeCapacityForPlace } = require('../services/capacity');
+const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
 const { orgToday } = require('../services/orgDate');
 const schedulingConfig = require('../config/scheduling');
 
@@ -154,6 +154,10 @@ router.post('/', async (req, res, next) => {
       zip: zip || null,
       phone: phone || null,
       region: regionForPlace({ city, zip }),
+      // Never pre-qualified yet — eligible for EXPLORATION from day one. See
+      // the migration that added this column for why it's stamped
+      // explicitly here rather than left to a schema-level default.
+      exploration_eligible_since: orgToday(),
     };
     if (address || city || zip) {
       const coords = await geocodeAddress({ address, city, state: payload.state, zip });
@@ -580,16 +584,20 @@ router.post('/:id/capacity-observations', async (req, res, next) => {
     const referralsErr = monthlyReferralsError(req.body.monthly_referrals);
     if (referralsErr) return res.status(400).json({ error: referralsErr });
 
+    const observedAt = orgToday();
     const [row] = await knex('capacity_observations')
       .insert({
         place_id: id,
         monthly_referrals: Math.round(Number(req.body.monthly_referrals)),
         source: 'manual',
-        observed_at: orgToday(),
+        observed_at: observedAt,
         note: req.body.note || null,
       })
       .returning('id');
     const observationId = knex.extractId(row);
+    // Stamps places.exploration_eligible_since to the date THIS observation
+    // goes stale — see capacity.js's stampExplorationEligibility for why.
+    await stampExplorationEligibility(knex, id, observedAt, schedulingConfig);
     const observation = await knex('capacity_observations').where({ id: observationId }).first();
     res.status(201).json(observation);
   } catch (err) {

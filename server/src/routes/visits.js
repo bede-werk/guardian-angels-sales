@@ -9,7 +9,7 @@ const { VISIT_TYPES } = require('../config/visitTypes');
 const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, findCrossRepFloorWarning, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
 const { detectConflicts } = require('../services/conflictDetection');
-const { computeCapacityForPlace } = require('../services/capacity');
+const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
 const { orgToday } = require('../services/orgDate');
 const schedulingConfig = require('../config/scheduling');
 
@@ -119,31 +119,28 @@ async function maybeCapturePreQualification({ placeId, capacityMonthlyReferrals,
   const capacity = await computeCapacityForPlace(knex, placeId, { asOf: orgToday() });
   if (!capacity || capacity.confidence === 'fresh') return;
 
+  const observedAt = orgToday();
   const namedEncounter = encounters.find((e) => e.person_id != null);
   await knex('capacity_observations').insert({
     place_id: placeId,
     monthly_referrals: n,
     source: 'prequal',
-    observed_at: orgToday(),
+    observed_at: observedAt,
     person_id: namedEncounter ? namedEncounter.person_id : null,
     visit_id: visitId,
   });
+  // Stamps places.exploration_eligible_since to the date THIS observation
+  // goes stale — see capacity.js's stampExplorationEligibility for why.
+  await stampExplorationEligibility(knex, placeId, observedAt, schedulingConfig);
 
-  // --- TEMPORARY BRIDGE — delete this block at capacity-computation-spec.md
-  // step 6 (schedulingEngine.js swapped to read the computed service). ---
-  // schedulingEngine.js still ranks off the old frozen columns, not the new
-  // capacity_observations log. Without this, a pre-qual answer would land in
-  // the log (and show up correctly on PlaceDetail) but the ranker would
-  // never see it — the place would stay in EXPLORATION and keep getting
-  // routed back for pre-qualification forever, which is worse than the old
-  // single-column behavior it's replacing. capacity_status: 'verified' is
-  // the same value routes/places.js's old inline handling used to set from
-  // this exact call site (a real first-visit pre-qualification), not
-  // 'adjusted' (place-card correction, no visit) or 'estimated' (never asked).
-  await knex('places').where({ id: placeId }).update({
-    capacity_monthly_referrals: n,
-    capacity_status: 'verified',
-  });
+  // The step-6/7 dual-write bridge that used to sit here (writing the
+  // legacy capacity_monthly_referrals/capacity_status columns alongside the
+  // observation above) was removed 2026-08-07 once step 7 landed and was
+  // verified: schedulingEngine.js's EXPLORATION tier gate now reads the
+  // computed confidence (rankKey's effectiveCapacityConfidence), not
+  // place.capacity_status, so nothing downstream reads those two columns for
+  // ranking anymore. They're still on the table, unread, until the spec's
+  // final step drops them.
 }
 
 // Trip-level fields a client is allowed to set when logging/updating a visit.

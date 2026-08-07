@@ -45,6 +45,12 @@ function place(id, overrides = {}) {
     relationship_level: 'weak',
     do_not_visit: false,
     snooze_until: null,
+    priority_score: 0,
+    // Step 7's EXPLORATION ordering reads this directly, no created_at
+    // fallback (see the migration that added it). Defaulted to TODAY here
+    // (daysWaiting = 0) so existing fixtures that don't care about aging
+    // stay meaningful unchanged.
+    exploration_eligible_since: TODAY,
     ...overrides,
   };
 }

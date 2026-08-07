@@ -144,6 +144,31 @@ function computeCapacityPure({ declared, measuredFloor, overrideLevel, category,
   };
 }
 
+// --- EXPLORATION tier eligibility stamp (spec §8.2, step 7) ---------------
+//
+// places.exploration_eligible_since holds the date this place next becomes
+// eligible for the EXPLORATION tier — see the migration that added it for
+// why this is a real, explicitly-stamped column rather than a `?? created_at`
+// fallback computed at read time. A fresh declared observation means this
+// place will next become eligible once THAT observation goes stale, so the
+// value is knowable (and stamped) the moment the observation is written —
+// never derived later, so a future CAPACITY_STALE_DAYS retune doesn't
+// retroactively reshuffle every place already waiting in EXPLORATION.
+
+// Pure: the actual date math, unit-testable without a DB.
+function nextExplorationEligibleSince(observedAt, config) {
+  return addDays(observedAt, config.CAPACITY_STALE_DAYS);
+}
+
+// Impure: called by every capacity_observations write site (POST
+// /:id/capacity-observations, routes/visits.js's maybeCapturePreQualification)
+// immediately after inserting the observation row.
+async function stampExplorationEligibility(knex, placeId, observedAt, config = defaultConfig) {
+  await knex('places').where({ id: placeId }).update({
+    exploration_eligible_since: nextExplorationEligibleSince(observedAt, config),
+  });
+}
+
 // --- Bulk DB paths -----------------------------------------------------
 //
 // Both take knex explicitly (matching referralMetrics.js/relationship.js's
@@ -277,9 +302,11 @@ module.exports = {
   bucketForMonthlyReferrals,
   categorySeedLevel,
   computeCapacityPure,
+  nextExplorationEligibleSince,
   // bulk DB
   latestObservationsByPlace,
   measuredFloorByPlace,
   computeCapacityForPlaces,
   computeCapacityForPlace,
+  stampExplorationEligibility,
 };

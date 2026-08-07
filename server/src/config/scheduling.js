@@ -86,4 +86,12 @@ module.exports = {
     [/online resource/i, 'low'],
   ],
   CATEGORY_CAPACITY_SEED_DEFAULT: 'low', // spec §6.5's explicit DEFAULT — deliberately more conservative than the migration's 'medium' fallback, since this now governs live ranking, not a one-time backfill guess
+
+  // EXPLORATION tier starvation guard (spec §8.2, step 7). Every
+  // EXPLORATION_AGING_DAYS a place spends waiting (see
+  // places.exploration_eligible_since) pulls its explorationRank down by 1,
+  // so a low-capacity/never-verified place doesn't sit at the bottom of the
+  // tier forever — it eventually climbs to rank 0 on wait time alone. Single
+  // named tuning knob per the spec, ship as specced.
+  EXPLORATION_AGING_DAYS: 90,
 };

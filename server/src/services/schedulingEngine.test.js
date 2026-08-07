@@ -7,17 +7,27 @@ const {
   eligibility,
   rankKey,
   rankCandidates,
+  explorationRank,
+  compareRankKeys,
 } = require('./schedulingEngine');
 
 const TODAY = '2026-07-10';
 
+let nextPlaceId = 1;
 function place(overrides = {}) {
   return {
+    id: nextPlaceId++,
     capacity_level: 'medium',
     capacity_status: 'estimated',
     relationship_level: 'weak',
     do_not_visit: false,
     snooze_until: null,
+    priority_score: 0,
+    // Step 7: EXPLORATION tier ordering reads this directly (no created_at
+    // fallback — see the migration that added it). Defaulted to TODAY here
+    // (daysWaiting = 0, the aging guard's own inert case) so every existing
+    // fixture that doesn't care about aging stays meaningful unchanged.
+    exploration_eligible_since: TODAY,
     ...overrides,
   };
 }
@@ -327,5 +337,120 @@ describe("spec's acceptance test, updated for the endangered tier", () => {
       { today: TODAY, config }
     );
     assert.equal(rankedC[0].place, unverified);
+  });
+});
+
+// Step 7 (capacity-computation-spec.md §8): EXPLORATION tier tie-break.
+describe('explorationRank() — spec §8.2', () => {
+  test('base ordering: high < medium < low at zero wait (pure capacity guess)', () => {
+    assert.equal(explorationRank({ level: 'high', confidence: 'unknown', daysWaiting: 0, config }), 0);
+    assert.equal(explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: 0, config }), 1);
+    assert.equal(explorationRank({ level: 'low', confidence: 'unknown', daysWaiting: 0, config }), 2);
+  });
+
+  test('stale sorts below unknown at equal capacity — "never-asked outranks re-asked"', () => {
+    const unknownMedium = explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: 0, config });
+    const staleMedium = explorationRank({ level: 'medium', confidence: 'stale', daysWaiting: 0, config });
+    assert.ok(unknownMedium < staleMedium, 'a lower explorationRank sorts first — unknown must be lower than stale here');
+  });
+
+  test('aging pulls the rank down exactly at EXPLORATION_AGING_DAYS multiples, inert before them', () => {
+    // medium: baseRank 1. Needs 1 full aging window to reach 0.
+    assert.equal(explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS - 1, config }), 1, 'not yet aged a full window -> unchanged');
+    assert.equal(explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS, config }), 0, 'exactly one aging window -> reaches rank 0');
+
+    // low: baseRank 2. Needs 2 full aging windows to reach 0.
+    assert.equal(explorationRank({ level: 'low', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS, config }), 1, 'one aging window is only halfway for a low-capacity place');
+    assert.equal(explorationRank({ level: 'low', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS * 2, config }), 0, 'two aging windows -> reaches rank 0');
+  });
+
+  test('clamped at 0, never negative — a place cannot age past the front of the tier', () => {
+    assert.equal(explorationRank({ level: 'high', confidence: 'unknown', daysWaiting: 10000, config }), 0);
+    assert.equal(explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS * 5, config }), 0);
+  });
+
+  test('a low/unknown place waiting a full aging cycle sorts above a high place waiting 0 days; at daysWaiting=0 for both, ordering is pure capacity', () => {
+    const waitedLow = explorationRank({ level: 'low', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS * 2, config });
+    const freshHigh = explorationRank({ level: 'high', confidence: 'unknown', daysWaiting: 0, config });
+    assert.ok(waitedLow <= freshHigh, 'a fully-aged low place should reach parity with (or beat) a freshly-eligible high place');
+
+    const zeroLow = explorationRank({ level: 'low', confidence: 'unknown', daysWaiting: 0, config });
+    const zeroHigh = explorationRank({ level: 'high', confidence: 'unknown', daysWaiting: 0, config });
+    assert.ok(zeroHigh < zeroLow, 'with no aging credit anywhere, capacity guess alone decides the order');
+  });
+});
+
+describe('EXPLORATION tier membership — governed by confidence, not the legacy capacity_status latch', () => {
+  test('capacityConfidence: "fresh" keeps a place OUT of exploration even if the legacy column still says "estimated"', () => {
+    const p = place({ capacity_status: 'estimated', capacity_level: 'high', relationship_level: 'weak' }); // cadence 7
+    const key = rankKey({ place: p, lastVisitDate: daysAgo(3), recentCompletedCount: 0, nextVisitDate: null, capacityConfidence: 'fresh', today: TODAY, config });
+    assert.notEqual(key[0], TIERS.EXPLORATION, 'confidence must govern membership now, not the stale capacity_status column');
+    assert.equal(key[0], TIERS.MAINTENANCE, 'mildly overdue, fresh, and not neglected -> ordinary maintenance ordering');
+  });
+
+  test('capacityConfidence: "stale" RE-ENTERS exploration even if the legacy column still says "verified" — impossible under the old one-way latch', () => {
+    const p = place({ capacity_status: 'verified', capacity_level: 'medium', relationship_level: 'weak' });
+    const key = rankKey({ place: p, lastVisitDate: daysAgo(3), recentCompletedCount: 0, nextVisitDate: null, capacityConfidence: 'stale', today: TODAY, config });
+    assert.equal(key[0], TIERS.EXPLORATION, 'a place whose declared number has gone stale must re-enter EXPLORATION for a fresh re-ask');
+  });
+
+  test('the fallback (no capacityConfidence supplied) still reproduces the OLD gate exactly, for this module\'s own bare-place tests', () => {
+    const estimated = place({ capacity_status: 'estimated' });
+    const verified = place({ capacity_status: 'verified', relationship_level: 'weak', capacity_level: 'medium' });
+    assert.equal(rankKey({ place: estimated, lastVisitDate: null, recentCompletedCount: 0, nextVisitDate: null, today: TODAY, config })[0], TIERS.EXPLORATION);
+    assert.equal(rankKey({ place: verified, lastVisitDate: daysAgo(3), recentCompletedCount: 0, nextVisitDate: null, today: TODAY, config })[0], TIERS.MAINTENANCE);
+  });
+});
+
+describe('EXPLORATION ordering determinism and tiebreaks — spec §8.1/§13', () => {
+  test('priority_score breaks a tie in explorationRank, descending', () => {
+    const lowPriority = place({ capacity_status: 'estimated', capacity_level: 'medium', priority_score: 10 });
+    const highPriority = place({ capacity_status: 'estimated', capacity_level: 'medium', priority_score: 90 });
+
+    const ranked = rankCandidates(
+      [
+        { place: lowPriority, lastVisitDate: null, recentCompletedCount: 0, nextVisitDate: null },
+        { place: highPriority, lastVisitDate: null, recentCompletedCount: 0, nextVisitDate: null },
+      ],
+      { today: TODAY, config }
+    );
+    assert.equal(ranked[0].place, highPriority, 'equal explorationRank -> higher priority_score sorts first');
+  });
+
+  test('place.id is the final deterministic tiebreak, ascending, once explorationRank and priority_score both tie', () => {
+    const first = place({ capacity_status: 'estimated', capacity_level: 'medium', priority_score: 50 });
+    const second = place({ capacity_status: 'estimated', capacity_level: 'medium', priority_score: 50 });
+    const [lower, higher] = first.id < second.id ? [first, second] : [second, first];
+
+    const ranked = rankCandidates(
+      [
+        { place: higher, lastVisitDate: null, recentCompletedCount: 0, nextVisitDate: null },
+        { place: lower, lastVisitDate: null, recentCompletedCount: 0, nextVisitDate: null },
+      ],
+      { today: TODAY, config }
+    );
+    assert.equal(ranked[0].place, lower, 'fully tied on rank and priority -> lower place.id sorts first');
+  });
+
+  test('ordering is deterministic across repeated runs and independent of input array order, on identical data', () => {
+    const places = ['low', 'medium', 'high', 'low', 'medium', 'high', 'low'].map((level, i) =>
+      place({ capacity_status: 'estimated', capacity_level: level, priority_score: (i * 7) % 5 })
+    );
+    const candidates = places.map((p) => ({ place: p, lastVisitDate: null, recentCompletedCount: 0, nextVisitDate: null }));
+
+    const runA = rankCandidates(candidates, { today: TODAY, config }).map((c) => c.place.id);
+    const runB = rankCandidates([...candidates].reverse(), { today: TODAY, config }).map((c) => c.place.id);
+    const runC = rankCandidates([...candidates], { today: TODAY, config }).map((c) => c.place.id);
+
+    assert.deepEqual(runB, runA, 'reversing the input order must not change the output order');
+    assert.deepEqual(runC, runA, 'repeated runs over identical data must produce identical order');
+  });
+
+  test('compareRankKeys generalizes cleanly to EXPLORATION\'s 4-element key alongside every other tier\'s 2-element key', () => {
+    const commitmentKey = [TIERS.COMMITMENT, 3];
+    const explorationKeyIdTwo = [TIERS.EXPLORATION, -1, 50, -2]; // place.id 2 (negated)
+    const explorationKeyIdOne = [TIERS.EXPLORATION, -1, 50, -1]; // place.id 1 (negated) — should sort first
+    assert.ok(compareRankKeys(commitmentKey, explorationKeyIdTwo) < 0, 'lower tier always wins regardless of within-tier key length');
+    assert.ok(compareRankKeys(explorationKeyIdTwo, explorationKeyIdOne) > 0, 'tier and rank tied -> the key encoding the smaller place.id must sort first');
   });
 });
