@@ -35,7 +35,7 @@ export default function CompletedVisitsModal({ date, visits, showContact, onClos
           ) : (
             <ul className="list">
               {visits.map((v) => (
-                <li key={v.id} className="stop">
+                <li key={v.id} className="stop" style={{ alignItems: 'center' }}>
                   <div className="main hover-row" title="View this visit's details" onClick={() => onViewVisit(v)}>
                     <div className="tag-list" style={{ alignItems: 'center' }}>
                       <span style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 15 }}>

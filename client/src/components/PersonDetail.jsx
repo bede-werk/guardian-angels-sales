@@ -578,23 +578,24 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                   {data.referrals.map((r) => (
                     <li
                       key={r.id}
-                      className="stack hover-row"
-                      style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}
+                      className="hover-row"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderTop: '1px solid var(--border)' }}
                       onClick={() => { exitFieldEdits(); setViewingReferral(r); }}
                     >
-                      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                      <div className="stack" style={{ minWidth: 0 }}>
                         <strong className="tiny">{r.referral_date ? formatDate(r.referral_date) : 'no date'}</strong>
-                        <Button
-                          variant="danger"
-                          size="small"
-                          title="Delete this referral"
-                          disabled={removingReferralId === r.id}
-                          onClick={(e) => { e.stopPropagation(); removeReferral(r); }}
-                        >
-                          ✕
-                        </Button>
+                        {r.notes && <div className="tiny">{r.notes}</div>}
                       </div>
-                      {r.notes && <div className="tiny">{r.notes}</div>}
+                      <Button
+                        variant="danger"
+                        size="small"
+                        title="Delete this referral"
+                        disabled={removingReferralId === r.id}
+                        onClick={(e) => { e.stopPropagation(); removeReferral(r); }}
+                        style={{ flexShrink: 0 }}
+                      >
+                        ✕
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -625,12 +626,12 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     return (
                       <li
                         key={v.id}
-                        className="stack hover-row"
-                        style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
+                        className="hover-row"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--border)' }}
                         onClick={() => { exitFieldEdits(); setViewingVisit(v); }}
                       >
-                        <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                          <div className="tag-list" style={{ flex: 'unset' }}>
+                        <div className="stack" style={{ minWidth: 0 }}>
+                          <div className="tag-list" style={{ minWidth: 0 }}>
                             <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
                             {/* "Bede Fulton at Guardian Angels (Test)" — who visited, then where. */}
                             {(v.user_name || v.place_name) && (
@@ -639,23 +640,24 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                               </span>
                             )}
                           </div>
-                          <Button
-                            variant="danger"
-                            size="small"
-                            title="Delete this whole visit, everyone on it included"
-                            disabled={removingVisitId === v.id}
-                            onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
-                          >
-                            ✕
-                          </Button>
+                          {/* Only when the trip took in someone else — on a
+                              one-person visit there's nothing to disclose. */}
+                          {others.length > 0 && (
+                            <div className="tiny muted">Also met {joinNames(others.map(encounterLabel))}</div>
+                          )}
+                          {v.notes && <div className="tiny">{v.notes}</div>}
+                          {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
                         </div>
-                        {/* Only when the trip took in someone else — on a
-                            one-person visit there's nothing to disclose. */}
-                        {others.length > 0 && (
-                          <div className="tiny muted">Also met {joinNames(others.map(encounterLabel))}</div>
-                        )}
-                        {v.notes && <div className="tiny">{v.notes}</div>}
-                        {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
+                        <Button
+                          variant="danger"
+                          size="small"
+                          title="Delete this whole visit, everyone on it included"
+                          disabled={removingVisitId === v.id}
+                          onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
+                          style={{ flexShrink: 0 }}
+                        >
+                          ✕
+                        </Button>
                       </li>
                     );
                   })}

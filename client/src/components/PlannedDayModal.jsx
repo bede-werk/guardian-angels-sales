@@ -71,7 +71,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
           ) : (
             <ul className="list">
               {visits.map((v) => (
-                <li key={v.visit_id ?? v.id} className="stop">
+                <li key={v.visit_id ?? v.id} className="stop" style={{ alignItems: 'center' }}>
                   <div
                     className="main hover-row"
                     title="View this visit's details"

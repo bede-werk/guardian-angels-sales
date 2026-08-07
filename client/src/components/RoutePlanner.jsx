@@ -478,7 +478,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
             </div>
             <ul className="list">
               {day.committed.map((v) => (
-                <li key={v.visit_id} className="stop">
+                <li key={v.visit_id} className="stop" style={{ alignItems: 'center' }}>
                   <div className="main">
                     <div className="name">{v.place_name}</div>
                     <div className="meta">

@@ -25,23 +25,23 @@ export default function SkippedVisitsModal({ date, visits, showRepName, onClose,
               {visits.map((v) => (
                 <li
                   key={v.id}
-                  className="stack hover-row"
-                  style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
+                  className="hover-row"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--border)' }}
                   onClick={() => onViewVisit(v)}
                 >
-                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                    <div className="tag-list" style={{ flex: 'unset' }}>
+                  <div className="stack" style={{ minWidth: 0 }}>
+                    <div className="tag-list" style={{ minWidth: 0 }}>
                       <span style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 15 }}>
                         {v.place_name || 'Unknown place'}
                       </span>
                       {v.category && <CategoryChip category={v.category} />}
                       {v.tier && <TierChip tier={v.tier} />}
                     </div>
-                    <span className="badge" style={{ background: 'var(--grey-tint-1)', color: 'var(--grey-dark)' }}>Skipped</span>
+                    {showRepName && (
+                      <div className="tiny muted">with {v.user_name || 'Unknown rep'}</div>
+                    )}
                   </div>
-                  {showRepName && (
-                    <div className="tiny muted">with {v.user_name || 'Unknown rep'}</div>
-                  )}
+                  <span className="badge" style={{ background: 'var(--grey-tint-1)', color: 'var(--grey-dark)', flexShrink: 0 }}>Skipped</span>
                 </li>
               ))}
             </ul>

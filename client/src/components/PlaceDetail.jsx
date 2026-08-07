@@ -371,11 +371,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   className="tiny hover-row"
                   title="Click to edit this place's pre-qualification estimate"
                   onClick={() => { setEditingNotes(false); setPreQualDraft(data.capacity_monthly_referrals ?? ''); setEditingPreQual(true); }}
+                  style={{ color: 'var(--teal-dark)', fontWeight: 600 }}
                 >
                   Pre-qualified{data.capacity_monthly_referrals != null ? ` · ~${data.capacity_monthly_referrals} referral${data.capacity_monthly_referrals === 1 ? '' : 's'}/month` : ''}
                 </div>
               ) : (
-                <div className="tiny muted">Needs pre-qualification</div>
+                <div className="tiny" style={{ color: 'var(--warn)', fontWeight: 600 }}>Needs pre-qualification</div>
               )}
 
               {editingNotes ? (
@@ -443,7 +444,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                     <li
                       key={p.id}
                       className="stop hover-row"
-                      style={{ justifyContent: 'space-between' }}
+                      style={{ justifyContent: 'space-between', alignItems: 'center' }}
                       onClick={() => { setEditingNotes(false); setEditingPreQual(false); setSelectedPersonId(p.id); }}
                     >
                       <div className="main">
@@ -547,14 +548,17 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   {data.visits.map((v) => (
                     <li
                       key={v.id}
-                      className="stack hover-row"
-                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
+                      className="hover-row"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--border)' }}
                       onClick={() => { setEditingNotes(false); setEditingPreQual(false); setViewingVisit(v); }}
                     >
-                      {/* nowrap + minWidth:0 so a long "with A, B and C" line
-                          wraps within its own column instead of pushing the
-                          delete button onto a line of its own. */}
-                      <div className="tag-list" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+                      {/* minWidth:0 so a long "with A, B and C" line wraps
+                          within its own column instead of pushing the delete
+                          button wider. The delete button lives as a sibling of
+                          this whole stack (not nested in its first line) so it
+                          centers against the full row, notes/next-visit lines
+                          included, not just the date line. */}
+                      <div className="stack" style={{ minWidth: 0 }}>
                         <div className="tag-list" style={{ minWidth: 0 }}>
                           <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
                           {/* "Lisa Marks with Flibber Gibblits, New Guy and a
@@ -565,19 +569,19 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                             </span>
                           )}
                         </div>
-                        <Button
-                          variant="danger"
-                          size="small"
-                          title="Delete this whole visit, everyone on it included"
-                          disabled={removingVisitId === v.id}
-                          onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
-                          style={{ flexShrink: 0 }}
-                        >
-                          ✕
-                        </Button>
+                        {v.notes && <div className="tiny">{v.notes}</div>}
+                        {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
                       </div>
-                      {v.notes && <div className="tiny">{v.notes}</div>}
-                      {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
+                      <Button
+                        variant="danger"
+                        size="small"
+                        title="Delete this whole visit, everyone on it included"
+                        disabled={removingVisitId === v.id}
+                        onClick={(e) => { e.stopPropagation(); removeVisit(v); }}
+                        style={{ flexShrink: 0 }}
+                      >
+                        ✕
+                      </Button>
                     </li>
                   ))}
                 </ul>
