@@ -10,6 +10,7 @@
     "geocode": "node src/scripts/geocode-places.js",
     "relationship:distribution": "node src/scripts/relationship-distribution.js",
     "capacity:distribution": "node src/scripts/capacity-distribution.js",
+    "capacity:legacy-diff": "node src/scripts/capacity-legacy-diff.js",
     "seed": "npm run migrate && npm run import",
     "reset": "knex migrate:rollback --all && npm run seed",
     "dev": "node --watch src/index.js",

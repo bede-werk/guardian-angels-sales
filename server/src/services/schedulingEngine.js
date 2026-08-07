@@ -44,7 +44,7 @@ const TIERS = { COMMITMENT: 0, ENDANGERED: 1, EXPLORATION: 2, MAINTENANCE: 3 };
 // Falls back to 'medium'/'weak' — the same defaults the
 // 20260712000000_add_scheduling_fields.js migration itself uses (capacity
 // backfill's own documented fallback, and relationship_level's column
-// default) — for a place with a null/unrecognized capacity_level or
+// default) — for a place with a null/unrecognized capacity level or
 // relationship_level, e.g. one created after that migration ran without
 // either field ever being set by a route.
 function targetCadenceDays(capacityLevel, relationshipLevel, config) {
@@ -59,9 +59,9 @@ function targetCadenceDays(capacityLevel, relationshipLevel, config) {
 // *effective* cadence, not the base one — this is the single source of
 // truth used both to test the tier-1 neglect threshold and to order within
 // tiers 1 and 3.
-function urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, today, config }) {
+function urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today, config }) {
   if (!lastVisitDate) return Infinity;
-  let cadence = targetCadenceDays(place.capacity_level, effectiveRelationshipLevel({ place, relationshipLevel }), config);
+  let cadence = targetCadenceDays(effectiveCapacityLevel({ place, capacityLevel }), effectiveRelationshipLevel({ place, relationshipLevel }), config);
   if (recentCompletedCount >= config.FATIGUE_THRESHOLD) cadence *= config.FATIGUE_MULTIPLIER;
   return daysSince(lastVisitDate, today) / cadence;
 }
@@ -81,6 +81,20 @@ function urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel
 // the meantime. Delete it along with the column.
 function effectiveRelationshipLevel({ place, relationshipLevel }) {
   return relationshipLevel ?? place.relationship_level;
+}
+
+// Same transition pattern as effectiveRelationshipLevel above, one release
+// later: capacity level is now COMPUTED (services/capacity.js,
+// capacity-computation-spec.md step 6) and supplied per-candidate by
+// buildCandidatePool, rather than read off place.capacity_level — the raw
+// column is a frozen one-time guess/pre-qual snapshot, never revised against
+// reality (see the spec's §1). The fallback to place.capacity_level exists
+// only so this module's own pure tests (bare place objects, no pool) stay
+// meaningful; buildCandidatePool always supplies capacityLevel in production,
+// so the fallback never fires there. Delete it once the legacy column is
+// dropped (spec step 9).
+function effectiveCapacityLevel({ place, capacityLevel }) {
+  return capacityLevel ?? place.capacity_level;
 }
 
 // Ordinal for "ordered among themselves by capacity level (guess)" within
@@ -127,19 +141,27 @@ function eligibility({ place, today, lastVisitDate, nextVisitDate, plannedVisitD
 
 // [tier, withinTierValue] — lower tier sorts first; within a tier, higher
 // withinTierValue sorts first (see compareRankKeys).
-function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, relationshipLevel, today, config }) {
+//
+// isEstimated still reads place.capacity_status directly, NOT the computed
+// capacity service's `confidence` — that's capacity-computation-spec.md step
+// 7's swap (the EXPLORATION tier rework), not step 6's. Step 6 is scoped to
+// the cadence-lookup/capacityRank consumers of capacity LEVEL only; the tier
+// gate itself is untouched here on purpose. capacity_status is kept current
+// by routes/visits.js's dual-write bridge in the meantime (see that
+// function's own comment) — it survives through step 7, not just step 6.
+function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, relationshipLevel, capacityLevel, today, config }) {
   if (nextVisitDate && nextVisitDate <= today) {
     return [TIERS.COMMITMENT, daysSince(nextVisitDate, today)];
   }
 
   const isEstimated = place.capacity_status === 'estimated';
-  const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, today, config });
+  const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today, config });
 
   if (!isEstimated && u >= config.NEGLECT_MULTIPLIER) {
     return [TIERS.ENDANGERED, u];
   }
   if (isEstimated) {
-    return [TIERS.EXPLORATION, capacityRank(place.capacity_level)];
+    return [TIERS.EXPLORATION, capacityRank(effectiveCapacityLevel({ place, capacityLevel }))];
   }
   return [TIERS.MAINTENANCE, u];
 }
@@ -159,7 +181,7 @@ function compareRankKeys(a, b) {
   return compareDesc(a[1], b[1]);
 }
 
-// candidates: [{ place, lastVisitDate, recentCompletedCount, nextVisitDate, plannedVisitDates, lockedElsewhere, relationshipLevel }]
+// candidates: [{ place, lastVisitDate, recentCompletedCount, nextVisitDate, plannedVisitDates, lockedElsewhere, relationshipLevel, capacityLevel }]
 // Filters out ineligible candidates, then sorts the rest by rankKey.
 function rankCandidates(candidates, { today, config }) {
   return candidates
@@ -173,6 +195,7 @@ module.exports = {
   daysSince,
   targetCadenceDays,
   effectiveRelationshipLevel,
+  effectiveCapacityLevel,
   urgency,
   capacityRank,
   eligibility,

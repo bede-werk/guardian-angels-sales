@@ -41,34 +41,40 @@ Two things it's worth knowing immediately, because both will otherwise look like
    signal that the axis isn't separating and half-lives/thresholds need tuning before the
    ranker leans on it. Seeding (People tab → "Seed relationships") is what makes day one honest.
 
-### 2026-08-07 — Capacity is now COMPUTED too (new §18 at the bottom of this doc), steps 1–5 of 9
+### 2026-08-07 — Capacity is now COMPUTED too (new §18 at the bottom of this doc), steps 1–6 of 9
 
 The other cadence axis got the same treatment as relationship above. `places.capacity_level`/
 `capacity_monthly_referrals`/`capacity_status` were a manual guess, a number frozen at first
 pre-qual, and a one-way latch respectively — replaced with `server/src/services/capacity.js`,
 computed from an append-only `capacity_observations` log plus our own measured referral
-throughput, with the same override pattern. **Full design and the two deferred ranker-facing
-steps are in [capacity-computation-spec.md](capacity-computation-spec.md) and §18 below — read
-before touching capacity, the EXPLORATION tier, or scheduling cadence.**
+throughput, with the same override pattern. `schedulingEngine.js`'s cadence lookup now reads the
+computed level (step 6, done — see §18 for the verification). **Full design and the two remaining
+ranker-facing steps are in [capacity-computation-spec.md](capacity-computation-spec.md) and §18
+below — read before touching capacity, the EXPLORATION tier, or scheduling cadence.**
 
 Two things worth knowing immediately, because both will otherwise look like bugs:
 
-1. **Capacity and `referralMetrics.js`'s place rollup will disagree for any contact who's
-   changed employers, and both are correct.** `referrals.place_id` is stamped once at referral
-   creation from the referring person's place *at that time* and never re-stamped
-   (`routes/referrals.js`) — so `capacity.js`'s measured floor stays attributed to whichever
-   building actually generated the referral, per the spec's "capacity is a property of the
-   building, not the contact" rule (§2/§14). `referralMetrics.js`'s own place-level rollup does
-   the opposite on purpose (it follows the contact's *current* place, see its own
-   `referralMetricsByPlaceId` comment) — so a place's two referral counts can legitimately
-   diverge the moment someone changes jobs. Neither is a bug; don't "fix" one to match the other.
-2. **A temporary dual-write bridge is live and must be deleted at step 6.** `schedulingEngine.js`
-   hasn't been swapped to read the computed service yet, so `routes/visits.js`'s
-   `maybeCapturePreQualification` also writes the legacy `capacity_monthly_referrals`/
-   `capacity_status` columns straight to `places` alongside the new observation row — otherwise a
-   pre-qualified place would never leave the EXPLORATION tier (which still reads only the old
-   columns) and would get routed back for pre-qualification forever. Clearly commented as a
-   bridge in `routes/visits.js`; remove it the moment step 6 lands.
+1. **Capacity is correct; `referralMetrics.js`'s PLACE-level rollup is a known bug, not a second
+   correct answer.** `referrals.place_id` is stamped once at referral creation from the referring
+   person's place *at that time* and never re-stamped (`routes/referrals.js`) — so `capacity.js`'s
+   measured floor correctly stays attributed to whichever building actually generated the
+   referral, per the spec's "capacity is a property of the building, not the contact" rule
+   (§2/§14). `referralMetrics.js`'s place-level rollup (`referralMetricsByPlaceId`) instead joins
+   on the contact's *current* place — so on a job change, it silently drops the referral from the
+   place that earned it and credits the place the contact moved to, which never generated it.
+   Logged as a real bug in §18, fix deferred until before step 8 (it's a hard dependency for the
+   drop-off detector specifically — see `capacity-computation-spec.md` §9's 2026-08-07
+   amendment). `referralMetrics.js`'s PERSON-level rollup is unaffected and correct as-is.
+2. **A temporary dual-write bridge is live and must survive through step 7, not just step 6.**
+   `routes/visits.js`'s `maybeCapturePreQualification` writes the legacy
+   `capacity_monthly_referrals`/`capacity_status` columns straight to `places` alongside the new
+   observation row, because the EXPLORATION tier gate (`rankKey`'s `isEstimated` check) still
+   reads `place.capacity_status` directly — that consumer isn't swapped until step 7, not step 6.
+   Without the bridge, a pre-qualified place would never leave EXPLORATION and would get routed
+   back for pre-qualification forever. **Correction, 2026-08-07:** an earlier version of this note
+   said "delete at step 6" — wrong; step 6 only swapped the cadence-lookup/`capacityRank`
+   consumers of capacity *level* (done, see §18), which don't touch `capacity_status` at all.
+   Clearly commented as a bridge in `routes/visits.js`; remove it once step 7 lands.
 
 **What this app is, in one line:** a CRM-ish tool for Guardian Angels Homecare's sales team
 to plan visits to referral places, log who they talked to, and track referrals — built this
@@ -1193,8 +1199,8 @@ wire that into `scheduler.js`'s ordering in place of/alongside `clusterSort`, (d
 8. Read §16 before touching relationship level or visit outcomes — the outcome enum changed and
    relationship is now computed, not stored.
 9. Read §18 (and `capacity-computation-spec.md`) before touching capacity, the EXPLORATION tier,
-   or scheduling cadence — capacity is now computed too, steps 1–5 of 9 only, and there's a
-   temporary dual-write bridge in `routes/visits.js` that must be deleted at step 6.
+   or scheduling cadence — capacity is now computed too, steps 1–6 of 9 done, and there's a
+   temporary dual-write bridge in `routes/visits.js` that must survive through step 7 (not 6).
 
 ---
 
@@ -1432,7 +1438,7 @@ skipped-with-encounters trip is even supposed to mean once that exists.
 
 ---
 
-## 18. Computed capacity (steps 1–5 of 9 built 2026-08-07)
+## 18. Computed capacity (steps 1–6 of 9 built 2026-08-07)
 
 Replaces the manual `places.capacity_level`, the frozen `places.capacity_monthly_referrals`, and
 the one-way `places.capacity_status` latch. Built from Bede's own written spec —
@@ -1490,6 +1496,47 @@ Same anti-rot mechanism as relationship's override (§16): the UI always shows c
 override side by side when they diverge, so a stale manual call is visible, not silently trusted
 forever.
 
+### Step 6 — cadence lookup swapped to the computed level (done 2026-08-07)
+
+`schedulingEngine.js`'s `targetCadenceDays()` and the EXPLORATION tier's `capacityRank()` both
+used to read `place.capacity_level` (the raw, frozen column) directly. `buildCandidatePool`
+(`scheduleDraft.js`) now also computes capacity for the whole pool in one batched
+`computeCapacityForPlaces` call, exactly like it already does for relationship, and attaches the
+result as `capacityLevel` on each candidate. `schedulingEngine.js` reads that via a new
+`effectiveCapacityLevel({ place, capacityLevel })` helper — same transition-fallback shape as
+`effectiveRelationshipLevel`, falling back to `place.capacity_level` only when no candidate-level
+value is supplied (i.e. only in this module's own bare-place-object unit tests; production always
+supplies it). Delete the fallback once the legacy column is dropped (step 9), same as
+relationship's.
+
+**Deliberately NOT touched:** `rankKey`'s `isEstimated` tier gate still reads
+`place.capacity_status` directly, not the computed `confidence`. That's step 7's swap (the
+EXPLORATION tier rework), not step 6's — see the dual-write bridge note above for why that matters
+(the bridge has to survive step 6 and stay live through step 7).
+
+**Verification performed before finalizing, both requested explicitly:**
+- **Legacy-vs-computed diff** (`npm run capacity:legacy-diff`, new script): 260/261 places (99.6%)
+  unchanged. The 1 move was the internal test place ("Guardian Angels (Test)"), and only because it
+  was carrying a manual capacity override left over from exercising the override UI during steps
+  1–5 — not a real disagreement.
+- **Override path exercised end to end** on that same test place before clearing it: confirmed
+  `capacity_override_level` flows through `computeCapacityForPlace` → `buildCandidatePool`'s
+  `capacityLevel` → `effectiveCapacityLevel` → `targetCadenceDays`, changing its cadence target
+  from 21 days (legacy `medium`) to 60 days (override `low`) at the same relationship level — and,
+  holding `lastVisitDate` at a fixed 60-days-ago for illustration, urgency from 2.86 down to 1.0 at
+  the same inputs otherwise. The override was then cleared (`capacity_override_level/_reason/_at`
+  all set back to `null`) so the test place stops carrying a fake value; it now resolves naturally
+  to `low` via its real declared observation (5/month, which legitimately buckets under `medium`'s
+  6-referral floor — the legacy column's `medium` was simply stale).
+- **Before/after draft generation, same date/zone/home base**: ran `generateDraft` once against a
+  temporary copy of the pre-swap `scheduleDraft.js`/`schedulingEngine.js`/`scheduleGenerator.js`
+  (pulled from the prior commit via `git show HEAD:...`, loaded under throwaway filenames, never
+  written into the working tree as a real change) and once against the current code, same
+  `today`/target date/zone override/home base, real OSRM optimizer both times. Output — stop order,
+  visit types, `totalMinutes`, `remainingMinutes` — was byte-identical. Confirms the swap changed
+  nothing for any place whose level didn't move, which is what the near-total diff overlap predicts
+  but doesn't itself prove.
+
 ### Judgment calls recorded here because the spec asked for them (or a spec error was caught)
 
 1. **§13 test 2 ("Asymmetry — down") had a bucket-boundary contradiction** — its prose said
@@ -1523,14 +1570,36 @@ code from steps 8–9, not built. `npm run capacity:distribution` is the health-
 
 - **The dual-write bridge** (`routes/visits.js`'s `maybeCapturePreQualification`, see §0 above) —
   writes the legacy `capacity_monthly_referrals`/`capacity_status` columns alongside the new
-  observation row, purely so `schedulingEngine.js` (still reading only the old columns) doesn't
-  strand pre-qualified places in EXPLORATION forever. Delete it the moment step 6 lands.
-- **Capacity vs. `referralMetrics.js` disagreement for job-changing contacts** — see §0 above.
-  Correct in both cases; will look like a bug the first time someone notices.
-- **Steps 6–9 are not started**, by Bede's own pacing choice (steps 1–5 now, stop and report,
-  steps 6–9 later): swapping `schedulingEngine.js`'s cadence lookup to the computed service,
-  fixing the EXPLORATION tier's tie-break (a real launch blocker — ties currently pick a day's
-  entire zone at random), the drop-off detector, and dropping the three legacy columns.
+  observation row, purely so the EXPLORATION tier gate (`rankKey`'s `isEstimated` check, still
+  reading `place.capacity_status` directly — untouched by step 6) doesn't strand pre-qualified
+  places in EXPLORATION forever. Survives step 6; delete it once step 7 lands.
+- **Capacity vs. `referralMetrics.js`'s PERSON-level rollup disagreement for job-changing
+  contacts** — see §0 above. Both are correct: capacity's frozen `referrals.place_id` snapshot
+  stays with the building that actually generated the referral; the person-level rollup correctly
+  follows the individual. This one is not a bug — leave it alone.
+- **Step 6 is done** (see its own subsection above); **steps 7–9 are not started**, by Bede's own
+  pacing choice (stop and report after each): fixing the EXPLORATION tier's tie-break (a real
+  launch blocker — ties currently pick a day's entire zone at random) and retiring the dual-write
+  bridge, the drop-off detector, and dropping the three legacy columns.
 - **The distribution readout validated the category-seed axis, not the 6/16 thresholds** — 99.6%
   of real places are still `category_seed`/`unknown` confidence (expected — real places, test-only
   referral/visit history). Re-check the thresholds once roughly 30 real pre-quals exist.
+
+### Known bug, logged 2026-08-07 — fix before step 8 (drop-off detector), NOT fixed yet
+
+`referralMetrics.js`'s **place-level** rollup (`referralMetricsByPlaceId`, used by the places
+directory) is wrong on every job change, in both directions: it joins on the referring person's
+*current* `place_id`, so the moment a contact changes employers, the place that actually earned
+the referral loses it from its rollup, and the place they moved to gains a referral it never
+generated. The **person-level** rollup (`referralMetricsByPersonId`) is correct and stays as-is —
+following the individual is exactly what it should do.
+
+This surfaced because `capacity.js`'s `measuredFloorByPlace` was deliberately built to read
+`referrals.place_id` directly instead (see §18's judgment call #2) — the two systems' disagreement
+on job-changing contacts is what exposed that the place rollup, not just the capacity service, was
+answering the wrong question. The fix is presumably the same: read `referrals.place_id` instead of
+joining on `people.place_id` current. Not done here — deliberately deferred, because it's a launch
+blocker for §9's drop-off detector specifically (a departing contact would otherwise produce a
+false drop-off signature through this same rollup, see `capacity-computation-spec.md` §9's
+2026-08-07 amendment) but is lower urgency everywhere else the place rollup is displayed today.
+**Fix this before building the drop-off detector (step 8), not before.**

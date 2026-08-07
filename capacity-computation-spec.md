@@ -1,7 +1,7 @@
 # Capacity — Computation Spec
 
 Target: Guardian Angels Sales Scheduler
-Status: Implementation spec — steps 1–5 built 2026-08-07 (see HANDOFF.md and `project_capacity_spec_2026-08-07.md`), steps 6–9 not started
+Status: Implementation spec — steps 1–6 built 2026-08-07 (see HANDOFF.md §18 and `project_capacity_spec_2026-08-07.md`), steps 7–9 not started
 Companion to: relationship-computation-spec.md (the other cadence axis, folded into HANDOFF.md §16 — never saved standalone either)
 Replaces: manual `places.capacity_level`, frozen `capacity_monthly_referrals`, latched `capacity_status`
 Also folds in: EXPLORATION tier tie-break (launch blocker), ENDANGERED referral drop-off trigger
@@ -109,7 +109,7 @@ Stored separately from the computed value, same pattern as the relationship over
 - `places.capacity_level` — same.
 - `places.capacity_status` — replaced by derived confidence (§6). Keep the column until every consumer is migrated, then drop. Do not add values to its enum.
 
-> **2026-08-07 addendum (temporary, delete at step 6):** "stop writing immediately" above is not literally true for `capacity_monthly_referrals`/`capacity_status` — `routes/visits.js`'s `maybeCapturePreQualification` dual-writes both columns alongside the new `capacity_observations` insert, because `schedulingEngine.js` (step 6) still reads only the old columns. Without the bridge, a pre-qualified place never leaves EXPLORATION. See the bridge's own comment in `routes/visits.js` for the exact mechanics; delete the block the moment step 6 lands.
+> **2026-08-07 addendum (temporary, delete at step 7):** "stop writing immediately" above is not literally true for `capacity_monthly_referrals`/`capacity_status` — `routes/visits.js`'s `maybeCapturePreQualification` dual-writes both columns alongside the new `capacity_observations` insert, because the EXPLORATION tier gate (`rankKey`'s `isEstimated` check) still reads `place.capacity_status` directly. Without the bridge, a pre-qualified place never leaves EXPLORATION. Step 6 only swaps the cadence-lookup/`capacityRank` consumers of capacity LEVEL — `capacity_status` isn't touched until step 7's EXPLORATION tier rework, so the bridge survives step 6 and must stay live through it. **Corrected 2026-08-07**: an earlier version of this note said "delete at step 6" — wrong, the bridge's only reason to exist (the `capacity_status` consumer) isn't retired until step 7. See the bridge's own comment in `routes/visits.js` for the exact mechanics; delete the block once step 7 lands, not before.
 
 ## 6. `services/capacity.js`
 
@@ -253,6 +253,8 @@ The gap. The ENDANGERED tier fires only on `urgency >= NEGLECT_MULTIPLIER` — p
 
 **Not started as of 2026-08-07.**
 
+> **Source requirement, added 2026-08-07 (spec amendment — read before building this):** the detector MUST compute `recent`/`baseline` from `referrals.place_id` directly (the same source `capacity.js`'s `measuredFloorByPlace` uses), NEVER from `referralMetrics.js`'s place-level rollup (`referralMetricsByPlaceId`). That rollup joins on the referring person's *current* `place_id`, not the referral's own place attribution — so a departing named contact (DON leaving, etc.) produces the exact drop-off signature by construction: recent volume collapses to zero the moment they leave, while the baseline (computed while they still worked there) stays high. Built on the rollup, this detector would fire a false ENDANGERED alert on every contact departure, concentrated in the highest-turnover categories — in the one tier whose entire value depends on being trustworthy. This is the same divergence documented in §12's note below and in HANDOFF.md §18; it is a hard dependency for this section specifically, not just a general FYI.
+
 ### 9.1 Detector
 
 ```js
@@ -373,10 +375,10 @@ If eRSP will only export one thing, take dated referrals over contact records. C
 2. `services/capacity.js` with tests. Do not wire to anything yet. — **done**
 3. Distribution readout (§7). Confirm the buckets separate before the ranker consumes them. — **done**
 4. Wire into GET endpoints; PlaceDetail display. — **done**
-5. VisitLogModal pre-qual gate change + observation write path. — **done**, plus a temporary dual-write bridge to the legacy columns (see §5 addendum) so pre-qualified places don't get stranded in EXPLORATION before step 6 lands
-6. Swap `schedulingEngine.js` cadence lookup to the computed level. Compare computed vs. legacy `capacity_level` across all places and eyeball the diff before switching. — **not started**
-7. EXPLORATION tier ordering (§8). Stop and report — this changes generated routes visibly and should be reviewed against a real draft before proceeding. — **not started**
-8. Drop-off detector (§9), shipped behind `DROPOFF_DETECTOR_ENABLED = false`. — **not started**
-9. Drop `capacity_monthly_referrals`, `capacity_level`, `capacity_status` in a follow-up migration once verified. — **not started**; also remove the §5 dual-write bridge no later than step 6
+5. VisitLogModal pre-qual gate change + observation write path. — **done**, plus a temporary dual-write bridge to the legacy columns (see §5 addendum) so pre-qualified places don't get stranded in EXPLORATION — survives through step 7, see that addendum's 2026-08-07 correction
+6. Swap `schedulingEngine.js` cadence lookup to the computed level. Compare computed vs. legacy `capacity_level` across all places and eyeball the diff before switching. — **done 2026-08-07**: diff was 260/261 unchanged (the 1 move was the internal test place's own manual override, exercised and confirmed end to end, then cleared); before/after draft generation confirmed byte-identical on the same seed/date/zone. `targetCadenceDays`/`capacityRank` now read the computed level via `buildCandidatePool`'s new `capacityLevel` field (`effectiveCapacityLevel()` in `schedulingEngine.js`, same fallback-to-column pattern as `effectiveRelationshipLevel`). The `capacity_status`/`isEstimated` tier gate is explicitly NOT touched — that's step 7.
+7. EXPLORATION tier ordering (§8). Stop and report — this changes generated routes visibly and should be reviewed against a real draft before proceeding. Also the step that retires the `capacity_status` dual-write bridge (§5 addendum) and swaps the tier gate off `place.capacity_status` — **not started**
+8. Drop-off detector (§9), shipped behind `DROPOFF_DETECTOR_ENABLED = false`. Must read `referrals.place_id` directly per §9.1's 2026-08-07 amendment, never `referralMetrics.js`'s place rollup — see HANDOFF.md's logged bug in that rollup first. — **not started**
+9. Drop `capacity_monthly_referrals`, `capacity_level`, `capacity_status` in a follow-up migration once verified. — **not started**
 
 Steps 6 and 7 are the two that change routing behaviour. Smallest viable diffs, no opportunistic refactoring, and surface any policy question rather than resolving it in code.

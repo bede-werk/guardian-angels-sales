@@ -26,6 +26,7 @@ const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 const { orgToday } = require('./orgDate');
 const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
+const { computeCapacityForPlaces } = require('./capacity');
 
 // Recognizes a unique-constraint violation across both engines this app runs
 // on (SQLite in dev, Postgres in prod) — see commitDay's per-row insert loop,
@@ -267,6 +268,15 @@ async function buildCandidatePool(db, { today }) {
   // need to touch this call site's shape.
   const relationshipByPlace = await computeRelationshipForPlaces(db, places.map((p) => p.id), { asOf: today });
 
+  // Capacity level is computed too now (services/capacity.js,
+  // capacity-computation-spec.md step 6) — same "fetch once for the whole
+  // pool" reasoning as relationship above, not a per-place call. Unlike
+  // relationship, capacity's own `level` field is already override-aware
+  // (computeCapacityForPlaces resolves override precedence internally — see
+  // its own comment), so there's no separate "effective level" helper to
+  // call here the way relationshipFor() provides one.
+  const capacityByPlace = await computeCapacityForPlaces(db, places.map((p) => p.id), { asOf: today });
+
   return places.map((place) => ({
     place,
     lastVisitDate: lastVisitByPlace[place.id] || null,
@@ -276,6 +286,7 @@ async function buildCandidatePool(db, { today }) {
     // The EFFECTIVE level — a manual override wins over the computed value,
     // which is the whole point of the override existing.
     relationshipLevel: relationshipFor(relationshipByPlace, place.id).effective_level,
+    capacityLevel: capacityByPlace.get(place.id)?.level ?? null,
   }));
 }
 
