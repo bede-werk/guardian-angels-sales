@@ -111,6 +111,7 @@ export function PlaceRelationship({ relationship, onSave, saving }) {
   return (
     <div className="stack">
       <div className="tag-list" style={{ alignItems: 'center' }}>
+        <span className="tiny muted">Status:</span>
         <div className="hover-row" title="Click to override the computed relationship level" onClick={startEdit} style={{ width: 'fit-content' }}>
           <RelationshipChip level={effective} overridden={overridden} />
         </div>
@@ -139,6 +140,7 @@ export function PersonRelationship({ relationship }) {
   return (
     <div className="stack">
       <div className="tag-list" style={{ alignItems: 'center' }}>
+        <span className="tiny muted">Status:</span>
         <RelationshipChip level={level} />
         <TrendIndicator trend={relationship.trend} />
       </div>

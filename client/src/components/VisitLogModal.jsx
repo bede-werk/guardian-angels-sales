@@ -182,6 +182,16 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     api.place(resolvedPlaceId).then(setPlace).catch(() => {});
   }, [resolvedPlaceId]);
 
+  // Meeting nobody can't produce a "substantive conversation" or any of the
+  // other outcomes that presuppose talking to someone — the only thing that
+  // actually happened is materials got left (or not even that, but that's
+  // the closest true answer on offer). Locked rather than left as a normal
+  // pick, so the dropdown itself is removed for this encounter below.
+  useEffect(() => {
+    if (!metTypes.includes('nobody')) return;
+    setDetails((d) => ({ ...d, 'type:nobody': { outcome: 'materials_only', they_requested: false } }));
+  }, [metTypes]);
+
   // Editing/completing always refetches the trip, because the lists that open
   // this modal (a place's or person's visit history) carry only a name-only
   // encounter summary — no ids, no outcomes. Saving off that summary would
@@ -571,15 +581,19 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                   {encounters.map((e) => (
                     <div key={e.key} className="encounter-row">
                       <div className="encounter-name">{e.label}</div>
-                      <select
-                        value={detailFor(e.key).outcome}
-                        onChange={(ev) => setDetail(e.key, { outcome: ev.target.value })}
-                      >
-                        <option value="">Select what happened…</option>
-                        {Object.entries(OUTCOME_LABELS).map(([key, label]) => (
-                          <option key={key} value={key}>{label}</option>
-                        ))}
-                      </select>
+                      {e.met_with_type === 'nobody' ? (
+                        <div className="tiny muted">{OUTCOME_LABELS.materials_only}</div>
+                      ) : (
+                        <select
+                          value={detailFor(e.key).outcome}
+                          onChange={(ev) => setDetail(e.key, { outcome: ev.target.value })}
+                        >
+                          <option value="">Select what happened…</option>
+                          {Object.entries(OUTCOME_LABELS).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                          ))}
+                        </select>
+                      )}
                       {/* Them asking US for something is the purest reciprocity
                           signal available — it measures their investment, not
                           the rep's. Asked per encounter because it's a fact

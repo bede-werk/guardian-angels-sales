@@ -25,9 +25,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete })
           {/* No contact line here on purpose. Who was met lives in a visit's
               `encounters`, which only get written when the visit is logged —
               a planned stop having none is its normal state, not missing
-              data, so this says so outright rather than rendering an empty
-              "Contact:" row. The completed equivalent is VisitDetailModal. */}
-          <div className="tiny muted">Nobody recorded yet — who you meet is captured when you log this visit.</div>
+              data. The completed equivalent is VisitDetailModal. */}
           {visit.user_name && (
             <div className="tiny"><strong>Rep:</strong> {visit.user_name}</div>
           )}

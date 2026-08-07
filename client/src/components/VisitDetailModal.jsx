@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, formatDate, VISIT_TYPE_LABELS } from '../api';
-import { OutcomeChip } from './ui/Chip';
+import { api, formatDate, VISIT_TYPE_LABELS, outcomeLabel } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 
@@ -178,41 +177,36 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
                 {trip.encounters.map((e) => {
                   const open = openEncounterId === e.id;
                   return (
-                    <div key={e.id} className="encounter-row">
+                    <div
+                      key={e.id}
+                      className="encounter-row hover-row"
+                      title={open ? 'Hide what happened' : 'Show what happened with them'}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setOpenEncounterId(open ? null : e.id)}
+                      onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpenEncounterId(open ? null : e.id); } }}
+                    >
                       <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div
-                          className="encounter-name hover-row"
-                          title={open ? 'Hide what happened' : 'Show what happened with them'}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => setOpenEncounterId(open ? null : e.id)}
-                          onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpenEncounterId(open ? null : e.id); } }}
-                        >
+                        <div className="encounter-name">
                           {open ? '▾' : '▸'} {encounterLabel(e)}
                           {e.person_title ? <span className="muted"> — {e.person_title}</span> : null}
                         </div>
-                        <Button
-                          variant="danger"
-                          size="small"
+                        <button
+                          type="button"
+                          className="icon-remove"
                           title="Remove this person from this visit"
                           disabled={removingEncounterId === e.id}
-                          onClick={() => removeEncounter(e)}
+                          onClick={(ev) => { ev.stopPropagation(); removeEncounter(e); }}
                         >
-                          ✕
-                        </Button>
+                          ×
+                        </button>
                       </div>
                       {open && (
                         <div className="stack" style={{ gap: 6 }}>
                           {e.outcome ? (
-                            <div className="tag-list"><OutcomeChip outcome={e.outcome} /></div>
+                            <div className="tiny"><strong>Outcome:</strong> {outcomeLabel(e.outcome)}</div>
                           ) : (
                             <div className="tiny muted">No outcome recorded.</div>
-                          )}
-                          {(e.person_email || e.person_phone) && (
-                            <div className="tiny">
-                              {e.person_email && <div>{e.person_email}</div>}
-                              {e.person_phone && <div>{e.person_phone}</div>}
-                            </div>
                           )}
                           {/* Only worth stating when it happened — "no" is the
                               default for every encounter and says nothing. */}
