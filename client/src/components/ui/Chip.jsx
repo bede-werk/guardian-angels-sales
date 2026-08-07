@@ -2,7 +2,7 @@
 // outcome, and category. This file replaced the old Badges.jsx during the
 // brand redesign — same idea, restyled with the brand tokens.
 import React from 'react';
-import { outcomeLabel, RELATIONSHIP_LABELS } from '../../api';
+import { outcomeLabel, RELATIONSHIP_LABELS, CAPACITY_LABELS } from '../../api';
 
 // "Tier 1", "Tier 2", "Tier 3" + an optional "★ Priority" pill next to it.
 export function TierChip({ tier, isPriority }) {
@@ -32,6 +32,18 @@ export function RelationshipChip({ level, overridden }) {
   return (
     <span className={`badge rel-${level}`} title={overridden ? 'Set manually — see the subtext below for the computed value' : undefined}>
       {RELATIONSHIP_LABELS[level] || level}
+    </span>
+  );
+}
+
+// A place's computed capacity level (services/capacity.js). `overridden`
+// works the same way RelationshipChip's does — the subtext line below it
+// (see CapacityDetail.jsx) is what actually discloses "manually set."
+export function CapacityChip({ level, overridden }) {
+  if (!level) return null;
+  return (
+    <span className={`badge cap-${level}`} title={overridden ? 'Set manually — see the subtext below for the computed value' : undefined}>
+      {CAPACITY_LABELS[level] || level}
     </span>
   );
 }

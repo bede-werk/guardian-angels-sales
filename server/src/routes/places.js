@@ -11,7 +11,15 @@ const { compareDatesAsc } = require('../services/sortHelpers');
 const { computeRelationshipForPlaces, relationshipFor, LEVELS: RELATIONSHIP_LEVELS } = require('../services/relationship');
 const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
+const { computeCapacityForPlace } = require('../services/capacity');
+const { orgToday } = require('../services/orgDate');
 const schedulingConfig = require('../config/scheduling');
+
+// The three real capacity buckets — same list capacity.js's own
+// bucketForMonthlyReferrals resolves into, used here only to validate
+// capacity_override_level (the level is a human's direct bucket choice, not
+// a number to be bucketed).
+const CAPACITY_LEVELS = ['high', 'medium', 'low'];
 
 const router = express.Router();
 
@@ -65,23 +73,22 @@ function tierError(tier) {
 
 // Fields a client is allowed to set on an existing place via PATCH. (POST
 // below has its own inline handling since it also derives priority_score/region.)
-const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes', 'capacity_monthly_referrals', 'capacity_status'];
-
-// capacity_monthly_referrals — "real number captured at pre-qual" (see the
-// migration that added it) — is nullable (null clears back to "needs
-// pre-qualification") but anything provided must be a non-negative whole
-// number (referrals/month, not a fraction).
-function capacityMonthlyReferralsError(v) {
-  if (v === undefined || v === null || v === '') return null;
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < 0) return 'capacity_monthly_referrals must be a non-negative whole number';
-  return null;
-}
-
-// estimated (never pre-qualified — the default) | adjusted (corrected
-// directly on the place card, no fresh visit) | verified (set from an actual
-// first-visit pre-qualification conversation, see routes/visits.js's PATCH).
-const CAPACITY_STATUSES = ['estimated', 'adjusted', 'verified'];
+//
+// capacity_monthly_referrals/capacity_status are DELIBERATELY absent —
+// capacity-computation-spec.md §5: "stop writing immediately, keep reading
+// during verification" (the columns stay for now, since schedulingEngine.js
+// hasn't been swapped over to the computed value yet — see the spec's build
+// order step 6, not done here). Setting a place's declared capacity now
+// happens via POST /:id/capacity-observations below, which appends to
+// capacity_observations instead of overwriting a column — see that route's
+// own comment for why an append-only log replaced a single frozen number.
+// do_not_visit was previously a schema field with no write path anywhere in
+// the app (only ever read, by schedulingEngine.js's eligibility() guard) —
+// added here now because capacity-computation-spec.md §4/§11 gives it its
+// first real UI entry point: a dismissible "this place reports no winnable
+// referrals" suggestion on a zero-capacity place. Plain boolean, no
+// validation beyond the truthy coercion PATCH already does everywhere else.
+const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes', 'do_not_visit'];
 
 // relationship_level_override is the manual "I know this one, trust me over
 // the math" escape hatch on the otherwise-computed relationship level (see
@@ -95,9 +102,29 @@ function relationshipOverrideError(v) {
   if (!RELATIONSHIP_LEVELS.includes(v)) return `relationship_level_override must be one of: ${RELATIONSHIP_LEVELS.join(', ')}`;
   return null;
 }
-function capacityStatusError(v) {
-  if (v === undefined) return null;
-  if (!CAPACITY_STATUSES.includes(v)) return `capacity_status must be one of: ${CAPACITY_STATUSES.join(', ')}`;
+
+// capacity_override_level — same "I know this one, trust me over the math"
+// escape hatch as relationship_level_override, mirrored exactly (see
+// 20260807000001_add_place_capacity_override.js's own header for why this
+// one carries a free-text reason instead of a `_by` user id). null/''
+// clears it back to computed control; anything else must be one of the
+// three real capacity levels — it's a direct bucket choice, not a number to
+// be re-bucketed.
+function capacityOverrideLevelError(v) {
+  if (v === undefined || v === null || v === '') return null;
+  if (!CAPACITY_LEVELS.includes(v)) return `capacity_override_level must be one of: ${CAPACITY_LEVELS.join(', ')}`;
+  return null;
+}
+
+// The number a place-card or pre-qual answer declares — validated here
+// because it's shared by both write paths onto capacity_observations (this
+// file's POST /:id/capacity-observations below, and routes/visits.js's
+// first-visit capture) rather than duplicated in each.
+function monthlyReferralsError(v) {
+  const n = Number(v);
+  if (v === undefined || v === null || v === '' || !Number.isInteger(n) || n < 0) {
+    return 'monthly_referrals must be a non-negative whole number';
+  }
   return null;
 }
 
@@ -407,6 +434,23 @@ router.get('/:id', async (req, res, next) => {
     // it (see relationship.js's computeRelationshipForPlaces comment).
     const relationshipByPlace = await computeRelationshipForPlaces(knex, [place.id], { includeTrend: true });
 
+    // Same "full object on the detail screen" reasoning as relationship
+    // above — capacity-computation-spec.md §11 needs the whole thing
+    // (contributors, confidence, staleAt) to explain the number, not just a
+    // bucket. capacity_observations: the append-only history itself, newest
+    // first, left-joined to the person who answered (nullable — see that
+    // migration's header) so the UI can say "verified by Sharon, who no
+    // longer works here" even after Sharon's own record is gone.
+    const [capacity, capacityObservations] = await Promise.all([
+      computeCapacityForPlace(knex, place.id, { asOf: orgToday() }),
+      knex('capacity_observations as co')
+        .leftJoin('people as pe', 'pe.id', 'co.person_id')
+        .where('co.place_id', place.id)
+        .orderBy('co.observed_at', 'desc')
+        .orderBy('co.id', 'desc')
+        .select('co.*', 'pe.name as person_name'),
+    ]);
+
     res.json({
       ...decorate(place),
       visits,
@@ -414,6 +458,8 @@ router.get('/:id', async (req, res, next) => {
       people: peopleWithMetrics,
       referral_metrics: referralMetrics,
       relationship: relationshipFor(relationshipByPlace, place.id),
+      capacity,
+      capacity_observations: capacityObservations,
     });
   } catch (err) {
     next(err);
@@ -440,10 +486,6 @@ router.patch('/:id', async (req, res, next) => {
     if (catError) return res.status(400).json({ error: catError });
     const tErr = tierError(update.tier);
     if (tErr) return res.status(400).json({ error: tErr });
-    const referralsErr = capacityMonthlyReferralsError(update.capacity_monthly_referrals);
-    if (referralsErr) return res.status(400).json({ error: referralsErr });
-    const statusErr = capacityStatusError(update.capacity_status);
-    if (statusErr) return res.status(400).json({ error: statusErr });
 
     // Relationship override — handled outside EDITABLE because who set it and
     // when are stamped here, server-side, from the bearer token rather than
@@ -462,10 +504,16 @@ router.patch('/:id', async (req, res, next) => {
       update.relationship_override_by = clearing ? null : req.user.id;
     }
 
-    if (update.capacity_monthly_referrals !== undefined) {
-      update.capacity_monthly_referrals = update.capacity_monthly_referrals === '' || update.capacity_monthly_referrals === null
-        ? null
-        : Number(update.capacity_monthly_referrals);
+    // Capacity override — same pattern, one field lighter (a free-text
+    // reason instead of a `_by` user id; see capacityOverrideLevelError's
+    // own comment for why).
+    if (req.body.capacity_override_level !== undefined) {
+      const overrideErr = capacityOverrideLevelError(req.body.capacity_override_level);
+      if (overrideErr) return res.status(400).json({ error: overrideErr });
+      const clearing = req.body.capacity_override_level === null || req.body.capacity_override_level === '';
+      update.capacity_override_level = clearing ? null : req.body.capacity_override_level;
+      update.capacity_override_reason = clearing ? null : (req.body.capacity_override_reason || null);
+      update.capacity_override_at = clearing ? null : knex.fn.now();
     }
 
     // Tier/region/priority changes need the same derived fields kept in sync
@@ -508,6 +556,42 @@ router.patch('/:id', async (req, res, next) => {
 
     await knex('places').where({ id }).update(update);
     res.json(decorate(await knex('places').where({ id }).first()));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/places/:id/capacity-observations — record a fresh declared
+// capacity number (capacity-computation-spec.md §5/§11). Appends a new
+// capacity_observations row rather than overwriting a column: nothing here
+// is ever updated or deleted, so a partner's number visibly growing over
+// three years of re-asks stays legible instead of only the latest answer
+// surviving. source: 'manual' — a direct place-card edit with no visit
+// behind it. routes/visits.js's own first-visit capture inserts its own
+// rows with source: 'prequal' (has a visit_id/person_id); this is the OTHER
+// entry point, PlaceDetail's own "Add/Edit pre-qualification" card.
+router.post('/:id/capacity-observations', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Place not found' });
+    const place = await knex('places').where({ id }).first();
+    if (!place) return res.status(404).json({ error: 'Place not found' });
+
+    const referralsErr = monthlyReferralsError(req.body.monthly_referrals);
+    if (referralsErr) return res.status(400).json({ error: referralsErr });
+
+    const [row] = await knex('capacity_observations')
+      .insert({
+        place_id: id,
+        monthly_referrals: Math.round(Number(req.body.monthly_referrals)),
+        source: 'manual',
+        observed_at: orgToday(),
+        note: req.body.note || null,
+      })
+      .returning('id');
+    const observationId = knex.extractId(row);
+    const observation = await knex('capacity_observations').where({ id: observationId }).first();
+    res.status(201).json(observation);
   } catch (err) {
     next(err);
   }

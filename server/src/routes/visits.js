@@ -9,6 +9,8 @@ const { VISIT_TYPES } = require('../config/visitTypes');
 const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, findCrossRepFloorWarning, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
 const { detectConflicts } = require('../services/conflictDetection');
+const { computeCapacityForPlace } = require('../services/capacity');
+const { orgToday } = require('../services/orgDate');
 const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
@@ -87,34 +89,61 @@ function snapshotFromPerson(person) {
 }
 
 // Captures the "avg. referrals/month discovered at pre-qual" number that
-// VisitLogModal offers on any completed visit to a place that hasn't been
-// pre-qualified yet. Sent as a transient `capacity_monthly_referrals` body
-// field (not a `visits` column — EDITABLE below intentionally excludes it);
-// writes through to `places.capacity_monthly_referrals` and flips
-// `capacity_status` to 'verified' — the same fields routes/places.js's PATCH
-// lets a rep correct directly afterward (landing as 'adjusted' instead, see
-// its own comment). Silently no-ops on bad/irrelevant input, same "extra field
-// ignored" convention as the EDITABLE loops below — this is a best-effort
+// VisitLogModal offers on any completed visit to a place whose declared
+// capacity isn't fresh (capacity-computation-spec.md §11). Sent as a
+// transient `capacity_monthly_referrals` body field (not a `visits` column —
+// EDITABLE below intentionally excludes it); appends a capacity_observations
+// row (source: 'prequal') rather than overwriting a column — see that
+// table's own migration header for why nothing here is ever updated in
+// place. Silently no-ops on bad/irrelevant input, same "extra field ignored"
+// convention as the EDITABLE loops below — this is a best-effort
 // convenience, not a required part of logging a visit.
-async function maybeCapturePreQualification({ placeId, capacityMonthlyReferrals }) {
+//
+// Gate is computed confidence, NOT "is this the first visit" (the old rule
+// this replaced had exactly that trapdoor — miss the number on visit one and
+// the place was never asked again). 'fresh' is the only confidence this may
+// NOT write over — 'stale' and 'unknown' both keep the prompt coming back
+// until a real, CURRENT number is captured. Still re-read server-side rather
+// than trusting the client's view of the place, same reasoning the old gate
+// already had.
+//
+// encounters (already-normalized, post-validation — see ENCOUNTER_FIELDS)
+// attributes the observation to whichever named contact was met, when there
+// is one; a staff/receptionist/nobody-only trip leaves person_id null rather
+// than guessing.
+async function maybeCapturePreQualification({ placeId, capacityMonthlyReferrals, visitId, encounters = [] }) {
   if (capacityMonthlyReferrals === undefined || capacityMonthlyReferrals === null || capacityMonthlyReferrals === '') return;
   const n = Number(capacityMonthlyReferrals);
   if (!Number.isInteger(n) || n < 0) return;
 
-  // Gate is capacity_status, NOT "is this the first visit." The old
-  // first-visit-only rule had a trapdoor: miss the number on visit one and
-  // the place was never asked again, so it sat on an estimated capacity
-  // forever — permanently stuck in the ranker's exploration tier. Keying off
-  // 'estimated' means the prompt keeps coming back until a real number is
-  // actually captured, and stops the moment one is.
-  //
-  // Still re-read server-side rather than trusting the client's view of the
-  // place: 'estimated' is the only state this may write over, so a second
-  // capture can never clobber a verified/adjusted number.
-  const place = await knex('places').where({ id: placeId }).first();
-  if (!place || place.capacity_status !== 'estimated') return;
+  const capacity = await computeCapacityForPlace(knex, placeId, { asOf: orgToday() });
+  if (!capacity || capacity.confidence === 'fresh') return;
 
-  await knex('places').where({ id: placeId }).update({ capacity_monthly_referrals: n, capacity_status: 'verified' });
+  const namedEncounter = encounters.find((e) => e.person_id != null);
+  await knex('capacity_observations').insert({
+    place_id: placeId,
+    monthly_referrals: n,
+    source: 'prequal',
+    observed_at: orgToday(),
+    person_id: namedEncounter ? namedEncounter.person_id : null,
+    visit_id: visitId,
+  });
+
+  // --- TEMPORARY BRIDGE — delete this block at capacity-computation-spec.md
+  // step 6 (schedulingEngine.js swapped to read the computed service). ---
+  // schedulingEngine.js still ranks off the old frozen columns, not the new
+  // capacity_observations log. Without this, a pre-qual answer would land in
+  // the log (and show up correctly on PlaceDetail) but the ranker would
+  // never see it — the place would stay in EXPLORATION and keep getting
+  // routed back for pre-qualification forever, which is worse than the old
+  // single-column behavior it's replacing. capacity_status: 'verified' is
+  // the same value routes/places.js's old inline handling used to set from
+  // this exact call site (a real first-visit pre-qualification), not
+  // 'adjusted' (place-card correction, no visit) or 'estimated' (never asked).
+  await knex('places').where({ id: placeId }).update({
+    capacity_monthly_referrals: n,
+    capacity_status: 'verified',
+  });
 }
 
 // Trip-level fields a client is allowed to set when logging/updating a visit.
@@ -471,7 +500,7 @@ router.post('/', async (req, res, next) => {
     });
 
     if (payload.status === 'completed') {
-      await maybeCapturePreQualification({ placeId: numericPlaceId, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
+      await maybeCapturePreQualification({ placeId: numericPlaceId, capacityMonthlyReferrals: req.body.capacity_monthly_referrals, visitId: id, encounters });
     }
 
     res.status(201).json(await fetchVisit(id));
@@ -578,7 +607,7 @@ router.patch('/:id', async (req, res, next) => {
     });
 
     if (finalStatus === 'completed') {
-      await maybeCapturePreQualification({ placeId: visit.place_id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals });
+      await maybeCapturePreQualification({ placeId: visit.place_id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals, visitId: id, encounters: encounters || [] });
     }
 
     res.json(await fetchVisit(id));

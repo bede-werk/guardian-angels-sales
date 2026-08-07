@@ -87,6 +87,9 @@ export const api = {
   createPlace: (body) => request('/places', { method: 'POST', body }),
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
+  // Appends a new capacity_observations row (capacity-computation-spec.md
+  // §5/§11) — never overwrites a column. body: { monthly_referrals, note }.
+  addCapacityObservation: (id, body) => request(`/places/${id}/capacity-observations`, { method: 'POST', body }),
 
   // Visits (logging a call) — server/src/routes/visits.js
   // A visit is a TRIP (place, date, rep, notes); who was met lives in its
@@ -236,6 +239,13 @@ export const RELATIONSHIP_LABELS = {
   strong: 'Strong',
   medium: 'Medium',
   weak: 'Weak',
+};
+
+// Display labels for a computed capacity level (services/capacity.js).
+export const CAPACITY_LABELS = {
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
 };
 
 

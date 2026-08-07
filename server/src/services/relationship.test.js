@@ -913,14 +913,22 @@ describe('the visit_encounters split', () => {
   before(async () => {
     db = memoryDb();
     // Migrate to the point IMMEDIATELY BEFORE the split: everything, then
-    // step exactly one migration back (migrate.down() reverts a single
-    // migration; migrate.rollback() would undo the whole batch).
+    // step back one migration at a time (migrate.down() reverts a single
+    // migration; migrate.rollback() would undo the whole batch) until the
+    // split itself is undone. Not just one down() call — the split is no
+    // longer guaranteed to be the LAST migration (e.g. capacity_observations/
+    // capacity_override landed after it, 2026-08-07), and this loop stays
+    // correct no matter how many more land after it in the future, instead
+    // of needing its own update every time.
     await db.migrate.latest();
-    await db.migrate.down();
+    while (await db.schema.hasTable('visit_encounters')) {
+      await db.migrate.down();
+    }
 
-    // Guard the assumption above rather than trusting it — if another
-    // migration is ever added after the split, this suite would otherwise
-    // silently start testing the wrong boundary.
+    // Guard the assumption above rather than trusting it — if this ever
+    // rolls back too FAR (e.g. visit_encounters was dropped by some other
+    // migration entirely), this suite would otherwise silently start testing
+    // the wrong boundary.
     assert.equal(await db.schema.hasTable('visit_encounters'), false, 'must be sitting on the PRE-split schema');
     assert.equal(await db.schema.hasColumn('visits', 'met_with_type'), true, 'pre-split visits still carries the encounter columns');
 

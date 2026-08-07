@@ -64,12 +64,17 @@ function conflictMessage(conflict, sameDateFallback) {
 // front desk" on one trip are different facts, and collapsing them to one
 // answer throws away whichever is less convenient.
 //
-// A place that still reads capacity_status 'estimated' also gets the optional
-// "avg. referrals/month discovered at pre-qual" field — not a real visits
-// column, it writes through server-side to places.capacity_monthly_referrals +
-// capacity_status: 'verified' (routes/visits.js's maybeCapturePreQualification).
-// This used to appear only on a place's FIRST completed visit, which meant
-// missing it once left that place stuck on an estimated capacity forever.
+// A place whose declared capacity isn't 'fresh' (capacity-computation-spec.md
+// §6.6/§11 — never pre-qualified, or last answered too long ago) also gets
+// the optional "avg. referrals/month discovered at pre-qual" field — not a
+// real visits column, it writes through server-side to a NEW
+// capacity_observations row (routes/visits.js's maybeCapturePreQualification),
+// never overwriting a place column. This used to appear only on a place's
+// FIRST completed visit, which meant missing it once left that place stuck
+// on an estimated capacity forever — then it was widened to "capacity_status
+// still estimated," which had the same trapdoor once a number had ever been
+// captured, however old. Confidence-based re-asking closes that for good:
+// the prompt comes back on its own once the answer goes stale.
 export default function VisitLogModal({ visit, placeId, placeName, initialPerson, userId, onClose, onSaved }) {
   // Whichever way this modal was opened, we need to know which place it's for.
   const resolvedPlaceId = visit?.place_id || placeId;
@@ -160,9 +165,11 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   // conflictMessage() uses this instead of re-deriving that one type's
   // wording client-side.
   const [collisionMessage, setCollisionMessage] = useState('');
-  // Fetched to know whether this place still needs pre-qualifying (see the
-  // module comment). Not part of `form`: it's a transient side-channel value
-  // that writes through to places.capacity_monthly_referrals server-side.
+  // Fetched to know whether this place still needs (re-)pre-qualifying (see
+  // the module comment) — GET /api/places/:id now includes the computed
+  // `capacity` object (services/capacity.js). Not part of `form`: it's a
+  // transient side-channel value that appends a fresh capacity_observations
+  // row server-side, never overwriting a place column.
   const [place, setPlace] = useState(null);
   const [avgReferrals, setAvgReferrals] = useState('');
 
@@ -299,8 +306,11 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
 
   const detailFor = (key) => details[key] || { outcome: '', they_requested: false };
 
-  // Keeps appearing until a real number is captured — see the module comment.
-  const needsPreQual = Boolean(place && place.capacity_status === 'estimated');
+  // Keeps appearing until a real, CURRENT number is on file — confidence
+  // 'fresh' is the only state this hides for (see the module comment); a
+  // never-asked place ('unknown') or one whose last answer has aged out
+  // ('stale') both keep prompting.
+  const needsPreQual = Boolean(place && place.capacity && place.capacity.confidence !== 'fresh');
 
   // Every encounter has to say what happened — an unanswered one would be
   // scored at the model's unknown-outcome floor, silently under-crediting it.
@@ -643,7 +653,14 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
               </div>
               {needsPreQual && (
                 <div>
-                  <label className="field">Avg. referrals/month discovered at pre-qual</label>
+                  {/* Stale is a refresh of a real prior answer, not a first
+                      ask — phrased accordingly (spec §11). 'unknown' (never
+                      pre-qualified) keeps the original first-ask wording. */}
+                  <label className="field">
+                    {place.capacity.confidence === 'stale' && place.capacity.declared
+                      ? `Last time we heard ~${place.capacity.declared.value}/month. Still about right?`
+                      : 'Avg. referrals/month discovered at pre-qual'}
+                  </label>
                   <input
                     type="number"
                     min="0"

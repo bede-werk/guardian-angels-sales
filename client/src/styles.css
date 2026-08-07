@@ -275,6 +275,14 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.rel-medium { background: var(--blue-tint-1); color: var(--blue); }
 .badge.rel-weak { background: var(--grey-tint-1); color: var(--muted); }
 
+/* Computed capacity level (services/capacity.js) — see CapacityChip. Same
+   color scheme as the relationship chips above (best/middle/weakest ->
+   teal/blue/grey) — a different axis, but the same "which tier is this"
+   visual language. */
+.badge.cap-high { background: var(--teal-tint-2); color: var(--teal-dark); }
+.badge.cap-medium { background: var(--blue-tint-1); color: var(--blue); }
+.badge.cap-low { background: var(--grey-tint-1); color: var(--muted); }
+
 /* Relationship trend badge (see RelationshipDetail.jsx) — mauve for heating
    up, blue for cooling down. A temperature metaphor, not this app's usual
    good/bad color convention (mauve is --warn elsewhere): text only, no

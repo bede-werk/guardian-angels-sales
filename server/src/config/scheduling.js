@@ -30,4 +30,60 @@ module.exports = {
   // measured neglect overriding an exploration guess. Rescue is urgency-based
   // only, never capacity-based (see schedulingEngine.js's rankKey).
   NEGLECT_MULTIPLIER: 2,
+
+  // Tunables for services/capacity.js (capacity-computation-spec.md). Single
+  // scale across every category — see the spec's §4 for why per-category
+  // thresholds were rejected.
+  CAPACITY_THRESHOLDS: {
+    MEDIUM_MIN: 6, // 0-5 => low
+    HIGH_MIN: 16, // 6-15 => medium, 16+ => high
+  },
+
+  // Our own referral throughput only counts as a measured floor once there's
+  // enough of it to not be noise — small counts over a short window are
+  // exactly the kind of "3 referrals in a week" fluke that shouldn't ratchet
+  // a place's capacity number up permanently (see spec §6.2 — the floor only
+  // ever raises, never lowers, so a loose gate's failure mode is
+  // over-stating capacity, not under-stating it).
+  MEASURED_MIN_EXPOSURE_DAYS: 180,
+  MEASURED_MIN_REFERRAL_COUNT: 3,
+
+  // A declared observation (pre-qual answer or manual override) older than
+  // this many days is 'stale', not 'fresh' — see spec §6.6. An override does
+  // NOT reset this clock; it only says "don't trust the stale number in the
+  // meantime," it doesn't make the number current again.
+  CAPACITY_STALE_DAYS: 365,
+
+  // Starting guess for a place that's never been pre-qualified and has no
+  // measured referral floor yet — spec §6.5. Ordered first-match-wins,
+  // case-insensitive substring match against places.category. This is a
+  // FRESH copy of the same keyword table the 20260712000000 migration
+  // seeded places.capacity_level from (not imported from that migration —
+  // migrations in this codebase are frozen historical snapshots, not living
+  // config; see that migration's own header). Keep the two in sync only if
+  // there's a reason to — the migration's copy did its one-time job already
+  // and this one is what actually governs new/never-pre-qualified places
+  // going forward. Tuned against the real category values in this dataset,
+  // not just the spec's illustrative examples (which used category names —
+  // 'SNF/Rehab', 'ALF', 'Legal and Trust' — that don't match this app's
+  // actual, messier category strings).
+  CATEGORY_CAPACITY_SEED: [
+    [/hospital/i, 'high'],
+    [/rehab/i, 'high'],
+    [/physical therapy/i, 'high'],
+    [/senior living|assisted living|independent living|memory care/i, 'high'],
+    [/senior advisor/i, 'high'],
+    [/case manager/i, 'high'],
+    [/hospice/i, 'medium'],
+    [/physician|concierge doc|medical/i, 'medium'],
+    [/pharmac/i, 'medium'],
+    [/community partner/i, 'medium'],
+    [/elder law|legal|attorney|trust/i, 'low'],
+    [/church/i, 'low'],
+    [/fire station/i, 'low'],
+    [/vendor/i, 'low'],
+    [/funeral/i, 'low'],
+    [/online resource/i, 'low'],
+  ],
+  CATEGORY_CAPACITY_SEED_DEFAULT: 'low', // spec §6.5's explicit DEFAULT — deliberately more conservative than the migration's 'medium' fallback, since this now governs live ranking, not a one-time backfill guess
 };

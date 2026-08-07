@@ -11,6 +11,7 @@ import ReferralModal from './ReferralModal';
 import VisitDetailModal, { encounterLabel, joinNames } from './VisitDetailModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 import { PlaceRelationship } from './RelationshipDetail';
+import { PlaceCapacity } from './CapacityDetail';
 
 // Who was met on one trip, as a single inline phrase: "with Flibber Gibblits,
 // New Guy and a staff member". The visit list endpoint returns a name-only
@@ -50,18 +51,17 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [notesDraft, setNotesDraft] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [removingNotes, setRemovingNotes] = useState(false);
-  // Pre-qualification: capacity_monthly_referrals ("real number captured at
-  // pre-qual") + capacity_status (estimated | adjusted | verified) — same
-  // click-to-edit pattern as notes above, editable directly here even though
-  // it's normally captured once via VisitLogModal's first-visit field.
-  const [editingPreQual, setEditingPreQual] = useState(false);
-  const [preQualDraft, setPreQualDraft] = useState('');
-  const [savingPreQual, setSavingPreQual] = useState(false);
-  const [removingPreQual, setRemovingPreQual] = useState(false);
   // Manual relationship override (see RelationshipDetail.jsx). The editor's
   // own open/closed state lives in that component; only the in-flight save
   // needs to be known here, since this is what triggers the reload.
   const [savingRelationship, setSavingRelationship] = useState(false);
+  // Capacity (see CapacityDetail.jsx) — same "editor state lives in the
+  // child component" convention as relationship above. Two separate
+  // in-flight flags since the override and a fresh observation are two
+  // independent actions that can't collide (the child only ever shows one
+  // editor open at a time).
+  const [savingCapacityOverride, setSavingCapacityOverride] = useState(false);
+  const [savingCapacityObservation, setSavingCapacityObservation] = useState(false);
 
   async function load() {
     try {
@@ -124,27 +124,6 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // Editing directly here (as opposed to VisitLogModal's first-visit field,
-  // which sets capacity_status: 'verified') lands as 'adjusted' — a
-  // corrected estimate, not a fresh pre-qualification conversation.
-  async function savePreQual() {
-    setSavingPreQual(true);
-    try {
-      // Rounded client-side — capacity_monthly_referrals is a real DB integer
-      // column, and the server silently drops (doesn't error on) a
-      // non-integer value rather than rejecting the save outright.
-      const rounded = Math.max(0, Math.round(Number(preQualDraft)));
-      await api.updatePlace(data.id, { capacity_monthly_referrals: rounded, capacity_status: 'adjusted' });
-      setEditingPreQual(false);
-      load();
-      onChanged?.();
-    } catch (e) {
-      window.alert(e.message);
-    } finally {
-      setSavingPreQual(false);
-    }
-  }
-
   // Sets (or, with null, clears) the manual relationship override. The
   // server stamps who/when — see routes/places.js — so nothing about the
   // attribution is client-supplied. Returns false on failure so the editor
@@ -164,18 +143,58 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  async function removePreQual() {
-    if (!window.confirm("Clear this place's pre-qualification estimate? This can't be undone.")) return;
-    setRemovingPreQual(true);
+  // Same override pattern, capacity's own field pair (level + free-text
+  // reason — see 20260807000001_add_place_capacity_override.js). `reason`
+  // is only meaningful alongside a real level; clearing (level: null) drops
+  // it too, same "stale attribution on a cleared override would be a lie"
+  // rule relationship's own override already follows.
+  async function saveCapacityOverride(level, reason) {
+    setSavingCapacityOverride(true);
     try {
-      await api.updatePlace(data.id, { capacity_monthly_referrals: null, capacity_status: 'estimated' });
-      setEditingPreQual(false);
+      await api.updatePlace(data.id, { capacity_override_level: level, capacity_override_reason: level ? reason : null });
+      load();
+      onChanged?.();
+      return true;
+    } catch (e) {
+      window.alert(e.message);
+      return false;
+    } finally {
+      setSavingCapacityOverride(false);
+    }
+  }
+
+  // Appends a fresh capacity_observations row — never overwrites the
+  // previous one (see that table's own migration header). value is
+  // whatever raw string the number input held; rounded client-side for the
+  // same reason the old pre-qual field used to (a non-integer silently
+  // fails the server's own validation rather than producing a useful error).
+  async function addCapacityObservation(value) {
+    setSavingCapacityObservation(true);
+    try {
+      const rounded = Math.max(0, Math.round(Number(value)));
+      await api.addCapacityObservation(data.id, { monthly_referrals: rounded });
+      load();
+      onChanged?.();
+      return true;
+    } catch (e) {
+      window.alert(e.message);
+      return false;
+    } finally {
+      setSavingCapacityObservation(false);
+    }
+  }
+
+  // The dismissible zero-capacity suggestion's action button (see
+  // CapacityDetail.jsx) — a plain field write, no confirm needed since
+  // do_not_visit only ever SKIPS this place in future route proposals, it
+  // never deletes or hides anything already on file.
+  async function markDoNotVisit() {
+    try {
+      await api.updatePlace(data.id, { do_not_visit: true });
       load();
       onChanged?.();
     } catch (e) {
       window.alert(e.message);
-    } finally {
-      setRemovingPreQual(false);
     }
   }
 
@@ -241,8 +260,6 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     e.stopPropagation();
     if (editingNotes) {
       setEditingNotes(false);
-    } else if (editingPreQual) {
-      setEditingPreQual(false);
     } else {
       onClose();
     }
@@ -298,42 +315,38 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             </div>
           </div>
 
+          {/* Capacity (capacity-computation-spec.md) — the OTHER cadence
+              axis, own full-width card since it has more to explain than
+              Relationship's short version (resolution source, staleness,
+              override, observation history) — see CapacityDetail.jsx. */}
+          <div className="card">
+            <div className="card-head"><h2>Capacity</h2></div>
+            <div className="card-body stack">
+              <PlaceCapacity
+                place={data}
+                capacity={data.capacity}
+                observations={data.capacity_observations}
+                onSaveOverride={saveCapacityOverride}
+                savingOverride={savingCapacityOverride}
+                onAddObservation={addCapacityObservation}
+                savingObservation={savingCapacityObservation}
+                onMarkDoNotVisit={markDoNotVisit}
+              />
+            </div>
+          </div>
+
           {/* Durable notes about the organization itself — not tied to any one
-              visit or person (e.g. "front desk is picky about walk-ins").
-              Pre-qualification (capacity_monthly_referrals/capacity_status —
-              see routes/places.js) lives in this same card as one compact
-              line, same add-then-click-to-edit interaction as notes below:
-              nothing set yet -> small muted "Needs pre-qualification" text
-              (not clickable) + an "Add pre-qualification" button up in the
-              card-head next to "Add notes"; once set -> the button's gone
-              and the line itself ("Pre-qualified · ~N referrals/month")
-              becomes the click-to-edit target, same as notes' own text once
-              it has a value. 'estimated' (default, seeded from category) vs
-              'adjusted' (edited here) vs 'verified' (captured via
-              VisitLogModal's first-visit field) collapse to the same two
-              labels — the distinction underneath is internal bookkeeping,
-              also feeds the route planner's ranking engine (a place stuck at
-              'estimated' stays in the "exploration" tier forever). */}
+              visit or person (e.g. "front desk is picky about walk-ins"). */}
           <div className="card">
             <div className="card-head">
               <h2>Details</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                {data.capacity_status === 'estimated' && !editingPreQual && (
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    title="Record this place's pre-qualification estimate"
-                    onClick={() => { setEditingNotes(false); setPreQualDraft(''); setEditingPreQual(true); }}
-                  >
-                    Add pre-qualification
-                  </Button>
-                )}
                 {!data.notes && !editingNotes && (
                   <Button
                     variant="secondary"
                     size="small"
                     title="Add a standing note about this place"
-                    onClick={() => { setEditingPreQual(false); setNotesDraft(''); setEditingNotes(true); }}
+                    onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
                   >
                     Add notes
                   </Button>
@@ -341,44 +354,6 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               </div>
             </div>
             <div className="card-body stack">
-              {editingPreQual ? (
-                <div className="tag-list" style={{ alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="Referrals/month"
-                    style={{ width: 120 }}
-                    value={preQualDraft}
-                    onChange={(e) => setPreQualDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); savePreQual(); } }}
-                    autoFocus
-                  />
-                  <Button size="small" title="Save this estimate" onClick={savePreQual} disabled={savingPreQual || removingPreQual || preQualDraft === ''}>
-                    {savingPreQual ? 'Saving…' : 'Save'}
-                  </Button>
-                  <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingPreQual(false)} disabled={savingPreQual || removingPreQual}>
-                    Cancel
-                  </Button>
-                  {data.capacity_status !== 'estimated' && (
-                    <Button variant="danger" size="small" title="Clear this estimate — reverts to needing pre-qualification, can't be undone" onClick={removePreQual} disabled={removingPreQual || savingPreQual}>
-                      {removingPreQual ? 'Deleting…' : 'Delete'}
-                    </Button>
-                  )}
-                </div>
-              ) : data.capacity_status !== 'estimated' ? (
-                <div
-                  className="tiny hover-row"
-                  title="Click to edit this place's pre-qualification estimate"
-                  onClick={() => { setEditingNotes(false); setPreQualDraft(data.capacity_monthly_referrals ?? ''); setEditingPreQual(true); }}
-                  style={{ color: 'var(--teal-dark)', fontWeight: 600 }}
-                >
-                  Pre-qualified{data.capacity_monthly_referrals != null ? ` · ~${data.capacity_monthly_referrals} referral${data.capacity_monthly_referrals === 1 ? '' : 's'}/month` : ''}
-                </div>
-              ) : (
-                <div className="tiny" style={{ color: 'var(--warn)', fontWeight: 600 }}>Needs pre-qualification</div>
-              )}
-
               {editingNotes ? (
                 <div className="stack">
                   <textarea
@@ -405,7 +380,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   </div>
                 </div>
               ) : data.notes ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => { setEditingPreQual(false); setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
+                <div className="tiny hover-row" title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
                   {data.notes}
                 </div>
               ) : (
@@ -427,9 +402,9 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             <div className="card-head">
               <h2>People ({data.people.length})</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setAssigningPerson(true); }}>Assign person</Button>
-                <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setEditingPerson(null); }}>New person</Button>
-                <Button size="small" title="Record a referral from someone at this place" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setLoggingReferral(true); }}>Log a referral</Button>
+                <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => { setEditingNotes(false); setAssigningPerson(true); }}>Assign person</Button>
+                <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => { setEditingNotes(false); setEditingPerson(null); }}>New person</Button>
+                <Button size="small" title="Record a referral from someone at this place" onClick={() => { setEditingNotes(false); setLoggingReferral(true); }}>Log a referral</Button>
               </div>
             </div>
             <div className="card-body stack">
@@ -445,7 +420,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={p.id}
                       className="stop hover-row"
                       style={{ justifyContent: 'space-between', alignItems: 'center' }}
-                      onClick={() => { setEditingNotes(false); setEditingPreQual(false); setSelectedPersonId(p.id); }}
+                      onClick={() => { setEditingNotes(false); setSelectedPersonId(p.id); }}
                     >
                       <div className="main">
                         <div className="name">{p.name}</div>
@@ -491,7 +466,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={v.id}
                       className="stack hover-row"
                       style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); setEditingPreQual(false); setViewingUpcomingVisit(v); }}
+                      onClick={() => { setEditingNotes(false); setViewingUpcomingVisit(v); }}
                     >
                       <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                         <div className="tag-list" style={{ flex: 'unset' }}>
@@ -538,7 +513,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           <div className="card">
             <div className="card-head">
               <h2>Visit history ({data.visits.length})</h2>
-              <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setLogging(true); }}>Log a visit</Button>
+              <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setLogging(true); }}>Log a visit</Button>
             </div>
             <div className="card-body">
               {data.visits.length === 0 ? (
@@ -550,7 +525,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={v.id}
                       className="hover-row"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); setEditingPreQual(false); setViewingVisit(v); }}
+                      onClick={() => { setEditingNotes(false); setViewingVisit(v); }}
                     >
                       {/* minWidth:0 so a long "with A, B and C" line wraps
                           within its own column instead of pushing the delete
@@ -599,7 +574,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           >
             {deleting ? 'Deleting…' : 'Delete place'}
           </Button>
-          <Button variant="secondary" title="Edit this place's details" onClick={() => { setEditingNotes(false); setEditingPreQual(false); setEditing(true); }}>Edit</Button>
+          <Button variant="secondary" title="Edit this place's details" onClick={() => { setEditingNotes(false); setEditing(true); }}>Edit</Button>
         </div>
       </div>
 
