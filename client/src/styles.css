@@ -159,6 +159,15 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .btn.secondary:hover { background: var(--blue-tint-2); }
 .btn.ghost { background: none; color: var(--blue); padding: 6px 8px; }
 .btn.ghost:hover { background: var(--blue-tint-2); }
+/* Same weight as .ghost (no fill) but mauve, plus a thin outline — a firm
+   suggestion ("do not visit") rather than a request to confirm destroying
+   something (.danger's filled pill, reserved for actually-irreversible
+   actions like Delete). The outline is what keeps a no-fill button reading
+   as a button rather than plain text; .ghost gets away without one because
+   it always sits among other filled buttons that establish the row as
+   clickable — this one doesn't. */
+.btn.caution { background: none; color: var(--mauve); border: 1px solid var(--mauve-tint-3); padding: 5px 8px; }
+.btn.caution:hover { background: var(--mauve-tint-1); }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .btn.danger { background: var(--mauve-tint-1); color: var(--mauve); }
 .btn.danger:hover { background: var(--mauve-tint-2); }

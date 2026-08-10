@@ -181,7 +181,12 @@ function reciprocityMultiplier(person, { hasReferral, requestedRecently }) {
 //
 // Those figures assume weight-1.0 visits (named person, substantive). Real
 // scores land lower, which is correct.
-const RELATIONSHIP_THRESHOLDS = { strong: 3.4, medium: 1.3 };
+//
+// medium's floor is 1.4, not the 1.33 convergence value itself: Bede decided
+// (2026-08-10) that "visited half as often as the half-life" should read
+// weak, matching the prose table above, so the threshold sits just above
+// that boundary rather than just below it.
+const RELATIONSHIP_THRESHOLDS = { strong: 3.4, medium: 1.4 };
 const LEVELS = ['strong', 'medium', 'weak'];
 
 function levelForScore(score) {

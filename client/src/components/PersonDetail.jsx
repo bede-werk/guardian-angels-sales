@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, formatDate, MONTH_NAMES, daysInMonth } from '../api';
+import { api, formatDate, MONTH_NAMES, daysInMonth, suppressionNote } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
@@ -646,7 +646,13 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                             <div className="tiny muted">Also met {joinNames(others.map(encounterLabel))}</div>
                           )}
                           {v.notes && <div className="tiny">{v.notes}</div>}
-                          {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
+                          {v.next_visit_date && (
+                            <div className="tiny muted">
+                              {/* The place's own snooze/do-not-visit, not this
+                                  visit's — see VisitDetailModal's identical note. */}
+                              Next visit: {formatDate(v.next_visit_date)}{suppressionNote(data.place)}
+                            </div>
+                          )}
                         </div>
                         <Button
                           variant="danger"

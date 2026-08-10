@@ -133,6 +133,26 @@ describe('eligibility() guards', () => {
     assert.equal(result.reason, 'do_not_visit');
   });
 
+  test('do_not_visit with no until date is indefinite', () => {
+    const p = place({ do_not_visit: true, do_not_visit_until: null });
+    assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, false);
+  });
+
+  test('do_not_visit_until in the future still excludes', () => {
+    const p = place({ do_not_visit: true, do_not_visit_until: daysAgo(-5) });
+    assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, false);
+  });
+
+  test('do_not_visit_until on today still excludes (boundary is inclusive)', () => {
+    const p = place({ do_not_visit: true, do_not_visit_until: TODAY });
+    assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, false);
+  });
+
+  test('do_not_visit_until in the past has lapsed — no longer excludes', () => {
+    const p = place({ do_not_visit: true, do_not_visit_until: daysAgo(1) });
+    assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, true);
+  });
+
   test('locked-elsewhere guard (pure half of the multi-user collision check)', () => {
     const p = place();
     const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: true, config });

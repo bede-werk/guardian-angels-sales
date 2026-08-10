@@ -436,8 +436,9 @@ guardian-angels-sales/
 - **places** — referral organizations (`name, category, tier 1/2/3, is_priority,
   priority_score, address, city, state, zip, region, phone, notes`, plus route-planner fields
   added 2026-07-10/13: `capacity_level`/`capacity_monthly_referrals`/`capacity_status`/
-  `current_agency_used`/`has_inhouse_service`/`relationship_level`/`snooze_until`/
-  `do_not_visit`/`default_visit_type`). `category` is now a locked enum
+  `relationship_level`/`snooze_until`/`do_not_visit`/`default_visit_type`; `do_not_visit_until`
+  added 2026-08-10 (see §19A); `current_agency_used`/`has_inhouse_service` were dropped
+  2026-08-10 — see `capacity-computation-spec.md` §10). `category` is now a locked enum
   (`config/categories.js`), not free text (2026-07-14). Originally imported from Excel
   (261 rows), now a full CRUD directory — add/edit/delete from the UI. Deleting a place
   deletes only that row; see section 8 for what happens to its people/visits.
@@ -1318,13 +1319,12 @@ Verified against the real dev SQLite — the new FK landed with `ON DELETE SET N
 
 ### Deliberately deferred — do NOT rediscover these as mystery bugs
 
-- **Quality-weighted urgency clock.** `lastVisitDate` counts *all* completed visits regardless
-  of quality, so a front-desk drop-off resets the urgency clock and trips the 5-day hard floor
-  exactly like a substantive meeting — while contributing ~1% of the relationship weight. A rep
-  doing easy drop-offs can therefore keep a place looking recently-visited and floor-blocked
-  while its relationship score quietly decays. Two possible fixes, both out of scope here:
-  weight the urgency clock by visit quality, and/or let the ENDANGERED tier trigger on
-  relationship decay rather than urgency alone.
+- **Quality-weighted urgency clock — DECIDED, not deferred (2026-08-10).** `lastVisitDate`
+  counts *all* completed visits regardless of quality, so a front-desk drop-off resets the
+  urgency clock and trips the 5-day hard floor exactly like a substantive meeting — while
+  contributing ~1% of the relationship weight. Bede's call: this is intended, not a gap. Any
+  completed visit should count. Don't weight the urgency clock by visit quality later without
+  checking with him first — this isn't an open question anymore.
 - **Old→new visit-outcome backfill**, and what `visit_weight` should resolve to for a
   backfilled visit whose outcome doesn't map cleanly. Both punted because all current visit
   data is test data.
@@ -1335,11 +1335,12 @@ Verified against the real dev SQLite — the new FK landed with `ON DELETE SET N
   category in `20260712000000` and never touched since — so any place created after that
   migration has `capacity_level: null` and silently falls back to the `medium` cadence row.
   Pre-existing gap, unrelated to this work, but it's the *other* axis of the same table.
-- **Threshold judgment call**: the spec's prose calls "visited at half the half-life rate" the
-  *weak* boundary, but its own threshold constant (`medium: 1.3`) puts that case in **medium** —
-  the true converged value is 1.3333, clearing 1.3 by only 0.033. Implemented per the explicit
-  constant. If the prose was the real intent, `RELATIONSHIP_THRESHOLDS.medium` needs to move
-  above 1.3333 (≈1.4). Flagged in `relationship.test.js` too.
+- **Threshold judgment call — DECIDED 2026-08-10.** The spec's prose called "visited at half
+  the half-life rate" the *weak* boundary, but the original threshold constant (`medium: 1.3`)
+  put that case in **medium** (converged value 1.3333, clearing 1.3 by only 0.033). Bede said he
+  didn't have a preference and left the call to me; went with the prose's intent —
+  `RELATIONSHIP_THRESHOLDS.medium` is now `1.4`, so that boundary case reads weak. Updated in
+  `relationship.js` and `relationship.test.js`.
 
 ### Testing
 
@@ -1748,18 +1749,28 @@ the snooze lapses, `next_visit_date` is still sitting there, now overdue, and th
 straight in `TIERS.COMMITMENT` ranked by how overdue it is — a real bonus (deferring a promise
 makes it resurface hotter, not neutral), not a rationalization for leaving it alone.
 
-One known, deliberately deferred display gap from this: `VisitDetailModal.jsx` and
-`PersonDetail.jsx` still show a bare `"Next visit: {date}"` line with no annotation when that
-date falls under an active place-level snooze (unlike `PlaceDetail.jsx`'s own visit-history row
-and its new snooze-state banner, both of which do annotate this — see below). Left for a later
-pass on purpose, not missed.
+**FIXED 2026-08-10** (was a known, deliberately deferred display gap): `VisitDetailModal.jsx` and
+`PersonDetail.jsx` now annotate a bare `"Next visit: {date}"` line when that date falls under an
+active place-level snooze OR do-not-visit — both via the new shared `suppressionNote(place)`
+helper in `api.js` (also backs `isSnoozeActive`/`isDoNotVisitActive`, so every reader compares
+the same way the server's `schedulingEngine.js` does). `VisitDetailModal`'s `trip` needed three
+new joined columns to get there — `routes/visits.js`'s `fetchVisit()` now selects
+`p.snooze_until`/`p.do_not_visit`/`p.do_not_visit_until` as `place_*` aliases, since a visit row
+alone doesn't carry its place's own suppression state. `PersonDetail.jsx` needed no server
+change — `GET /api/people/:id` already returns a full `place` row.
 
-**`places.snooze_until` had a write path with no display anywhere until this session** — a place
-could vanish from routing for up to a month with literally no UI explanation. Now shown on
-`PlaceDetail.jsx`'s Details card (`"Snoozed — out of routing until {date}"` + a `Lift snooze`
-button, `DELETE /api/places/:id/snooze`) whenever `snooze_until` is still active, plus a computed
-`skipped_visit_count` on the same card (`"Skipped N times — planned, then never visited"`, plain
-text, no warning styling — live `COUNT` over `visits.status = 'skipped'`, same "computed, never
+**`do_not_visit` got its own "until" date the same session (`do_not_visit_until`, migration
+`20260810020000`) — see the new §19A below for the full design**, alongside consolidating both
+snooze and do-not-visit's status/controls onto the Upcoming Visits card (moved off the Details
+card, which only ever had the snooze half).
+
+**`places.snooze_until` had a write path with no display anywhere until the 2026-08-10 session
+that added it** — a place could vanish from routing for up to a month with literally no UI
+explanation. Shown on `PlaceDetail.jsx`'s Upcoming Visits card (`"Snoozed — out of routing until
+{date}"` + a `Lift snooze` button, `DELETE /api/places/:id/snooze`) whenever `snooze_until` is
+still active, plus a computed `skipped_visit_count` on the Details card
+(`"Skipped N times — planned, then never visited"`, plain text, no warning styling — live
+`COUNT` over `visits.status = 'skipped'`, same "computed, never
 stored" convention as referral metrics in §9).
 
 **Skip-sweep mechanics, worth knowing before assuming it isn't running:** there's no cron/job
@@ -1781,3 +1792,61 @@ endpoint/middleware/sweep themselves were verified live (smoke-tested through Li
 HTTP calls, real browser click-through screenshots) rather than given route-level automated tests
 — matches this project's existing convention (pure logic modules get `*.test.js`; routes get
 smoke-tested).
+
+---
+
+## 19A. `do_not_visit_until` + consolidated Upcoming Visits card (2026-08-10)
+
+Same session as §19, at Bede's follow-up request: `do_not_visit` (a plain boolean since
+2026-07-12, only ever settable via a dismissible zero-capacity suggestion on `CapacityDetail.jsx`
+— see §18) gained its own `until` date, and both it and snooze got a real home on
+`PlaceDetail.jsx`'s Upcoming Visits card instead of a one-click-only toggle.
+
+**Schema:** `places.do_not_visit_until` (migration `20260810020000_add_place_do_not_visit_until`),
+nullable date. Same convention as `snooze_until` — never cleared automatically once it lapses,
+every reader does a live `>= today` compare instead. `null` while `do_not_visit` is `true` means
+indefinite; `null` while `do_not_visit` is `false` means never marked (or already lifted).
+
+**Server:** `schedulingEngine.js`'s `eligibility()` guard changed from a bare `place.do_not_visit`
+check to `place.do_not_visit && (!place.do_not_visit_until || place.do_not_visit_until >= today)`
+— still excludes always, even over a due commitment, exactly like before (see that function's own
+precedence comment). `routes/places.js`'s `EDITABLE` gained `do_not_visit_until` alongside the
+existing `do_not_visit`, with `doNotVisitUntilError()` validating the `YYYY-MM-DD` format (or
+null/'' for indefinite/clear). **The client always writes both fields together** — marking or
+re-marking sends `{ do_not_visit: true, do_not_visit_until }`, lifting sends
+`{ do_not_visit: false, do_not_visit_until: null }`. This isn't just tidiness: a stale
+`do_not_visit_until` left over from an already-lapsed mark must never silently cap a fresh
+indefinite one if only `do_not_visit` were re-sent alone.
+
+**Client, `api.js`:** three new shared helpers so every surface computes "is this place currently
+suppressed" the same way the server does — `isSnoozeActive(place)`, `isDoNotVisitActive(place)`,
+and `suppressionNote(place)` (the `" (deferred by an active snooze)"` /
+`" (this place is marked do-not-visit)"` suffix for a bare `"Next visit: {date}"` line, do-not-
+visit taking precedence when — rare, but not disallowed — both are somehow active at once).
+
+**Client, `PlaceDetail.jsx`:** the Upcoming Visits card head now has a `"Do not visit…"` trigger
+(hidden while already active or while the panel's open); the card body shows an active-snooze
+banner (moved here from the Details card, which only ever had this half) and an active-do-not-
+visit banner, each with their own action(s) — snooze gets `Lift snooze` only (starting/changing a
+snooze still requires opening a specific upcoming visit's own popup, since `POST /:id/snooze`
+is visit-scoped by design — see §19); do-not-visit gets both `Change` (reopens the panel with a
+new choice) and `Lift`. The panel itself (`DO_NOT_VISIT_PRESETS`: 1/3/6 months, deliberately
+longer-scale than `UpcomingVisitDetailModal`'s own 1/2-week/1-month `SNOOZE_PRESETS` — do-not-
+visit is a "stop proposing this place" call, not a short rotation nudge) plus an `Indefinitely`
+button and a custom date input, same shape as the snooze panel it's modeled on.
+`CapacityDetail.jsx`'s existing one-click "Mark" suggestion still works (now calls
+`setDoNotVisit(null)` — indefinite) and its gating condition switched from `!place.do_not_visit`
+to `!isDoNotVisitActive(place)` so it doesn't stay hidden forever after a dated mark lapses.
+
+**Verified live** (Lisa Marks smoke-test token, real place — id 2, "Ambassador Health of
+Lincoln" — reverted to its original clean state afterward): marked 1-month, confirmed the status
+banner and its date; used `Change` → `Indefinitely`, confirmed the banner updated; `Lift`,
+confirmed the trigger button reappeared and the banner cleared. 333 tests pass (4 new, covering
+`do_not_visit_until`'s indefinite/future/on-boundary/lapsed cases in `schedulingEngine.test.js`),
+client build clean.
+
+**Deliberately not built:** no commitment guard on do-not-visit analogous to
+`snoozeSwallowsCommitment()` — marking do-not-visit can silently suppress a promised
+`next_visit_date` the same way an unguarded snooze would have. Not asked for; do-not-visit reads
+as a more deliberate, less accidental action than a rotation snooze, so the asymmetry is a
+judgment call, not an oversight. Revisit if it turns out to bite someone in practice.

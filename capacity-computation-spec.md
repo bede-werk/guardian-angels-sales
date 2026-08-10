@@ -14,7 +14,8 @@ Three fields, all stagnant, all read on every ranker run:
 - `capacity_monthly_referrals` — written once at first pre-qual from a number someone gave at a door, then frozen forever.
 - `capacity_status` — a one-way latch. Moves estimated → verified on first completed visit and never moves again. `adjusted` has no writer anywhere in the codebase. Once verified, always verified, no matter how wrong or how old the number underneath it is.
 
-Two more fields are stored and read by nothing: `current_agency_used`, `has_inhouse_service`.
+Two more fields were stored and read by nothing: `current_agency_used`, `has_inhouse_service`.
+**Removed 2026-08-10** (Bede's call — see §10) rather than kept as unused intel.
 
 Per the project convention — no manual smart fields that need upkeep — capacity becomes a computed value derived from an observation history, with a clearly-flagged manual override.
 
@@ -65,6 +66,8 @@ CAPACITY_THRESHOLDS: {
 - high: 16+ per month
 
 Zero is a real answer, not a null. A place that answers "0 — everything goes to our in-house service" is genuinely low. Do not auto-set `do_not_visit`. Surface a dismissible suggestion on PlaceDetail ("This place reports no winnable referrals. Mark as do-not-visit?") and leave the decision to the human. A 0 today is a 0 under this DON.
+
+`do_not_visit` gained its own `do_not_visit_until` date 2026-08-10, alongside a proper "Do not visit until…" panel on PlaceDetail's Upcoming Visits card (presets + an indefinite option), not just this one-click suggestion — see HANDOFF.md §19A for the full design.
 
 No hysteresis on bucket boundaries. Oscillation risk is near zero because the number only ratchets up between annual re-asks. Do not add a stabilisation mechanism.
 
@@ -299,13 +302,17 @@ A place that used to send 4/month and stopped outranks a place that is 2.1× pas
 
 This detector requires dated referral rows. If the referral history carries no usable dates, `detectDropoff` must return an empty set rather than approximate — a false ENDANGERED alert destroys trust in the tier faster than a missing one. Gate it behind a config flag (`DROPOFF_DETECTOR_ENABLED`) so it can ship dark and be switched on when the data supports it.
 
-## 10. current_agency_used and has_inhouse_service
+## 10. current_agency_used and has_inhouse_service — REMOVED 2026-08-10
 
-Both remain intel. Neither enters any scoring path.
+Both fields, and all associated display/functionality, were dropped at Bede's explicit request
+(migration `20260810010000_drop_agency_and_inhouse_service.js`; `CapacityDetail.jsx`'s intel
+block removed). This section is kept as history, not as a build target — do not re-add these
+fields without asking first.
 
-In-house flow is already excluded from the capacity number by definition (§2). Applying a second discount for `has_inhouse_service` would count the same fact twice. And "uses a competitor" does not change pipe size — it changes what you say in the room.
-
-Surface both prominently on PlaceDetail and in the pre-visit brief. Do not let them touch `schedulingEngine.js`.
+Original design, for reference: both were meant to remain intel, entering no scoring path.
+In-house flow was already excluded from the capacity number by definition (§2), so a second
+discount for `has_inhouse_service` would have counted the same fact twice, and "uses a
+competitor" doesn't change pipe size — it changes what you say in the room.
 
 ## 11. UI changes
 
@@ -316,7 +323,6 @@ Surface both prominently on PlaceDetail and in the pre-visit brief. Do not let t
 - Confidence badge; when stale: "Capacity last confirmed 14 months ago by Sharon Klein — worth asking again."
 - Override control, showing computed vs. override side by side when they diverge
 - Observation history (the `capacity_observations` rows) — this is where a partner's pipe visibly growing over three years becomes legible
-- `current_agency_used` / `has_inhouse_service` displayed as intel
 - Dismissible do-not-visit suggestion when `effectiveMonthly === 0`
 
 ### VisitLogModal
@@ -371,7 +377,8 @@ If eRSP will only export one thing, take dated referrals over contact records. C
 - Auto `do_not_visit` on zero capacity. Suggestion only.
 - Person-level capacity. Capacity is a property of the building, not the contact.
 - Per-day `asOf` threading through `generateDraft`. The service accepts `asOf`; actually threading a per-day date through the planner remains separate work.
-- Quality-weighted urgency clock. Still open from the relationship spec.
+- Quality-weighted urgency clock. Decided 2026-08-10, not open anymore — any completed visit
+  should count. See HANDOFF §16's deferred-items note.
 
 ## 15. Build order
 

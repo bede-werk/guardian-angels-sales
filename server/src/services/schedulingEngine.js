@@ -191,7 +191,12 @@ function explorationRank({ level, confidence, daysWaiting, config }) {
 // cadence math below, and a planned-but-not-yet-happened visit must not
 // affect how overdue a place LOOKS — only whether it's eligible at all.
 function eligibility({ place, today, lastVisitDate, nextVisitDate, plannedVisitDates = [], lockedElsewhere, config }) {
-  if (place.do_not_visit) return { eligible: false, reason: 'do_not_visit' };
+  // do_not_visit_until mirrors snooze_until's own "never cleared, just live-
+  // compared" convention — null/unset means indefinite once do_not_visit is
+  // true, a date means the mark lapses on its own once today passes it.
+  if (place.do_not_visit && (!place.do_not_visit_until || place.do_not_visit_until >= today)) {
+    return { eligible: false, reason: 'do_not_visit' };
+  }
 
   const commitmentDue = isCommitmentDue({ nextVisitDate, today });
 

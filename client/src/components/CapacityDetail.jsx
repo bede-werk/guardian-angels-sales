@@ -12,7 +12,7 @@
 // RelationshipDetail.jsx's PlaceRelationship already uses — this file is
 // presentational, driven by callback props.
 import React, { useState } from 'react';
-import { formatDate, CAPACITY_LABELS } from '../api';
+import { formatDate, CAPACITY_LABELS, isDoNotVisitActive } from '../api';
 import Button from './ui/Button';
 import { CapacityChip } from './ui/Chip';
 
@@ -208,7 +208,7 @@ export function PlaceCapacity({
           under this DON" — the suggestion re-appears on next load rather
           than remembering a permanent dismissal, since nothing about the
           underlying number changed). */}
-      {effectiveMonthly === 0 && !place.do_not_visit && !dnvDismissed && (
+      {effectiveMonthly === 0 && !isDoNotVisitActive(place) && !dnvDismissed && (
         <div className="tiny" style={{ background: 'var(--mauve-tint-1)', color: 'var(--mauve)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <span>This place reports no winnable referrals. Mark as do-not-visit?</span>
           <span className="tag-list" style={{ flex: 'unset' }}>
@@ -219,13 +219,6 @@ export function PlaceCapacity({
               Dismiss
             </Button>
           </span>
-        </div>
-      )}
-
-      {(place.current_agency_used || place.has_inhouse_service != null) && (
-        <div className="tiny muted">
-          {place.has_inhouse_service != null && <div>In-house service: {place.has_inhouse_service ? 'Yes' : 'No'}</div>}
-          {place.current_agency_used && <div>Current agency used: {place.current_agency_used}</div>}
         </div>
       )}
 

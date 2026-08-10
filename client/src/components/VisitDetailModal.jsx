@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, formatDate, VISIT_TYPE_LABELS, outcomeLabel } from '../api';
+import { api, formatDate, VISIT_TYPE_LABELS, outcomeLabel, suppressionNote } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 
@@ -150,7 +150,13 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
             <div className="tiny"><strong>Took:</strong> {trip.actual_duration_minutes} min</div>
           )}
           {trip.next_visit_date && (
-            <div className="tiny"><strong>Next visit:</strong> {formatDate(trip.next_visit_date)}</div>
+            <div className="tiny">
+              <strong>Next visit:</strong> {formatDate(trip.next_visit_date)}
+              {/* The place's own snooze/do-not-visit, not this trip's — this
+                  date is a promise on file but not one the app will act on
+                  until whichever suppression lifts. */}
+              {suppressionNote({ snooze_until: trip.place_snooze_until, do_not_visit: trip.place_do_not_visit, do_not_visit_until: trip.place_do_not_visit_until })}
+            </div>
           )}
           {/* No crossRepFloorWarning pill — this modal only ever shows an
               already-completed or already-skipped trip (see VisitsCalendar.jsx;

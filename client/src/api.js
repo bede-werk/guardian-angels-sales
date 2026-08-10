@@ -285,6 +285,30 @@ export function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// A place-level snooze/do-not-visit never gets cleared automatically once it
+// lapses (same convention as the server's schedulingEngine.js eligibility()
+// guard) — every reader does its own live >= today() compare instead. These
+// three helpers are that one compare, shared so PlaceDetail's own card,
+// CapacityDetail's zero-capacity suggestion, and the "Next visit" annotation
+// on VisitDetailModal/PersonDetail can't drift out of sync with each other
+// or with the server's own rule.
+export function isSnoozeActive(place) {
+  return !!(place && place.snooze_until && place.snooze_until >= today());
+}
+
+export function isDoNotVisitActive(place) {
+  return !!(place && place.do_not_visit && (!place.do_not_visit_until || place.do_not_visit_until >= today()));
+}
+
+// Suffix for a bare "Next visit: {date}" line — that promise sits unacted on
+// while either suppression is active. '' (not null) so it's always safe to
+// interpolate directly.
+export function suppressionNote(place) {
+  if (isDoNotVisitActive(place)) return ' (this place is marked do-not-visit)';
+  if (isSnoozeActive(place)) return ' (deferred by an active snooze)';
+  return '';
+}
+
 // Month names for the birthday picker (PersonModal.jsx/PersonDetail.jsx) and
 // the Calendar tab's birthday badges — a separate array from
 // ui/MonthCalendar.jsx's own internal one rather than a refactor of that

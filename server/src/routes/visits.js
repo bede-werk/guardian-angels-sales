@@ -298,7 +298,18 @@ async function fetchVisit(id) {
     .leftJoin('places as p', 'p.id', 'v.place_id')
     .leftJoin('users as u', 'u.id', 'v.user_id')
     .where('v.id', id)
-    .select('v.*', 'p.city as place_city', 'p.zip as place_zip', 'u.name as user_name')
+    .select(
+      'v.*',
+      'p.city as place_city',
+      'p.zip as place_zip',
+      // For VisitDetailModal's "Next visit" annotation — the promise this
+      // visit's next_visit_date makes can sit unacted on if the PLACE is
+      // currently snoozed/do-not-visited, which lives on a different row.
+      'p.snooze_until as place_snooze_until',
+      'p.do_not_visit as place_do_not_visit',
+      'p.do_not_visit_until as place_do_not_visit_until',
+      'u.name as user_name'
+    )
     .first();
   if (!visit) return visit;
   const [withEncounters] = await attachEncounters(knex, [visit], { columns: ENCOUNTER_DETAIL_COLUMNS });

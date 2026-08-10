@@ -73,6 +73,14 @@ function tierError(tier) {
   return null;
 }
 
+// null/'' is the "indefinite" case (or "not marked", when do_not_visit
+// itself is false) — anything else must be a real YYYY-MM-DD date.
+function doNotVisitUntilError(v) {
+  if (v === undefined || v === null || v === '') return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'do_not_visit_until must be in YYYY-MM-DD format';
+  return null;
+}
+
 // Fields a client is allowed to set on an existing place via PATCH. (POST
 // below has its own inline handling since it also derives priority_score/region.)
 //
@@ -90,7 +98,13 @@ function tierError(tier) {
 // first real UI entry point: a dismissible "this place reports no winnable
 // referrals" suggestion on a zero-capacity place. Plain boolean, no
 // validation beyond the truthy coercion PATCH already does everywhere else.
-const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes', 'do_not_visit'];
+//
+// do_not_visit_until (added 2026-08-10) is do_not_visit's own "until" date,
+// same shape/convention as places.snooze_until — the client always writes
+// the pair together (see PlaceDetail.jsx's setDoNotVisit/liftDoNotVisit), so
+// a stale until date left over from a lapsed mark can never silently limit
+// a fresh one.
+const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes', 'do_not_visit', 'do_not_visit_until'];
 
 // relationship_level_override is the manual "I know this one, trust me over
 // the math" escape hatch on the otherwise-computed relationship level (see
@@ -503,6 +517,8 @@ router.patch('/:id', async (req, res, next) => {
     if (catError) return res.status(400).json({ error: catError });
     const tErr = tierError(update.tier);
     if (tErr) return res.status(400).json({ error: tErr });
+    const dnvErr = doNotVisitUntilError(update.do_not_visit_until);
+    if (dnvErr) return res.status(400).json({ error: dnvErr });
 
     // Relationship override — handled outside EDITABLE because who set it and
     // when are stamped here, server-side, from the bearer token rather than

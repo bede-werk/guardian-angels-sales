@@ -146,22 +146,16 @@ describe('decay math', () => {
     close(scoreAtCadence(HALF_LIFE_DEFAULT * 2), 1.3333, 0.02);
   });
 
-  // FLAGGED FOR BEDE — a real judgment call, not a bug. The spec's prose table
-  // labels "visited half as often as the half-life" as the WEAK boundary, but
-  // its own threshold constant (medium: 1.3) makes that case land in MEDIUM:
-  // the true converged value is 1.3333, clearing 1.3 by only 0.033. So a place
-  // visited at half its target rate currently reads medium by a hair. If the
-  // prose was the real intent, RELATIONSHIP_THRESHOLDS.medium needs to move
-  // above 1.3333 (e.g. 1.4). Asserting the explicit constant — the
-  // unambiguous, machine-readable half of the spec — until Bede decides.
-  test('a place visited at half its half-life rate currently lands just inside medium', () => {
+  // Bede decided (2026-08-10): the prose table's intent wins — "visited half
+  // as often as the half-life" reads weak. RELATIONSHIP_THRESHOLDS.medium
+  // moved to 1.4 to put the 1.3333 convergence value on the weak side.
+  test('a place visited at half its half-life rate lands in weak', () => {
     const visits = Array.from({ length: 20 }, (_, i) => visit(daysBefore(ASOF, i * HALF_LIFE_DEFAULT * 2)));
     const score = computePersonRelationship({
       person: barePerson(), visits, hasReferral: false, halfLifeDays: HALF_LIFE_DEFAULT, asOf: ASOF,
     }).score;
     close(score, 1.3333, 0.02);
-    assert.equal(levelForScore(score), 'medium');
-    assert.ok(score - 1.3 < 0.04, 'it clears the medium threshold by a very thin margin');
+    assert.equal(levelForScore(score), 'weak');
   });
 });
 
@@ -587,8 +581,8 @@ describe('empty cases', () => {
   test('levelForScore boundaries are inclusive at the threshold', () => {
     assert.equal(levelForScore(3.4), 'strong');
     assert.equal(levelForScore(3.399), 'medium');
-    assert.equal(levelForScore(1.3), 'medium');
-    assert.equal(levelForScore(1.299), 'weak');
+    assert.equal(levelForScore(1.4), 'medium');
+    assert.equal(levelForScore(1.399), 'weak');
     assert.equal(levelForScore(0), 'weak');
   });
 

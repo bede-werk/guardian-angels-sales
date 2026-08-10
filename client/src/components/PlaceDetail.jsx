@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, navigateUrl, formatDate, today, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import { api, navigateUrl, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS, isSnoozeActive, isDoNotVisitActive, suppressionNote } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
@@ -22,6 +22,45 @@ import { PlaceCapacity } from './CapacityDetail';
 function encounterSummary(encounters) {
   if (!encounters || encounters.length === 0) return null;
   return `with ${joinNames(encounters.map(encounterLabel))}`;
+}
+
+// The Upcoming Visits card's empty state doubles as the answer to "why is
+// there nothing here" when that's a deliberate hold rather than just an
+// empty pipeline — the status banner above already says this too, but an
+// empty list right underneath a banner explaining why it's empty reads
+// better than a generic "nothing here" sitting right below the reason.
+// do-not-visit takes precedence when — rare, but possible — both are active,
+// same precedence suppressionNote() uses.
+function upcomingEmptyMessage(place) {
+  if (isDoNotVisitActive(place)) {
+    return `Nothing upcoming — marked do-not-visit${place.do_not_visit_until ? ` until ${formatDate(place.do_not_visit_until)}` : ' indefinitely'}.`;
+  }
+  if (isSnoozeActive(place)) {
+    return `Nothing upcoming — snoozed until ${formatDate(place.snooze_until)}.`;
+  }
+  return 'Nothing upcoming at this place.';
+}
+
+// Presets for the "Do not visit until…" panel — longer-scale than
+// UpcomingVisitDetailModal's own SNOOZE_PRESETS (1/2 weeks, 1 month) on
+// purpose: do-not-visit is a deliberate "stop proposing this place" call,
+// not a short rotation nudge, so the defaults skew toward the kind of
+// horizon that decision actually needs. Same "+N days, not a calendar month"
+// math as that panel, for the same reason (a plain date-string add, no
+// month-length edge cases).
+const DO_NOT_VISIT_PRESETS = [
+  { label: '1 month', days: 30 },
+  { label: '3 months', days: 90 },
+  { label: '6 months', days: 180 },
+];
+
+function addDaysISO(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 // Slide-in modal: place details + people here + full visit history + "log a
@@ -52,6 +91,13 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [savingNotes, setSavingNotes] = useState(false);
   const [removingNotes, setRemovingNotes] = useState(false);
   const [liftingSnooze, setLiftingSnooze] = useState(false);
+  // Do-not-visit panel on the Upcoming Visits card — same "editor state
+  // lives in this component, not the card itself" shape as the snooze flag
+  // above, since both act on `data.id` directly with no per-row target.
+  const [markingDoNotVisit, setMarkingDoNotVisit] = useState(false);
+  const [dnvCustomDate, setDnvCustomDate] = useState('');
+  const [savingDoNotVisit, setSavingDoNotVisit] = useState(false);
+  const [liftingDoNotVisit, setLiftingDoNotVisit] = useState(false);
   // Manual relationship override (see RelationshipDetail.jsx). The editor's
   // own open/closed state lives in that component; only the in-flight save
   // needs to be known here, since this is what triggers the reload.
@@ -185,17 +231,39 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // The dismissible zero-capacity suggestion's action button (see
-  // CapacityDetail.jsx) — a plain field write, no confirm needed since
-  // do_not_visit only ever SKIPS this place in future route proposals, it
-  // never deletes or hides anything already on file.
-  async function markDoNotVisit() {
+  // Marks (or re-marks) do_not_visit with an explicit until-date — null
+  // means indefinite. Always writes do_not_visit and do_not_visit_until
+  // together (see places.js's EDITABLE comment): a stale until date left
+  // over from an already-lapsed mark must never silently cap a fresh one.
+  // Also the dismissible zero-capacity suggestion's action button (see
+  // CapacityDetail.jsx) — do_not_visit only ever SKIPS this place in future
+  // route proposals, it never deletes or hides anything already on file, so
+  // no confirm is needed here.
+  async function setDoNotVisit(until) {
+    setSavingDoNotVisit(true);
     try {
-      await api.updatePlace(data.id, { do_not_visit: true });
+      await api.updatePlace(data.id, { do_not_visit: true, do_not_visit_until: until || null });
+      setMarkingDoNotVisit(false);
+      setDnvCustomDate('');
       load();
       onChanged?.();
     } catch (e) {
       window.alert(e.message);
+    } finally {
+      setSavingDoNotVisit(false);
+    }
+  }
+
+  async function liftDoNotVisit() {
+    setLiftingDoNotVisit(true);
+    try {
+      await api.updatePlace(data.id, { do_not_visit: false, do_not_visit_until: null });
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setLiftingDoNotVisit(false);
     }
   }
 
@@ -348,7 +416,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 savingOverride={savingCapacityOverride}
                 onAddObservation={addCapacityObservation}
                 savingObservation={savingCapacityObservation}
-                onMarkDoNotVisit={markDoNotVisit}
+                onMarkDoNotVisit={() => setDoNotVisit(null)}
               />
             </div>
           </div>
@@ -372,21 +440,10 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               </div>
             </div>
             <div className="card-body stack">
-              {/* The only visible answer to "why hasn't this place come up in
-                  routing?" — place.snooze_until has had a write path
-                  (POST /api/visits/:id/snooze) since this session but no
-                  display anywhere until now, which meant a snooze made a
-                  place vanish with no explanation on file. Plain text + a
-                  small secondary action, not a warning — snoozing is a
-                  deliberate rep choice, not a problem. */}
-              {data.snooze_until && data.snooze_until >= today() && (
-                <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="tiny">Snoozed — out of routing until {formatDate(data.snooze_until)}.</div>
-                  <Button variant="secondary" size="small" onClick={liftSnooze} disabled={liftingSnooze} title="Make this place eligible for routing again now">
-                    {liftingSnooze ? 'Lifting…' : 'Lift snooze'}
-                  </Button>
-                </div>
-              )}
+              {/* Snooze/do-not-visit status + controls moved to the Upcoming
+                  Visits card below (2026-08-10) — that's where a rep is
+                  already looking to answer "why hasn't this place come up in
+                  routing?", and where the do-not-visit action now lives too. */}
               {data.skipped_visit_count > 0 && (
                 <div className="tiny muted">
                   Skipped {data.skipped_visit_count} time{data.skipped_visit_count === 1 ? '' : 's'} — planned, then never visited.
@@ -492,11 +549,66 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               already use, not this card. */}
           <div className="card">
             <div className="card-head">
-              <h2>Upcoming visits ({data.upcoming_visits.length})</h2>
+              <h2>Upcoming Visits ({data.upcoming_visits.length})</h2>
+              {!isDoNotVisitActive(data) && !markingDoNotVisit && (
+                <Button
+                  variant="caution"
+                  size="small"
+                  title="Stop proposing this place in the route planner"
+                  onClick={() => setMarkingDoNotVisit(true)}
+                >
+                  Do not visit…
+                </Button>
+              )}
             </div>
-            <div className="card-body">
+            <div className="card-body stack">
+              {/* The only visible answer to "why hasn't this place come up in
+                  routing?" — both flags act on the whole place, not any one
+                  visit, so they live here rather than inside a specific
+                  upcoming visit's own popup. Plain text + a small secondary
+                  action, not a warning — both are deliberate rep choices,
+                  not problems. */}
+              {isSnoozeActive(data) && (
+                <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="tiny">Snoozed — out of routing until {formatDate(data.snooze_until)}.</div>
+                  <Button variant="secondary" size="small" onClick={liftSnooze} disabled={liftingSnooze} title="Make this place eligible for routing again now">
+                    {liftingSnooze ? 'Lifting…' : 'Lift snooze'}
+                  </Button>
+                </div>
+              )}
+              {isDoNotVisitActive(data) && (
+                <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="tiny">
+                    Do not visit — {data.do_not_visit_until ? `until ${formatDate(data.do_not_visit_until)}` : 'indefinitely'}.
+                  </div>
+                  <span className="tag-list" style={{ flex: 'unset' }}>
+                    <Button variant="secondary" size="small" onClick={() => setMarkingDoNotVisit(true)} title="Change the until-date" disabled={liftingDoNotVisit}>
+                      Change
+                    </Button>
+                    <Button variant="secondary" size="small" onClick={liftDoNotVisit} disabled={liftingDoNotVisit} title="Make this place eligible for routing again now">
+                      {liftingDoNotVisit ? 'Lifting…' : 'Lift'}
+                    </Button>
+                  </span>
+                </div>
+              )}
+              {markingDoNotVisit && (
+                <div className="tag-list" style={{ flexWrap: 'wrap' }}>
+                  <div className="tiny muted" style={{ width: '100%' }}>Stop proposing this place in the route planner until…</div>
+                  {DO_NOT_VISIT_PRESETS.map((p) => (
+                    <Button key={p.days} variant="secondary" size="small" disabled={savingDoNotVisit} onClick={() => setDoNotVisit(addDaysISO(p.days))}>
+                      {p.label}
+                    </Button>
+                  ))}
+                  <Button variant="secondary" size="small" disabled={savingDoNotVisit} onClick={() => setDoNotVisit(null)}>
+                    Indefinitely
+                  </Button>
+                  <input type="date" value={dnvCustomDate} onChange={(e) => setDnvCustomDate(e.target.value)} disabled={savingDoNotVisit} />
+                  <Button size="small" disabled={savingDoNotVisit || !dnvCustomDate} onClick={() => setDoNotVisit(dnvCustomDate)}>Set date</Button>
+                  <Button variant="secondary" size="small" onClick={() => { setMarkingDoNotVisit(false); setDnvCustomDate(''); }} disabled={savingDoNotVisit}>Cancel</Button>
+                </div>
+              )}
               {data.upcoming_visits.length === 0 ? (
-                <EmptyState message="Nothing upcoming at this place." />
+                <EmptyState message={upcomingEmptyMessage(data)} />
               ) : (
                 <ul className="list">
                   {data.upcoming_visits.map((v) => (
@@ -550,7 +662,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               there's nothing left to act on. */}
           <div className="card">
             <div className="card-head">
-              <h2>Visit history ({data.visits.length})</h2>
+              <h2>Visit History ({data.visits.length})</h2>
               <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setLogging(true); }}>Log a visit</Button>
             </div>
             <div className="card-body">
@@ -585,13 +697,13 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                         {v.notes && <div className="tiny">{v.notes}</div>}
                         {v.next_visit_date && (
                           <div className="tiny muted">
-                            Next visit: {formatDate(v.next_visit_date)}
-                            {/* An active place-level snooze suppresses this place
-                                entirely (schedulingEngine.js's eligibility() does
-                                not let a due commitment bypass it) — so while
-                                snoozed, this date is a promise on file but not
-                                one the app will act on until the snooze lifts. */}
-                            {data.snooze_until && data.snooze_until >= today() && ' (deferred by an active snooze)'}
+                            {/* An active place-level snooze/do-not-visit
+                                suppresses this place entirely (schedulingEngine.js's
+                                eligibility() does not let a due commitment bypass
+                                either) — so while one is active, this date is a
+                                promise on file but not one the app will act on
+                                until it lifts. */}
+                            Next visit: {formatDate(v.next_visit_date)}{suppressionNote(data)}
                           </div>
                         )}
                       </div>
