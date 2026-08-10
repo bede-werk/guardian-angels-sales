@@ -131,6 +131,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
           visit={viewingVisit}
           onClose={() => setViewingVisit(null)}
           onComplete={readOnly ? undefined : (v) => { setViewingVisit(null); setLoggingVisit(v); }}
+          onSnoozed={readOnly ? undefined : () => { setViewingVisit(null); reloadOwnVisits(); onChanged?.(); }}
         />
       )}
 

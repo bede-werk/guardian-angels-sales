@@ -13,6 +13,7 @@ const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
 const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
 const { orgToday } = require('../services/orgDate');
+const { skipSweepMiddleware } = require('../services/visitLifecycle');
 const schedulingConfig = require('../config/scheduling');
 
 // The three real capacity buckets — same list capacity.js's own
@@ -22,6 +23,7 @@ const schedulingConfig = require('../config/scheduling');
 const CAPACITY_LEVELS = ['high', 'medium', 'low'];
 
 const router = express.Router();
+router.use(skipSweepMiddleware(knex));
 
 // Re-sorts the already-decorated (last_visit_date/my_last_visit_date/
 // referral_metrics attached) place list per the `sort` query param. Pure (no
@@ -455,6 +457,16 @@ router.get('/:id', async (req, res, next) => {
         .select('co.*', 'pe.name as person_name'),
     ]);
 
+    // Computed, not stored — same "live count, no manual field" convention
+    // as referral metrics (§9). A plain display number: how many planned
+    // visits to this place lapsed (services/visitLifecycle.js's skip sweep)
+    // rather than actually happening. Not folded into any scoring path —
+    // see that module's header for why skip is deliberately inert.
+    const { n: skippedVisitCount } = await knex('visits')
+      .where({ place_id: place.id, status: 'skipped' })
+      .count('id as n')
+      .first();
+
     res.json({
       ...decorate(place),
       visits,
@@ -464,6 +476,7 @@ router.get('/:id', async (req, res, next) => {
       relationship: relationshipFor(relationshipByPlace, place.id),
       capacity,
       capacity_observations: capacityObservations,
+      skipped_visit_count: Number(skippedVisitCount),
     });
   } catch (err) {
     next(err);
@@ -600,6 +613,26 @@ router.post('/:id/capacity-observations', async (req, res, next) => {
     await stampExplorationEligibility(knex, id, observedAt, schedulingConfig);
     const observation = await knex('capacity_observations').where({ id: observationId }).first();
     res.status(201).json(observation);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/places/:id/snooze — lift an active place-level snooze early
+// (POST /api/visits/:id/snooze is the only way snooze_until gets SET; this
+// is the only way it gets cleared before its own date arrives). Deliberately
+// a plain clear, not tied to the visit that originally set it — that visit
+// stays 'snoozed' as its own permanent record of what was deferred and why;
+// this only undoes the place-level suppression schedulingEngine.js's
+// eligibility() reads.
+router.delete('/:id/snooze', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Place not found' });
+    const place = await knex('places').where({ id }).first();
+    if (!place) return res.status(404).json({ error: 'Place not found' });
+    await knex('places').where({ id }).update({ snooze_until: null });
+    res.json(decorate(await knex('places').where({ id }).first()));
   } catch (err) {
     next(err);
   }

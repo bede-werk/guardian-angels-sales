@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, navigateUrl, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import { api, navigateUrl, formatDate, today, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
@@ -51,6 +51,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [notesDraft, setNotesDraft] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [removingNotes, setRemovingNotes] = useState(false);
+  const [liftingSnooze, setLiftingSnooze] = useState(false);
   // Manual relationship override (see RelationshipDetail.jsx). The editor's
   // own open/closed state lives in that component; only the in-flight save
   // needs to be known here, since this is what triggers the reload.
@@ -195,6 +196,23 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       onChanged?.();
     } catch (e) {
       window.alert(e.message);
+    }
+  }
+
+  // Clears the place-level suppression early (POST /api/visits/:id/snooze —
+  // fired from UpcomingVisitDetailModal — is the only way it gets set). The
+  // visit that set it keeps its own 'snoozed' record; this only undoes what
+  // schedulingEngine.js's eligibility() reads.
+  async function liftSnooze() {
+    setLiftingSnooze(true);
+    try {
+      await api.unsnoozePlace(data.id);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setLiftingSnooze(false);
     }
   }
 
@@ -354,6 +372,26 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               </div>
             </div>
             <div className="card-body stack">
+              {/* The only visible answer to "why hasn't this place come up in
+                  routing?" — place.snooze_until has had a write path
+                  (POST /api/visits/:id/snooze) since this session but no
+                  display anywhere until now, which meant a snooze made a
+                  place vanish with no explanation on file. Plain text + a
+                  small secondary action, not a warning — snoozing is a
+                  deliberate rep choice, not a problem. */}
+              {data.snooze_until && data.snooze_until >= today() && (
+                <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="tiny">Snoozed — out of routing until {formatDate(data.snooze_until)}.</div>
+                  <Button variant="secondary" size="small" onClick={liftSnooze} disabled={liftingSnooze} title="Make this place eligible for routing again now">
+                    {liftingSnooze ? 'Lifting…' : 'Lift snooze'}
+                  </Button>
+                </div>
+              )}
+              {data.skipped_visit_count > 0 && (
+                <div className="tiny muted">
+                  Skipped {data.skipped_visit_count} time{data.skipped_visit_count === 1 ? '' : 's'} — planned, then never visited.
+                </div>
+              )}
               {editingNotes ? (
                 <div className="stack">
                   <textarea
@@ -545,7 +583,17 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                           )}
                         </div>
                         {v.notes && <div className="tiny">{v.notes}</div>}
-                        {v.next_visit_date && <div className="tiny muted">Next visit: {formatDate(v.next_visit_date)}</div>}
+                        {v.next_visit_date && (
+                          <div className="tiny muted">
+                            Next visit: {formatDate(v.next_visit_date)}
+                            {/* An active place-level snooze suppresses this place
+                                entirely (schedulingEngine.js's eligibility() does
+                                not let a due commitment bypass it) — so while
+                                snoozed, this date is a promise on file but not
+                                one the app will act on until the snooze lifts. */}
+                            {data.snooze_until && data.snooze_until >= today() && ' (deferred by an active snooze)'}
+                          </div>
+                        )}
                       </div>
                       <Button
                         variant="danger"
@@ -663,6 +711,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           visit={viewingUpcomingVisit}
           onClose={() => setViewingUpcomingVisit(null)}
           onComplete={(v) => { setViewingUpcomingVisit(null); setEditingVisit(v); }}
+          onSnoozed={() => { setViewingUpcomingVisit(null); load(); }}
         />
       )}
 

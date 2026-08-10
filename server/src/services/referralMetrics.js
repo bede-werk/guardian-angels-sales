@@ -68,6 +68,16 @@ async function referralMetricsByPersonId(knex, personIds, now = new Date()) {
 // Batch per-place metrics, rolled up across each place's *current* people —
 // same "live membership, not the referral's own place_id snapshot" rule the
 // old referral_total used (see routes/places.js). Used by the places directory.
+//
+// Deliberate, not a bug: a referral relationship lives with the PERSON, not
+// the building, so a place's displayed count should follow a strong referral
+// source when they change jobs, and the place they left should stop getting
+// credit for a relationship that's no longer there. Investigated as a
+// possible bug 2026-08-07 (by analogy to capacity.js's measuredFloorByPlace,
+// which deliberately reads referrals.place_id directly instead — because
+// capacity IS a property of the building, a different question this rollup
+// isn't answering) and closed 2026-08-10 as working as intended. See
+// HANDOFF.md's mental model principle #2 and §18.
 async function referralMetricsByPlaceId(knex, placeIds, now = new Date()) {
   if (!placeIds.length) return {};
   const cutoff = recentWindowCutoff(now);

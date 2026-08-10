@@ -27,13 +27,22 @@ function monthKeyOf(date) {
 // exact same component/read-as-you're-used-to-it-in-Route-Planner view;
 // every other rep's group opens PlannedDayModal too, read-only), completed
 // visits (completedVisits — any rep, opens CompletedVisitsModal), and
-// skipped visits (otherVisits — the one status left once planned/completed
-// are both accounted for above — opens SkippedVisitsModal). Planned and
-// completed are kept strictly separate buckets by design: a
+// skipped visits (otherVisits — status: 'skipped' specifically, opens
+// SkippedVisitsModal, which assumes every row it's handed IS 'skipped').
+// Planned and completed are kept strictly separate buckets by design: a
 // visit only ever moves from one to the other by its own `status` actually
 // changing (e.g. logging a planned visit marks that same row completed —
 // see VisitLogModal), never by any special-casing here — the next load()
 // just re-buckets it based on whatever status is now on the row.
+//
+// 'snoozed' visits (services/visitLifecycle.js) are deliberately dropped
+// here, not folded into otherVisits — otherVisits used to be "whatever's
+// left once planned/completed are accounted for," which quietly meant
+// "skipped" until 'snoozed' became a fourth status, silently mislabeling a
+// deliberate deferral as a passive lapse. A snoozed visit never gets a new
+// scheduled_date (snoozing only sets places.snooze_until; it doesn't move
+// the row), so there's no date on the calendar that's actually "about" the
+// snooze — the only current UI for it is PlaceDetail's own snooze banner.
 //
 // One further pass turns plannedGroups/completedVisits into a flat, capped
 // list of "pills" for the cell to actually render — see buildDayPills/
@@ -51,7 +60,7 @@ function splitDayVisits(dayVisits, userId) {
       }
       group.visits.push(v);
     } else if (v.status === 'completed') completedVisits.push(v);
-    else otherVisits.push(v);
+    else if (v.status === 'skipped') otherVisits.push(v);
   }
   // Own group always first, then everyone else alphabetically by name.
   const plannedGroups = [...plannedByUser.values()].sort((a, b) => {
@@ -97,10 +106,11 @@ function splitPillsForDay(dayVisits, userId) {
 }
 
 // The "+N more" chip opens an enlarged view of the *whole* day, not just the
-// overflowed pills — so unlike buildDayPills (cell-only), this also folds in
-// a "Skipped Visits" pill when there are any, matching the day cell's own
-// separate skipped-dot indicator but as a full pill here since there's a
-// whole modal to spend on it instead of a ~64px cell.
+// overflowed pills — so unlike buildDayPills (cell-only, capped at
+// MAX_VISIBLE_PILLS), this also folds in a "Skipped Visits" pill when there
+// are any, same badge the day cell itself renders directly (renderDay),
+// just untruncated and with no cap here since there's a whole modal to
+// spend on it instead of a ~64px cell.
 function buildFullDayPills(dayVisits, userId) {
   const { otherVisits } = splitDayVisits(dayVisits, userId);
   const pills = buildDayPills(dayVisits, userId);
@@ -314,11 +324,11 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         {otherVisits.length > 0 && (
           <button
             type="button"
-            className="day-dots clickable"
+            className="skipped-visits-badge"
             title="View this day's skipped visits"
             onClick={() => setSelectedDate(iso)}
           >
-            <span className="day-dot skipped" />
+            Skipped Visits
           </button>
         )}
       </>

@@ -90,6 +90,9 @@ export const api = {
   // Appends a new capacity_observations row (capacity-computation-spec.md
   // §5/§11) — never overwrites a column. body: { monthly_referrals, note }.
   addCapacityObservation: (id, body) => request(`/places/${id}/capacity-observations`, { method: 'POST', body }),
+  // Lifts an active snooze early — the visit that set it keeps its own
+  // 'snoozed' record; this only clears the place-level suppression.
+  unsnoozePlace: (id) => request(`/places/${id}/snooze`, { method: 'DELETE' }),
 
   // Visits (logging a call) — server/src/routes/visits.js
   // A visit is a TRIP (place, date, rep, notes); who was met lives in its
@@ -99,6 +102,11 @@ export const api = {
   createVisit: (body) => request('/visits', { method: 'POST', body }),
   updateVisit: (id, body) => request(`/visits/${id}`, { method: 'PATCH', body }),
   deleteVisit: (id) => request(`/visits/${id}`, { method: 'DELETE' }),
+  // Explicit deferral of a still-planned visit. body: { snoozed_until, force? }.
+  // A 409 (code: 'SNOOZE_SWALLOWS_COMMITMENT') means the chosen date would
+  // suppress a follow-up the place is already owed — re-send with
+  // `force: true` once the caller has confirmed that's intentional.
+  snoozeVisit: (id, body) => request(`/visits/${id}/snooze`, { method: 'POST', body }),
   // Removes ONE person/category from a trip. If it was the last encounter on
   // a completed trip the server deletes the trip too — callers must confirm
   // that with the user first (see VisitDetailModal).

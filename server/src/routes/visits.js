@@ -11,9 +11,11 @@ const { crossRepVisitsByPlace, findCrossRepFloorWarning, attachCrossRepFloorWarn
 const { detectConflicts } = require('../services/conflictDetection');
 const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
 const { orgToday } = require('../services/orgDate');
+const { skipSweepMiddleware, snoozeSwallowsCommitment } = require('../services/visitLifecycle');
 const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
+router.use(skipSweepMiddleware(knex));
 
 // Outcomes are now the six observable events the relationship model scores
 // against (see services/relationship.js's OUTCOME_WEIGHT). This REPLACED the
@@ -29,7 +31,11 @@ const router = express.Router();
 // the real old->new backfill is Bede's to write when historical data actually
 // gets imported (tracked in HANDOFF.md).
 const OUTCOMES = ['substantive', 'introduced_new', 'brief', 'materials_only', 'unavailable', 'declined'];
-const STATUSES = ['planned', 'completed', 'skipped'];
+// 'snoozed' — an explicit rep deferral (POST /:id/snooze below), distinct
+// from 'skipped' (a passive lapse, stamped by the skip sweep in
+// services/visitLifecycle.js). Both are terminal, neither writes
+// lastVisitedAt/urgency the way 'completed' does.
+const STATUSES = ['planned', 'completed', 'skipped', 'snoozed'];
 
 // WHO the rep actually spoke to — the single biggest input to relationship
 // scoring, since only 'named_person' can build an individual's score.
@@ -606,6 +612,80 @@ router.patch('/:id', async (req, res, next) => {
     if (finalStatus === 'completed') {
       await maybeCapturePreQualification({ placeId: visit.place_id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals, visitId: id, encounters: encounters || [] });
     }
+
+    res.json(await fetchVisit(id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/visits/:id/snooze — an explicit rep deferral of a still-planned
+// visit (distinct from 'skipped', the passive lapse the sweep in
+// services/visitLifecycle.js stamps on its own). Two writes, and the second
+// is the one that matters: the visit resolves to 'snoozed' (the audit
+// record — who deferred what, until when), and the PLACE's own
+// `snooze_until` is set to the same date — the actual suppression.
+// schedulingEngine.js's eligibility() has read place.snooze_until since
+// 2026-07-12 with no write path anywhere until now; without this second
+// write a snooze would accomplish nothing; lastVisitedAt stays untouched,
+// urgency keeps climbing, and the next draft generation re-offers the place
+// right away. No background job un-suppresses it later — eligibility()
+// already checks `place.snooze_until >= today` live on every ranking pass,
+// so it lapses naturally once the date passes, same as the skip sweep needs
+// no cron.
+//
+// Guarded against swallowing a real commitment: if this place already has a
+// next_visit_date on file — the same "most recent visit (by scheduled_date)
+// that set one" lookup buildCandidatePool uses (services/scheduleDraft.js)
+// — and the chosen snoozed_until would land ON OR AFTER it, that commitment
+// would never surface before the snooze lifts. A snooze that resolves
+// BEFORE the commitment is due is not a conflict and proceeds silently.
+// Requires `force: true` to proceed past the conflict, same override
+// convention as the SAME_DATE_VISIT collision in POST / above.
+router.post('/:id/snooze', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
+    const visit = await knex('visits').where({ id }).first();
+    if (!visit) return res.status(404).json({ error: 'Visit not found' });
+    if (visit.status !== 'planned') {
+      return res.status(400).json({ error: 'Only a still-planned visit can be snoozed' });
+    }
+    if (visit.user_id != null && visit.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only edit a still-planned visit under your own account' });
+    }
+
+    const { snoozed_until } = req.body;
+    if (!snoozed_until || !/^\d{4}-\d{2}-\d{2}$/.test(snoozed_until)) {
+      return res.status(400).json({ error: 'snoozed_until is required, in YYYY-MM-DD format' });
+    }
+
+    if (visit.place_id && !req.body.force) {
+      const commitment = await knex('visits')
+        .where({ place_id: visit.place_id })
+        .whereNotNull('next_visit_date')
+        .orderBy('scheduled_date', 'desc')
+        .first('next_visit_date');
+      if (snoozeSwallowsCommitment({ snoozedUntil: snoozed_until, nextVisitDate: commitment?.next_visit_date })) {
+        return res.status(409).json({
+          error: `This place has a follow-up promised for ${commitment.next_visit_date}. Snoozing until ${snoozed_until} would suppress it.`,
+          code: 'SNOOZE_SWALLOWS_COMMITMENT',
+          nextVisitDate: commitment.next_visit_date,
+        });
+      }
+    }
+
+    await knex.transaction(async (trx) => {
+      await trx('visits').where({ id }).update({
+        status: 'snoozed',
+        snoozed_until,
+        resolved_at: trx.fn.now(),
+        updated_at: trx.fn.now(),
+      });
+      if (visit.place_id) {
+        await trx('places').where({ id: visit.place_id }).update({ snooze_until: snoozed_until });
+      }
+    });
 
     res.json(await fetchVisit(id));
   } catch (err) {

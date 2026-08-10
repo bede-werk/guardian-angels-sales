@@ -1,6 +1,25 @@
-import React from 'react';
-import { formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import React, { useState } from 'react';
+import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
+
+// Presets shown on the Snooze panel below. "1 month" is a plain +30 days,
+// not a calendar-month jump — keeps the math (and the commitment-guard
+// comparison against a place's next_visit_date) a simple date string add,
+// no month-length edge cases.
+const SNOOZE_PRESETS = [
+  { label: '1 week', days: 7 },
+  { label: '2 weeks', days: 14 },
+  { label: '1 month', days: 30 },
+];
+
+function addDaysISO(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 // Read-only popup for a still-upcoming (planned) visit — the "Upcoming
 // Visits" card's own equivalent of VisitDetailModal, which is for visit
@@ -9,7 +28,50 @@ import Button from './ui/Button';
 // intact — that PATCHes this exact row to status: 'completed' rather than
 // creating a new one, so it moves from planned to completed in place
 // instead of leaving a stray planned row behind.
-export default function UpcomingVisitDetailModal({ visit, onClose, onComplete }) {
+//
+// `onSnoozed`, when passed, is what enables the Snooze button at all (same
+// "omit the prop to omit the action" convention onComplete already uses) —
+// PlannedDayModal's read-only "someone else's route" mode omits both. Fires
+// with the updated (now status: 'snoozed') visit once POST /:id/snooze
+// succeeds, so the caller can drop it from whatever "planned" list it came
+// from, same as onComplete's caller does after logging.
+export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed }) {
+  const [snoozing, setSnoozing] = useState(false); // showing the preset/date panel, vs the normal footer
+  const [customDate, setCustomDate] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Two-step by necessity, not choice: the server can't know a chosen date
+  // is fine until it's checked this place's own commitment (see
+  // routes/visits.js's POST /:id/snooze) — a client-side guess here would
+  // just duplicate that check and could drift from it. SNOOZE_SWALLOWS_
+  // COMMITMENT is the only 409 this endpoint returns, so no code check is
+  // needed beyond "was there a conflict at all."
+  async function doSnooze(snoozedUntil, { force } = {}) {
+    if (!snoozedUntil) return;
+    setSaving(true);
+    try {
+      // Same visit_id/id duality VisitLogModal already resolves (see its own
+      // `isEditing`/`api.visit(visit.visit_id)`): PlaceDetail's "Upcoming
+      // visits" rows carry a real `id`, but PlannedDayModal's rows come from
+      // scheduleDraft.js's committedDayVisits, which aliases it to
+      // `visit_id` instead. `visit.id` alone is undefined on that path.
+      const visitId = visit.visit_id ?? visit.id;
+      const updated = await api.snoozeVisit(visitId, { snoozed_until: snoozedUntil, force });
+      onSnoozed?.(updated);
+    } catch (e) {
+      if (!force && e.code === 'SNOOZE_SWALLOWS_COMMITMENT') {
+        if (window.confirm(`${e.message} Snooze anyway?`)) {
+          await doSnooze(snoozedUntil, { force: true });
+          return;
+        }
+      } else {
+        window.alert(e.message);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
@@ -41,14 +103,37 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete })
             </div>
           )}
         </div>
-        <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
-          {onComplete && (
-            <Button title="Log what happened and mark this visit completed" onClick={() => onComplete(visit)}>
-              Log this visit
-            </Button>
-          )}
-        </div>
+        {snoozing ? (
+          <div className="modal-foot" style={{ flexWrap: 'wrap' }}>
+            <div className="tiny muted" style={{ width: '100%' }}>Push this place out of rotation until…</div>
+            {SNOOZE_PRESETS.map((p) => (
+              <Button key={p.days} variant="secondary" size="small" disabled={saving} onClick={() => doSnooze(addDaysISO(p.days))}>
+                {p.label}
+              </Button>
+            ))}
+            <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} disabled={saving} />
+            <Button size="small" disabled={saving || !customDate} onClick={() => doSnooze(customDate)}>Set date</Button>
+            <Button variant="secondary" size="small" onClick={() => setSnoozing(false)} disabled={saving}>Cancel</Button>
+          </div>
+        ) : (
+          <div className="modal-foot">
+            <Button variant="secondary" onClick={onClose}>Close</Button>
+            {onSnoozed && (
+              <Button
+                variant="secondary"
+                title="Defer this visit — suppresses this place for every rep until the date you pick"
+                onClick={() => setSnoozing(true)}
+              >
+                Snooze
+              </Button>
+            )}
+            {onComplete && (
+              <Button title="Log what happened and mark this visit completed" onClick={() => onComplete(visit)}>
+                Log this visit
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

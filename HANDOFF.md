@@ -50,28 +50,46 @@ computed from an append-only `capacity_observations` log plus our own measured r
 throughput, with the same override pattern. `schedulingEngine.js`'s cadence lookup AND the
 EXPLORATION tier (membership and ordering) both now read the computed service — nothing left in
 the ranker reads `place.capacity_level`/`capacity_status` anymore (steps 6–7, done — see §18 for
-both verifications). **Full design and the two remaining steps (drop-off detector, dropping the
-legacy columns) are in [capacity-computation-spec.md](capacity-computation-spec.md) and §18 below
-— read before touching capacity, the EXPLORATION tier, or scheduling cadence.**
+both verifications). **Full design and the two remaining steps are in
+[capacity-computation-spec.md](capacity-computation-spec.md) and §18 below — read before touching
+capacity, the EXPLORATION tier, or scheduling cadence.** Step 8 (the drop-off detector) is
+**BLOCKED, not just pending** — it needs 455 days of dated referral history, which doesn't exist
+until the eRSP migration lands, and Bede isn't touching that migration for a while. There's
+nothing to build against; don't pick it up speculatively.
 
-One thing worth knowing immediately, because it will otherwise look like a bug:
+One thing worth knowing immediately, because it was briefly logged as a bug and isn't one:
 
-- **Capacity is correct; `referralMetrics.js`'s PLACE-level rollup is a known bug, not a second
-  correct answer.** `referrals.place_id` is stamped once at referral creation from the referring
-  person's place *at that time* and never re-stamped (`routes/referrals.js`) — so `capacity.js`'s
-  measured floor correctly stays attributed to whichever building actually generated the
-  referral, per the spec's "capacity is a property of the building, not the contact" rule
-  (§2/§14). `referralMetrics.js`'s place-level rollup (`referralMetricsByPlaceId`) instead joins
-  on the contact's *current* place — so on a job change, it silently drops the referral from the
-  place that earned it and credits the place the contact moved to, which never generated it.
-  Logged as a real bug in §18, fix deferred until before step 8 (it's a hard dependency for the
-  drop-off detector specifically — see `capacity-computation-spec.md` §9's 2026-08-07
-  amendment). `referralMetrics.js`'s PERSON-level rollup is unaffected and correct as-is.
+- **Capacity and `referralMetrics.js`'s PLACE-level rollup deliberately disagree on job-changing
+  contacts — both are correct for what they each measure.** `referrals.place_id` is stamped once
+  at referral creation from the referring person's place *at that time* and never re-stamped
+  (`routes/referrals.js`). `capacity.js`'s measured floor reads that frozen snapshot directly, so
+  it stays attributed to whichever building actually generated the referral, per the spec's
+  "capacity is a property of the building, not the contact" rule (§2/§14) — capacity describes the
+  *building's* historical output, independent of who currently staffs it.
+  `referralMetrics.js`'s place-level rollup (`referralMetricsByPlaceId`) instead joins on the
+  contact's *current* place on purpose: a referral relationship lives with the *person*, not the
+  building, so the displayed number should follow a strong referral source when they change jobs,
+  and the place they left should stop getting credit for a relationship that's no longer there.
+  This was scoped as a bug on 2026-08-07 by over-applying capacity's building-scoped reasoning to a
+  metric it was never meant to govern — re-reviewed and closed 2026-08-10 (Bede's call) as working
+  as intended. See §18's now-closed writeup. `referralMetrics.js`'s PERSON-level rollup was never
+  in question either way — it has no notion of "place" in its query at all.
 
 The temporary dual-write bridge (`routes/visits.js`'s `maybeCapturePreQualification` writing the
 legacy `capacity_monthly_referrals`/`capacity_status` columns) that used to be documented here was
 **removed 2026-08-07** once step 7 landed and was verified — nothing ranking-related reads those
 two columns anymore, so there was nothing left for it to bridge to. See §18's "Step 7" subsection.
+
+### 2026-08-10 — Visit terminal states: `snoozed` + `skipped` (new §19 at the bottom of this doc)
+
+Every planned visit now resolves to exactly one of `completed`/`snoozed`/`skipped` — `skipped` is
+a passive lapse (no cron; stamped by request-time middleware, see §19), `snoozed` is a deliberate
+rep deferral (`POST /api/visits/:id/snooze`) that also suppresses the place via the previously-
+dormant `places.snooze_until`, now finally visible on `PlaceDetail.jsx` with a way to lift it
+early. **Read §19 before touching visit statuses, the skip sweep, or the snooze commitment
+guard** — it also documents a deliberate decision (forced snooze leaves `next_visit_date`
+untouched) that should not get "fixed" later, and the encounter invariant that made the old
+`VisitDetailModal` delete-trip bug turn out to be unreachable rather than live.
 
 **What this app is, in one line:** a CRM-ish tool for Guardian Angels Homecare's sales team
 to plan visits to referral places, log who they talked to, and track referrals — built this
@@ -1197,8 +1215,9 @@ wire that into `scheduler.js`'s ordering in place of/alongside `clusterSort`, (d
    relationship is now computed, not stored.
 9. Read §18 (and `capacity-computation-spec.md`) before touching capacity, the EXPLORATION tier,
    or scheduling cadence — capacity is now computed too, steps 1–7 of 9 done (the ranker no longer
-   reads any legacy capacity_* column at all); steps 8–9 (drop-off detector, dropping the legacy
-   columns) not started.
+   reads any legacy capacity_* column at all). Step 8 (drop-off detector) is BLOCKED on the eRSP
+   migration, not just unstarted — don't pick it up speculatively. Step 9 (drop the legacy columns)
+   not started.
 
 ---
 
@@ -1650,33 +1669,115 @@ health-check readout (mirrors `relationship:distribution`).
 
 ### Deliberately deferred — do NOT rediscover these as mystery bugs
 
-- **Capacity vs. `referralMetrics.js`'s PERSON-level rollup disagreement for job-changing
-  contacts** — see §0 above. Both are correct: capacity's frozen `referrals.place_id` snapshot
-  stays with the building that actually generated the referral; the person-level rollup correctly
-  follows the individual. This one is not a bug — leave it alone.
-- **Steps 6–7 are done** (see their own subsections above); **steps 8–9 are not started**, by
-  Bede's own pacing choice (stop and report after each): the drop-off detector, and dropping the
-  three legacy columns (`capacity_monthly_referrals`/`capacity_level`/`capacity_status` — all
-  three are now fully unread by anything, dead weight until that migration).
+- **Steps 6–7 are done** (see their own subsections above). **Step 8 (drop-off detector) is
+  BLOCKED**, not just unstarted — it needs 455 days of dated referral history the eRSP migration
+  hasn't landed yet; nothing to build against, don't pick it up speculatively. **Step 9** (drop the
+  three legacy columns — all now fully unread by anything ranking-related) is unstarted, ordinary
+  backlog.
+- **`referralMetrics.js`'s place-level rollup was briefly logged as a bug (2026-08-07), then
+  closed 2026-08-10 as working as intended** — see its own subsection below. Don't re-flag it.
 - **The distribution readout validated the category-seed axis, not the 6/16 thresholds** — 99.6%
   of real places are still `category_seed`/`unknown` confidence (expected — real places, test-only
   referral/visit history). Re-check the thresholds once roughly 30 real pre-quals exist.
 
-### Known bug, logged 2026-08-07 — fix before step 8 (drop-off detector), NOT fixed yet
+### `referralMetrics.js`'s place-level rollup — logged as a bug 2026-08-07, CLOSED 2026-08-10 (not a bug)
 
-`referralMetrics.js`'s **place-level** rollup (`referralMetricsByPlaceId`, used by the places
-directory) is wrong on every job change, in both directions: it joins on the referring person's
-*current* `place_id`, so the moment a contact changes employers, the place that actually earned
-the referral loses it from its rollup, and the place they moved to gains a referral it never
-generated. The **person-level** rollup (`referralMetricsByPersonId`) is correct and stays as-is —
-following the individual is exactly what it should do.
+**Status: investigated, confirmed working as intended.** On 2026-08-07 this was logged as a bug —
+see the git history of this section for the original writeup — after `capacity.js`'s
+`measuredFloorByPlace` was deliberately built to read `referrals.place_id` directly (§18's judgment
+call #2) instead of joining through `people`'s current `place_id` the way
+`referralMetricsByPlaceId` does. The two systems' disagreement on job-changing contacts looked like
+one of them must be wrong, and capacity's building-scoped reasoning got over-applied to
+`referralMetrics.js` by analogy.
 
-This surfaced because `capacity.js`'s `measuredFloorByPlace` was deliberately built to read
-`referrals.place_id` directly instead (see §18's judgment call #2) — the two systems' disagreement
-on job-changing contacts is what exposed that the place rollup, not just the capacity service, was
-answering the wrong question. The fix is presumably the same: read `referrals.place_id` instead of
-joining on `people.place_id` current. Not done here — deliberately deferred, because it's a launch
-blocker for §9's drop-off detector specifically (a departing contact would otherwise produce a
-false drop-off signature through this same rollup, see `capacity-computation-spec.md` §9's
-2026-08-07 amendment) but is lower urgency everywhere else the place rollup is displayed today.
-**Fix this before building the drop-off detector (step 8), not before.**
+**On 2026-08-10, reviewing the proposed fix, Bede's call: the analogy doesn't hold.** A referral
+relationship lives with the *person*, not the building — if a strong referral source changes jobs,
+the place's displayed number should follow them to their new employer, and the place they left
+should stop getting credit for a relationship that's no longer there. That's exactly what
+`referralMetricsByPlaceId`'s current join does. This also isn't a new realization — mental model
+principle #2 near the top of this doc ("Referrals belong to a person, never a place... if you see a
+bug where a place's numbers don't match expectations, check who's currently assigned there first")
+already documented this as intentional *before* the 2026-08-07 mis-scoping happened.
+
+**Capacity and `referralMetrics.js` are correctly answering two different questions, not
+disagreeing about one.** Capacity asks "how much has this *building* historically generated,"
+independent of current staff — that's why it deliberately reads the frozen `referrals.place_id`
+snapshot. `referralMetrics.js`'s place rollup asks "how strong is our relationship with whoever
+currently works here" — that's why it deliberately follows the current roster. Both are correct for
+what they measure; neither should be made to match the other.
+
+**No code changed.** `referralMetricsByPlaceId`, `routes/places.js`'s `GET /`, and `GET /:id`'s
+reduce-based summary are all unchanged and all correct as they stand. `referralMetricsByPersonId`
+(the PERSON-level rollup) was never in question either way — confirmed during the original scoping
+that it has no notion of "place" in its query at all.
+
+---
+
+## 19. Visit terminal states — `snoozed` and `skipped` (2026-08-10)
+
+Every planned visit now resolves to exactly one of `completed`, `snoozed`, or `skipped`.
+`skipped` is a passive lapse; `snoozed` is a deliberate rep deferral. Neither writes
+`lastVisitedAt` or touches urgency — only `completed` does. Full build in
+`server/src/services/visitLifecycle.js` (both mechanisms), `POST /api/visits/:id/snooze`
+(the endpoint), and `DELETE /api/places/:id/snooze` (lifting one early).
+
+**The encounter invariant** (worth stating plainly, since it's what made the old
+`VisitDetailModal.jsx:95` bug (`trip.status !== 'planned'`, now correctly
+`trip.status === 'completed'`) turn out to be unreachable rather than live): encounters only
+ever come into existence through the visit log (`VisitLogModal`, which drives a visit toward
+`completed`). A `planned` visit is created with zero encounters and stays that way — it can
+never acquire any without becoming `completed` first, and a `skipped` visit inherits that same
+empty state and has no path to gain encounters afterward either. So an empty `encounters` array
+reliably means *never logged*, not *logged and then emptied down to nothing* — don't write code
+that treats those two as ambiguous.
+
+**Forced-snooze + `next_visit_date` — a decision, not a gap, don't "fix" it later.** Snoozing a
+place (`POST /api/visits/:id/snooze`) is guarded against swallowing a live commitment: if the
+place's most-recent-set `next_visit_date` falls on/after the chosen `snoozed_until`, the request
+409s with `code: 'SNOOZE_SWALLOWS_COMMITMENT'` and the caller must confirm and resend with
+`force: true`. On a forced snooze, `next_visit_date` itself is deliberately left untouched. It
+usually lives on a *different, already-completed* visit row than the one being snoozed — having
+the snooze endpoint reach back and rewrite that row's field to make current scheduling tidier
+would mean silently revising a different record's history to keep the system convenient, which
+runs against the whole detach-not-delete/audit-trail spirit of this app's data model (see mental
+model point 1 near the top of this doc). Nothing is silently lost either way:
+`schedulingEngine.js`'s `eligibility()` has a fixed precedence — a due commitment only bypasses
+the *hard floor* guard, never the snooze guard (see that function's own comment) — so a forced
+snooze suppresses the place, promised follow-up included, for the whole window on purpose. When
+the snooze lapses, `next_visit_date` is still sitting there, now overdue, and the place lands
+straight in `TIERS.COMMITMENT` ranked by how overdue it is — a real bonus (deferring a promise
+makes it resurface hotter, not neutral), not a rationalization for leaving it alone.
+
+One known, deliberately deferred display gap from this: `VisitDetailModal.jsx` and
+`PersonDetail.jsx` still show a bare `"Next visit: {date}"` line with no annotation when that
+date falls under an active place-level snooze (unlike `PlaceDetail.jsx`'s own visit-history row
+and its new snooze-state banner, both of which do annotate this — see below). Left for a later
+pass on purpose, not missed.
+
+**`places.snooze_until` had a write path with no display anywhere until this session** — a place
+could vanish from routing for up to a month with literally no UI explanation. Now shown on
+`PlaceDetail.jsx`'s Details card (`"Snoozed — out of routing until {date}"` + a `Lift snooze`
+button, `DELETE /api/places/:id/snooze`) whenever `snooze_until` is still active, plus a computed
+`skipped_visit_count` on the same card (`"Skipped N times — planned, then never visited"`, plain
+text, no warning styling — live `COUNT` over `visits.status = 'skipped'`, same "computed, never
+stored" convention as referral metrics in §9).
+
+**Skip-sweep mechanics, worth knowing before assuming it isn't running:** there's no cron/job
+infrastructure in this app, so lapsed `planned` rows (`scheduled_date < today`, org-local) are
+flipped to `skipped` by `resolveLapsedPlannedVisits()`, mounted as router-level middleware on the
+three routers that actually surface a `planned` visit to a user — `routes/visits.js` (calendar,
+single-visit fetch), `routes/places.js` (`GET /:id`'s `upcoming_visits` — easy to miss, not the
+obvious one), and `routes/scheduleDrafts.js` (route planner committed-day views). Verified live
+against synthetic lapsed rows on all three. The 47 pre-existing planned trips from §17's
+2026-08-05 migration were checked as a real-world backlog test and turned out to be gone from
+the dev DB already (a reset somewhere in the sessions since, not a defect in the sweep) — the dev
+DB currently has 19 visits total and zero skipped rows, so don't be surprised by an empty
+`SkippedVisitsModal`/zero skip counts until real usage accumulates some.
+
+**Tests:** `snoozeSwallowsCommitment()` (the guard's actual three-branch decision — no commitment,
+before it, on/after it) is unit-tested in `server/src/services/visitLifecycle.test.js`, pulled out
+of the route so it's testable the same way `schedulingEngine.js`'s pure functions are. The
+endpoint/middleware/sweep themselves were verified live (smoke-tested through Lisa Marks, real
+HTTP calls, real browser click-through screenshots) rather than given route-level automated tests
+— matches this project's existing convention (pure logic modules get `*.test.js`; routes get
+smoke-tested).

@@ -9,8 +9,10 @@
 const express = require('express');
 const knex = require('../db/knex');
 const scheduleDraft = require('../services/scheduleDraft');
+const { skipSweepMiddleware } = require('../services/visitLifecycle');
 
 const router = express.Router();
+router.use(skipSweepMiddleware(knex));
 
 // Routes below throw errors carrying a `status` (404/403/409) for expected
 // failure cases (not found, not yours, collision) — this wrapper respects

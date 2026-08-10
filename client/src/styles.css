@@ -574,7 +574,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
    CompletedVisitsModal/SkippedVisitsModal's own status badges use (planned →
    blue, completed → teal); "+N more" gets a neutral grey since it isn't its
    own status. */
-.planned-route-badge, .completed-visits-badge, .pill-overflow-badge {
+.planned-route-badge, .completed-visits-badge, .pill-overflow-badge, .skipped-visits-badge {
   font-family: var(--font-sans); font-size: 10px; font-weight: 700;
   padding: 3px 7px; border-radius: var(--radius-sm); border: none; cursor: pointer;
   white-space: nowrap; line-height: 1.3;
@@ -590,9 +590,10 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .completed-visits-badge:hover { background: var(--teal-tint-4); }
 .pill-overflow-badge { background: var(--grey-tint-1); color: var(--grey-dark); }
 .pill-overflow-badge:hover { background: var(--grey-tint-2); }
-/* Same grey as the day-dot/status-badge skipped color elsewhere — only used
-   inside DayOverflowModal's enlarged view (see .day-overview-pill below),
-   since the day cell itself still shows skipped visits as a plain dot. */
+/* Same grey family as .pill-overflow-badge — skipped is "nothing happened,"
+   not a status worth its own color. Used both directly in the day cell
+   (renderDay) and inside DayOverflowModal's enlarged view (see
+   .day-overview-pill below), same as the other two badges. */
 .skipped-visits-badge { background: var(--grey-tint-1); color: var(--grey-dark); }
 .skipped-visits-badge:hover { background: var(--grey-tint-2); }
 
@@ -615,14 +616,6 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   font-size: 12px; padding: 6px 12px; white-space: normal;
   max-width: none; overflow: visible; text-overflow: clip;
 }
-/* Status dot for skipped visits — the one status not covered by the two
-   badges above — clickable, opening SkippedVisitsModal for just that slice. */
-.day-dots { display: flex; gap: 4px; margin-top: auto; border: none; background: none; padding: 0; }
-.day-dots.clickable { cursor: pointer; }
-.day-dots.clickable:hover .day-dot { opacity: 0.6; }
-.day-dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
-.day-dot.skipped { background: var(--grey); }
-
 /* Birthday badge — a day cell's 🎂, clickable, opening BirthdayModal for
    that day. Deliberately not one of the .planned-route-badge family above
    (this isn't a visit status) and not folded into .day-dots either (a

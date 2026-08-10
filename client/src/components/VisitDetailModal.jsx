@@ -92,7 +92,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
     // normal pre-completion state — so emptying one doesn't delete it. Every
     // other status is treated as cascading: over-warning costs a sentence in a
     // confirm, under-warning costs a follow-up date nobody knew they lost.
-    const deletesTrip = trip.encounters.length === 1 && trip.status !== 'planned';
+    const deletesTrip = trip.encounters.length === 1 && trip.status === 'completed';
     const message = deletesTrip
       ? lastEncounterConfirm(encounter)
       : `Remove ${encounterLabel(encounter)} from this visit? The rest of the visit stays. This can't be undone.`;
