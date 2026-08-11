@@ -392,6 +392,9 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .empty-state { padding: 36px 24px; text-align: center; color: var(--muted); }
 .empty-state .empty-icon { width: 56px; height: auto; opacity: 0.35; margin-bottom: 12px; }
 .empty-state .empty-message { font-size: 13px; max-width: 360px; margin: 0 auto 14px; line-height: 1.5; }
+.empty-state.compact { padding: 8px 24px; }
+.empty-state.compact .empty-icon { width: 32px; margin-bottom: 6px; }
+.empty-state.compact .empty-message { margin: 0 auto; }
 
 /* Modal / slide-up sheet — the dark overlay + centered white box pattern used
    by every *Modal.jsx component (VisitLogModal, PersonModal, PlaceDetail,

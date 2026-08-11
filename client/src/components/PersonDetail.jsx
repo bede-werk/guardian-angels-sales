@@ -307,9 +307,20 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
 
   const { referral_metrics: metrics } = data;
 
+  // Which of the Details card's three fields are actually occupying a row
+  // right now (has data, or is mid-edit) — used to divide them with a
+  // border, same as Referrals/Visit history's list items, but only BETWEEN
+  // rows that are actually showing rather than a blanket border on every
+  // row (there's no leading summary line above the first one here to butt up
+  // against, unlike those two lists).
+  const showingPreferences = editingPreferences || !!data.preferences;
+  const showingBirthday = editingBirthday || !!data.birthday_month;
+  const showingNotes = editingNotes || !!data.notes;
+  const dividerStyle = { borderTop: '1px solid var(--border)', paddingTop: 8 };
+
   return (
     <div className="modal-backdrop" onClick={handleBackdropClick}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 980 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div>
             <div className="tag-list" style={{ alignItems: 'center' }}>
@@ -324,30 +335,80 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         </div>
         <div className="modal-body">
           {loadError && <div className="error-banner">{loadError}</div>}
-          {/* Contact info on the left, relationship status on the right —
-              two half-width cards side by side rather than one full-width
-              block stacked above the other. */}
+          {/* Contact Info, Place, and Relationship in one row, all the
+              same height (stretch) — three short, parallel "about this
+              person" facts read cleaner kept level than each hugging its
+              own height. Relationship gets a fixed width wide enough that
+              its status chip + trend arrow never wrap to a second line;
+              Contact Info is pinned to that same width so the row reads as
+              symmetric, and Place — flex:1 — fills and centers in whatever
+              room is left between them. */}
           <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+            <div className="card" style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column' }}>
               <div className="card-head"><h2>Contact Info</h2></div>
-              <div className="card-body stack">
+              <div className="card-body stack" style={{ flex: 1, justifyContent: 'center' }}>
                 {data.phone || data.email ? (
-                  <>
-                    <div className="tiny">
-                      {data.phone && <div>{data.phone}</div>}
-                      {data.email && <div>{data.email}</div>}
-                    </div>
-                    <div className="tag-list">
-                      {data.phone && <a className="btn secondary small" title={`Call ${data.phone}`} href={`tel:${data.phone}`}>Call</a>}
-                      {data.email && <a className="btn secondary small" title={`Email ${data.email}`} href={`mailto:${data.email}`}>Email</a>}
-                    </div>
-                  </>
+                  <div className="tiny">
+                    {data.phone && <div>{data.phone}</div>}
+                    {data.email && <div>{data.email}</div>}
+                  </div>
                 ) : (
                   <div className="tiny muted">No contact info on file.</div>
                 )}
               </div>
             </div>
-            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+
+            {/* Which place they belong to — or, since a person doesn't have to
+                be tied to one, a way to assign them to one. */}
+            <div className="card" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <div className="card-head">
+                <h2>Place</h2>
+                {!data.place && !assigning && (
+                  <Button variant="secondary" size="small" title="Link this person to a place" onClick={() => { exitFieldEdits(); setAssigning(true); }}>Assign to a place</Button>
+                )}
+              </div>
+              <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                {data.place ? (
+                  <div
+                    className="hover-row"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
+                    title="Open this person's place"
+                    onClick={() => onOpenPlace?.(data.place.id)}
+                  >
+                    <div>
+                      <strong>{data.place.name}</strong>
+                      <div className="tiny muted">{data.place.region}</div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="small"
+                      title="Unassign from this place — they stay on file, just no longer linked here"
+                      disabled={removingFromPlace}
+                      onClick={(e) => { e.stopPropagation(); removeFromPlace(); }}
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                ) : assigning ? (
+                  <div className="row" style={{ alignItems: 'center' }}>
+                    <select value={placeDraft} onChange={(e) => setPlaceDraft(e.target.value)} autoFocus disabled={savingAssign} style={{ flex: 1, minWidth: 0 }}>
+                      <option value="">Select a place…</option>
+                      {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    <div className="tag-list" style={{ flex: 'unset' }}>
+                      <Button variant="secondary" size="small" title="Close without assigning" onClick={() => { setAssigning(false); setPlaceDraft(''); }} disabled={savingAssign}>Cancel</Button>
+                      <Button size="small" title="Link this person to the selected place" onClick={assignToPlace} disabled={!placeDraft || savingAssign}>
+                        {savingAssign ? 'Saving…' : 'Save'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="tiny muted">Not currently assigned to a place.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="card" style={{ flex: '0 0 250px' }}>
               <div className="card-head"><h2>Relationship</h2></div>
               <div className="card-body stack">
                 <PersonRelationship relationship={data.relationship} />
@@ -355,263 +416,223 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
             </div>
           </div>
 
-          {/* Durable notes/preferences about this person — persist across visits. */}
-          <div className="card">
-            <div className="card-head">
-              <h2>Details</h2>
-              <div className="tag-list" style={{ flex: 'unset' }}>
-                {!data.preferences && !editingPreferences && (
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    title="Add preferences for this person"
-                    onClick={() => beginEditPreferences('')}
-                  >
-                    Add preferences
-                  </Button>
-                )}
-                {!data.birthday_month && !editingBirthday && (
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    title="Add this person's birthday"
-                    onClick={() => beginEditBirthday()}
-                  >
-                    Add birthday
-                  </Button>
-                )}
-                {!data.notes && !editingNotes && (
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    title="Add a standing note about this person"
-                    onClick={() => beginEditNotes('')}
-                  >
-                    Add notes
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div className="card-body stack">
-              {editingPreferences ? (
-                <div className="stack">
-                  <textarea
-                    rows={3}
-                    value={preferencesDraft}
-                    onChange={(e) => setPreferencesDraft(e.target.value)}
-                    placeholder="Coffee order, how they like to be reached…"
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); savePreferences(); } }}
-                    autoFocus
-                  />
-                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                    {data.preferences ? (
-                      <Button variant="danger" size="small" title="Delete preferences — can't be undone" onClick={removePreferences} disabled={removingPreferences || savingPreferences}>
-                        {removingPreferences ? 'Deleting…' : 'Delete'}
-                      </Button>
-                    ) : <span />}
-                    <div className="tag-list">
-                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingPreferences(false)} disabled={savingPreferences || removingPreferences}>
-                        Cancel
-                      </Button>
-                      <Button size="small" title="Save preferences" onClick={savePreferences} disabled={savingPreferences || removingPreferences}>
-                        {savingPreferences ? 'Saving…' : 'Save'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : data.preferences ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => beginEditPreferences(data.preferences || '')}>
-                  <strong>Preferences:</strong> {data.preferences}
-                </div>
-              ) : null}
-
-              {editingBirthday ? (
-                <div className="stack">
-                  <div className="row" style={{ maxWidth: 260 }}>
-                    <select
-                      value={birthdayMonthDraft}
-                      onChange={(e) => { setBirthdayMonthDraft(e.target.value); setBirthdayDayDraft(''); }}
-                      autoFocus
+          {/* Details + Referrals on the next line, both pinned to the same
+              fixed height (display:flex column so the head stays put and
+              card-body — flex:1, minHeight:0, overflow-y:auto — is what
+              actually scrolls once its content outgrows that height). */}
+          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+            <div className="card" style={{ flex: 1, minWidth: 0, height: 230, display: 'flex', flexDirection: 'column' }}>
+              <div className="card-head">
+                <h2>Details</h2>
+                <div className="tag-list" style={{ flex: 'unset' }}>
+                  {!data.preferences && !editingPreferences && (
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      title="Add preferences for this person"
+                      onClick={() => beginEditPreferences('')}
                     >
-                      <option value="">Month</option>
-                      {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                    </select>
-                    <select
-                      value={birthdayDayDraft}
-                      onChange={(e) => setBirthdayDayDraft(e.target.value)}
-                      disabled={!birthdayMonthDraft}
-                    >
-                      <option value="">Day</option>
-                      {Array.from({ length: daysInMonth(Number(birthdayMonthDraft)) }, (_, i) => i + 1).map((d) => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                    {data.birthday_month ? (
-                      <Button variant="danger" size="small" title="Delete birthday — can't be undone" onClick={removeBirthday} disabled={removingBirthday || savingBirthday}>
-                        {removingBirthday ? 'Deleting…' : 'Delete'}
-                      </Button>
-                    ) : <span />}
-                    <div className="tag-list">
-                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingBirthday(false)} disabled={savingBirthday || removingBirthday}>
-                        Cancel
-                      </Button>
-                      <Button
-                        size="small"
-                        title="Save birthday"
-                        onClick={saveBirthday}
-                        disabled={savingBirthday || removingBirthday || !birthdayMonthDraft || !birthdayDayDraft}
-                      >
-                        {savingBirthday ? 'Saving…' : 'Save'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : data.birthday_month ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => beginEditBirthday(data.birthday_month, data.birthday_day)}>
-                  <strong>Birthday:</strong> {MONTH_NAMES[data.birthday_month - 1]} {data.birthday_day}
-                </div>
-              ) : null}
-
-              {editingNotes ? (
-                <div className="stack">
-                  <textarea
-                    rows={3}
-                    value={notesDraft}
-                    onChange={(e) => setNotesDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
-                    autoFocus
-                  />
-                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                    {data.notes ? (
-                      <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
-                        {removingNotes ? 'Deleting…' : 'Delete'}
-                      </Button>
-                    ) : <span />}
-                    <div className="tag-list">
-                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes || removingNotes}>
-                        Cancel
-                      </Button>
-                      <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes || removingNotes}>
-                        {savingNotes ? 'Saving…' : 'Save'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : data.notes ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => beginEditNotes(data.notes || '')}>
-                  {data.notes}
-                </div>
-              ) : (
-                !data.preferences && !data.birthday_month && !editingPreferences && !editingBirthday && (
-                  <EmptyState message="No notes on file for this person yet." />
-                )
-              )}
-            </div>
-          </div>
-
-          {/* Which place they belong to — or, since a person doesn't have to
-              be tied to one, a way to assign them to one. */}
-          <div className="card">
-            <div className="card-head"><h2>Place</h2></div>
-            <div className="card-body">
-              {data.place ? (
-                <div
-                  className="hover-row"
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}
-                  title="Open this person's place"
-                  onClick={() => onOpenPlace?.(data.place.id)}
-                >
-                  <div>
-                    <strong>{data.place.name}</strong>
-                    <div className="tiny muted">{data.place.city}, {data.place.state} {data.place.zip}</div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="small"
-                    title="Unassign from this place — they stay on file, just no longer linked here"
-                    disabled={removingFromPlace}
-                    onClick={(e) => { e.stopPropagation(); removeFromPlace(); }}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              ) : assigning ? (
-                <div className="row" style={{ alignItems: 'center' }}>
-                  <select value={placeDraft} onChange={(e) => setPlaceDraft(e.target.value)} autoFocus disabled={savingAssign}>
-                    <option value="">Select a place…</option>
-                    {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <div className="tag-list" style={{ flex: 'unset' }}>
-                    <Button size="small" title="Link this person to the selected place" onClick={assignToPlace} disabled={!placeDraft || savingAssign}>
-                      {savingAssign ? 'Saving…' : 'Save'}
+                      Add preferences
                     </Button>
-                    <Button variant="secondary" size="small" title="Close without assigning" onClick={() => { setAssigning(false); setPlaceDraft(''); }} disabled={savingAssign}>Cancel</Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="row" style={{ alignItems: 'center' }}>
-                  <EmptyState message="Not currently assigned to a place." />
-                  <Button variant="secondary" size="small" title="Link this person to a place" onClick={() => { exitFieldEdits(); setAssigning(true); }}>Assign to a place</Button>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Every referral this person has sent us, most recent first, plus
-              the three headline metrics computed live from that list (see
-              services/referralMetrics.js) — no manual "temperature" to set. */}
-          <div className="card">
-            <div className="card-head">
-              <h2>Referrals ({metrics.lifetime_referrals})</h2>
-              <Button size="small" title="Record a new referral from this person" onClick={() => { exitFieldEdits(); setLoggingReferral(true); }}>Log a referral</Button>
-            </div>
-            <div className="card-body stack">
-              <div className="tiny muted">
-                Last referral: {metrics.last_referral_date ? formatDate(metrics.last_referral_date) : 'none yet'} · {metrics.referrals_last_90_days} in the last 90 days
-              </div>
-              {data.referrals.length === 0 ? (
-                <EmptyState message="No referrals logged for this person yet." />
-              ) : (
-                <ul className="list">
-                  {data.referrals.map((r) => (
-                    <li
-                      key={r.id}
-                      className="hover-row"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { exitFieldEdits(); setViewingReferral(r); }}
+                  )}
+                  {!data.birthday_month && !editingBirthday && (
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      title="Add this person's birthday"
+                      onClick={() => beginEditBirthday()}
                     >
-                      <div className="stack" style={{ minWidth: 0 }}>
-                        <strong className="tiny">{r.referral_date ? formatDate(r.referral_date) : 'no date'}</strong>
-                        {r.notes && <div className="tiny">{r.notes}</div>}
+                      Add birthday
+                    </Button>
+                  )}
+                  {!data.notes && !editingNotes && (
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      title="Add a standing note about this person"
+                      onClick={() => beginEditNotes('')}
+                    >
+                      Add notes
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto', gap: 8 }}>
+                {editingPreferences ? (
+                  <div className="stack">
+                    <textarea
+                      rows={2}
+                      value={preferencesDraft}
+                      onChange={(e) => setPreferencesDraft(e.target.value)}
+                      placeholder="Coffee order, how they like to be reached…"
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); savePreferences(); } }}
+                      autoFocus
+                    />
+                    <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                      {data.preferences ? (
+                        <Button variant="danger" size="small" title="Delete preferences — can't be undone" onClick={removePreferences} disabled={removingPreferences || savingPreferences}>
+                          {removingPreferences ? 'Deleting…' : 'Delete'}
+                        </Button>
+                      ) : <span />}
+                      <div className="tag-list">
+                        <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingPreferences(false)} disabled={savingPreferences || removingPreferences}>
+                          Cancel
+                        </Button>
+                        <Button size="small" title="Save preferences" onClick={savePreferences} disabled={savingPreferences || removingPreferences}>
+                          {savingPreferences ? 'Saving…' : 'Save'}
+                        </Button>
                       </div>
-                      <Button
-                        variant="danger"
-                        size="small"
-                        title="Delete this referral"
-                        disabled={removingReferralId === r.id}
-                        onClick={(e) => { e.stopPropagation(); removeReferral(r); }}
-                        style={{ flexShrink: 0 }}
+                    </div>
+                  </div>
+                ) : data.preferences ? (
+                  <div className="tiny hover-row" style={{ padding: '8px', margin: '-8px', borderRadius: 6 }} title="Click to edit" onClick={() => beginEditPreferences(data.preferences || '')}>
+                    <strong>Preferences:</strong> {data.preferences}
+                  </div>
+                ) : null}
+
+                {showingBirthday && (
+                <div style={showingPreferences ? dividerStyle : undefined}>
+                {editingBirthday ? (
+                  <div className="stack">
+                    <div className="row" style={{ maxWidth: 260 }}>
+                      <select
+                        value={birthdayMonthDraft}
+                        onChange={(e) => { setBirthdayMonthDraft(e.target.value); setBirthdayDayDraft(''); }}
+                        autoFocus
                       >
-                        ✕
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                        <option value="">Month</option>
+                        {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                      </select>
+                      <select
+                        value={birthdayDayDraft}
+                        onChange={(e) => setBirthdayDayDraft(e.target.value)}
+                        disabled={!birthdayMonthDraft}
+                      >
+                        <option value="">Day</option>
+                        {Array.from({ length: daysInMonth(Number(birthdayMonthDraft)) }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                      {data.birthday_month ? (
+                        <Button variant="danger" size="small" title="Delete birthday — can't be undone" onClick={removeBirthday} disabled={removingBirthday || savingBirthday}>
+                          {removingBirthday ? 'Deleting…' : 'Delete'}
+                        </Button>
+                      ) : <span />}
+                      <div className="tag-list">
+                        <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingBirthday(false)} disabled={savingBirthday || removingBirthday}>
+                          Cancel
+                        </Button>
+                        <Button
+                          size="small"
+                          title="Save birthday"
+                          onClick={saveBirthday}
+                          disabled={savingBirthday || removingBirthday || !birthdayMonthDraft || !birthdayDayDraft}
+                        >
+                          {savingBirthday ? 'Saving…' : 'Save'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : data.birthday_month ? (
+                  <div className="tiny hover-row" style={{ padding: '8px', margin: '-8px', borderRadius: 6 }} title="Click to edit" onClick={() => beginEditBirthday(data.birthday_month, data.birthday_day)}>
+                    <strong>Birthday:</strong> {MONTH_NAMES[data.birthday_month - 1]} {data.birthday_day}
+                  </div>
+                ) : null}
+                </div>
+                )}
+
+                {showingNotes && (
+                <div style={(showingPreferences || showingBirthday) ? dividerStyle : undefined}>
+                {editingNotes ? (
+                  <div className="stack">
+                    <textarea
+                      rows={2}
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
+                      autoFocus
+                    />
+                    <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                      {data.notes ? (
+                        <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
+                          {removingNotes ? 'Deleting…' : 'Delete'}
+                        </Button>
+                      ) : <span />}
+                      <div className="tag-list">
+                        <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes || removingNotes}>
+                          Cancel
+                        </Button>
+                        <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes || removingNotes}>
+                          {savingNotes ? 'Saving…' : 'Save'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="tiny hover-row" style={{ padding: '8px', margin: '-8px', borderRadius: 6 }} title="Click to edit" onClick={() => beginEditNotes(data.notes || '')}>
+                    <strong>Notes:</strong> {data.notes}
+                  </div>
+                )}
+                </div>
+                )}
+
+                {!showingPreferences && !showingBirthday && !showingNotes && (
+                  <div className="tiny muted">No notes on file for this person yet.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="card" style={{ flex: 1, minWidth: 0, height: 230, display: 'flex', flexDirection: 'column' }}>
+              <div className="card-head">
+                <h2>Referrals ({metrics.lifetime_referrals})</h2>
+                <Button size="small" title="Record a new referral from this person" onClick={() => { exitFieldEdits(); setLoggingReferral(true); }}>Log a referral</Button>
+              </div>
+              <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                <div className="tiny muted">
+                  Last referral: {metrics.last_referral_date ? formatDate(metrics.last_referral_date) : 'none yet'} · {metrics.referrals_last_90_days} in the last 90 days
+                </div>
+                {data.referrals.length === 0 ? (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <EmptyState message="No referrals logged for this person yet." compact />
+                  </div>
+                ) : (
+                  <ul className="list">
+                    {data.referrals.map((r) => (
+                      <li
+                        key={r.id}
+                        className="hover-row"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderTop: '1px solid var(--border)' }}
+                        onClick={() => { exitFieldEdits(); setViewingReferral(r); }}
+                      >
+                        <div className="stack" style={{ minWidth: 0 }}>
+                          <strong className="tiny">{r.referral_date ? formatDate(r.referral_date) : 'no date'}</strong>
+                          {r.notes && <div className="tiny">{r.notes}</div>}
+                        </div>
+                        <Button
+                          variant="danger"
+                          size="small"
+                          title="Delete this referral"
+                          disabled={removingReferralId === r.id}
+                          onClick={(e) => { e.stopPropagation(); removeReferral(r); }}
+                          style={{ flexShrink: 0 }}
+                        >
+                          ✕
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Every visit this person was met on, most recent first — the "last
-              time we spoke with them" history. One row per TRIP, so a visit
-              that also took in their colleagues appears once, naming them;
-              opening it shows the same full trip PlaceDetail would, whoever
-              you came in from. This survives even if the place it happened at
-              is later deleted or this person is moved to a different place. */}
+          {/* Visit history, full width, on its own — the longest list,
+              so it gets the most room. */}
           <div className="card">
             <div className="card-head">
-              <h2>Visit history ({data.visits.length})</h2>
+              <h2>Visit History ({data.visits.length})</h2>
               {data.place && (
                 <Button size="small" title="Record a visit with this person" onClick={() => { exitFieldEdits(); setLogging(true); }}>Log a visit</Button>
               )}

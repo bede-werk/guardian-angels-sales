@@ -80,7 +80,7 @@ export function PlaceRelationship({ relationship, onSave, saving }) {
     return (
       <div className="stack">
         <div className="tag-list" style={{ alignItems: 'center' }}>
-          <select value={draft} style={{ width: 140 }} onChange={(e) => setDraft(e.target.value)} autoFocus>
+          <select value={draft} style={{ width: 90 }} onChange={(e) => setDraft(e.target.value)} autoFocus>
             {LEVELS.map((l) => (
               <option key={l} value={l}>{RELATIONSHIP_LABELS[l]}</option>
             ))}

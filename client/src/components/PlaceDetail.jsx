@@ -355,7 +355,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     <div className="modal-backdrop" onClick={handleBackdropClick}>
       {/* stopPropagation so clicking inside the modal doesn't bubble up to the
           backdrop's onClick (which would close the modal). */}
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 1040 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div>
             <div className="tag-list" style={{ alignItems: 'center' }}>
@@ -369,27 +369,95 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         </div>
         <div className="modal-body">
           {loadError && <div className="error-banner">{loadError}</div>}
-          {/* Address/contact on the left, relationship status on the right —
-              two half-width cards side by side rather than one full-width
-              block stacked above the other. */}
+          {/* Contact Info, Details, and Relationship in one row — Details
+              (just standing notes) is the simplest of the three, so it's
+              what keeps this row short; People (busier — a scrollable list
+              plus header actions) moved down to pair with Capacity instead.
+              Contact Info/Relationship stay pinned to a fixed width (wide
+              enough that Relationship's status+trend never wraps). No fixed
+              height here (unlike the two rows below) — this row's content is
+              always short and bounded (address, one notes field, a status
+              line), so it can just size to whatever it actually needs. */}
           <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+            <div className="card" style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column' }}>
               <div className="card-head"><h2>Contact Info</h2></div>
-              <div className="card-body stack">
+              <div className="card-body stack" style={{ flex: 1, justifyContent: 'center' }}>
                 <div className="tiny">
                   {data.address && <div>{data.address}</div>}
                   <div>{data.city}, {data.state} {data.zip} · <strong>{data.region}</strong></div>
                   {data.phone && <div>{data.phone}</div>}
                 </div>
-                <div className="tag-list">
-                  <Button variant="secondary" size="small" title="Open directions to this address in Google Maps" onClick={() => window.open(navigateUrl(data), '_blank')}>Navigate</Button>
-                  {/* Call button only shows if this place has a phone number on file
-                      (not populated from the original Excel import — added manually). */}
-                  {data.phone && <a className="btn secondary small" title={`Call ${data.phone}`} href={`tel:${data.phone}`}>Call</a>}
-                </div>
               </div>
             </div>
+
+            {/* Durable notes about the organization itself — not tied to any one
+                visit or person (e.g. "front desk is picky about walk-ins"). */}
             <div className="card" style={{ flex: 1, minWidth: 0 }}>
+              <div className="card-head">
+                <h2>Details</h2>
+                <div className="tag-list" style={{ flex: 'unset' }}>
+                  {!data.notes && !editingNotes && (
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      title="Add a standing note about this place"
+                      onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
+                    >
+                      Add notes
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="card-body stack">
+                {/* Snooze/do-not-visit status + controls moved to the Upcoming
+                    Visits card below (2026-08-10) — that's where a rep is
+                    already looking to answer "why hasn't this place come up in
+                    routing?", and where the do-not-visit action now lives too. */}
+                {data.skipped_visit_count > 0 && (
+                  <div className="tiny muted">
+                    Skipped {data.skipped_visit_count} time{data.skipped_visit_count === 1 ? '' : 's'} — planned, then never visited.
+                  </div>
+                )}
+                {editingNotes ? (
+                  <div className="stack">
+                    <textarea
+                      rows={2}
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
+                      autoFocus
+                    />
+                    <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                      {data.notes ? (
+                        <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
+                          {removingNotes ? 'Deleting…' : 'Delete'}
+                        </Button>
+                      ) : <span />}
+                      <div className="tag-list">
+                        <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes || removingNotes}>
+                          Cancel
+                        </Button>
+                        <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes || removingNotes}>
+                          {savingNotes ? 'Saving…' : 'Save'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : data.notes ? (
+                  <div className="tiny hover-row" style={{ padding: '8px', margin: '-8px', borderRadius: 6 }} title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
+                    <strong>Notes:</strong> {data.notes}
+                  </div>
+                ) : (
+                  // Plain small muted line, not the full illustrated EmptyState
+                  // (too tall for this compact card, especially now that the
+                  // pre-qualification line above already fills the "nothing
+                  // set yet" role for this card).
+                  <div className="tiny muted">No standing notes about this place yet.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="card" style={{ flex: '0 0 250px' }}>
               <div className="card-head"><h2>Relationship</h2></div>
               <div className="card-body stack">
                 <PlaceRelationship
@@ -401,153 +469,96 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             </div>
           </div>
 
-          {/* Capacity (capacity-computation-spec.md) — the OTHER cadence
-              axis, own full-width card since it has more to explain than
-              Relationship's short version (resolution source, staleness,
-              override, observation history) — see CapacityDetail.jsx. */}
-          <div className="card">
-            <div className="card-head"><h2>Capacity</h2></div>
-            <div className="card-body stack">
-              <PlaceCapacity
-                place={data}
-                capacity={data.capacity}
-                observations={data.capacity_observations}
-                onSaveOverride={saveCapacityOverride}
-                savingOverride={savingCapacityOverride}
-                onAddObservation={addCapacityObservation}
-                savingObservation={savingCapacityObservation}
-                onMarkDoNotVisit={() => setDoNotVisit(null)}
-              />
-            </div>
-          </div>
-
-          {/* Durable notes about the organization itself — not tied to any one
-              visit or person (e.g. "front desk is picky about walk-ins"). */}
-          <div className="card">
-            <div className="card-head">
-              <h2>Details</h2>
-              <div className="tag-list" style={{ flex: 'unset' }}>
-                {!data.notes && !editingNotes && (
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    title="Add a standing note about this place"
-                    onClick={() => { setNotesDraft(''); setEditingNotes(true); }}
-                  >
-                    Add notes
-                  </Button>
+          {/* People + Capacity on the next line — both are the denser,
+              scrollable cards, same fixed-height/scroll pattern as
+              PersonDetail's Details/Referrals row. */}
+          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+            {/* People here: names, click one to open their full detail
+                (PersonDetail) — each person's own referral metrics show in
+                their row (the per-person breakdown); the place-level roll-up
+                lives up top next to the category/tier badges, and again below
+                as a one-line summary since it's important place-level info. */}
+            <div className="card" style={{ flex: 1, minWidth: 0, height: 240, display: 'flex', flexDirection: 'column' }}>
+              <div className="card-head">
+                <h2>People ({data.people.length})</h2>
+                <div className="tag-list" style={{ flex: 'unset' }}>
+                  <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => { setEditingNotes(false); setAssigningPerson(true); }}>Assign person</Button>
+                  <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => { setEditingNotes(false); setEditingPerson(null); }}>New person</Button>
+                  <Button size="small" title="Record a referral from someone at this place" onClick={() => { setEditingNotes(false); setLoggingReferral(true); }}>Log a referral</Button>
+                </div>
+              </div>
+              <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                <div className="tiny muted">
+                  Last referral: {data.referral_metrics.last_referral_date ? formatDate(data.referral_metrics.last_referral_date) : 'none yet'} · {data.referral_metrics.referrals_last_90_days} in the last 90 days
+                </div>
+                {data.people.length === 0 ? (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <EmptyState message="No one on file here yet. Add the people you meet so the team knows who to ask for." compact />
+                  </div>
+                ) : (
+                  <ul className="list">
+                    {data.people.map((p) => (
+                      <li
+                        key={p.id}
+                        className="stop hover-row"
+                        style={{ justifyContent: 'space-between', alignItems: 'center' }}
+                        onClick={() => { setEditingNotes(false); setSelectedPersonId(p.id); }}
+                      >
+                        <div className="main">
+                          <div className="name">{p.name}</div>
+                          {p.title && <div className="meta">{p.title}</div>}
+                        </div>
+                        <div className="tag-list" style={{ flex: 'unset' }}>
+                          <span className="tiny muted">
+                            {p.referral_metrics.lifetime_referrals} referral{p.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
+                            {p.referral_metrics.last_referral_date ? ` · last ${formatDate(p.referral_metrics.last_referral_date)}` : ''}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="small"
+                            title="Unassign person — they stay on file, just no longer linked to this place"
+                            disabled={removingPersonId === p.id}
+                            onClick={(e) => { e.stopPropagation(); removePerson(p); }}
+                          >
+                            ✕
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
             </div>
-            <div className="card-body stack">
-              {/* Snooze/do-not-visit status + controls moved to the Upcoming
-                  Visits card below (2026-08-10) — that's where a rep is
-                  already looking to answer "why hasn't this place come up in
-                  routing?", and where the do-not-visit action now lives too. */}
-              {data.skipped_visit_count > 0 && (
-                <div className="tiny muted">
-                  Skipped {data.skipped_visit_count} time{data.skipped_visit_count === 1 ? '' : 's'} — planned, then never visited.
-                </div>
-              )}
-              {editingNotes ? (
-                <div className="stack">
-                  <textarea
-                    rows={3}
-                    value={notesDraft}
-                    onChange={(e) => setNotesDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
-                    autoFocus
-                  />
-                  <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                    {data.notes ? (
-                      <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
-                        {removingNotes ? 'Deleting…' : 'Delete'}
-                      </Button>
-                    ) : <span />}
-                    <div className="tag-list">
-                      <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setEditingNotes(false)} disabled={savingNotes || removingNotes}>
-                        Cancel
-                      </Button>
-                      <Button size="small" title="Save this note" onClick={saveNotes} disabled={savingNotes || removingNotes}>
-                        {savingNotes ? 'Saving…' : 'Save'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : data.notes ? (
-                <div className="tiny hover-row" title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
-                  {data.notes}
-                </div>
-              ) : (
-                // Plain small muted line, not the full illustrated EmptyState
-                // (too tall for this compact card, especially now that the
-                // pre-qualification line above already fills the "nothing
-                // set yet" role for this card).
-                <div className="tiny muted">No standing notes about this place yet.</div>
-              )}
+
+            {/* Capacity (capacity-computation-spec.md) — the OTHER cadence
+                axis, has more to explain than Relationship's short version
+                (resolution source, staleness, override, observation
+                history) — see CapacityDetail.jsx. */}
+            <div className="card" style={{ flex: 1, minWidth: 0, height: 240, display: 'flex', flexDirection: 'column' }}>
+              <div className="card-head"><h2>Capacity</h2></div>
+              <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                <PlaceCapacity
+                  place={data}
+                  capacity={data.capacity}
+                  observations={data.capacity_observations}
+                  onSaveOverride={saveCapacityOverride}
+                  savingOverride={savingCapacityOverride}
+                  onAddObservation={addCapacityObservation}
+                  savingObservation={savingCapacityObservation}
+                  onMarkDoNotVisit={() => setDoNotVisit(null)}
+                />
+              </div>
             </div>
           </div>
 
-          {/* People here: names, click one to open their full detail
-              (PersonDetail) — each person's own referral metrics show in
-              their row (the per-person breakdown); the place-level roll-up
-              lives up top next to the category/tier badges, and again below
-              as a one-line summary since it's important place-level info. */}
-          <div className="card">
-            <div className="card-head">
-              <h2>People ({data.people.length})</h2>
-              <div className="tag-list" style={{ flex: 'unset' }}>
-                <Button variant="secondary" size="small" title="Link an existing person on file to this place" onClick={() => { setEditingNotes(false); setAssigningPerson(true); }}>Assign person</Button>
-                <Button variant="secondary" size="small" title="Create a brand-new person here" onClick={() => { setEditingNotes(false); setEditingPerson(null); }}>New person</Button>
-                <Button size="small" title="Record a referral from someone at this place" onClick={() => { setEditingNotes(false); setLoggingReferral(true); }}>Log a referral</Button>
-              </div>
-            </div>
-            <div className="card-body stack">
-              <div className="tiny muted">
-                Last referral: {data.referral_metrics.last_referral_date ? formatDate(data.referral_metrics.last_referral_date) : 'none yet'} · {data.referral_metrics.referrals_last_90_days} in the last 90 days
-              </div>
-              {data.people.length === 0 ? (
-                <EmptyState message="No one on file here yet. Add the people you meet so the team knows who to ask for." />
-              ) : (
-                <ul className="list">
-                  {data.people.map((p) => (
-                    <li
-                      key={p.id}
-                      className="stop hover-row"
-                      style={{ justifyContent: 'space-between', alignItems: 'center' }}
-                      onClick={() => { setEditingNotes(false); setSelectedPersonId(p.id); }}
-                    >
-                      <div className="main">
-                        <div className="name">{p.name}</div>
-                        {p.title && <div className="meta">{p.title}</div>}
-                      </div>
-                      <div className="tag-list" style={{ flex: 'unset' }}>
-                        <span className="tiny muted">
-                          {p.referral_metrics.lifetime_referrals} referral{p.referral_metrics.lifetime_referrals === 1 ? '' : 's'}
-                          {p.referral_metrics.last_referral_date ? ` · last ${formatDate(p.referral_metrics.last_referral_date)}` : ''}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="small"
-                          title="Unassign person — they stay on file, just no longer linked to this place"
-                          disabled={removingPersonId === p.id}
-                          onClick={(e) => { e.stopPropagation(); removePerson(p); }}
-                        >
-                          ✕
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-
+          {/* Upcoming Visits + Visit History on the last line, same
+              fixed-height/scroll pattern as the row above. */}
+          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
           {/* Still-open route-planner-committed visits, soonest first. View
               only for now — editing a planned visit will come later, through
               the same Route Planner/schedule-drafts flow a route's own days
               already use, not this card. */}
-          <div className="card">
+          <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
               <h2>Upcoming Visits ({data.upcoming_visits.length})</h2>
               {!isDoNotVisitActive(data) && !markingDoNotVisit && (
@@ -561,7 +572,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 </Button>
               )}
             </div>
-            <div className="card-body stack">
+            <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {/* The only visible answer to "why hasn't this place come up in
                   routing?" — both flags act on the whole place, not any one
                   visit, so they live here rather than inside a specific
@@ -608,7 +619,9 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 </div>
               )}
               {data.upcoming_visits.length === 0 ? (
-                <EmptyState message={upcomingEmptyMessage(data)} />
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <EmptyState message={upcomingEmptyMessage(data)} />
+                </div>
               ) : (
                 <ul className="list">
                   {data.upcoming_visits.map((v) => (
@@ -660,14 +673,16 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               routes/places.js), and the warning exists to help a rep pick a
               different stop before it happens. Once it's already happened,
               there's nothing left to act on. */}
-          <div className="card">
+          <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
               <h2>Visit History ({data.visits.length})</h2>
               <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setLogging(true); }}>Log a visit</Button>
             </div>
-            <div className="card-body">
+            <div className="card-body" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {data.visits.length === 0 ? (
-                <EmptyState message="No visits logged yet." />
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <EmptyState message="No visits logged yet." />
+                </div>
               ) : (
                 <ul className="list">
                   {data.visits.map((v) => (
@@ -722,6 +737,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 </ul>
               )}
             </div>
+          </div>
           </div>
         </div>
         <div className="modal-foot">

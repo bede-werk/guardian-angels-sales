@@ -5,9 +5,11 @@ import Logo from './Logo';
 // show, instead of a blank space or a generic "No data" message.
 // `message` is the copy text; `action` is an optional button/element rendered
 // below it (e.g. a "Plan today's visits" button when the route is empty).
-export default function EmptyState({ message, action }) {
+// `compact` shrinks the padding/icon for use inside a fixed-height card,
+// where the full-size version would force a scrollbar with nothing to scroll to.
+export default function EmptyState({ message, action, compact }) {
   return (
-    <div className="empty-state">
+    <div className={compact ? 'empty-state compact' : 'empty-state'}>
       <Logo variant="icon" className="empty-icon" />
       <div className="empty-message">{message}</div>
       {action}
