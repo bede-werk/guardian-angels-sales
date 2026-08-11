@@ -24,23 +24,6 @@ function encounterSummary(encounters) {
   return `with ${joinNames(encounters.map(encounterLabel))}`;
 }
 
-// The Upcoming Visits card's empty state doubles as the answer to "why is
-// there nothing here" when that's a deliberate hold rather than just an
-// empty pipeline — the status banner above already says this too, but an
-// empty list right underneath a banner explaining why it's empty reads
-// better than a generic "nothing here" sitting right below the reason.
-// do-not-visit takes precedence when — rare, but possible — both are active,
-// same precedence suppressionNote() uses.
-function upcomingEmptyMessage(place) {
-  if (isDoNotVisitActive(place)) {
-    return `Nothing upcoming — marked do-not-visit${place.do_not_visit_until ? ` until ${formatDate(place.do_not_visit_until)}` : ' indefinitely'}.`;
-  }
-  if (isSnoozeActive(place)) {
-    return `Nothing upcoming — snoozed until ${formatDate(place.snooze_until)}.`;
-  }
-  return 'Nothing upcoming at this place.';
-}
-
 // Presets for the "Do not visit until…" panel — longer-scale than
 // UpcomingVisitDetailModal's own SNOOZE_PRESETS (1/2 weeks, 1 month) on
 // purpose: do-not-visit is a deliberate "stop proposing this place" call,
@@ -493,7 +476,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 </div>
                 {data.people.length === 0 ? (
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <EmptyState message="No one on file here yet. Add the people you meet so the team knows who to ask for." compact />
+                    <EmptyState message="No one on file here yet." compact />
                   </div>
                 ) : (
                   <ul className="list">
@@ -619,9 +602,16 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 </div>
               )}
               {data.upcoming_visits.length === 0 ? (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <EmptyState message={upcomingEmptyMessage(data)} />
-                </div>
+                // The snooze/do-not-visit banner above already answers "why
+                // is there nothing here" when one of those is active — the
+                // empty-state icon+message would just repeat it, so it's
+                // skipped in that case and shown only for a genuinely empty,
+                // unsuppressed pipeline.
+                !isSnoozeActive(data) && !isDoNotVisitActive(data) && (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <EmptyState message="Nothing upcoming at this place." />
+                  </div>
+                )
               ) : (
                 <ul className="list">
                   {data.upcoming_visits.map((v) => (

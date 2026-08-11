@@ -21,12 +21,12 @@ const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { rankCandidates } = require('./schedulingEngine');
 const { detectConflicts, detectConflictsPure, detectConflictsForStops } = require('./conflictDetection');
 const { crossRepVisitsByPlace, findCrossRepFloorWarning } = require('./crossRepFloorWarning');
-const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments } = require('./scheduleGenerator');
+const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments, defaultVisitTypeForCapacity } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 const { orgToday } = require('./orgDate');
 const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
-const { computeCapacityForPlaces } = require('./capacity');
+const { computeCapacityForPlaces, computeCapacityForPlace } = require('./capacity');
 
 // Recognizes a unique-constraint violation across both engines this app runs
 // on (SQLite in dev, Postgres in prod) — see commitDay's per-row insert loop,
@@ -599,7 +599,7 @@ function toDraftStopShape(row) {
     region: row.region,
     lat: row.lat,
     lng: row.lng,
-    visitType: row.visit_type || row.default_visit_type,
+    visitType: row.visit_type,
     category: row.category,
     tier: row.tier,
     address: row.address,
@@ -946,14 +946,14 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
     const { max } = await trx('schedule_draft_stops').where({ draft_id: draftId, date }).max('sort_order as max').first();
     const nextSortOrder = (max ?? -1) + 1;
 
-    // Same never-visited-defaults-to-pre_qualification rule as auto-generated
-    // stops (see scheduleGenerator.js's toPackableStop) — only applied when
+    // Same capacity-driven default as auto-generated stops (see
+    // scheduleGenerator.js's defaultVisitTypeForCapacity) — only applied when
     // the caller didn't explicitly pick a type, so a deliberate choice from
     // the "add a stop" UI is never second-guessed.
     let resolvedVisitType = visitType || null;
     if (!resolvedVisitType) {
-      const everVisited = await trx('visits').where({ place_id: placeId, status: 'completed' }).first();
-      if (!everVisited) resolvedVisitType = 'pre_qualification';
+      const capacity = await computeCapacityForPlace(trx, placeId, { asOf: orgToday() });
+      resolvedVisitType = defaultVisitTypeForCapacity({ level: capacity?.level ?? null, confidence: capacity?.confidence ?? 'unknown' });
     }
 
     // Guards against the two-request race the pre-check above (own.has(placeId))
@@ -1292,7 +1292,7 @@ async function commitDay({ draftId, userId, date }) {
     const rows = await trx('schedule_draft_stops as s')
       .join('places as p', 'p.id', 's.place_id')
       .where({ 's.draft_id': draftId, 's.date': date })
-      .select('s.place_id', 's.visit_type', 's.sort_order', 'p.name as place_name', 'p.default_visit_type', 'p.lat', 'p.lng');
+      .select('s.place_id', 's.visit_type', 's.sort_order', 'p.name as place_name', 'p.lat', 'p.lng');
 
     if (rows.length === 0) return { date, committed: [], skippedCollisions: [] };
 
@@ -1307,15 +1307,13 @@ async function commitDay({ draftId, userId, date }) {
     const locked = await committedElsewherePlaceIds(trx, { date });
     const { committable, skippedCollisions: precheckCollisions } = partitionCommittableStops(geocodedRows, locked);
 
-    // Resolve down to a concrete type here (draft override -> place default
-    // -> config default) rather than passing s.visit_type through as-is —
-    // otherwise a stop that only ever inherited its type from the place's
-    // default_visit_type (never an explicit override) would commit with
-    // visit_type: null, silently losing the very duration info the draft
-    // view showed the whole time it was being edited.
+    // Resolve through config's own fallback (rather than passing s.visit_type
+    // through as-is) as defense-in-depth only — both write sites (addStop,
+    // generateAndPersistDraft) always resolve a concrete type up front now,
+    // so this should never actually need to fall back.
     const visitRows = committable.map((r) => ({
       place_id: r.place_id,
-      visit_type: resolveVisitType(r.visit_type || r.default_visit_type),
+      visit_type: resolveVisitType(r.visit_type),
       place_name: r.place_name,
       user_id: userId,
       scheduled_date: date,

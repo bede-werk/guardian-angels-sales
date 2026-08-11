@@ -20,28 +20,37 @@ const defaultSchedulingConfig = require('../config/scheduling');
 const defaultDriveConfig = require('../config/driveTime');
 const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
-const { rankCandidates, TIERS } = require('./schedulingEngine');
+const { rankCandidates, TIERS, effectiveCapacityLevel, effectiveCapacityConfidence } = require('./schedulingEngine');
 const { packTimeBlock, packOptimizedTimeBlock, isGeocoded, resolveVisitType, visitDurationMinutes } = require('./driveTime');
+
+// A place's default visit type: 'pre_qualification' until its capacity has
+// actually been declared (confidence 'unknown' — see services/capacity.js;
+// that's true whether the declaration came from a manual entry or from
+// maybeCapturePreQualification on a visit, capacity.js doesn't distinguish),
+// then keyed off its capacity level via config/visitTypes.js's
+// DEFAULT_VISIT_TYPE_BY_CAPACITY once it has. You can't skip straight to a
+// check-in/working-visit at a place nobody's actually qualified yet.
+// presentation is never chosen here — DEFAULT_VISIT_TYPE_BY_CAPACITY
+// deliberately excludes it, always a manual pick.
+function defaultVisitTypeForCapacity({ level, confidence, visitTypesConfig = defaultVisitTypesConfig }) {
+  if (confidence === 'unknown') return 'pre_qualification';
+  return visitTypesConfig.DEFAULT_VISIT_TYPE_BY_CAPACITY[level] || visitTypesConfig.DEFAULT_VISIT_TYPE;
+}
 
 // Shapes a ranked candidate into packTimeBlock's stop input. Keeps the
 // fields needed to read/identify the draft; packTimeBlock spreads these
 // through untouched into its output.
-//
-// A place with no completed visit on record ever (lastVisitDate null, from
-// buildCandidatePool's COMPLETED-only lookup) always defaults to
-// pre_qualification, overriding any place.default_visit_type — you can't
-// skip straight to a check-in/presentation at a place nobody's actually
-// stood in front of yet. Once a place has a first completed visit, this
-// falls back to the place's own default (and from there to
-// config/visitTypes.js's DEFAULT_VISIT_TYPE) same as before.
-function toPackableStop({ place, lastVisitDate }) {
+function toPackableStop({ place, capacityLevel, capacityConfidence }) {
   return {
     place_id: place.id,
     place_name: place.name,
     region: place.region,
     lat: place.lat,
     lng: place.lng,
-    visitType: lastVisitDate ? place.default_visit_type : 'pre_qualification',
+    visitType: defaultVisitTypeForCapacity({
+      level: effectiveCapacityLevel({ place, capacityLevel }),
+      confidence: effectiveCapacityConfidence({ place, capacityConfidence }),
+    }),
     capacity_level: place.capacity_level,
     capacity_status: place.capacity_status,
     relationship_level: place.relationship_level,
@@ -281,6 +290,7 @@ async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, c
 
 module.exports = {
   toPackableStop,
+  defaultVisitTypeForCapacity,
   fillDayFromZone,
   orderedZones,
   outOfZoneCommitments,

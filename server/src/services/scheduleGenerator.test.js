@@ -39,7 +39,6 @@ function place(id, overrides = {}) {
     region: 'East Lincoln',
     lat: EAST_LINCOLN.lat,
     lng: EAST_LINCOLN.lng,
-    default_visit_type: null,
     capacity_level: 'medium',
     capacity_status: 'estimated',
     relationship_level: 'weak',
@@ -101,28 +100,25 @@ describe('fillDayFromZone', () => {
     assert.equal(result.remainingMinutes, 100);
   });
 
-  test("resolves each stop's visitType from place.default_visit_type, falling back to DEFAULT_VISIT_TYPE when null", async () => {
-    // Both already have a completed visit on record (lastVisitDate set) —
-    // isolates this from the never-visited-defaults-to-pre_qualification
-    // rule covered separately below.
-    const c1 = candidate(place(1, { default_visit_type: 'presentation' }), { lastVisitDate: '2026-01-01' });
-    const c2 = candidate(place(2, { default_visit_type: null }), { lastVisitDate: '2026-01-01' });
+  test("resolves each stop's visitType by capacity level once capacity is declared, falling back to DEFAULT_VISIT_TYPE for an unrecognized level", async () => {
+    const c1 = candidate(place(1, { capacity_status: 'verified', capacity_level: 'high' }));
+    const c2 = candidate(place(2, { capacity_status: 'verified', capacity_level: null }));
 
     const result = await fillDayFromZone({ candidates: [c1, c2], zone: 'East Lincoln', homeBase: DOWNTOWN, budgetMinutes: 1000 });
 
-    assert.equal(result.stops[0].visitType, 'presentation');
+    assert.equal(result.stops[0].visitType, 'working_visit');
     assert.equal(result.stops[1].visitType, defaultVisitTypesConfig.DEFAULT_VISIT_TYPE);
   });
 
-  test('a place with no completed visit ever defaults to pre_qualification, overriding any place default_visit_type', async () => {
-    const neverVisited = candidate(place(1, { default_visit_type: 'presentation' }), { lastVisitDate: null });
-    const alreadyVisited = candidate(place(2, { default_visit_type: 'presentation' }), { lastVisitDate: '2026-01-01' });
+  test('a place whose capacity has not been declared yet always defaults to pre_qualification, regardless of capacity level', async () => {
+    const unqualified = candidate(place(1, { capacity_status: 'estimated', capacity_level: 'high' }));
+    const qualified = candidate(place(2, { capacity_status: 'verified', capacity_level: 'high' }));
 
-    const result = await fillDayFromZone({ candidates: [neverVisited, alreadyVisited], zone: 'East Lincoln', homeBase: DOWNTOWN, budgetMinutes: 1000 });
+    const result = await fillDayFromZone({ candidates: [unqualified, qualified], zone: 'East Lincoln', homeBase: DOWNTOWN, budgetMinutes: 1000 });
 
     const stopsById = Object.fromEntries(result.stops.map((s) => [s.place_id, s]));
-    assert.equal(stopsById[1].visitType, 'pre_qualification', 'never-visited place should be forced to pre_qualification regardless of its own default');
-    assert.equal(stopsById[2].visitType, 'presentation', 'an already-visited place keeps using its own default_visit_type');
+    assert.equal(stopsById[1].visitType, 'pre_qualification', 'capacity not yet declared should force pre_qualification regardless of capacity_level');
+    assert.equal(stopsById[2].visitType, 'working_visit', 'once capacity is declared, the capacity-level default applies');
   });
 
   test("chains drive time from homeBase for the first stop", async () => {
@@ -194,7 +190,7 @@ describe('fillDayFromZone', () => {
       // call. Budget of 50 fits exactly 3 blocks (48) but not 4 (64) — the
       // top-up pass should reach past the pool cap to pull candidate 3 in,
       // then reject candidate 4 once it no longer fits.
-      const candidates = Array.from({ length: 4 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', default_visit_type: 'drop_in' }), { lastVisitDate: '2026-01-01' }));
+      const candidates = Array.from({ length: 4 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })));
       const optimizer = async ({ stops }) => ({ orderedStops: stops, legMinutes: stops.map(() => 1) });
 
       const result = await fillDayFromZone({
@@ -210,19 +206,19 @@ describe('fillDayFromZone', () => {
     });
 
     test('does not attempt a top-up re-optimize call once remainingMinutes drops below MIN_TOPUP_MINUTES', async () => {
-      const candidates = Array.from({ length: 2 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', default_visit_type: 'presentation' }), { lastVisitDate: '2026-01-01' }));
+      const candidates = Array.from({ length: 2 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'high' })));
       let calls = 0;
       const optimizer = async ({ stops }) => {
         calls += 1;
         return { orderedStops: stops, legMinutes: stops.map(() => 0) };
       };
-      const presentationBlock = defaultVisitTypesConfig.VISIT_TYPES.presentation.minutes + defaultVisitTypesConfig.PREP_MINUTES + defaultVisitTypesConfig.DATA_ENTRY_MINUTES;
+      const workingVisitBlock = defaultVisitTypesConfig.VISIT_TYPES.working_visit.minutes + defaultVisitTypesConfig.PREP_MINUTES + defaultVisitTypesConfig.DATA_ENTRY_MINUTES;
 
       await fillDayFromZone({
         candidates,
         zone: 'East Lincoln',
         homeBase: DOWNTOWN,
-        budgetMinutes: presentationBlock, // exactly enough for one stop, 0 leftover
+        budgetMinutes: workingVisitBlock, // exactly enough for one stop, 0 leftover
         optimizeRoute: optimizer,
         routeOptimizerConfig: { MAX_OPTIMIZE_STOPS: 1, MIN_TOPUP_MINUTES: 1 },
       });
@@ -231,8 +227,8 @@ describe('fillDayFromZone', () => {
     });
 
     test('never regresses: a candidate that would shrink the packed set after re-optimizing is rejected', async () => {
-      const c1 = candidate(place(1, { region: 'East Lincoln', default_visit_type: 'drop_in' }));
-      const c2 = candidate(place(2, { region: 'East Lincoln', default_visit_type: 'drop_in' }));
+      const c1 = candidate(place(1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' }));
+      const c2 = candidate(place(2, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' }));
 
       // First call (the initial optimize) packs both fine; the top-up pass's
       // re-optimize call reports a huge leg time that blows the budget,
@@ -257,8 +253,8 @@ describe('fillDayFromZone', () => {
     });
 
     test('droppedCommitments surfaces a commitment trimmed by the budget after the optimizer resequences it out', async () => {
-      const commitmentPlace = candidate(place(1, { region: 'East Lincoln', default_visit_type: 'drop_in' }), { rankKey: [TIERS.COMMITMENT, 5], lastVisitDate: '2026-01-01' });
-      const otherPlace = candidate(place(2, { region: 'East Lincoln', default_visit_type: 'drop_in' }), { lastVisitDate: '2026-01-01' });
+      const commitmentPlace = candidate(place(1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' }), { rankKey: [TIERS.COMMITMENT, 5] });
+      const otherPlace = candidate(place(2, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' }));
 
       // The optimizer sequences the commitment LAST despite rank order
       // putting it first in the input — the accepted sequencing tradeoff —
@@ -292,7 +288,7 @@ describe('fillDayFromZone', () => {
     });
 
     test('topUpDay stops growing the packed set once MAX_TOPUP_STOPS is hit, even with budget and candidates left', async () => {
-      const candidates = Array.from({ length: 6 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', default_visit_type: 'drop_in' })));
+      const candidates = Array.from({ length: 6 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })));
       const optimizer = async ({ stops }) => ({ orderedStops: stops, legMinutes: stops.map(() => 1) });
 
       const result = await fillDayFromZone({
@@ -311,7 +307,7 @@ describe('fillDayFromZone', () => {
       // Candidate 3 is deliberately "bad" (the optimizer reports it blows
       // the budget); candidate 4 is "good" (fits fine). Top-up should skip
       // 3 and still pick up 4, rather than giving up the moment 3 fails.
-      const candidates = Array.from({ length: 4 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', default_visit_type: 'drop_in' }), { lastVisitDate: '2026-01-01' }));
+      const candidates = Array.from({ length: 4 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })));
       const optimizer = async ({ stops }) => {
         const includesBadCandidate = stops.some((s) => s.place_id === 3);
         return { orderedStops: stops, legMinutes: stops.map(() => (includesBadCandidate ? 9999 : 1)) };
@@ -330,8 +326,8 @@ describe('fillDayFromZone', () => {
     });
 
     test('skips a network call for a candidate whose own visit type cannot fit the remaining budget', async () => {
-      const cheap = candidate(place(1, { region: 'East Lincoln', default_visit_type: 'drop_in' }));
-      const tooLong = candidate(place(2, { region: 'East Lincoln', default_visit_type: 'presentation' }));
+      const cheap = candidate(place(1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' }));
+      const tooLong = candidate(place(2, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'high' }));
 
       let topUpCalls = 0;
       const optimizer = async ({ stops }) => {
@@ -343,7 +339,7 @@ describe('fillDayFromZone', () => {
         candidates: [cheap, tooLong],
         zone: 'East Lincoln',
         homeBase: DOWNTOWN,
-        budgetMinutes: 20, // room for the drop_in (16min) plus a sliver, nowhere near presentation's 68min block
+        budgetMinutes: 20, // room for the drop_in (16min) plus a sliver, nowhere near working_visit's 39min block
         optimizeRoute: optimizer,
         routeOptimizerConfig: { MAX_OPTIMIZE_STOPS: 1, MIN_TOPUP_MINUTES: 1 },
       });
@@ -356,7 +352,7 @@ describe('fillDayFromZone', () => {
       // generous budget means all 3 leftover candidates can plausibly fit
       // together — top-up should fold them into ONE re-optimize call
       // rather than three separate one-at-a-time round-trips.
-      const candidates = Array.from({ length: 5 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', default_visit_type: 'drop_in' })));
+      const candidates = Array.from({ length: 5 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })));
       let topUpCallCount = 0;
       let lastBatchSize = 0;
       const optimizer = async ({ stops }) => {
@@ -379,15 +375,15 @@ describe('fillDayFromZone', () => {
     });
 
     test('a batch candidate that would overflow the batch total is skipped in favor of a cheaper later one, within the same round', async () => {
-      // candidate 2 (presentation, 68min block) would blow the batch total
-      // on its own; candidates 3 and 4 (drop_in, 15min blocks) are cheaper
+      // candidate 2 (working_visit, 39min block) would blow the batch total
+      // on its own; candidates 3 and 4 (drop_in, 16min blocks) are cheaper
       // and rank-ordered right behind it — the batch builder should skip 2
       // and still include 3 and 4 in the same round.
       const candidates = [
-        candidate(place(1, { region: 'East Lincoln', default_visit_type: 'drop_in' }), { lastVisitDate: '2026-01-01' }),
-        candidate(place(2, { region: 'East Lincoln', default_visit_type: 'presentation' }), { lastVisitDate: '2026-01-01' }),
-        candidate(place(3, { region: 'East Lincoln', default_visit_type: 'drop_in' }), { lastVisitDate: '2026-01-01' }),
-        candidate(place(4, { region: 'East Lincoln', default_visit_type: 'drop_in' }), { lastVisitDate: '2026-01-01' }),
+        candidate(place(1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })),
+        candidate(place(2, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'high' })),
+        candidate(place(3, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })),
+        candidate(place(4, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })),
       ];
       const optimizer = async ({ stops }) => ({ orderedStops: stops, legMinutes: stops.map(() => 1) });
 
@@ -395,7 +391,7 @@ describe('fillDayFromZone', () => {
         candidates,
         zone: 'East Lincoln',
         homeBase: DOWNTOWN,
-        budgetMinutes: 50, // fits candidate 1 (16min) + two more 16min drop_ins (48 total), never candidate 2's 69min block
+        budgetMinutes: 50, // fits candidate 1 (16min) + two more 16min drop_ins (48 total), never candidate 2's 39min working_visit block
         optimizeRoute: optimizer,
         routeOptimizerConfig: { MAX_OPTIMIZE_STOPS: 1, MIN_TOPUP_MINUTES: 1 },
       });
@@ -485,12 +481,18 @@ describe('generateDraft', () => {
     // but East is listed first and capacityRank ties keep insertion order via
     // a stable sort) only for day 1; a tight budget fits exactly one stop, so
     // after day 1 dedupes East's top pick, day 2 should reconsider and pick
-    // whichever region now has the top remaining candidate. Pinned to
-    // working_visit explicitly (not relying on config's DEFAULT_VISIT_TYPE)
-    // so "tight" stays tight regardless of what the global default is set to.
-    const eastTop = candidate(place(1, { region: 'East Lincoln', capacity_level: 'high', default_visit_type: 'working_visit' }));
-    const eastSecond = candidate(place(2, { region: 'East Lincoln', capacity_level: 'low', default_visit_type: 'working_visit' }));
-    const southwestTop = candidate(place(3, { region: 'Southwest Lincoln', capacity_level: 'high', lat: SOUTHWEST_LINCOLN.lat, lng: SOUTHWEST_LINCOLN.lng, default_visit_type: 'working_visit' }));
+    // whichever region now has the top remaining candidate. capacity_status
+    // is left at place()'s default ('estimated', i.e. not yet pre-qualified)
+    // so all three stay in the EXPLORATION tier and rank purely by
+    // capacity_level (this test's whole point) rather than jumping to a
+    // different tier — every candidate resolves to the SAME pre_qualification
+    // duration as a result, and real haversine drive time from DOWNTOWN alone
+    // (14min to East, 16min to Southwest) already makes the 1-hour budget too
+    // tight for a second stop chained behind the first (drive+15+3+5 >= 23min
+    // remaining either way).
+    const eastTop = candidate(place(1, { region: 'East Lincoln', capacity_level: 'high' }));
+    const eastSecond = candidate(place(2, { region: 'East Lincoln', capacity_level: 'low' }));
+    const southwestTop = candidate(place(3, { region: 'Southwest Lincoln', capacity_level: 'high', lat: SOUTHWEST_LINCOLN.lat, lng: SOUTHWEST_LINCOLN.lng }));
 
     const result = await generateDraft({
       candidates: [eastTop, eastSecond, southwestTop],
@@ -537,11 +539,13 @@ describe('generateDraft', () => {
   });
 
   test('a candidate excluded by budget on day 1 remains available and gets packed on day 2', async () => {
-    // Pinned to working_visit explicitly so the 1-hour budget stays tight
-    // enough to exclude a second stop regardless of the global default.
+    // capacity_status: 'verified' so visitType is capacity-level driven
+    // (working_visit / check_in) rather than the much shorter
+    // pre_qualification default — real drive time from DOWNTOWN already
+    // leaves the 1-hour budget too tight for a second stop regardless.
     const candidates = [
-      candidate(place(1, { capacity_level: 'high', default_visit_type: 'working_visit' })),
-      candidate(place(2, { capacity_level: 'medium', default_visit_type: 'working_visit' })),
+      candidate(place(1, { capacity_status: 'verified', capacity_level: 'high' })),
+      candidate(place(2, { capacity_status: 'verified', capacity_level: 'medium' })),
     ];
     const result = await generateDraft({
       candidates, days: mkDays(2, 1), homeBase: DOWNTOWN,
@@ -568,22 +572,22 @@ describe('generateDraft', () => {
     assert.ok(allPackedIds.has(4), 'the eligible place should still appear');
   });
 
-  test('mixed visit-type budgeting within a single day reuses default_visit_type end-to-end', async () => {
+  test('mixed visit-type budgeting within a single day reuses the capacity-based default end-to-end', async () => {
     const candidates = [
-      candidate(place(1, { default_visit_type: 'drop_in' }), { lastVisitDate: '2026-01-01' }),
-      candidate(place(2, { default_visit_type: 'check_in' }), { lastVisitDate: '2026-01-01' }),
-      candidate(place(3, { default_visit_type: 'working_visit' }), { lastVisitDate: '2026-01-01' }),
-      candidate(place(4, { default_visit_type: 'presentation' }), { lastVisitDate: '2026-01-01' }),
+      candidate(place(1, { capacity_status: 'estimated' })), // not yet pre-qualified
+      candidate(place(2, { capacity_status: 'verified', capacity_level: 'low' })),
+      candidate(place(3, { capacity_status: 'verified', capacity_level: 'medium' })),
+      candidate(place(4, { capacity_status: 'verified', capacity_level: 'high' })),
     ];
     const result = await generateDraft({
       candidates, days: mkDays(1, 8), homeBase: DOWNTOWN,
     });
 
     const stopsById = Object.fromEntries(result.days[0].stops.map((s) => [s.place_id, s]));
-    assert.equal(stopsById[1].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.drop_in.minutes);
-    assert.equal(stopsById[2].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.check_in.minutes);
-    assert.equal(stopsById[3].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.working_visit.minutes);
-    assert.equal(stopsById[4].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.presentation.minutes);
+    assert.equal(stopsById[1].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.pre_qualification.minutes);
+    assert.equal(stopsById[2].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.drop_in.minutes);
+    assert.equal(stopsById[3].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.check_in.minutes);
+    assert.equal(stopsById[4].visitMinutes, defaultVisitTypesConfig.VISIT_TYPES.working_visit.minutes);
   });
 
   test('empty-pool day entries (zone: null) once the whole pool is exhausted', async () => {
@@ -677,7 +681,7 @@ describe('generateDraft', () => {
   });
 
   test('config.visitTypes override changes visitMinutes', async () => {
-    const candidates = [candidate(place(1, { default_visit_type: 'working_visit' }), { lastVisitDate: '2026-01-01' })];
+    const candidates = [candidate(place(1, { capacity_status: 'verified', capacity_level: 'high' }))];
     const result = await generateDraft({
       candidates, days: mkDays(1, 20), homeBase: DOWNTOWN, // generous enough to still fit the inflated 999-minute visit
       config: { visitTypes: { VISIT_TYPES: { ...defaultVisitTypesConfig.VISIT_TYPES, working_visit: { label: 'Working visit', minutes: 999 } } } },
@@ -709,8 +713,8 @@ describe('generateDraft', () => {
 
   test('with optimizeRoute: still re-ranks and dedupes correctly across days, using the optimizer for each day\'s sequence', async () => {
     const candidates = [
-      candidate(place(1, { region: 'East Lincoln', capacity_level: 'high', default_visit_type: 'drop_in' })),
-      candidate(place(2, { region: 'East Lincoln', capacity_level: 'medium', default_visit_type: 'drop_in' })),
+      candidate(place(1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })),
+      candidate(place(2, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })),
     ];
 
     const result = await generateDraft({

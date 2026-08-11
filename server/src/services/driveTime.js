@@ -103,8 +103,8 @@ function visitDurationMinutes(visitType, config = {}) {
 // stop the user's own edit pushed past the limit.
 //
 // Each stop's visit duration comes from its own visitType if set (e.g. a
-// place's default_visit_type, or a visit's explicit choice), falling back to
-// `defaultVisitType` for the whole pack, then to
+// place's computed capacity-based default, or a visit's explicit choice),
+// falling back to `defaultVisitType` for the whole pack, then to
 // config/visitTypes.js's DEFAULT_VISIT_TYPE — never a flat assumption.
 // Prep and data-entry time (config/visitTypes.js's PREP_MINUTES/
 // DATA_ENTRY_MINUTES) are flat per-stop overhead, same for every visit type,

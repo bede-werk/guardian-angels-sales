@@ -215,8 +215,15 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
                             <div className="tiny muted">No outcome recorded.</div>
                           )}
                           {/* Only worth stating when it happened — "no" is the
-                              default for every encounter and says nothing. */}
-                          {e.they_requested && <div className="tiny">They asked us for something.</div>}
+                              default for every encounter and says nothing. The
+                              ✓ marks this as an already-recorded fact, not an
+                              open call to action the rep still owes someone. */}
+                          {e.they_requested && (
+                            <div className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span aria-hidden="true" style={{ color: 'var(--teal-dark)', fontWeight: 700 }}>✓</span>
+                              They asked us for something.
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

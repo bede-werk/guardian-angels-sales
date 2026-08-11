@@ -235,7 +235,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    are easy to mis-associate. */
 .encounter-row {
   border: 1px solid var(--border); border-radius: var(--radius-md);
-  padding: 6px 12px; background: var(--bg);
+  padding: 10px 14px; background: var(--bg);
   display: flex; flex-direction: column; gap: 6px;
 }
 .encounter-row .encounter-name { font-size: 13px; font-weight: 600; }

@@ -2,10 +2,10 @@
 // duration in minutes. Used by services/driveTime.js's time-block packing
 // instead of a flat visit-duration assumption — a drop-in and an in-service
 // presentation don't cost the same time, and packing needs to know which one
-// it's budgeting for. A place's default_visit_type (see migration
-// 20260713000000_add_default_visit_type_to_places.js) just pre-fills this
-// choice when scheduling a visit there; every visit can still choose a
-// different type.
+// it's budgeting for. A place's default visit type is now fully computed
+// (DEFAULT_VISIT_TYPE_BY_CAPACITY below, gated by pre-qualification — see
+// scheduleGenerator.js's defaultVisitTypeForCapacity) rather than a stored
+// per-place field; every visit can still choose a different type.
 //
 // pre_qualification already existed as a concept (places' capacity/
 // relationship fields are captured "at pre-qual" — see
@@ -27,6 +27,19 @@ module.exports = {
 
   // Used when neither a visit nor its place specifies a type.
   DEFAULT_VISIT_TYPE: 'drop_in',
+
+  // A place's default visit type once it's been pre-qualified (capacity
+  // declared — see services/capacity.js's `declared`/`confidence`), keyed by
+  // its capacity level. Before that point every place defaults to
+  // 'pre_qualification' instead (see scheduleGenerator.js's
+  // defaultVisitTypeForCapacity) — this table only applies once `confidence`
+  // is no longer 'unknown'. presentation is deliberately NOT in this table:
+  // it's always a manual choice, never an auto-selected default.
+  DEFAULT_VISIT_TYPE_BY_CAPACITY: {
+    high: 'working_visit',
+    medium: 'check_in',
+    low: 'drop_in',
+  },
 
   // Flat per-stop overhead that isn't drive time and isn't the visit itself:
   // reviewing notes/history on the way in, logging the outcome on the way
