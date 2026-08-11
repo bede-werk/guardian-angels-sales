@@ -93,6 +93,18 @@ export const api = {
   // Lifts an active snooze early — the visit that set it keeps its own
   // 'snoozed' record; this only clears the place-level suppression.
   unsnoozePlace: (id) => request(`/places/${id}/snooze`, { method: 'DELETE' }),
+  // Place Commitments (server/src/services/placeCommitments.js) — a dated
+  // promise to return, replacing visits.next_visit_date. body: {
+  // promised_date, person_id?, note? }. GET /places/:id already includes
+  // `commitments: { outstanding, discharged }`, so there's no separate list call.
+  addCommitment: (id, body) => request(`/places/${id}/commitments`, { method: 'POST', body }),
+  // Discharges the original as superseded, creates a new outstanding
+  // commitment for the new date. body: { promised_date, person_id?, note? }.
+  rescheduleCommitment: (placeId, commitmentId, body) =>
+    request(`/places/${placeId}/commitments/${commitmentId}/reschedule`, { method: 'POST', body }),
+  // Discharges as waived — the place falls back to normal cadence. body: { note? }.
+  waiveCommitment: (placeId, commitmentId, body) =>
+    request(`/places/${placeId}/commitments/${commitmentId}/waive`, { method: 'POST', body }),
 
   // Visits (logging a call) — server/src/routes/visits.js
   // A visit is a TRIP (place, date, rep, notes); who was met lives in its

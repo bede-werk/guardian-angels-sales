@@ -76,6 +76,19 @@ function stopConflictMessage(c, viewerId) {
       return null;
   }
 }
+// Place Commitments badge text (spec §6.1) — `stop.commitment`/`s.commitment`,
+// attached server-side by services/scheduleDraft.js's commitmentBadge. The
+// promise itself, not just a flag: who it was for (when known), the date,
+// how overdue (only once genuinely overdue — see that function's own
+// comment on why "0 days overdue" is never shown), and how many OTHER
+// outstanding commitments this same place has on file.
+function commitmentBadgeText(c) {
+  const base = c.personName ? `Promised to ${c.personName} for ${formatDate(c.promisedDate)}` : `Promised for ${formatDate(c.promisedDate)}`;
+  const overdue = c.overdueDays > 0 ? ` — ${c.overdueDays} day${c.overdueDays === 1 ? '' : 's'} overdue` : '';
+  const more = c.moreCount > 0 ? ` +${c.moreCount} more` : '';
+  return `${base}${overdue}${more}`;
+}
+
 const MAX_DAYS_AHEAD = 7; // mirrors scheduleDraft.js's MAX_DAYS_AHEAD
 
 // 'YYYY-MM-DD' in the browser's local timezone.
@@ -163,6 +176,70 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
   const [viewingPlaceId, setViewingPlaceId] = useState(null); // stop whose full PlaceDetail is open, if any
+
+  // Place Commitments badge actions (spec §6.2) — reschedule/waive, reachable
+  // straight from the badge instead of only from PlaceDetail's own fuller
+  // Commitments panel (PlaceCommitments.jsx). Deliberately a lighter-weight
+  // surface than that panel: no person/note editing here (both are still
+  // carried forward server-side per the reschedule contract, just not
+  // exposed for edit in this already-dense row) — a rep who wants to change
+  // those opens PlaceDetail instead. commitmentActionPlaceId is which stop's
+  // mini-form is open (at most one at a time); commitmentActionMode picks
+  // which of the two it is.
+  const [commitmentActionPlaceId, setCommitmentActionPlaceId] = useState(null);
+  const [commitmentActionMode, setCommitmentActionMode] = useState(null); // 'reschedule' | 'waive'
+  const [commitmentDraftDate, setCommitmentDraftDate] = useState('');
+  const [commitmentWaiveNote, setCommitmentWaiveNote] = useState('');
+  const [commitmentActionBusy, setCommitmentActionBusy] = useState(false);
+
+  function openCommitmentReschedule(placeId) {
+    setCommitmentActionPlaceId(placeId);
+    setCommitmentActionMode('reschedule');
+    setCommitmentDraftDate('');
+  }
+  function openCommitmentWaive(placeId) {
+    setCommitmentActionPlaceId(placeId);
+    setCommitmentActionMode('waive');
+    setCommitmentWaiveNote('');
+  }
+  function closeCommitmentAction() {
+    setCommitmentActionPlaceId(null);
+    setCommitmentActionMode(null);
+  }
+
+  // Both actions hit the same place-scoped endpoints PlaceDetail's
+  // Commitments panel uses (server/src/routes/places.js) — nothing
+  // draft-specific about a commitment, so there's no schedule-drafts route
+  // for this. A full reload() afterward (not a patched-in-place day update,
+  // unlike every other mutation in this component) since this changes
+  // ranking/eligibility, not just this one stop's own fields — simplest way
+  // to guarantee the whole draft reflects the place's new commitment state.
+  async function submitCommitmentReschedule(commitmentId) {
+    onError(null);
+    setCommitmentActionBusy(true);
+    try {
+      await api.rescheduleCommitment(commitmentActionPlaceId, commitmentId, { promised_date: commitmentDraftDate });
+      closeCommitmentAction();
+      reload();
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setCommitmentActionBusy(false);
+    }
+  }
+  async function submitCommitmentWaive(commitmentId) {
+    onError(null);
+    setCommitmentActionBusy(true);
+    try {
+      await api.waiveCommitment(commitmentActionPlaceId, commitmentId, { note: commitmentWaiveNote || null });
+      closeCommitmentAction();
+      reload();
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setCommitmentActionBusy(false);
+    }
+  }
 
   // Two-part gate for the Re-optimize button below, both set by anything
   // that changes which stops are in the day or their order (add/remove/
@@ -594,6 +671,72 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         {stopConflictMessage(c, userId)}
                       </div>
                     ))}
+                    {/* Place Commitments badge (spec §6.1) — a due commitment
+                        is exactly why this place jumped to the top of the
+                        proposal, so the badge is what explains the ranking,
+                        not just decorates it. stopPropagation throughout:
+                        the whole "main" block's own onClick opens
+                        PlaceDetail, and none of these clicks should. */}
+                    {stop.commitment && (
+                      <div style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className="tiny"
+                          style={{ color: 'var(--blue-dark)', background: 'var(--blue-tint-3)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+                          title={stop.commitment.note || undefined}
+                        >
+                          ⚑ {commitmentBadgeText(stop.commitment)}
+                        </div>
+                        {commitmentActionPlaceId === stop.place_id ? (
+                          commitmentActionMode === 'reschedule' ? (
+                            <div className="tag-list" style={{ marginTop: 4, alignItems: 'center' }}>
+                              <input
+                                type="date"
+                                value={commitmentDraftDate}
+                                onChange={(e) => setCommitmentDraftDate(e.target.value)}
+                                disabled={commitmentActionBusy}
+                              />
+                              <Button
+                                size="small"
+                                onClick={() => submitCommitmentReschedule(stop.commitment.id)}
+                                disabled={commitmentActionBusy || !commitmentDraftDate}
+                              >
+                                {commitmentActionBusy ? 'Saving…' : 'Save'}
+                              </Button>
+                              <Button variant="secondary" size="small" onClick={closeCommitmentAction} disabled={commitmentActionBusy}>
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="tag-list" style={{ marginTop: 4, alignItems: 'center' }}>
+                              <input
+                                type="text"
+                                placeholder="Reason (optional)"
+                                value={commitmentWaiveNote}
+                                onChange={(e) => setCommitmentWaiveNote(e.target.value)}
+                                disabled={commitmentActionBusy}
+                                style={{ flex: 1, minWidth: 100 }}
+                              />
+                              <Button
+                                variant="danger"
+                                size="small"
+                                onClick={() => submitCommitmentWaive(stop.commitment.id)}
+                                disabled={commitmentActionBusy}
+                              >
+                                {commitmentActionBusy ? 'Waiving…' : 'Confirm waive'}
+                              </Button>
+                              <Button variant="secondary" size="small" onClick={closeCommitmentAction} disabled={commitmentActionBusy}>
+                                Cancel
+                              </Button>
+                            </div>
+                          )
+                        ) : (
+                          <div className="tag-list" style={{ marginTop: 2 }}>
+                            <Button variant="ghost" size="small" onClick={() => openCommitmentReschedule(stop.place_id)}>Reschedule</Button>
+                            <Button variant="ghost" size="small" onClick={() => openCommitmentWaive(stop.place_id)}>Waive</Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="actions" style={{ alignItems: 'center', gap: 14 }}>
                     <select
@@ -672,6 +815,19 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
                       >
                         {crossRepFloorWarningText(s.crossRepFloorWarning)}
+                      </div>
+                    )}
+                    {/* Display only here (no reschedule/waive) — those act on
+                        a real draft stop or PlaceDetail's own Commitments
+                        panel; this row is still just a candidate, not yet
+                        added. */}
+                    {s.commitment && (
+                      <div
+                        className="tiny"
+                        style={{ color: 'var(--blue-dark)', background: 'var(--blue-tint-3)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                        title={s.commitment.note || undefined}
+                      >
+                        ⚑ {commitmentBadgeText(s.commitment)}
                       </div>
                     )}
                   </div>

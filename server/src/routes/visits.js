@@ -10,6 +10,13 @@ const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, findCrossRepFloorWarning, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
 const { detectConflicts } = require('../services/conflictDetection');
 const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
+const {
+  createCommitment,
+  fulfillCommitment,
+  getOutstandingCommitments,
+  getBindingCommitment,
+  attachCommitmentsMade,
+} = require('../services/placeCommitments');
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware, snoozeSwallowsCommitment } = require('../services/visitLifecycle');
 const schedulingConfig = require('../config/scheduling');
@@ -149,6 +156,64 @@ async function maybeCapturePreQualification({ placeId, capacityMonthlyReferrals,
   // final step drops them.
 }
 
+// promise_next_visit is a transient body field (not a `visits` column, same
+// convention as capacity_monthly_referrals above) — { promised_date,
+// person_id?, note? }, VisitLogModal's "promise a next visit" field (Place
+// Commitments spec §5.1). Validated up front, alongside the trip fields, so
+// a bad date can't leave a completed visit saved with the promise silently
+// dropped — unlike fulfill_commitment_ids below, this is real input the rep
+// deliberately typed, not a best-effort convenience.
+function promiseNextVisitError(v) {
+  if (v === undefined || v === null) return null;
+  if (!v.promised_date || !/^\d{4}-\d{2}-\d{2}$/.test(v.promised_date)) {
+    return 'promise_next_visit.promised_date must be in YYYY-MM-DD format';
+  }
+  return null;
+}
+
+async function promiseNextVisitPersonError(v) {
+  if (!v || v.person_id === undefined || v.person_id === null || v.person_id === '') return null;
+  const n = Number(v.person_id);
+  if (!Number.isInteger(n)) return 'promise_next_visit.person_id must be a number';
+  const exists = await knex('people').where({ id: n }).first('id');
+  if (!exists) return 'person not found';
+  return null;
+}
+
+// Applied AFTER the visit itself is saved — both need the real visit id
+// (fulfillCommitment's discharged_by_visit_id, createCommitment's
+// source_visit_id). Two independent side effects of "log this visit," same
+// spot maybeCapturePreQualification hooks in from, gated the same way
+// (completed trips only — a still-planned stop hasn't happened yet, nothing
+// to fulfill or promise from).
+//
+// fulfillCommitmentIds is intersected against what's ACTUALLY outstanding
+// right now, never trusted from the client's possibly-stale view (the panel
+// was fetched when the modal opened, and time passes while a rep fills out
+// the form) — anything not currently outstanding (already resolved by
+// someone else, wrong place, bogus id) is silently skipped, not errored,
+// same best-effort convention as maybeCapturePreQualification's own bad-input
+// handling.
+async function applyCommitmentSideEffects({ placeId, visitId, fulfillCommitmentIds, promiseNextVisit, createdByUserId }) {
+  if (Array.isArray(fulfillCommitmentIds) && fulfillCommitmentIds.length) {
+    const outstanding = await getOutstandingCommitments(knex, placeId);
+    const requested = new Set(fulfillCommitmentIds.map(Number));
+    for (const c of outstanding) {
+      if (requested.has(c.id)) await fulfillCommitment(knex, c.id, { dischargedByVisitId: visitId });
+    }
+  }
+  if (promiseNextVisit && promiseNextVisit.promised_date) {
+    await createCommitment(knex, {
+      placeId,
+      promisedDate: promiseNextVisit.promised_date,
+      personId: promiseNextVisit.person_id || null,
+      note: promiseNextVisit.note || null,
+      sourceVisitId: visitId,
+      createdByUserId,
+    });
+  }
+}
+
 // Trip-level fields a client is allowed to set when logging/updating a visit.
 // Anything not in this list in the request body is silently ignored (not
 // saved). visit_type is otherwise only ever set once, at route-planner commit
@@ -159,12 +224,19 @@ async function maybeCapturePreQualification({ placeId, capacityMonthlyReferrals,
 // are per-ENCOUNTER facts now, and arrive in the `encounters` array instead.
 // Leaving them here would let a client "save" an outcome that has nowhere to
 // land and no visible symptom.
+//
+// next_visit_date is ALSO deliberately absent now (removed 2026-08-11, Place
+// Commitments) — it had six readers and zero writers even before this, and
+// VisitLogModal's own "promise a next visit" field (see promise_next_visit
+// below) is its real replacement: a place_commitments row, not a visits
+// column, since a column can only ever hold one promise. The column itself
+// stays on the table, frozen, until every read site is repointed and it's
+// dropped in a follow-up migration.
 const EDITABLE = [
   'user_id',
   'scheduled_date',
   'status',
   'notes',
-  'next_visit_date',
   'sort_order',
   'visit_type',
   // Relationship-model capture (see services/relationship.js).
@@ -302,8 +374,8 @@ async function fetchVisit(id) {
       'v.*',
       'p.city as place_city',
       'p.zip as place_zip',
-      // For VisitDetailModal's "Next visit" annotation — the promise this
-      // visit's next_visit_date makes can sit unacted on if the PLACE is
+      // For VisitDetailModal's "Promised next visit" annotation — a
+      // commitment made during this trip can sit unacted on if the PLACE is
       // currently snoozed/do-not-visited, which lives on a different row.
       'p.snooze_until as place_snooze_until',
       'p.do_not_visit as place_do_not_visit',
@@ -313,16 +385,17 @@ async function fetchVisit(id) {
     .first();
   if (!visit) return visit;
   const [withEncounters] = await attachEncounters(knex, [visit], { columns: ENCOUNTER_DETAIL_COLUMNS });
+  const [withCommitments] = await attachCommitmentsMade(knex, [withEncounters]);
 
   // Cross-rep hard-floor warning (informational only — see
   // crossRepFloorWarning.js). No place, no floor to check against.
-  if (withEncounters.place_id) {
-    const byPlace = await crossRepVisitsByPlace(knex, [withEncounters.place_id]);
-    withEncounters.crossRepFloorWarning = findCrossRepFloorWarning(withEncounters, byPlace.get(withEncounters.place_id) || [], schedulingConfig);
+  if (withCommitments.place_id) {
+    const byPlace = await crossRepVisitsByPlace(knex, [withCommitments.place_id]);
+    withCommitments.crossRepFloorWarning = findCrossRepFloorWarning(withCommitments, byPlace.get(withCommitments.place_id) || [], schedulingConfig);
   } else {
-    withEncounters.crossRepFloorWarning = null;
+    withCommitments.crossRepFloorWarning = null;
   }
-  return withEncounters;
+  return withCommitments;
 }
 
 // "2026-07" -> { start: "2026-07-01", end: "2026-07-31" }. Used by the
@@ -387,8 +460,7 @@ router.get('/calendar', async (req, res, next) => {
         'v.status',
         'v.notes',
         'v.visit_type',
-        'v.source',
-        'v.next_visit_date'
+        'v.source'
       );
 
     // One extra query for the whole month, grouped in JS — never one per row.
@@ -443,6 +515,11 @@ router.post('/', async (req, res, next) => {
 
     const userError = await coerceUserId(payload);
     if (userError) return res.status(400).json({ error: userError });
+
+    const promiseErr = promiseNextVisitError(req.body.promise_next_visit);
+    if (promiseErr) return res.status(400).json({ error: promiseErr });
+    const promisePersonErr = await promiseNextVisitPersonError(req.body.promise_next_visit);
+    if (promisePersonErr) return res.status(400).json({ error: promisePersonErr });
 
     let encounters = [];
     if (req.body.encounters !== undefined) {
@@ -515,6 +592,13 @@ router.post('/', async (req, res, next) => {
 
     if (payload.status === 'completed') {
       await maybeCapturePreQualification({ placeId: numericPlaceId, capacityMonthlyReferrals: req.body.capacity_monthly_referrals, visitId: id, encounters });
+      await applyCommitmentSideEffects({
+        placeId: numericPlaceId,
+        visitId: id,
+        fulfillCommitmentIds: req.body.fulfill_commitment_ids,
+        promiseNextVisit: req.body.promise_next_visit,
+        createdByUserId: req.user.id,
+      });
     }
 
     res.status(201).json(await fetchVisit(id));
@@ -551,6 +635,11 @@ router.patch('/:id', async (req, res, next) => {
 
     const userError = await coerceUserId(update);
     if (userError) return res.status(400).json({ error: userError });
+
+    const promiseErr = promiseNextVisitError(req.body.promise_next_visit);
+    if (promiseErr) return res.status(400).json({ error: promiseErr });
+    const promisePersonErr = await promiseNextVisitPersonError(req.body.promise_next_visit);
+    if (promisePersonErr) return res.status(400).json({ error: promisePersonErr });
 
     const existing = await knex('visit_encounters').where({ visit_id: id }).select('id');
     const existingIds = new Set(existing.map((e) => e.id));
@@ -622,6 +711,13 @@ router.patch('/:id', async (req, res, next) => {
 
     if (finalStatus === 'completed') {
       await maybeCapturePreQualification({ placeId: visit.place_id, capacityMonthlyReferrals: req.body.capacity_monthly_referrals, visitId: id, encounters: encounters || [] });
+      await applyCommitmentSideEffects({
+        placeId: visit.place_id,
+        visitId: id,
+        fulfillCommitmentIds: req.body.fulfill_commitment_ids,
+        promiseNextVisit: req.body.promise_next_visit,
+        createdByUserId: req.user.id,
+      });
     }
 
     res.json(await fetchVisit(id));
@@ -646,13 +742,22 @@ router.patch('/:id', async (req, res, next) => {
 // no cron.
 //
 // Guarded against swallowing a real commitment: if this place already has a
-// next_visit_date on file — the same "most recent visit (by scheduled_date)
-// that set one" lookup buildCandidatePool uses (services/scheduleDraft.js)
-// — and the chosen snoozed_until would land ON OR AFTER it, that commitment
-// would never surface before the snooze lifts. A snooze that resolves
-// BEFORE the commitment is due is not a conflict and proceeds silently.
-// Requires `force: true` to proceed past the conflict, same override
-// convention as the SAME_DATE_VISIT collision in POST / above.
+// binding place_commitments row (services/placeCommitments.js's
+// getBindingCommitment — the earliest OUTSTANDING promised_date) and the
+// chosen snoozed_until would land ON OR AFTER it, that commitment would
+// never surface before the snooze lifts. A snooze that resolves BEFORE the
+// commitment is due is not a conflict and proceeds silently. Requires
+// `force: true` to proceed past the conflict, same override convention as
+// the SAME_DATE_VISIT collision in POST / above.
+//
+// force: true is deliberately NOT wired to discharge or otherwise touch the
+// commitment — it stays outstanding, the place stays suppressed for the
+// snooze window, and once the snooze lapses the place returns to the
+// COMMITMENT tier more overdue than before. Auto-clearing it here would mean
+// this endpoint reaches into a promise's own record to make scheduling
+// convenient, which erodes the audit trail (see HANDOFF.md §19). The route
+// planner badge (Place Commitments spec §6.1) is what keeps a deferred
+// promise visible during the snooze window instead.
 router.post('/:id/snooze', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -672,16 +777,12 @@ router.post('/:id/snooze', async (req, res, next) => {
     }
 
     if (visit.place_id && !req.body.force) {
-      const commitment = await knex('visits')
-        .where({ place_id: visit.place_id })
-        .whereNotNull('next_visit_date')
-        .orderBy('scheduled_date', 'desc')
-        .first('next_visit_date');
-      if (snoozeSwallowsCommitment({ snoozedUntil: snoozed_until, nextVisitDate: commitment?.next_visit_date })) {
+      const commitment = await getBindingCommitment(knex, visit.place_id);
+      if (snoozeSwallowsCommitment({ snoozedUntil: snoozed_until, nextVisitDate: commitment?.promised_date })) {
         return res.status(409).json({
-          error: `This place has a follow-up promised for ${commitment.next_visit_date}. Snoozing until ${snoozed_until} would suppress it.`,
+          error: `This place has a follow-up promised for ${commitment.promised_date}. Snoozing until ${snoozed_until} would suppress it.`,
           code: 'SNOOZE_SWALLOWS_COMMITMENT',
-          nextVisitDate: commitment.next_visit_date,
+          nextVisitDate: commitment.promised_date,
         });
       }
     }

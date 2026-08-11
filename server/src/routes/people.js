@@ -11,6 +11,7 @@ const { referralMetricsByPersonId, summarizeReferralDates, metricsFor } = requir
 const { compareDatesAsc } = require('../services/sortHelpers');
 const { computeRelationshipForPeople } = require('../services/relationship');
 const { attachEncounters, SUMMARY_COLUMNS } = require('../services/visitEncounters');
+const { attachCommitmentsMade } = require('../services/placeCommitments');
 const { orgToday } = require('../services/orgDate');
 
 const router = express.Router();
@@ -256,7 +257,10 @@ router.get('/people/:id', async (req, res, next) => {
     // needs it to tell "this person's own encounter" apart from an
     // attendee who merely shares their name, rather than matching on the
     // name string itself.
-    const visits = await attachEncounters(knex, visitRows, { columns: [...SUMMARY_COLUMNS, 'person_id'] });
+    const visitsWithEncounters = await attachEncounters(knex, visitRows, { columns: [...SUMMARY_COLUMNS, 'person_id'] });
+    // "The promise made during this trip" (Place Commitments spec §6.3) —
+    // same attach this person's place-mate view (routes/places.js) uses.
+    const visits = await attachCommitmentsMade(knex, visitsWithEncounters);
 
     const referrals = await knex('referrals')
       .where({ person_id: person.id })

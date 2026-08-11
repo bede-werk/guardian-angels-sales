@@ -488,6 +488,83 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
   });
 });
 
+// Place Commitments badge (spec §6.1) on a draft stop — loadDraftView/
+// loadDraftDayView attach it via the pure commitmentBadge helper, fed by
+// services/placeCommitments.js's getOutstandingCommitmentsForPlaces.
+// promised_date is a fixed, clearly-past date (not "N days before whatever
+// day this test happens to run") so overdueDays > 0 is true regardless of
+// when this suite executes, without asserting the exact count (which WOULD
+// depend on the real wall-clock date, since loadDraftView/loadDraftDayView
+// call orgToday() internally, same as their pre-existing alreadyVisitedToday
+// computation).
+describe('loadDraftView / loadDraftDayView — Place Commitments badge', () => {
+  let db;
+  const originalFetch = global.fetch;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+
+  before(async () => {
+    global.fetch = async () => ({ ok: false, json: async () => ({}) });
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
+    await db('places').insert([
+      { id: 1, name: 'Promised Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+    ]);
+    await db('people').insert({ id: 1, place_id: 1, name: 'Sharon Klein' });
+    // Two outstanding commitments at place 1: the binding one (earliest,
+    // overdue, named) plus a second, later one — this is what exercises
+    // moreCount.
+    await db('place_commitments').insert([
+      { place_id: 1, promised_date: '2020-01-01', person_id: 1, note: 'asked for the DON' },
+      { place_id: 1, promised_date: '2099-01-01' },
+    ]);
+
+    const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    db.draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert([
+      { draft_id: db.draftId, place_id: 1, date: DATE_A, sort_order: 0 },
+      { draft_id: db.draftId, place_id: 2, date: DATE_A, sort_order: 1 },
+    ]);
+  });
+
+  after(async () => {
+    global.fetch = originalFetch;
+    await db.destroy();
+  });
+
+  test('loadDraftDayView: a place with outstanding commitments carries the badge, correctly shaped', async () => {
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    const stop = view.stops.find((s) => s.place_id === 1);
+    assert.ok(stop.commitment, 'a place with an outstanding commitment must carry the badge');
+    assert.equal(stop.commitment.promisedDate, '2020-01-01', 'the EARLIEST outstanding commitment binds, not the later one');
+    assert.equal(stop.commitment.personName, 'Sharon Klein');
+    assert.equal(stop.commitment.note, 'asked for the DON');
+    assert.ok(stop.commitment.overdueDays > 0, 'a promised_date years in the past must be overdue');
+    assert.equal(stop.commitment.moreCount, 1, 'the second outstanding commitment counts as "+1 more", not silently dropped');
+  });
+
+  test('loadDraftDayView: a place with no outstanding commitments gets no badge', async () => {
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    const stop = view.stops.find((s) => s.place_id === 2);
+    assert.equal(stop.commitment, null);
+  });
+
+  test('loadDraftView: same badge, on the whole-draft read', async () => {
+    const view = await loadDraftView(db, db.draftId);
+    const stop = view.days[0].stops.find((s) => s.place_id === 1);
+    assert.ok(stop.commitment);
+    assert.equal(stop.commitment.moreCount, 1);
+  });
+});
+
 // day.committed feeds RoutePlanner.jsx's "Already Planned"/"Planned" list,
 // which renders every row under a hardcoded "✓ Planned" badge — so
 // committedVisitsQuery must only ever return status:'planned' rows, the same
