@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api, formatDate, VISIT_TYPE_LABELS, outcomeLabel, suppressionNote } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Short, joinable labels for a non-named encounter — MET_WITH_LABELS in api.js
 // reads as a form option ("A staff member (name unknown)"), too long to sit
@@ -49,6 +50,8 @@ export function joinNames(names) {
 // removeEncounter) the modal closes itself as well, since there's nothing
 // left to show.
 export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onChanged }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [trip, setTrip] = useState(null); // GET /api/visits/:id — the full trip + every encounter field
   const [loadError, setLoadError] = useState(null);
   const [openEncounterId, setOpenEncounterId] = useState(null); // which encounter's detail is expanded, if any
@@ -102,7 +105,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
       await api.deleteVisitEncounter(trip.id, encounter.id);
       onChanged?.();
       if (deletesTrip) {
-        onClose();
+        requestClose();
         return;
       }
       await load();
@@ -115,12 +118,12 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
 
   if (!trip) {
     return (
-      <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+      <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
         <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
           {loadError ? (
             <div className="stack" style={{ padding: 20 }}>
               <div className="error-banner">{loadError}</div>
-              <Button variant="secondary" onClick={onClose}>Close</Button>
+              <Button variant="secondary" onClick={requestClose}>Close</Button>
             </div>
           ) : (
             <div className="loading">Loading…</div>
@@ -131,11 +134,11 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{trip.scheduled_date ? formatDate(trip.scheduled_date) : 'unscheduled'} · Visit</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">
           {loadError && <div className="error-banner">{loadError}</div>}
@@ -236,11 +239,10 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
         <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
           <Button variant="danger" title="Delete this visit and everyone on it" onClick={() => onDelete?.(trip)}>Delete</Button>
           <div style={{ display: 'flex', gap: 10 }}>
-            <Button variant="secondary" onClick={onClose}>Close</Button>
             {/* Hands the FULL trip up, not the row the parent opened this
                 with, so VisitLogModal starts from every encounter already on
                 file instead of the list endpoint's name-only summary. */}
-            <Button title="Edit this visit's details" onClick={() => onEdit?.(trip)}>Edit</Button>
+            <Button variant="secondary" title="Edit this visit's details" onClick={() => onEdit?.(trip)}>Edit</Button>
           </div>
         </div>
       </div>

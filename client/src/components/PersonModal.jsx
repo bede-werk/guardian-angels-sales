@@ -5,6 +5,7 @@ import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
 import PlaceModal from './PlaceModal';
 import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // The place picker's last option is a sentinel that opens a nested PlaceModal
 // instead of actually picking a place — same pattern as the category filter
@@ -18,6 +19,8 @@ const ADD_PLACE_OPTION = '__add_place__';
 // "+ Add person" button (passes `places`/`categories` instead, so the form
 // includes a place picker that can also create a brand-new place on the fly).
 export default function PersonModal({ placeId, placeName, places, categories, person, onClose, onSaved }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [form, setForm] = useState({
     place_id: placeId || person?.place_id || '',
     name: person?.name || '',
@@ -83,7 +86,7 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
         ? await api.people.update(person.id, form)
         : await api.people.create({ ...form, place_id: placeId || form.place_id || null });
       onSaved?.(saved);
-      onClose();
+      requestClose();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -94,11 +97,11 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
   const needsPlacePicker = !placeId && !person && places;
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{person ? 'Edit person' : placeName ? `Add a new person to ${placeName}` : 'Add a person'}</h2>
-          <button className="close" title="Close without saving" onClick={onClose}>×</button>
+          <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -168,7 +171,7 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>Cancel</Button>
           <Button
             title={person ? "Save changes to this person's details" : 'Create this new person'}
             onClick={save}
