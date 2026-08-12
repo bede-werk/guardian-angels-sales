@@ -105,6 +105,10 @@ export const api = {
   // Discharges as waived — the place falls back to normal cadence. body: { note? }.
   waiveCommitment: (placeId, commitmentId, body) =>
     request(`/places/${placeId}/commitments/${commitmentId}/waive`, { method: 'POST', body }),
+  // Hard-deletes a discharged commitment — history cleanup only, rejected
+  // server-side if the commitment is still outstanding.
+  deleteCommitment: (placeId, commitmentId) =>
+    request(`/places/${placeId}/commitments/${commitmentId}`, { method: 'DELETE' }),
 
   // Visits (logging a call) — server/src/routes/visits.js
   // A visit is a TRIP (place, date, rep, notes); who was met lives in its

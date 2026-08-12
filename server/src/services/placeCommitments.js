@@ -207,6 +207,20 @@ async function rescheduleCommitment(db, id, { promisedDate, personId, note, crea
   });
 }
 
+// Hard-deletes a discharged commitment — history cleanup only (a typo'd
+// waive reason, a duplicate entry), not a way to back out of a live promise.
+// Guards on whereNotNull('discharged_at') so an outstanding commitment can't
+// be removed this way; it has to be waived/rescheduled/fulfilled first, same
+// as fulfillCommitment's guard the other direction. Safe against dangling
+// refs: superseded_by_id is the only column anywhere that points AT a
+// place_commitments row, and it's declared onDelete('SET NULL') (see the
+// migration), so deleting a row that an earlier reschedule points at just
+// clears that pointer instead of failing.
+async function deleteCommitment(db, id) {
+  const deleted = await db('place_commitments').where({ id }).whereNotNull('discharged_at').delete();
+  return deleted > 0;
+}
+
 // Every commitment whose source_visit_id is one of these visit ids — "the
 // promise made during this trip" (spec §6.3), replacing the old per-visit
 // next_visit_date column as what a visit-history row shows. Same
@@ -265,6 +279,7 @@ module.exports = {
   fulfillCommitment,
   waiveCommitment,
   rescheduleCommitment,
+  deleteCommitment,
   commitmentsBySourceVisitId,
   attachCommitmentsMade,
 };

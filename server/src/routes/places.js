@@ -14,7 +14,7 @@ const { crossRepVisitsByPlace, attachCrossRepFloorWarnings } = require('../servi
 const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware } = require('../services/visitLifecycle');
-const { createCommitment, rescheduleCommitment, waiveCommitment, attachCommitmentsMade } = require('../services/placeCommitments');
+const { createCommitment, rescheduleCommitment, waiveCommitment, deleteCommitment, attachCommitmentsMade } = require('../services/placeCommitments');
 const schedulingConfig = require('../config/scheduling');
 
 // The three real capacity buckets — same list capacity.js's own
@@ -773,6 +773,28 @@ router.post('/:id/commitments/:commitmentId/waive', async (req, res, next) => {
 
     const waived = await waiveCommitment(knex, commitmentId, { note: req.body.note });
     res.json(await loadCommitment(waived.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/places/:id/commitments/:commitmentId — history cleanup only.
+// Only discharged commitments can be deleted this way; an outstanding
+// promise has to be waived, rescheduled, or fulfilled first — this isn't a
+// second way to back out of a live one.
+router.delete('/:id/commitments/:commitmentId', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const commitmentId = Number(req.params.commitmentId);
+    if (Number.isNaN(id) || Number.isNaN(commitmentId)) return res.status(404).json({ error: 'Commitment not found' });
+    const existing = await knex('place_commitments').where({ id: commitmentId, place_id: id }).first();
+    if (!existing) return res.status(404).json({ error: 'Commitment not found' });
+    if (!existing.discharged_at) {
+      return res.status(409).json({ error: 'This commitment is still outstanding — waive, reschedule, or fulfill it first' });
+    }
+
+    await deleteCommitment(knex, commitmentId);
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

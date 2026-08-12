@@ -24,7 +24,7 @@ const { crossRepVisitsByPlace, findCrossRepFloorWarning } = require('./crossRepF
 const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments, defaultVisitTypeForCapacity } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
-const { orgToday } = require('./orgDate');
+const { orgToday, orgDateOf } = require('./orgDate');
 const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
 const { computeCapacityForPlaces, computeCapacityForPlace } = require('./capacity');
 const { getBindingCommitmentsForPlaces, getOutstandingCommitmentsForPlaces } = require('./placeCommitments');
@@ -1072,6 +1072,38 @@ async function deleteActiveDraft({ draftId, userId }) {
   });
 }
 
+// Auto-discards any draft still sitting in the proposal stage from a
+// previous org-day — the route-planner equivalent of visitLifecycle.js's
+// skip sweep. Keyed off created_at (never bumped by day-edits/reoptimize/
+// partial commits — see createDraft), so this is deliberately "when was this
+// proposal first made," not "when was it last touched": a draft a rep is
+// still actively shaping stays exactly as fresh as the day they started it,
+// same as a 'planned' visit's scheduled_date isn't reset by editing it.
+// Comparing org-DATE (not a raw instant) matches the calendar-day cutoff the
+// skip sweep uses, not an elapsed-hours timer — a draft from 11pm yesterday
+// is stale at 12:01am today, same as one from 9am yesterday.
+async function discardStaleDrafts(db, { today } = {}) {
+  const cutoff = today || orgToday();
+  const rows = await db('schedule_drafts').select('id', 'created_at');
+  const staleIds = rows.filter((r) => orgDateOf(r.created_at) < cutoff).map((r) => r.id);
+  if (staleIds.length > 0) await db('schedule_drafts').whereIn('id', staleIds).del(); // cascades to schedule_draft_stops
+  return staleIds.length;
+}
+
+// Express middleware wrapper — same fire-and-continue convention as
+// visitLifecycle.js's skipSweepMiddleware: a failure here must never block
+// the actual request it's riding in on.
+function draftDiscardMiddleware(db) {
+  return async function draftDiscardSweep(req, res, next) {
+    try {
+      await discardStaleDrafts(db);
+    } catch (err) {
+      return next(err);
+    }
+    next();
+  };
+}
+
 async function reorderDay({ draftId, userId, date, placeIds }) {
   await knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
@@ -1596,6 +1628,8 @@ module.exports = {
   removeStop,
   discardDay,
   deleteActiveDraft,
+  discardStaleDrafts,
+  draftDiscardMiddleware,
   reorderDay,
   setVisitType,
   reoptimizeDay,

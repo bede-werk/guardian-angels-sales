@@ -19,15 +19,22 @@
 // authoritative rather than trusting client input for something logic-
 // relevant. formatToParts (not a locale's default format string) guarantees
 // exact YYYY-MM-DD regardless of ICU/locale quirks.
-function orgToday() {
+// Same America/Chicago rule as orgToday, but for an arbitrary instant (e.g. a
+// row's created_at) instead of "right now" — lets callers ask "what org-date
+// was this timestamp created on" (see scheduleDraft.js's discardStaleDrafts).
+function orgDateOf(when) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Chicago',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(new Date());
+  }).formatToParts(new Date(when));
   const get = (type) => parts.find((p) => p.type === type).value;
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
-module.exports = { orgToday };
+function orgToday() {
+  return orgDateOf(new Date());
+}
+
+module.exports = { orgToday, orgDateOf };

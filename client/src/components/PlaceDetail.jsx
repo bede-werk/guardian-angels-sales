@@ -100,6 +100,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [savingCommitment, setSavingCommitment] = useState(false);
   const [reschedulingCommitmentSaving, setReschedulingCommitmentSaving] = useState(false);
   const [waivingCommitmentId, setWaivingCommitmentId] = useState(null);
+  const [deletingCommitmentId, setDeletingCommitmentId] = useState(null);
 
   async function load() {
     try {
@@ -272,6 +273,22 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       return false;
     } finally {
       setWaivingCommitmentId(null);
+    }
+  }
+
+  // Hard-deletes a discharged commitment — history cleanup only (the server
+  // rejects this on a still-outstanding one; waive/reschedule it first).
+  async function deleteCommitment(commitmentId) {
+    if (!window.confirm("Delete this commitment from history? This can't be undone.")) return;
+    setDeletingCommitmentId(commitmentId);
+    try {
+      await api.deleteCommitment(data.id, commitmentId);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setDeletingCommitmentId(null);
     }
   }
 
@@ -678,20 +695,11 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 rescheduling={reschedulingCommitmentSaving}
                 onWaive={waiveCommitment}
                 waivingId={waivingCommitmentId}
+                onDelete={deleteCommitment}
+                deletingId={deletingCommitmentId}
               />
 
-              {data.upcoming_visits.length === 0 ? (
-                // The snooze/do-not-visit banner above already answers "why
-                // is there nothing here" when one of those is active — the
-                // empty-state icon+message would just repeat it, so it's
-                // skipped in that case and shown only for a genuinely empty,
-                // unsuppressed pipeline.
-                !isSnoozeActive(data) && !isDoNotVisitActive(data) && (
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <EmptyState message="Nothing upcoming at this place." />
-                  </div>
-                )
-              ) : (
+              {data.upcoming_visits.length > 0 && (
                 <ul className="list">
                   {data.upcoming_visits.map((v) => (
                     <li

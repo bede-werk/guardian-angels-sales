@@ -17,7 +17,7 @@ import Button from './ui/Button';
 
 const DISCHARGE_LABELS = { fulfilled: 'fulfilled', superseded: 'rescheduled', waived: 'waived' };
 
-export function PlaceCommitments({ commitments, people, onAdd, saving, onReschedule, rescheduling, onWaive, waivingId }) {
+export function PlaceCommitments({ commitments, people, onAdd, saving, onReschedule, rescheduling, onWaive, waivingId, onDelete, deletingId }) {
   const [adding, setAdding] = useState(false);
   const [addDate, setAddDate] = useState('');
   const [addPersonId, setAddPersonId] = useState('');
@@ -193,10 +193,25 @@ export function PlaceCommitments({ commitments, people, onAdd, saving, onResched
           {showHistory && (
             <ul className="list">
               {discharged.map((c) => (
-                <li key={c.id} className="tiny muted" style={{ padding: '4px 0', borderTop: '1px solid var(--border)' }}>
-                  {formatDate(c.promised_date)} — {DISCHARGE_LABELS[c.discharge_reason] || c.discharge_reason}
-                  {c.person_name ? ` · ${c.person_name}` : ''}
-                  {c.note ? ` · ${c.note}` : ''}
+                <li
+                  key={c.id}
+                  className="tag-list"
+                  style={{ padding: '4px 0', borderTop: '1px solid var(--border)', justifyContent: 'space-between', alignItems: 'center' }}
+                >
+                  <span className="tiny muted">
+                    {formatDate(c.promised_date)} — {DISCHARGE_LABELS[c.discharge_reason] || c.discharge_reason}
+                    {c.person_name ? ` · ${c.person_name}` : ''}
+                    {c.note ? ` · ${c.note}` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    className="icon-delete"
+                    title="Delete this from history"
+                    onClick={() => onDelete(c.id)}
+                    disabled={deletingId === c.id}
+                  >
+                    ✕
+                  </button>
                 </li>
               ))}
             </ul>

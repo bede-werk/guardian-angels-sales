@@ -13,6 +13,13 @@ const { skipSweepMiddleware } = require('../services/visitLifecycle');
 
 const router = express.Router();
 router.use(skipSweepMiddleware(knex));
+// Wipes any draft still in the proposal stage from before today, so a rep
+// who never committed/discarded yesterday's plan doesn't find it still
+// sitting there (and doesn't get silently blocked from generating a new one
+// by the "one active draft per user" rule) — see scheduleDraft.js's
+// discardStaleDrafts for why created_at (not a last-touched timestamp) is
+// the right cutoff.
+router.use(scheduleDraft.draftDiscardMiddleware(knex));
 
 // Routes below throw errors carrying a `status` (404/403/409) for expected
 // failure cases (not found, not yours, collision) — this wrapper respects

@@ -2,7 +2,7 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, buildCandidatePool, loadDraftView, loadDraftDayView, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 const { estimateDriveMinutes } = require('./driveTime');
 
 describe('mergeLockedElsewhereIds', () => {
@@ -210,6 +210,52 @@ describe('deleteCommittedDay', () => {
     const db = makeFakeDb(3);
     const result = await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
     assert.equal(result, 3);
+  });
+});
+
+describe('discardStaleDrafts', () => {
+  // Same fake-db-as-call-recorder style as deleteCommittedDay's tests above —
+  // enough to assert on which ids get deleted without standing up sqlite.
+  function makeFakeDb(rows) {
+    const calls = [];
+    const db = (table) => {
+      calls.push({ table });
+      return {
+        select: () => Promise.resolve(rows),
+        whereIn(col, ids) {
+          calls[calls.length - 1].whereIn = { col, ids };
+          return { del: () => Promise.resolve(ids.length) };
+        },
+      };
+    };
+    db.calls = calls;
+    return db;
+  }
+
+  test('deletes drafts created on an org-date before today, leaves today\'s alone', async () => {
+    const db = makeFakeDb([
+      { id: 1, created_at: '2026-08-11T23:30:00.000Z' }, // 6:30pm Central on the 11th — stale
+      { id: 2, created_at: '2026-08-12T13:00:00.000Z' }, // 8am Central on the 12th — fresh
+    ]);
+    const count = await discardStaleDrafts(db, { today: '2026-08-12' });
+
+    assert.equal(count, 1);
+    assert.equal(db.calls.length, 2);
+    assert.deepEqual(db.calls[1].whereIn, { col: 'id', ids: [1] });
+  });
+
+  test('does nothing when every draft is from today', async () => {
+    const db = makeFakeDb([{ id: 1, created_at: '2026-08-12T13:00:00.000Z' }]);
+    const count = await discardStaleDrafts(db, { today: '2026-08-12' });
+
+    assert.equal(count, 0);
+    assert.equal(db.calls.length, 1); // no whereIn/del call at all
+  });
+
+  test('does nothing when there are no drafts', async () => {
+    const db = makeFakeDb([]);
+    const count = await discardStaleDrafts(db, { today: '2026-08-12' });
+    assert.equal(count, 0);
   });
 });
 

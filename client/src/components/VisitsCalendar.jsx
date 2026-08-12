@@ -556,6 +556,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         <SkippedVisitDetailModal
           visit={viewingSkippedVisit}
           onClose={() => setViewingSkippedVisit(null)}
+          onComplete={(v) => { setViewingSkippedVisit(null); setEditingVisit(v); }}
         />
       )}
     </div>

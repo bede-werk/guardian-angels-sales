@@ -11,6 +11,7 @@ const {
   fulfillCommitment,
   waiveCommitment,
   rescheduleCommitment,
+  deleteCommitment,
   attachCommitmentsMade,
 } = require('./placeCommitments');
 
@@ -214,6 +215,38 @@ describe('placeCommitments', () => {
     const commitment = await createCommitment(db, { placeId: 1, promisedDate: '2026-08-20', note: 'promised to the DON' });
     const waived = await waiveCommitment(db, commitment.id, {});
     assert.equal(waived.note, 'promised to the DON');
+  });
+
+  test('delete refuses an outstanding commitment', async () => {
+    const commitment = await createCommitment(db, { placeId: 1, promisedDate: '2026-08-20' });
+    const ok = await deleteCommitment(db, commitment.id);
+    assert.equal(ok, false);
+    assert.ok(await db('place_commitments').where({ id: commitment.id }).first(), 'row should still exist');
+  });
+
+  test('delete removes a discharged commitment', async () => {
+    const commitment = await createCommitment(db, { placeId: 1, promisedDate: '2026-08-20' });
+    await waiveCommitment(db, commitment.id, {});
+    const ok = await deleteCommitment(db, commitment.id);
+    assert.equal(ok, true);
+    assert.equal(await db('place_commitments').where({ id: commitment.id }).first(), undefined);
+  });
+
+  test('delete is a no-op on an id that does not exist', async () => {
+    const ok = await deleteCommitment(db, 999999);
+    assert.equal(ok, false);
+  });
+
+  test('deleting a superseded row clears the earlier row\'s superseded_by_id instead of failing', async () => {
+    const original = await createCommitment(db, { placeId: 1, promisedDate: '2026-08-20' });
+    const rescheduled = await rescheduleCommitment(db, original.id, { promisedDate: '2026-09-01' });
+    await waiveCommitment(db, rescheduled.id, {});
+
+    const ok = await deleteCommitment(db, rescheduled.id);
+    assert.equal(ok, true);
+
+    const originalAfter = await db('place_commitments').where({ id: original.id }).first();
+    assert.equal(originalAfter.superseded_by_id, null);
   });
 
   test('getBindingCommitmentsForPlaces returns the earliest outstanding row per place in one query, keyed by place_id', async () => {
