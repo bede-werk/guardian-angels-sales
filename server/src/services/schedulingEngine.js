@@ -176,11 +176,13 @@ function explorationRank({ level, confidence, daysWaiting, config }) {
 // rather than a bare bool so callers/UI can explain a skip.
 //
 // Precedence: do_not_visit excludes always, even over a due commitment (the
-// ultimate manual veto) -> a due commitment (nextVisitDate <= today) bypasses
-// the hard floor only, since a human explicitly asking us back is exactly
-// the justification the floor exists to protect against overriding -> every
-// other guard (snooze, locked-elsewhere, and the floor itself when there's
-// no due commitment) applies normally.
+// ultimate manual veto) -> a visit already planned for TODAY excludes always
+// too, for the same reason (Manual Visit Planning spec §7.1/§9 — see below)
+// -> a due commitment (nextVisitDate <= today) bypasses the hard floor only,
+// since a human explicitly asking us back is exactly the justification the
+// floor exists to protect against overriding -> every other guard (snooze,
+// locked-elsewhere, and the floor itself when there's no due commitment)
+// applies normally.
 //
 // plannedVisitDates (Step 3 of the 2026-08 remediation ticket): every OTHER
 // planned visit this place already has on the books, checked against the
@@ -196,6 +198,19 @@ function eligibility({ place, today, lastVisitDate, nextVisitDate, plannedVisitD
   // true, a date means the mark lapses on its own once today passes it.
   if (place.do_not_visit && (!place.do_not_visit_until || place.do_not_visit_until >= today)) {
     return { eligible: false, reason: 'do_not_visit' };
+  }
+
+  // A planned visit dated EXACTLY today (Manual Visit Planning spec §7.1) is
+  // a same-day duplicate risk, not a recency judgment call — unlike the
+  // nearby-but-not-exact floor case below, a due commitment must NOT be able
+  // to bypass this one, or a place with both a due commitment and an
+  // already-planned visit today would stay eligible and could be proposed a
+  // second time on the very day it's already booked. Checked unconditionally,
+  // same precedence tier as do_not_visit above, and before commitmentDue is
+  // even computed — §9 depends on this holding regardless of commitment
+  // status ("the generator... does not schedule a second stop").
+  if (plannedVisitDates.includes(today)) {
+    return { eligible: false, reason: 'already_planned_today' };
   }
 
   const commitmentDue = isCommitmentDue({ nextVisitDate, today });

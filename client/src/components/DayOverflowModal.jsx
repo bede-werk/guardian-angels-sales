@@ -1,7 +1,9 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { formatDate } from '../api';
+import { formatDate, today } from '../api';
 import EmptyState from './ui/EmptyState';
+import Button from './ui/Button';
+import PlanVisitModal from './PlanVisitModal';
 
 // Which of the day cell's own pill classes to reuse for each kind, so this
 // popover reads as "the same day cell, zoomed in" rather than a new visual
@@ -33,9 +35,18 @@ const PILL_CLASS = {
 // has no scroll region of its own), so an absolutely-positioned popover
 // naturally scrolls along with the cell it's anchored to instead of
 // detaching from it.
-export default function DayOverflowModal({ date, pills, anchorEl, onClose, onSelect }) {
+// `userId`/`users`/`onChanged` are only needed for the Manual Visit Planning
+// control below (Manual Visit Planning spec §3) — this is genuinely new UI,
+// not a modification of an existing add flow, since no day-view add
+// affordance existed anywhere in VisitsCalendar before this.
+export default function DayOverflowModal({ date, pills, anchorEl, userId, users, onClose, onSelect, onChanged }) {
   const popoverRef = useRef(null);
   const [style, setStyle] = useState({ visibility: 'hidden', top: 0, left: 0 });
+
+  // "Plan a visit…" opens PlanVisitModal with THIS day already fixed (see
+  // that component's own header comment) — a real, separate overlay now,
+  // not an inline form that used to grow the popover itself.
+  const [planningVisit, setPlanningVisit] = useState(false);
 
   useLayoutEffect(() => {
     const popover = popoverRef.current;
@@ -78,29 +89,56 @@ export default function DayOverflowModal({ date, pills, anchorEl, onClose, onSel
     };
   }, [onClose]);
 
-  return createPortal(
-    <div className="day-overview-popover" style={style} ref={popoverRef}>
-      <div className="day-overview-popover-head">
-        <h3>{formatDate(date)}</h3>
-        <button className="close" title="Close" onClick={onClose}>×</button>
-      </div>
-      {pills.length === 0 ? (
-        <EmptyState message="Nothing on the calendar for this day." />
-      ) : (
-        <div className="day-overview-pills">
-          {pills.map((pill) => (
-            <button
-              key={pill.key}
-              type="button"
-              className={`day-overview-pill ${PILL_CLASS[pill.kind]}`}
-              onClick={() => onSelect(pill)}
-            >
-              {pill.label}
-            </button>
-          ))}
-        </div>
+  return (
+    <>
+      {createPortal(
+        <div className="day-overview-popover" style={style} ref={popoverRef}>
+          <div className="day-overview-popover-head">
+            <h3>{formatDate(date)}</h3>
+            <button className="close" title="Close" onClick={onClose}>×</button>
+          </div>
+          {pills.length === 0 ? (
+            <EmptyState message="Nothing on the calendar for this day." />
+          ) : (
+            <div className="day-overview-pills">
+              {pills.map((pill) => (
+                <button
+                  key={pill.key}
+                  type="button"
+                  className={`day-overview-pill ${PILL_CLASS[pill.kind]}`}
+                  onClick={() => onSelect(pill)}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Manual Visit Planning (spec §3) — plan a real, still-open visit
+              directly for THIS day, no route-planner draft involved. Hidden
+              for a past day: creation would always be rejected (§4.1's
+              past-date block), so there's nothing useful the control could
+              do there. */}
+          {date >= today() && (
+            <div className="day-overview-plan">
+              <Button variant="secondary" size="small" onClick={() => setPlanningVisit(true)}>
+                Plan a visit…
+              </Button>
+            </div>
+          )}
+        </div>,
+        document.body
       )}
-    </div>,
-    document.body
+
+      {planningVisit && (
+        <PlanVisitModal
+          date={date}
+          userId={userId}
+          users={users}
+          onClose={() => setPlanningVisit(false)}
+          onSaved={() => { setPlanningVisit(false); onChanged?.(); }}
+        />
+      )}
+    </>
   );
 }

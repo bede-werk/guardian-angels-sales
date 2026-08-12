@@ -1850,3 +1850,279 @@ client build clean.
 `next_visit_date` the same way an unguarded snooze would have. Not asked for; do-not-visit reads
 as a more deliberate, less accidental action than a rotation snooze, so the asymmetry is a
 judgment call, not an oversight. Revisit if it turns out to bite someone in practice.
+
+## 20. Manual Visit Planning (2026-08-12)
+
+**The zone/anchor mechanism described in this section (`is_anchor`, `pickZoneForDay`'s manual-stop
+branching, the live detour-cost estimate, the ⚓ Anchored toggle) was removed the same day, a few
+hours later — see §20A.** Bede's call: too much coupling between the planner and a human's own
+decision. Kept below as a record of what was built and why, not as current state; the plain
+Manual Visit Planning feature itself (plan a real visit directly, no draft) is unaffected and
+still exactly as described here.
+
+### Why
+
+Before this, the only path to a `status: 'planned'` visit was committing a route-planner draft —
+there was no way to say "I'm going to Tabitha on Thursday" without asking the planner to agree
+first. `VisitLogModal` hardcodes `status: 'completed'` on save, so it could never produce a
+`'planned'` row either. Manual planning inverts that: the human decides, a real `visits` row is
+created directly, and the generator arranges itself around it. This is a genuinely different
+object from a place commitment (`§16`'s replacement of `next_visit_date`, later) — a commitment
+obligates the planner to produce a stop on a date; a manual visit *is* the stop.
+
+### Schema (2 migrations, `20260812000000`–`20260812010000`)
+
+`visits` gained three columns: `planned_manually` (integer 0/1, NOT NULL default 0 — the first
+migration added it as a text `origin` column with `'draft'`/`'manual'` values, which turned out to
+collide in meaning with the pre-existing `source` column; the second migration renamed it to this
+boolean-style int instead, see that migration's own header for the full reasoning), `is_anchor`
+(nullable integer — `NULL` = no generation has run against this day yet, `1` = anchored, `0` =
+explicitly floated; a plain boolean default can't distinguish "never asked" from "asked and
+declined", which is what the zone-conflict logic below needs), and `created_by_user_id` (who
+*planned* the visit — always the authenticated caller, backfilled to each row's own `user_id` —
+distinct from `user_id`, who the visit is *for*, since any rep may plan for any other rep).
+
+**`planned_manually` is not the same axis as the existing `source` column.** `source` is
+`'planner'` (committed from a route-planner draft) vs `'manual'` (the DB default, everything
+else — including ad-hoc "Log a visit" entries). `planned_manually` answers a narrower question:
+was this specific row created through the new manual-planning feature. An ad-hoc-logged completed
+visit has `source: 'manual'` and `planned_manually: 0` — both true at once, meaning different
+things. Don't conflate them.
+
+### Server
+
+`services/manualVisits.js` is a **policy layer over `services/conflictDetection.js`**, not a
+second detector — that module already computed every finding needed
+(`SAME_DATE_VISIT`/`FLOOR_COMPLETED`/`FLOOR_PLANNED`/`DRAFT_ELSEWHERE`) at the right threshold
+(`HARD_FLOOR_DAYS` was already 5). The only new code is which findings **block** vs **warn**, and
+that split is deliberately different from the existing ad-hoc "Log a visit" route
+(`routes/visits.js`'s `POST /`): `DRAFT_ELSEWHERE` is a soft warning there, but a **hard block**
+for manual planning (`createManualVisit`/`rescheduleManualVisit`'s `classifyConflicts`). Same
+finding, two different policies depending on which surface is asking — this is intentional, not
+drift, and there's a test (`manualVisits.test.js`) asserting the divergence explicitly so it stays
+visible if either policy changes later.
+
+**One visit per place per day, full stop — deliberate policy, not an oversight.** Two reps at the
+same large multi-department facility on the same day is blocked exactly like anywhere else. If
+this ever gets "fixed" to allow it, that's a real product decision, not a bug fix.
+
+Endpoints: `POST /api/visits/manual` (create), `PATCH /api/visits/:id/reschedule` (re-runs every
+check against the new date, resets `is_anchor` to `NULL` on any real move — deliberately its own
+endpoint rather than folded into the generic `PATCH /api/visits/:id`, since that route has no
+warn-then-confirm response shape and was never built for one). Delete reuses the existing
+`DELETE /api/visits/:id` with one added permission clause: a manually-planned, still-`'planned'`
+visit's **creator** may also delete it on the assignee's behalf (cross-rep planning, see below) —
+scoped to `planned_manually && status === 'planned'` so a completed/skipped visit still falls back
+to the ordinary assignee-only rule. The anchor toggle reuses the generic `PATCH` too (`is_anchor`
+added to `EDITABLE`) — toggling "recomputes nothing," it only changes what the *next* reoptimize
+does, so there's no side effect for a dedicated endpoint to own.
+
+**Cross-rep planning:** `user_id` is the assignee, `created_by_user_id` the planner, and they can
+differ. The assignee may always edit or delete; the creator may additionally delete (not edit) a
+visit planned for someone else; a third rep can do neither. **Known gap, not built:** no
+notification. If Nikki plans a stop on Lisa's Thursday and Lisa never opens that day, it lapses to
+`skipped` (the existing skip sweep, unchanged) and Nikki has no idea — there's no notification
+infrastructure and no dashboard yet. The "Planned by {Name}" marker (`RoutePlanner.jsx`'s
+committed rows, `PlannedDayModal.jsx`'s rows, the Calendar tab via the same modal) is the entire
+mitigation for now. **This is a real dashboard requirement once one exists**: cross-rep planned
+visits assigned to you need surfacing somewhere the assignee will actually see it.
+
+**Generator integration (`schedulingEngine.js`, `scheduleGenerator.js`, `scheduleDraft.js`):**
+
+- *Hard exclusion.* A place with a visit already planned exactly `today` is now an **unconditional**
+  eligibility exclusion (`schedulingEngine.js`'s `eligibility()`, new `already_planned_today`
+  reason), checked *before* the due-commitment exemption is even evaluated. This closes a real gap
+  found live: the pre-existing floor logic already excluded a same-day planned visit via the
+  ordinary 5-day floor (`daysApart === 0` always trips it) — but a due commitment bypasses that
+  floor, so a place with **both** a due commitment **and** an already-planned visit today stayed
+  eligible and could have been proposed a second time on the same day it was already booked. Not
+  hypothetical — manual planning makes "a place with both" a normal occurrence, not an edge case.
+- *Zone/anchor decision* (`scheduleGenerator.js`'s `pickZoneForDay`, called from `generateDraft`'s
+  per-day loop): no manual stop → unchanged. Manual stop whose region already matches the
+  algorithm's natural pick → silent, `is_anchor = 1`, no interruption. Manual stop in a **different**
+  region → the day silently generates in the *manual stop's* zone instead (still no blocking
+  prompt — generation itself must never interrupt), `is_anchor = 1` for it. An explicit zone
+  override (an earlier "Somewhere else" pick, replayed on regenerate) always wins outright, never
+  second-guessed by this logic — but anchor bookkeeping still updates to match reality.
+- *Live detour cost* (`scheduleDraft.js`'s `getDayZones`, extended response: `{ list, anchor,
+  alternative }`): when there's a real zone conflict, an extra real-optimizer round-trip computes
+  how many minutes the algorithm's zone would cost if picked instead (fills that zone without the
+  manual stop, then re-evaluates with it inserted as an already-committed leg, subtracts the
+  stop's own fixed visit/prep/data-entry time to isolate drive-only cost). **Never cached** — same
+  "recompute live on every read" convention `loadDraftView`/`loadDraftDayView` already use — so
+  it can't go stale, but it does mean the number can take several real seconds to appear (verified
+  live: sub-second normally, but this specific field waited ~5–10s behind two chained OSRM calls).
+  `RoutePlanner.jsx`'s existing "Somewhere else" dropdown (`InlineDropdown`) is where this
+  surfaces — no new modal, per the spec's explicit instruction to reuse it. Picking the
+  alternative zone from that same dropdown (`selectDayZone`) is what actually flips `is_anchor` to
+  `0`; picking the anchor's own zone (or the silent no-conflict path above) sets it to `1`.
+- *Reoptimize* (`scheduleDraft.js`'s `reoptimizeDay`): when an anchored manual stop exists for the
+  date, the OSRM `/trip` call now starts from **the anchor's own coordinates** instead of
+  `homeBase` — same idea `evaluateDay` already applies to the *displayed* estimate (a committed
+  segment's real end point, not home, is where a proposed stop's drive time is measured from),
+  extended here to the actual routing call so the optimized *order* reflects it too. A floating or
+  absent manual stop changes nothing — ordered exactly as before.
+- *Joining the draft*: a manual visit never becomes a `schedule_draft_stops` row — it's already a
+  real `visits` row, so it simply shows up via the existing `committed` list (`committedVisitsQuery`/
+  `committedDayVisits`, both extended with `planned_manually`/`created_by_user_id`/
+  `created_by_name`/`is_anchor`) alongside whatever the generator proposed. The route **never
+  auto-reoptimizes** — adding/discovering a manual stop leaves existing draft order untouched;
+  reordering only ever happens on an explicit "Re-optimize route" click.
+
+**A second live-smoke-test-only bug, unrelated to the generator, also had to be fixed to make any
+of the above reachable at all:** `committedDateSummaries` (which `validateDays` uses to reject
+re-picking an "already committed" date) and `deleteCommittedDay` both queried `visits` with no
+`source`/`planned_manually` filter. Before this feature, that was harmless — no `status: 'planned'`
+row could exist without `source: 'planner'` (`VisitLogModal` always saved `'completed'`), so the
+gap was dead code. The moment a manual visit could exist, it broke immediately: a fresh manual
+visit alone made `/generate` 400 with *"already has committed visits"* (caught live, mid-smoke-test
+— see `committedDateSummaries`'s own comment), and `deleteCommittedDay` would have silently deleted
+a rep's deliberately-planned manual visit as collateral damage of "undo this day's commit."
+Fixed by excluding `planned_manually` rows from the summary and scoping the delete to
+`source: 'planner'` — the exact same tag `commitDay`/`reopenCommittedDay` already use for
+identical reasons.
+
+### Client
+
+Three surfaces, matching the spec's explicit scoping — **no new button in the route planner**: it
+already has "Add a stop" (adds to the *draft*, commits later), and a second same-named control
+that writes a real row immediately would be a same-name-different-consequence trap. The planner's
+only changes are display (below).
+
+- **`PlaceDetail.jsx`**: a "Plan a visit" control in the Upcoming Visits card, right beside
+  `PlaceCommitments.jsx`'s own "Add…" — same inline-toggle-reveals-a-row-of-inputs shape
+  (date + rep picker, defaulting to self), same warn-then-`force`-confirm flow
+  `api.planVisit`/`api.rescheduleVisit` return.
+- **`VisitsCalendar.jsx` / `DayOverflowModal.jsx`**: genuinely new UI — the day-number drill-down
+  popover had no add affordance at all before this. Reuses `ui/PlacePicker.jsx` (the same
+  searchable picker `RoutePlanner.jsx`'s own "Add a stop" already used) plus a rep `<select>`.
+- **`RoutePlanner.jsx`**: display-only. Committed rows show "manually planned" and, when the
+  creator differs from the assignee, "planned by {Name}"; a manually-planned row gets an anchor
+  toggle button (⚓ Anchored / Anchor); the day header's zone dropdown carries the live detour-cost
+  line described above. `PlannedDayModal.jsx` (shared by the Calendar tab's own "already planned"
+  drill-down) got the same manual/cross-rep marker on its rows.
+
+### Testing
+
+420 backend tests pass (client build clean) as of this section. New coverage added for this
+feature: `manualVisits.test.js` (29 tests — policy divergence, all four §4.1/
+§4.2 conditions, cross-rep creation, permissions matrix, reschedule collision/anchor-reset/block-
+release), `schedulingEngine.test.js`'s new `already_planned_today` describe block (the commitment-
+bypass regression), `scheduleGenerator.test.js`'s `pickZoneForDay`/`generateDraft` manual-stop
+describe blocks (11 tests), `scheduleDraft.test.js`'s `manualStopsForDates` and
+`committedDateSummaries` describe blocks (7 tests). **Verified live** end-to-end (Lisa Marks
+smoke-test token, real places, reverted after): plan → same-day/draft-elsewhere hard blocks →
+reschedule → generate with a real zone conflict (confirmed `is_anchor` persisted, confirmed the
+live detour number, confirmed picking the alternative zone flips the anchor) → reoptimize with an
+anchor present → all three client surfaces screenshotted and visually confirmed rendering
+correctly (`PlaceDetail`'s Plan-a-visit panel, the Calendar day-popover's Plan-a-visit + place
+search, `RoutePlanner`'s manual/cross-rep/anchor markers and the detour message).
+
+### Deliberately deferred — do NOT rediscover these as mystery gaps
+
+- **No notification infrastructure for cross-rep planned visits** (see above) — a real dashboard
+  requirement, not yet built because the dashboard itself doesn't have a slot for it yet.
+- **`snoozed` visits are invisible on the Calendar tab.** Pre-existing, unrelated to this feature,
+  but surfaced again while working in this area: `VisitsCalendar.jsx`'s `splitDayVisits` explicitly
+  drops `'snoozed'` status from every pill bucket (see that function's own comment — a snoozed
+  visit never gets a new `scheduled_date`, so there's no date on the calendar that's honestly
+  "about" the snooze). The only place a snooze is visible today is `PlaceDetail.jsx`'s own banner.
+  Not part of this build; worth fixing on its own if it comes up.
+- **Multi-rep same-day visits to one building** — blocked by policy, see above. Not a bug.
+- **Recurring manual visits** — out of scope, never discussed as a requirement.
+- **Auto-reoptimize on any event** — always user-initiated, by design (§8's "do not auto-reshuffle"
+  applies to anchor deletion/toggling too, and generation itself never reoptimizes an
+  already-generated day just because a manual stop showed up on it).
+
+## 20A. Manual Visit Planning simplified — zone/anchor mechanism removed (2026-08-12)
+
+### Why
+
+A few hours after §20 shipped, Bede's read on it: "too much and too hard to understand." His
+framing, verbatim intent: the route planner's only job is to propose an optimal day given
+constraints; a manually-planned visit is the human's own decision and should always trump the
+algorithm. The two should never be *combined* — once a visit is planned, by any means, it should
+be treated exactly like any other already-planned visit, and the planner should just naturally
+work around it using the plain rules it already has (don't propose a second visit to a place
+already being visited that day; warn, don't block, inside the 5-day floor). No merging, no
+anchoring, no live detour-cost math, no UI for any of it. See the `feedback_route_planner_proposals_only`
+memory for the durable principle this cemented.
+
+### The fix was one pivot, not a rewrite
+
+`scheduleDraft.js`'s `committedDateSummaries` used to carve manual-only dates out of "already
+committed" specifically so `/generate` could still run on them (that's what the whole anchor
+mechanism needed room to operate in). Removing that carve-out — a manual visit now counts toward
+"already committed" exactly like a planner-committed one — was the entire behavioral fix: a
+manually-planned date now shows as already-planned in the calendar and `/generate` rejects it
+outright, same as any other committed date. The planner simply never runs on it, so there's
+nothing left to anchor a zone choice around.
+
+### What got deleted
+
+Everything downstream of that pivot became unreachable and was removed outright, not left as dead
+code: `scheduleDraft.js`'s `manualStopsForDates` (deleted entirely), the anchor-writeback loop in
+`generateAndPersistDraft`, the live detour-cost branch in `getDayZones` (now returns just
+`{ list }`), the writeback loop in `selectDayZone`, the anchored-start-point override in
+`reoptimizeDay`, `manualStopBlockMinutes`; `scheduleGenerator.js`'s `pickZoneForDay` (simplified to
+`explicitZone || algorithmZone`, no more `manualStops`/`anchorUpdates`) and `generateDraft`'s
+`manualStopsByDate` param; the `is_anchor` column itself
+(`20260812020000_drop_visits_is_anchor.js` — no FK, plain drop); `routes/visits.js`'s `is_anchor`
+`EDITABLE` entry/validation/`GET /calendar` select; `manualVisits.js`'s `is_anchor: null` on
+create/reschedule; `RoutePlanner.jsx`'s Anchor/⚓ toggle and the "switching to X adds ~N min"
+banner (the "manually planned"/"planned by {name}" text markers stayed — those are unrelated
+display, not part of the mechanism).
+
+**Confirmed explicitly out of scope / untouched**, since it's easy to assume this was a bigger
+change than it was: `deleteCommittedDay`/`reopenCommittedDay`'s `source: 'planner'` scoping
+(already excluded manual visits from whole-day bulk actions on a mixed day — nothing to fix
+there); `evaluateDay`'s general committed-time budget math (a separate, pre-existing mechanism
+`getDayZones`' deleted code was just reusing for a one-off estimate); `schedulingEngine.js`'s
+`already_planned_today` hard exclusion and the plain 5-day floor warnings (place-level,
+source-agnostic, completely separate code path — this is exactly the "regular rules" the pivot
+above now leans on).
+
+**One real gap the pivot exposed, and had to be fixed as part of the same change:** a manual-only
+day is now reachable in the "Already Planned" drill-down (`PlannedDayModal.jsx`), whose whole-day
+Discard plan/Edit buttons are scoped server-side to `source: 'planner'` — for a manual-only day
+that meant Discard silently deleted zero rows (looked like success, wasn't) and Edit 404'd.
+Fixed: those two buttons now only render when the day has at least one non-manual visit; falls
+back to a bare Close otherwise. Per-visit delete (see below) is the correct action there instead.
+
+### Also shipped this same day, separate from the anchor removal
+
+- **Individual delete for a still-planned visit.** `DELETE /api/visits/:id` already worked for any
+  visit, but no UI exposed it for an upcoming (not-yet-completed) one — only completed Visit
+  History rows had a delete button. Added to `UpcomingVisitDetailModal.jsx` (an `onDelete` prop,
+  omitted in read-only contexts, same "omit the prop to omit the action" convention
+  `onComplete`/`onSnoozed` already used), wired through every caller (`PlaceDetail.jsx`,
+  `PlannedDayModal.jsx`) to each one's existing `removeVisit`.
+- **`PlanVisitModal.jsx`** replaced two separate cramped inline forms (§20's client section above
+  is now stale on this point) with one shared, dual-mode modal: pass `placeId`/`placeName` to fix
+  the place (`PlaceDetail.jsx`'s "Plan a visit…" button — now living in the Upcoming Visits
+  card-head next to "Do not visit…", not its own row down in the body), or pass `date` to fix the
+  date instead and let the user pick a place via `ui/PlacePicker.jsx` (`DayOverflowModal.jsx`'s
+  calendar day-drill-down "Plan a visit…" button, which lost its own inline
+  place-picker-plus-rep-select form in the same change). `PlacePicker.jsx` gained an `autoFocus`
+  prop for this. One real bug caught and fixed: `DayOverflowModal` closes itself on any
+  document-level `mousedown` outside its own popover DOM; since `PlanVisitModal` isn't nested
+  inside that popover, interacting with it would have bubbled up and silently closed the popover
+  (and the modal along with it) on the very first click. Fixed with
+  `onMouseDown={(e) => e.stopPropagation()}` on the modal's own backdrop.
+- **Notes field** on manual planning: `createManualVisit` accepts an optional `notes` param
+  (`routes/visits.js`'s `POST /manual` passes `req.body.notes` through), surfaced as a textarea in
+  `PlanVisitModal`. No new display code needed — `UpcomingVisitDetailModal.jsx` already rendered
+  `visit.notes` when present.
+- `.day-overview-plan` (the "Plan a visit…" button's wrapper in `DayOverflowModal`'s popover)
+  gained a top border + margin in `styles.css` — it used to sit flush against the pill list (or
+  the empty state) above it with no visual separation.
+
+### Testing
+
+406 backend tests passing after the removal (down from the 420 §20 reported, net of the deleted
+`pickZoneForDay`/`manualStopsByDate`/`manualStopsForDates` describe blocks minus the few rewritten
+in place — `committedDateSummaries`' own describe now asserts the OPPOSITE of what §20 built:
+a manual-only date is present in the summary, not absent). Client build clean. Verified live
+end-to-end in the browser (Lisa Marks smoke-test token, reverted after) for every piece above:
+the calendar's Plan-a-visit modal staying open through a place search, notes round-tripping onto
+`UpcomingVisitDetailModal`, and the two relocated/spaced buttons in `PlaceDetail`/`DayOverflowModal`.

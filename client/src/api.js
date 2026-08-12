@@ -118,6 +118,17 @@ export const api = {
   createVisit: (body) => request('/visits', { method: 'POST', body }),
   updateVisit: (id, body) => request(`/visits/${id}`, { method: 'PATCH', body }),
   deleteVisit: (id) => request(`/visits/${id}`, { method: 'DELETE' }),
+  // Manual Visit Planning (server/src/routes/visits.js's POST /manual) —
+  // plans a still-open, future visit directly, without a route-planner
+  // draft. body: { place_id, scheduled_date, user_id?, force? }. A 200 with
+  // no visit (just `{ warnings }`) means a §4.2 warning fired and nothing
+  // was written yet — resend with `force: true` once the user confirms; a
+  // thrown error (409, `err.conflicts` set) means a §4.1 hard block, no
+  // override possible.
+  planVisit: (body) => request('/visits/manual', { method: 'POST', body }),
+  // Moves a manually-planned visit to a new date, re-running the same §4
+  // checks against it. Same warn-then-force response shape as planVisit.
+  rescheduleVisit: (id, body) => request(`/visits/${id}/reschedule`, { method: 'PATCH', body }),
   // Explicit deferral of a still-planned visit. body: { snoozed_until, force? }.
   // A 409 (code: 'SNOOZE_SWALLOWS_COMMITMENT') means the chosen date would
   // suppress a follow-up the place is already owed — re-send with

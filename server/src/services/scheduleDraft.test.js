@@ -2,7 +2,7 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 const { estimateDriveMinutes } = require('./driveTime');
 
 describe('mergeLockedElsewhereIds', () => {
@@ -203,7 +203,18 @@ describe('deleteCommittedDay', () => {
       user_id: 7,
       scheduled_date: '2026-07-17',
       status: 'planned',
+      source: 'planner',
     });
+  });
+
+  // Manual Visit Planning spec §7 — same source:'planner' scoping
+  // commitDay/reopenCommittedDay already use: a manual visit sharing this
+  // date must survive "undo this day's commit," same as an ad-hoc "Log a
+  // visit" entry always has.
+  test('scopes the delete to source: planner, leaving a manual visit on the same date untouched', async () => {
+    const db = makeFakeDb(1);
+    await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
+    assert.equal(db.calls[0].filter.source, 'planner');
   });
 
   test('resolves to the number of rows deleted', async () => {
@@ -416,6 +427,69 @@ describe('buildCandidatePool plannedVisitDates', () => {
     const pool = await buildCandidatePool(db, { today: TODAY });
     const place = pool.find((c) => c.place.id === 4);
     assert.deepEqual(place.plannedVisitDates, []);
+  });
+});
+
+// A manually-planned visit is a real, still-open commitment on the
+// calendar — it counts toward "already committed" exactly the same as a
+// planner-committed one, so the date it's on is off-limits to /generate
+// (validateDays) and shows as already planned, same as any other planned
+// day. No carve-out for manual-only dates.
+describe('committedDateSummaries — a manual visit counts as committed, same as any other planned visit', () => {
+  let db;
+  const TODAY = '2026-08-12';
+
+  before(async () => {
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
+    await db('places').insert([
+      { id: 1, name: 'Manual Only Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 2, name: 'Planner Committed Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 3, name: 'Both Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 4, name: 'Both Place Two', category: 'Hospice', tier: 1, priority_score: 75 },
+    ]);
+
+    // A date with ONLY a manual visit — must appear in the summary, same as
+    // any other planned date.
+    await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-20', place_name: 'Manual Only Place' });
+
+    // A date with ONLY a real planner commit — unaffected by this change.
+    await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-21', place_name: 'Planner Committed Place' });
+
+    // A date with BOTH — both rows count.
+    await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-22', place_name: 'Both Place' });
+    await db('visits').insert({ place_id: 4, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-22', place_name: 'Both Place Two' });
+  });
+
+  after(async () => {
+    await db.destroy();
+  });
+
+  test('a manual-only date appears in the summary, off-limits to /generate like any other planned date', async () => {
+    const summaries = await committedDateSummaries(db, 1, { today: TODAY });
+    const row = summaries.find((s) => s.date === '2026-08-20');
+    assert.ok(row);
+    assert.equal(row.count, 1);
+  });
+
+  test('a planner-committed-only date still appears, count unchanged', async () => {
+    const summaries = await committedDateSummaries(db, 1, { today: TODAY });
+    const row = summaries.find((s) => s.date === '2026-08-21');
+    assert.ok(row);
+    assert.equal(row.count, 1);
+  });
+
+  test('a date with both counts both rows', async () => {
+    const summaries = await committedDateSummaries(db, 1, { today: TODAY });
+    const row = summaries.find((s) => s.date === '2026-08-22');
+    assert.ok(row);
+    assert.equal(row.count, 2, 'the manual visit is not special-cased out of the count anymore');
   });
 });
 

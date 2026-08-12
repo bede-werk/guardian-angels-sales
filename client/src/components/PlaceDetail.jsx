@@ -3,6 +3,7 @@ import { api, navigateUrl, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABE
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
+import PlanVisitModal from './PlanVisitModal';
 import PersonModal from './PersonModal';
 import PlaceModal from './PlaceModal';
 import AssignPersonModal from './AssignPersonModal';
@@ -101,6 +102,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [reschedulingCommitmentSaving, setReschedulingCommitmentSaving] = useState(false);
   const [waivingCommitmentId, setWaivingCommitmentId] = useState(null);
   const [deletingCommitmentId, setDeletingCommitmentId] = useState(null);
+  // Manual Visit Planning (see server's manual-visit-planning-spec.md §3) —
+  // the "Plan a visit…" button in the Upcoming Visits card-head, next to Do
+  // not visit…. Opens PlanVisitModal rather than an inline form (that used
+  // to cram date + rep picker + warning text into one card row).
+  const [planningVisit, setPlanningVisit] = useState(false);
+  const [users, setUsers] = useState([]); // team list, for the assigned-rep picker (cross-rep planning, §5)
 
   async function load() {
     try {
@@ -115,6 +122,9 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   }, [placeId]);
   useEffect(() => {
     api.filters().then((f) => setCategories(f.allCategories)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    api.users.list().then(setUsers).catch(() => {});
   }, []);
 
   // Permanently removes only the place itself. People who were here are
@@ -366,8 +376,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   // cascades server-side), and it's the same trip PersonDetail reads, so
   // removing it here removes it there on next load too. Dropping only ONE
   // person from a trip is VisitDetailModal's per-encounter ✕, not this.
+  // Also reused for a still-planned (status: 'planned') visit via
+  // UpcomingVisitDetailModal's own Delete button below — those have no
+  // encounters yet, hence the conditional clause.
   async function removeVisit(visit) {
-    if (!window.confirm("Delete this visit? Everyone recorded on it goes with it. This can't be undone.")) return;
+    const warning = visit.encounters?.length ? ' Everyone recorded on it goes with it.' : '';
+    if (!window.confirm(`Delete this visit?${warning} This can't be undone.`)) return;
     setRemovingVisitId(visit.id);
     try {
       await api.deleteVisit(visit.id);
@@ -622,16 +636,33 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
               <h2>Upcoming Visits ({data.upcoming_visits.length})</h2>
-              {!isDoNotVisitActive(data) && !markingDoNotVisit && (
+              <div className="tag-list" style={{ flex: 'unset' }}>
+                {/* Manual Visit Planning (spec §3) — "I'm going to Tabitha
+                    on Thursday," said directly, no route-planner draft
+                    involved. Opens PlanVisitModal. Sits next to Do not
+                    visit… here rather than its own row further down — same
+                    "card-head is where this card's actions live" precedent
+                    the People card's Assign/New/Log a referral row already
+                    sets. */}
                 <Button
-                  variant="caution"
+                  variant="secondary"
                   size="small"
-                  title="Stop proposing this place in the route planner"
-                  onClick={() => setMarkingDoNotVisit(true)}
+                  title="Schedule a future visit directly, without the route planner"
+                  onClick={() => setPlanningVisit(true)}
                 >
-                  Do not visit…
+                  Plan a visit…
                 </Button>
-              )}
+                {!isDoNotVisitActive(data) && !markingDoNotVisit && (
+                  <Button
+                    variant="caution"
+                    size="small"
+                    title="Stop proposing this place in the route planner"
+                    onClick={() => setMarkingDoNotVisit(true)}
+                  >
+                    Do not visit…
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {/* The only visible answer to "why hasn't this place come up in
@@ -923,6 +954,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           onClose={() => setViewingUpcomingVisit(null)}
           onComplete={(v) => { setViewingUpcomingVisit(null); setEditingVisit(v); }}
           onSnoozed={() => { setViewingUpcomingVisit(null); load(); }}
+          onDelete={(v) => { setViewingUpcomingVisit(null); removeVisit(v); }}
         />
       )}
 
@@ -934,6 +966,17 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           visit={{ ...editingVisit, visit_id: editingVisit.id }}
           userId={userId}
           onClose={() => setEditingVisit(null)}
+          onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {planningVisit && (
+        <PlanVisitModal
+          placeId={data.id}
+          placeName={data.name}
+          userId={userId}
+          users={users}
+          onClose={() => setPlanningVisit(false)}
           onSaved={() => { load(); onChanged?.(); }}
         />
       )}

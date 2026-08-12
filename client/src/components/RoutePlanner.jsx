@@ -479,7 +479,9 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
     } finally {
       setBusy(false);
     }
-    api.scheduleDrafts.getDayZones(draftId, day.date).then((z) => setZoneOptions(z.list)).catch(() => {});
+    api.scheduleDrafts.getDayZones(draftId, day.date)
+      .then((z) => setZoneOptions(z.list))
+      .catch(() => {});
   }
 
   return (
@@ -565,6 +567,17 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                       {v.category && <CategoryChip category={v.category} />}
                       {v.tier && <TierChip tier={v.tier} />}
                       <span className="tiny muted">{VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}</span>
+                      {/* Manual Visit Planning spec §5/§7.3 — marker(s) only
+                          on a manually-planned row; a normal
+                          planner-committed stop shows nothing extra here. */}
+                      {v.planned_manually === 1 && (
+                        <>
+                          <span className="tiny muted">manually planned</span>
+                          {v.created_by_user_id != null && v.created_by_user_id !== userId && (
+                            <span className="tiny muted">planned by {v.created_by_name || 'another rep'}</span>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="tiny muted" style={{ whiteSpace: 'nowrap', color: 'var(--teal-dark)', fontWeight: 600 }}>

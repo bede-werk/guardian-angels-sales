@@ -634,6 +634,11 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   font-size: 12px; padding: 6px 12px; white-space: normal;
   max-width: none; overflow: visible; text-overflow: clip;
 }
+/* "Plan a visit…" control (Manual Visit Planning §3) below the pills list —
+   its own section, so it gets a divider + top margin same as .modal-foot's
+   separation from .modal-body, instead of sitting flush against the last
+   pill (or EmptyState, which already carries its own padding). */
+.day-overview-plan { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
 /* Birthday badge — a day cell's 🎂, clickable, opening BirthdayModal for
    that day. Deliberately not one of the .planned-route-badge family above
    (this isn't a visit status) and not folded into .day-dots either (a

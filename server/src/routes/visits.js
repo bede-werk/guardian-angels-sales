@@ -19,6 +19,7 @@ const {
 } = require('../services/placeCommitments');
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware, snoozeSwallowsCommitment } = require('../services/visitLifecycle');
+const { createManualVisit, rescheduleManualVisit, canDeleteManualVisit } = require('../services/manualVisits');
 const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
@@ -441,6 +442,10 @@ router.get('/calendar', async (req, res, next) => {
     const rows = await knex('visits as v')
       .leftJoin('places as p', 'p.id', 'v.place_id')
       .leftJoin('users as u', 'u.id', 'v.user_id')
+      // Manual Visit Planning spec §5 — the PLANNER's name (which can differ
+      // from u.name/user_id above, the ASSIGNEE), for the "Planned by
+      // {Name}" marker on a cross-rep manual stop (PlannedDayModal.jsx).
+      .leftJoin('users as creator', 'creator.id', 'v.created_by_user_id')
       .whereBetween('v.scheduled_date', [start, end])
       .modify((qb) => userId && qb.andWhere('v.user_id', userId))
       .orderBy('v.scheduled_date', 'asc')
@@ -460,7 +465,10 @@ router.get('/calendar', async (req, res, next) => {
         'v.status',
         'v.notes',
         'v.visit_type',
-        'v.source'
+        'v.source',
+        'v.planned_manually',
+        'v.created_by_user_id',
+        'creator.name as created_by_name'
       );
 
     // One extra query for the whole month, grouped in JS — never one per row.
@@ -607,6 +615,69 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// POST /api/visits/manual — plan a visit directly, for a future date,
+// without asking the route planner to agree (Manual Visit Planning spec,
+// 2026-08-12 v2, §3-§5). Distinct from POST / above: that route creates an
+// ad-hoc COMPLETED (or occasionally already-known-outcome) trip; this one
+// creates a still-open status:'planned' row nobody has visited yet, with its
+// own, stricter conflict policy (services/manualVisits.js's classifyConflicts
+// hard-blocks DRAFT_ELSEWHERE, where the route above only warns on it).
+//
+// Body: { place_id, scheduled_date, user_id?, notes?, force? }. user_id is
+// the ASSIGNEE — defaults to the caller (planning for yourself is the common
+// case), but any rep may plan for any other rep (§5). created_by_user_id is
+// always the authenticated caller, never client-supplied — cross-rep
+// planning must always be traceable to who actually made the decision.
+//
+// Response shapes:
+//   201 { ...full visit... }       — created.
+//   200 { warnings: [...] }        — a §4.2 warning (floor / do_not_visit)
+//                                    fired and `force` wasn't set; nothing
+//                                    written yet. Resend with force:true.
+//   409 { error, code, conflicts } — a §4.1 hard block; nothing written, no
+//                                    override possible.
+router.post('/manual', async (req, res, next) => {
+  try {
+    const { place_id, scheduled_date, force } = req.body;
+    if (!place_id) return res.status(400).json({ error: 'place_id is required' });
+    if (!scheduled_date || !/^\d{4}-\d{2}-\d{2}$/.test(scheduled_date)) {
+      return res.status(400).json({ error: 'scheduled_date is required, in YYYY-MM-DD format' });
+    }
+    const numericPlaceId = Number(place_id);
+    if (Number.isNaN(numericPlaceId)) return res.status(404).json({ error: 'Place not found' });
+
+    let assigneeId = req.user.id;
+    if (req.body.user_id !== undefined && req.body.user_id !== null && req.body.user_id !== '') {
+      const numericUserId = Number(req.body.user_id);
+      const assignee = Number.isNaN(numericUserId) ? null : await knex('users').where({ id: numericUserId }).first();
+      if (!assignee) return res.status(400).json({ error: 'user not found' });
+      assigneeId = numericUserId;
+    }
+
+    const result = await createManualVisit(knex, {
+      placeId: numericPlaceId,
+      scheduledDate: scheduled_date,
+      userId: assigneeId,
+      createdByUserId: req.user.id,
+      notes: req.body.notes || null,
+      force: !!force,
+    });
+
+    if (!result.visit) return res.status(200).json({ warnings: result.warnings });
+    res.status(201).json(await fetchVisit(result.visit.id));
+  } catch (err) {
+    if (err.status) {
+      const body = { error: err.message };
+      if (err.conflicts) {
+        body.conflicts = err.conflicts;
+        body.code = err.code;
+      }
+      return res.status(err.status).json(body);
+    }
+    next(err);
+  }
+});
+
 // PATCH /api/visits/:id — log or update a visit (notes, date, status, and the
 // people met on it). This is what the "Log Visit" form actually calls when
 // saving. A rep can correct any already-logged (completed/skipped) visit,
@@ -722,6 +793,46 @@ router.patch('/:id', async (req, res, next) => {
 
     res.json(await fetchVisit(id));
   } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/visits/:id/reschedule — move a manually-planned visit to a new
+// date (Manual Visit Planning spec §6). Deliberately its own endpoint rather
+// than folded into the generic PATCH /:id above: a plain date edit there
+// just saves whatever's sent, but rescheduling a manual visit has to re-run
+// every §4 conflict check against the NEW date first (moving Tuesday to
+// Thursday is a fresh collision check against Thursday) and can come back
+// with warnings pending confirmation — a response shape PATCH /:id was never
+// built to return. Only touches scheduled_date; every other trip field
+// still goes through PATCH /:id.
+//
+// Only the visit's ASSIGNEE may reschedule it (services/manualVisits.js's
+// canEditManualVisit) — narrower than the creator-may-also-delete rule on
+// DELETE /:id below (§5: the creator's own permission stops at delete).
+//
+// Body: { scheduled_date, force? }. Same response shapes as POST /manual.
+router.patch('/:id/reschedule', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
+    const { scheduled_date, force } = req.body;
+    if (!scheduled_date || !/^\d{4}-\d{2}-\d{2}$/.test(scheduled_date)) {
+      return res.status(400).json({ error: 'scheduled_date is required, in YYYY-MM-DD format' });
+    }
+
+    const result = await rescheduleManualVisit(knex, id, { scheduledDate: scheduled_date, force: !!force }, req.user.id);
+    if (!result.visit) return res.status(200).json({ warnings: result.warnings });
+    res.json(await fetchVisit(result.visit.id));
+  } catch (err) {
+    if (err.status) {
+      const body = { error: err.message };
+      if (err.conflicts) {
+        body.conflicts = err.conflicts;
+        body.code = err.code;
+      }
+      return res.status(err.status).json(body);
+    }
     next(err);
   }
 });
@@ -862,9 +973,21 @@ router.delete('/:id', async (req, res, next) => {
     if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
     const visit = await knex('visits').where({ id }).first();
     if (!visit) return res.status(404).json({ error: 'Visit not found' });
-    if (visit.user_id != null && visit.user_id !== req.user.id) {
+
+    // A manually-planned visit's CREATOR may also delete it on someone
+    // else's behalf (Manual Visit Planning spec §5) — the one case where
+    // deleting a visit that isn't "your own account" is allowed. Scoped to
+    // status:'planned': once it's completed or lapsed to skipped it's real
+    // history, not an open plan, and the ordinary assignee-only rule below
+    // is what governs it (same as every other visit).
+    if (visit.planned_manually && visit.status === 'planned') {
+      if (!canDeleteManualVisit(visit, req.user.id)) {
+        return res.status(403).json({ error: 'Only the assigned rep or the rep who planned this visit can delete it' });
+      }
+    } else if (visit.user_id != null && visit.user_id !== req.user.id) {
       return res.status(403).json({ error: 'You can only edit visits scheduled under your own account' });
     }
+
     await knex('visits').where({ id }).del();
     res.status(204).end();
   } catch (err) {
