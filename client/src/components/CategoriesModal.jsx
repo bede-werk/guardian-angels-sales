@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Add / rename / retire a place category — reachable from both People.jsx
 // and Places.jsx's Category filter (category is owned by places, but People
@@ -9,6 +10,8 @@ import EmptyState from './ui/EmptyState';
 // Save button, matching the rest of the app's inline-edit conventions
 // (PlaceDetail/PersonDetail's notes fields).
 export default function CategoriesModal({ onClose, onChanged }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -87,11 +90,11 @@ export default function CategoriesModal({ onClose, onChanged }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Manage Categories</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -156,7 +159,7 @@ export default function CategoriesModal({ onClose, onChanged }) {
                         title={`Delete "${row.name}"`}
                         onClick={() => removeCategory(row)}
                         disabled={savingId === row.id}
-                        style={{ flexShrink: 0, padding: '2px 6px', fontSize: 11 }}
+                        style={{ flexShrink: 0 }}
                       >
                         ✕
                       </Button>
@@ -166,9 +169,6 @@ export default function CategoriesModal({ onClose, onChanged }) {
               ))}
             </ul>
           )}
-        </div>
-        <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>

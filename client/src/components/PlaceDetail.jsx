@@ -12,6 +12,7 @@ import VisitDetailModal, { encounterLabel, joinNames } from './VisitDetailModal'
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 import { PlaceRelationship } from './RelationshipDetail';
 import { PlaceCapacity } from './CapacityDetail';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Who was met on one trip, as a single inline phrase: "with Flibber Gibblits,
 // New Guy and a staff member". The visit list endpoint returns a name-only
@@ -50,6 +51,8 @@ function addDaysISO(days) {
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
 // (clicking any place-linked row/card).
 export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDeleted }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + people)
   const [loadError, setLoadError] = useState(null);
   const [categories, setCategories] = useState([]); // known category names, for PlaceModal's autocomplete
@@ -118,7 +121,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     try {
       await api.deletePlace(data.id);
       onDeleted?.();
-      onClose();
+      requestClose();
     } catch (e) {
       window.alert(e.message);
       setDeleting(false);
@@ -305,12 +308,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   // Show a lightweight loading modal while the initial fetch is in flight.
   if (!data) {
     return (
-      <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+      <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           {loadError ? (
             <div className="stack" style={{ padding: 20 }}>
               <div className="error-banner">{loadError}</div>
-              <Button variant="secondary" onClick={onClose}>Close</Button>
+              <Button variant="secondary" onClick={requestClose}>Close</Button>
             </div>
           ) : (
             <div className="loading">Loading…</div>
@@ -330,12 +333,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     if (editingNotes) {
       setEditingNotes(false);
     } else {
-      onClose();
+      requestClose();
     }
   }
 
   return (
-    <div className="modal-backdrop" onClick={handleBackdropClick}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={handleBackdropClick}>
       {/* stopPropagation so clicking inside the modal doesn't bubble up to the
           backdrop's onClick (which would close the modal). */}
       <div className="modal" style={{ maxWidth: 1040 }} onClick={(e) => e.stopPropagation()}>
@@ -348,7 +351,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               </span>
             </div>
           </div>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {loadError && <div className="error-banner">{loadError}</div>}

@@ -5,6 +5,7 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // "Already Planned" day drill-down — clicking a committed date's row (see
 // RoutePlanner.jsx) opens this instead of exposing Edit/Delete directly on the
@@ -29,6 +30,8 @@ import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 // else's route can never be reopened/deleted from here — only the owning
 // rep's own committed-day endpoints support that (see scheduleDrafts.js).
 export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, title, readOnly, userId, onChanged }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [visits, setVisits] = useState(providedVisits ?? null);
   const [loadError, setLoadError] = useState(null);
   const [viewingVisit, setViewingVisit] = useState(null); // planned visit open in UpcomingVisitDetailModal, or null
@@ -55,11 +58,11 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{formatDate(date)} · {title || 'Planned Route'}</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {loadError ? (
@@ -103,18 +106,14 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
             </ul>
           )}
         </div>
-        {readOnly ? (
-          <div className="modal-foot">
-            <Button variant="secondary" onClick={onClose}>Close</Button>
-          </div>
-        ) : (
+        {!readOnly && (
           <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
             <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove this day's planned visits">
               {deletingDay ? 'Removing…' : 'Discard plan'}
             </Button>
             <div style={{ display: 'flex', gap: 10 }}>
-              <Button variant="secondary" onClick={onClose}>Close</Button>
               <Button
+                variant="secondary"
                 onClick={onEditDay}
                 disabled={editingDay}
                 title="Pull this day's visits back into an editable proposal"

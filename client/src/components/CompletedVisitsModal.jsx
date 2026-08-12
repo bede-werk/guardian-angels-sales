@@ -4,6 +4,7 @@ import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import { encounterLabel, joinNames } from './VisitDetailModal';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // A day's completed visits — the Calendar tab's "Completed Visits" pill
 // (VisitsCalendar.jsx). Every row here is always `status: 'completed'` (the
@@ -22,12 +23,14 @@ import { encounterLabel, joinNames } from './VisitDetailModal';
 // No crossRepFloorWarning pill, for the same reason VisitDetailModal drops
 // it: every row here already happened, so there's nothing left to act on.
 export default function CompletedVisitsModal({ date, visits, showContact, onClose, onViewVisit, onViewPlace }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{formatDate(date)} · Completed Visits</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {visits.length === 0 ? (
@@ -66,9 +69,6 @@ export default function CompletedVisitsModal({ date, visits, showContact, onClos
               ))}
             </ul>
           )}
-        </div>
-        <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>

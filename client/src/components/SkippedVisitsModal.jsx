@@ -3,6 +3,7 @@ import { formatDate, VISIT_TYPE_LABELS } from '../api';
 import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // A day's skipped visits — the Calendar tab's small status-dot indicator
 // (VisitsCalendar.jsx). Every row here is always `status: 'skipped'` (the
@@ -14,12 +15,14 @@ import EmptyState from './ui/EmptyState';
 // PlannedDayModal/CompletedVisitsModal's main/actions split — a "View place"
 // button is the way into PlaceDetail, separate from the row click (visit).
 export default function SkippedVisitsModal({ date, visits, showRepName, onClose, onViewVisit, onViewPlace }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{formatDate(date)} · Skipped Visits</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {visits.length === 0 ? (
@@ -52,9 +55,6 @@ export default function SkippedVisitsModal({ date, visits, showRepName, onClose,
               ))}
             </ul>
           )}
-        </div>
-        <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>

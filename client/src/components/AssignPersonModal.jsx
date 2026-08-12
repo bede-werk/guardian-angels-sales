@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Search across every person already on file and assign one or more of them
 // to this place at once. Reassigns them (place_id -> this place) if they're
@@ -10,6 +11,8 @@ import EmptyState from './ui/EmptyState';
 // counterpart to PlaceDetail's "Create person" button, which makes a
 // brand-new record instead.
 export default function AssignPersonModal({ placeId, placeName, onClose, onAssigned }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -81,7 +84,7 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
       // can (VisitLogModal auto-selects a single assignee as the person the
       // visit was with). PlaceDetail ignores the argument and just reloads.
       onAssigned?.(ids);
-      onClose();
+      requestClose();
     } catch (e) {
       setError(e.message);
       setAssigning(false);
@@ -89,11 +92,11 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Assign people{placeName ? ` to ${placeName}` : ''}</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -126,7 +129,7 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
           )}
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose} disabled={assigning}>Cancel</Button>
+          <Button variant="secondary" onClick={requestClose} disabled={assigning}>Cancel</Button>
           <Button onClick={assignSelected} disabled={selected.size === 0 || assigning}>
             {assigning ? 'Assigning…' : `Assign ${selected.size} ${selected.size === 1 ? 'person' : 'people'}`}
           </Button>
