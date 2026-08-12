@@ -14,6 +14,7 @@ const { crossRepVisitsByPlace, attachCrossRepFloorWarnings } = require('../servi
 const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware } = require('../services/visitLifecycle');
+const { createCommitment, rescheduleCommitment, waiveCommitment, deleteCommitment, attachCommitmentsMade } = require('../services/placeCommitments');
 const schedulingConfig = require('../config/scheduling');
 
 // The three real capacity buckets — same list capacity.js's own
@@ -130,6 +131,37 @@ function capacityOverrideLevelError(v) {
   if (v === undefined || v === null || v === '') return null;
   if (!CAPACITY_LEVELS.includes(v)) return `capacity_override_level must be one of: ${CAPACITY_LEVELS.join(', ')}`;
   return null;
+}
+
+// promised_date is required on create/reschedule (unlike do_not_visit_until's
+// null-means-indefinite) — a commitment with no date isn't a commitment.
+function commitmentDateError(v) {
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'promised_date is required and must be in YYYY-MM-DD format';
+  return null;
+}
+
+// person_id is optional (a commitment can be place-level with nobody named),
+// but if given it must resolve to a real person — same "look it up, error if
+// missing" pattern routes/visits.js's encounter validation uses.
+async function commitmentPersonIdError(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  if (!Number.isInteger(n)) return 'person_id must be a number';
+  const exists = await knex('people').where({ id: n }).first('id');
+  if (!exists) return 'person not found';
+  return null;
+}
+
+// Re-fetches a commitment joined to its person/creator names — used to
+// decorate the single row returned by create/reschedule/waive below, same
+// shape as the joined list GET /:id bundles into `commitments`.
+function loadCommitment(id) {
+  return knex('place_commitments as pc')
+    .leftJoin('people as pe', 'pe.id', 'pc.person_id')
+    .leftJoin('users as u', 'u.id', 'pc.created_by_user_id')
+    .where('pc.id', id)
+    .select('pc.*', 'pe.name as person_name', 'u.name as created_by_name')
+    .first();
 }
 
 // The number a place-card or pre-qual answer declares — validated here
@@ -407,12 +439,18 @@ router.get('/:id', async (req, res, next) => {
       attachEncounters(knex, upcomingRows),
     ]);
 
+    // "The promise made during this trip" (Place Commitments spec §6.3) —
+    // completed history only. An upcoming (still-planned) visit can't have
+    // made a promise yet; that only happens when it's logged, via
+    // VisitLogModal's promise_next_visit field.
+    const visitsWithCommitments = await attachCommitmentsMade(knex, visitsWithEncounters);
+
     // Cross-rep hard-floor warning (informational only — see
     // crossRepFloorWarning.js): one batched query for this place, applied to
     // both lists so a rep sees it whether they're looking at history or an
     // upcoming stop.
     const crossRepByPlace = await crossRepVisitsByPlace(knex, [place.id]);
-    const visits = attachCrossRepFloorWarnings(visitsWithEncounters, crossRepByPlace, schedulingConfig);
+    const visits = attachCrossRepFloorWarnings(visitsWithCommitments, crossRepByPlace, schedulingConfig);
     const upcomingVisits = attachCrossRepFloorWarnings(upcomingVisitsWithEncounters, crossRepByPlace, schedulingConfig);
 
     const people = await knex('people')
@@ -481,6 +519,22 @@ router.get('/:id', async (req, res, next) => {
       .count('id as n')
       .first();
 
+    // Place Commitments (services/placeCommitments.js) — every commitment on
+    // file for this place, split outstanding/discharged. Small per-place
+    // dataset (commitments are rare, dated promises, not routine data), so
+    // both halves are always fetched together rather than the discharged
+    // half needing its own request when PlaceDetail's history toggle opens.
+    // Bundled here (not a separate GET /:id/commitments route) so
+    // VisitLogModal's existing api.place() fetch picks it up for free too —
+    // see that modal's own "load the place itself" effect.
+    const commitmentRows = await knex('place_commitments as pc')
+      .leftJoin('people as pe', 'pe.id', 'pc.person_id')
+      .leftJoin('users as u', 'u.id', 'pc.created_by_user_id')
+      .where('pc.place_id', place.id)
+      .orderBy('pc.promised_date', 'asc')
+      .orderBy('pc.id', 'asc')
+      .select('pc.*', 'pe.name as person_name', 'u.name as created_by_name');
+
     res.json({
       ...decorate(place),
       visits,
@@ -491,6 +545,12 @@ router.get('/:id', async (req, res, next) => {
       capacity,
       capacity_observations: capacityObservations,
       skipped_visit_count: Number(skippedVisitCount),
+      commitments: {
+        outstanding: commitmentRows.filter((r) => !r.discharged_at),
+        // Most-recently-resolved first — a history list reads newest-first,
+        // unlike the outstanding list above (soonest-due-first).
+        discharged: commitmentRows.filter((r) => r.discharged_at).sort((a, b) => (a.discharged_at < b.discharged_at ? 1 : -1)),
+      },
     });
   } catch (err) {
     next(err);
@@ -629,6 +689,112 @@ router.post('/:id/capacity-observations', async (req, res, next) => {
     await stampExplorationEligibility(knex, id, observedAt, schedulingConfig);
     const observation = await knex('capacity_observations').where({ id: observationId }).first();
     res.status(201).json(observation);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/places/:id/commitments — add a dated promise directly, no visit
+// involved (PlaceDetail's Commitments panel — see PlaceCommitments.jsx and
+// services/placeCommitments.js's module header for the model). source_visit_id
+// is always null from this route; VisitLogModal's own "promise a next visit"
+// field creates its commitment through routes/visits.js instead, once that's
+// wired up, so it can carry the visit's own id as provenance.
+router.post('/:id/commitments', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) return res.status(404).json({ error: 'Place not found' });
+    const place = await knex('places').where({ id }).first();
+    if (!place) return res.status(404).json({ error: 'Place not found' });
+
+    const dateErr = commitmentDateError(req.body.promised_date);
+    if (dateErr) return res.status(400).json({ error: dateErr });
+    const personErr = await commitmentPersonIdError(req.body.person_id);
+    if (personErr) return res.status(400).json({ error: personErr });
+
+    const commitment = await createCommitment(knex, {
+      placeId: id,
+      promisedDate: req.body.promised_date,
+      personId: req.body.person_id || null,
+      note: req.body.note || null,
+      createdByUserId: req.user.id,
+    });
+    res.status(201).json(await loadCommitment(commitment.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/places/:id/commitments/:commitmentId/reschedule — discharges the
+// original as superseded and creates a new outstanding commitment for the
+// new date (spec §6.2). person_id/note carry forward from the original
+// unless this request overrides them; created_by_user_id on the new row is
+// always whoever's rescheduling now, not carried forward.
+router.post('/:id/commitments/:commitmentId/reschedule', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const commitmentId = Number(req.params.commitmentId);
+    if (Number.isNaN(id) || Number.isNaN(commitmentId)) return res.status(404).json({ error: 'Commitment not found' });
+    const existing = await knex('place_commitments').where({ id: commitmentId, place_id: id }).first();
+    if (!existing) return res.status(404).json({ error: 'Commitment not found' });
+    if (existing.discharged_at) return res.status(409).json({ error: 'This commitment has already been resolved' });
+
+    const dateErr = commitmentDateError(req.body.promised_date);
+    if (dateErr) return res.status(400).json({ error: dateErr });
+    if (req.body.person_id !== undefined) {
+      const personErr = await commitmentPersonIdError(req.body.person_id);
+      if (personErr) return res.status(400).json({ error: personErr });
+    }
+
+    const rescheduled = await rescheduleCommitment(knex, commitmentId, {
+      promisedDate: req.body.promised_date,
+      personId: req.body.person_id !== undefined ? (req.body.person_id || null) : undefined,
+      note: req.body.note !== undefined ? (req.body.note || null) : undefined,
+      createdByUserId: req.user.id,
+    });
+    res.status(201).json(await loadCommitment(rescheduled.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/places/:id/commitments/:commitmentId/waive — discharges as
+// waived, with an optional reason appended to the promise's own note (spec
+// §6.2 — there's no separate discharge-note column, see
+// services/placeCommitments.js's waiveCommitment).
+router.post('/:id/commitments/:commitmentId/waive', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const commitmentId = Number(req.params.commitmentId);
+    if (Number.isNaN(id) || Number.isNaN(commitmentId)) return res.status(404).json({ error: 'Commitment not found' });
+    const existing = await knex('place_commitments').where({ id: commitmentId, place_id: id }).first();
+    if (!existing) return res.status(404).json({ error: 'Commitment not found' });
+    if (existing.discharged_at) return res.status(409).json({ error: 'This commitment has already been resolved' });
+
+    const waived = await waiveCommitment(knex, commitmentId, { note: req.body.note });
+    res.json(await loadCommitment(waived.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/places/:id/commitments/:commitmentId — history cleanup only.
+// Only discharged commitments can be deleted this way; an outstanding
+// promise has to be waived, rescheduled, or fulfilled first — this isn't a
+// second way to back out of a live one.
+router.delete('/:id/commitments/:commitmentId', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const commitmentId = Number(req.params.commitmentId);
+    if (Number.isNaN(id) || Number.isNaN(commitmentId)) return res.status(404).json({ error: 'Commitment not found' });
+    const existing = await knex('place_commitments').where({ id: commitmentId, place_id: id }).first();
+    if (!existing) return res.status(404).json({ error: 'Commitment not found' });
+    if (!existing.discharged_at) {
+      return res.status(409).json({ error: 'This commitment is still outstanding — waive, reschedule, or fulfill it first' });
+    }
+
+    await deleteCommitment(knex, commitmentId);
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

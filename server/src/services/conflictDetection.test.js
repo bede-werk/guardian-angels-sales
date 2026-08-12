@@ -312,10 +312,13 @@ describe('detectConflicts (real DB)', () => {
     // SAME_DATE_VISIT (amendment 1's fix, ported into detectConflicts since Step 1).
     await db('visits').insert({ place_id: 4, user_id: 2, status: 'skipped', scheduled_date: TARGET_DATE, place_name: 'Skipped Same Date Place' });
 
-    // Place 5: Bede completed a visit 2 days before TARGET_DATE, but also has
-    // a due commitment (next_visit_date <= TARGET_DATE) from that same visit
-    // — FLOOR_COMPLETED must be suppressed.
-    await db('visits').insert({ place_id: 5, user_id: 1, status: 'completed', scheduled_date: '2026-08-08', next_visit_date: TARGET_DATE, place_name: 'Commitment Exempt Place' });
+    // Place 5: Bede completed a visit 2 days before TARGET_DATE, but the
+    // place also has a due, OUTSTANDING place_commitments row (promised_date
+    // <= TARGET_DATE) — FLOOR_COMPLETED must be suppressed. Commitments are
+    // their own table now (Place Commitments spec), not a column on the
+    // visit — see services/placeCommitments.js.
+    await db('visits').insert({ place_id: 5, user_id: 1, status: 'completed', scheduled_date: '2026-08-08', place_name: 'Commitment Exempt Place' });
+    await db('place_commitments').insert({ place_id: 5, promised_date: TARGET_DATE });
 
     // Place 7: Sarah has a PLANNED (not yet happened) visit 2 days AFTER
     // TARGET_DATE — Step 3's own case. Dated after, not before, on purpose:

@@ -32,6 +32,25 @@ export function joinNames(names) {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
+// discharge_reason -> a short, past-tense label for a visit-history row.
+// null (still outstanding) has no label at all — an unresolved promise
+// needs no annotation beyond its date.
+const COMMITMENT_STATUS_LABELS = { fulfilled: 'fulfilled', superseded: 'rescheduled', waived: 'waived' };
+
+// One commitment made during a visit ("8/20/2026" or "8/20/2026
+// (rescheduled)") — just the date + status, no label, since PlaceDetail/
+// PersonDetail/this modal each prefix it differently (a bold "Promised next
+// visit:" field label here, a plain muted line there). Exported so all
+// three share one spelling of the status wording, same "one spelling, not
+// three drifting copies" convention as encounterLabel/joinNames above — all
+// three now read the same `commitments_made` array (see
+// services/placeCommitments.js's attachCommitmentsMade), which replaced the
+// old per-visit next_visit_date column.
+export function commitmentMadeText(c) {
+  const status = c.discharge_reason ? ` (${COMMITMENT_STATUS_LABELS[c.discharge_reason] || c.discharge_reason})` : '';
+  return `${formatDate(c.promised_date)}${status}`;
+}
+
 // Everything on file for one visit — a TRIP: place, date, rep, notes, and the
 // list of people/categories met on it (`encounters`). The list endpoints that
 // feed the callers here only return name + category per encounter, so this
@@ -72,20 +91,21 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
   // Removing the last encounter from an already-logged trip deletes the trip
   // server-side — a completed visit where nobody was met isn't a record of
   // anything. That cascade is invisible from the row being clicked, so the
-  // confirm has to name what actually goes with it. next_visit_date
-  // especially: it's what puts this place in the route planner's commitment
-  // tier, so losing it silently would quietly un-schedule a promised return.
+  // confirm has to name what actually goes with it: just the notes now.
+  // A commitment made during this trip (commitments_made) used to be named
+  // here too, back when it lived as a next_visit_date column ON the visit
+  // row and deleting the visit deleted it with it. Now it's its own
+  // place_commitments row with ON DELETE SET NULL on source_visit_id — the
+  // commitment survives a deleted visit, it only loses the "made during
+  // this trip" provenance link, so there's nothing lost here worth warning
+  // about.
   function lastEncounterConfirm(encounter) {
     const losses = [];
     if (trip.notes) losses.push('its notes');
-    if (trip.next_visit_date) losses.push(`the follow-up scheduled for ${formatDate(trip.next_visit_date)}`);
     return (
       `Removing ${encounterLabel(encounter)} leaves nobody on this visit, so the whole visit will be deleted` +
       (losses.length ? ` — including ${joinNames(losses)}` : '') +
       '.' +
-      (trip.next_visit_date
-        ? ' That follow-up date is what keeps this place scheduled for a return, and it will be gone too.'
-        : '') +
       " This can't be undone. Continue?"
     );
   }
@@ -152,15 +172,20 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
           {trip.actual_duration_minutes != null && (
             <div className="tiny"><strong>Took:</strong> {trip.actual_duration_minutes} min</div>
           )}
-          {trip.next_visit_date && (
-            <div className="tiny">
-              <strong>Next visit:</strong> {formatDate(trip.next_visit_date)}
-              {/* The place's own snooze/do-not-visit, not this trip's — this
-                  date is a promise on file but not one the app will act on
-                  until whichever suppression lifts. */}
-              {suppressionNote({ snooze_until: trip.place_snooze_until, do_not_visit: trip.place_do_not_visit, do_not_visit_until: trip.place_do_not_visit_until })}
+          {/* commitments_made — the promise(s) this trip made (Place
+              Commitments spec §6.3), via source_visit_id — replaces the old
+              bare next_visit_date field. Usually 0 or 1, but not enforced
+              at the DB level, so every one is shown. The suppression
+              caveat only applies to a still-OUTSTANDING promise — one
+              already fulfilled/rescheduled/waived isn't "sitting unacted
+              on," it's just resolved. */}
+          {trip.commitments_made?.map((c) => (
+            <div key={c.id} className="tiny">
+              <strong>Promised next visit:</strong> {commitmentMadeText(c)}
+              {!c.discharged_at &&
+                suppressionNote({ snooze_until: trip.place_snooze_until, do_not_visit: trip.place_do_not_visit, do_not_visit_until: trip.place_do_not_visit_until })}
             </div>
-          )}
+          ))}
           {/* No crossRepFloorWarning pill — this modal only ever shows an
               already-completed or already-skipped trip (see VisitsCalendar.jsx;
               a still-planned one is UpcomingVisitDetailModal's job), and the

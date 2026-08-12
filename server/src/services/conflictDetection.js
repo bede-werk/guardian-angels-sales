@@ -24,6 +24,7 @@
 // destructures a function off the other's still-empty module.exports and
 // gets undefined. Not worth the risk for one function.
 const defaultSchedulingConfig = require('../config/scheduling');
+const { getBindingCommitment, getBindingCommitmentsForPlaces } = require('./placeCommitments');
 
 // -- Pure date math / rules -----------------------------------------------
 
@@ -39,9 +40,12 @@ function daysSince(dateStr, today) {
   return Math.round((b - a) / 86400000);
 }
 
-// A due next_visit_date (a human explicitly asking us back) bypasses the
-// hard floor — see isFloorConflict. Ported verbatim from schedulingEngine.js's
-// eligibility(), which used to inline this same `Boolean(...)` check.
+// A due commitment (a human explicitly asking us back — a place_commitments
+// row now, not visits.next_visit_date, though the parameter name is kept
+// since every caller here still speaks in this pure-function vocabulary)
+// bypasses the hard floor — see isFloorConflict. Ported verbatim from
+// schedulingEngine.js's eligibility(), which used to inline this same
+// `Boolean(...)` check.
 function isCommitmentDue({ nextVisitDate, today }) {
   return Boolean(nextVisitDate && nextVisitDate <= today);
 }
@@ -246,15 +250,12 @@ async function detectConflicts(db, placeId, targetDate, ctx = {}) {
     .select('v.id as visitId', 'v.user_id as userId', 'u.name as userName', 'v.scheduled_date as scheduledDate')
     .first();
 
-  // Any status (not just completed/planned) that set one, same as
-  // buildCandidatePool's nextDateVisits — a commitment can come off a
-  // skipped trip ("couldn't get in, but come back Thursday").
-  const nextVisitRow = await db('visits')
-    .where({ place_id: placeId })
-    .whereNotNull('next_visit_date')
-    .orderBy('scheduled_date', 'desc')
-    .select('next_visit_date as nextVisitDate')
-    .first();
+  // The binding place_commitments row (services/placeCommitments.js's
+  // getBindingCommitment — earliest OUTSTANDING promised_date). Commitments
+  // are no longer tied to a visit's status at all (a promise can be added
+  // standalone from PlaceDetail, with no visit behind it) — this replaces
+  // the old "any status visit that set next_visit_date" reconstruction.
+  const bindingCommitment = await getBindingCommitment(db, placeId);
 
   // FLOOR_PLANNED's candidates (Step 3): every OTHER planned visit at this
   // place — excludes exactly `targetDate` since a planned visit dated there
@@ -302,7 +303,7 @@ async function detectConflicts(db, placeId, targetDate, ctx = {}) {
     lastVisitId: lastCompletedRow ? lastCompletedRow.visitId : null,
     lastVisitUserId: lastCompletedRow ? lastCompletedRow.userId : null,
     lastVisitUserName: lastCompletedRow ? lastCompletedRow.userName : null,
-    nextVisitDate: nextVisitRow ? nextVisitRow.nextVisitDate : null,
+    nextVisitDate: bindingCommitment ? bindingCommitment.promised_date : null,
     plannedVisits: plannedRows,
     draftElsewhere: draftElsewhereRow
       ? { stopId: draftElsewhereRow.stopId, userId: draftElsewhereRow.userId, userName: draftElsewhereRow.userName, date: draftElsewhereRow.date }
@@ -337,20 +338,23 @@ async function detectConflictsForStops(db, stops, ctx = {}) {
   if (placeIds.length === 0) return result;
 
   // Every status: sameDateVisit/lastVisitDate/plannedVisits each need their
-  // own status filter (see detectConflicts above), and next_visit_date can
-  // come off a skipped visit — so this fetches everything for these places
-  // and lets the per-stop loop below filter, exactly like detectConflicts'
-  // five separate single-place queries, just gathered as one multi-place
-  // query instead of five.
+  // own status filter (see detectConflicts above) — so this fetches
+  // everything for these places and lets the per-stop loop below filter,
+  // exactly like detectConflicts' separate single-place queries, just
+  // gathered as one multi-place query instead of several.
   const visitRows = await db('visits as v')
     .leftJoin('users as u', 'u.id', 'v.user_id')
     .whereIn('v.place_id', placeIds)
-    .select('v.id as visitId', 'v.place_id as placeId', 'v.user_id as userId', 'u.name as userName', 'v.scheduled_date as scheduledDate', 'v.status', 'v.next_visit_date as nextVisitDate');
+    .select('v.id as visitId', 'v.place_id as placeId', 'v.user_id as userId', 'u.name as userName', 'v.scheduled_date as scheduledDate', 'v.status');
   const visitsByPlace = new Map();
   for (const row of visitRows) {
     if (!visitsByPlace.has(row.placeId)) visitsByPlace.set(row.placeId, []);
     visitsByPlace.get(row.placeId).push(row);
   }
+
+  // Binding place_commitments per place (services/placeCommitments.js) — no
+  // longer derived from visits at all (see detectConflicts above for why).
+  const bindingCommitmentByPlace = await getBindingCommitmentsForPlaces(db, placeIds);
 
   const draftRows = await db('schedule_draft_stops as s')
     .join('schedule_drafts as d', 'd.id', 's.draft_id')
@@ -375,9 +379,7 @@ async function detectConflictsForStops(db, stops, ctx = {}) {
       ? completed.reduce((a, b) => (a.scheduledDate > b.scheduledDate ? a : b))
       : null;
     const planned = visits.filter((v) => v.status === 'planned' && v.scheduledDate !== date);
-    const withCommitment = visits
-      .filter((v) => v.nextVisitDate)
-      .reduce((a, b) => (!a || b.scheduledDate > a.scheduledDate ? b : a), null);
+    const binding = bindingCommitmentByPlace.get(placeId) || null;
     const draftElsewhere = (draftsByPlace.get(placeId) || []).find((d) => d.date === date) || null;
 
     const conflicts = detectConflictsPure({
@@ -391,7 +393,7 @@ async function detectConflictsForStops(db, stops, ctx = {}) {
       lastVisitId: lastCompleted ? lastCompleted.visitId : null,
       lastVisitUserId: lastCompleted ? lastCompleted.userId : null,
       lastVisitUserName: lastCompleted ? lastCompleted.userName : null,
-      nextVisitDate: withCommitment ? withCommitment.nextVisitDate : null,
+      nextVisitDate: binding ? binding.promised_date : null,
       plannedVisits: planned.map((v) => ({ visitId: v.visitId, userId: v.userId, userName: v.userName, scheduledDate: v.scheduledDate })),
       draftElsewhere: draftElsewhere
         ? { stopId: draftElsewhere.stopId, userId: draftElsewhere.userId, userName: draftElsewhere.userName, date: draftElsewhere.date }

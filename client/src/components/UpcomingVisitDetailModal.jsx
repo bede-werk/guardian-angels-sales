@@ -36,6 +36,12 @@ function addDaysISO(days) {
 // with the updated (now status: 'snoozed') visit once POST /:id/snooze
 // succeeds, so the caller can drop it from whatever "planned" list it came
 // from, same as onComplete's caller does after logging.
+//
+// `onDelete`, same convention again — omitted in PlannedDayModal's
+// read-only mode. Like VisitDetailModal's own onDelete, this just hands the
+// visit up to the caller's existing removeVisit (confirm + api.deleteVisit +
+// reload lives there, not here) rather than duplicating it.
+export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed, onDelete }) {
 export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed }) {
   const { closing, startClosing } = useClosingTransition();
   const requestClose = () => startClosing(onClose);
@@ -120,6 +126,12 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
           </div>
         ) : (
           <div className="modal-foot">
+            <Button variant="secondary" onClick={onClose}>Close</Button>
+            {onDelete && (
+              <Button variant="danger" title="Delete this planned visit" onClick={() => onDelete(visit)}>
+                Delete
+              </Button>
+            )}
             {onSnoozed && (
               <Button
                 variant="secondary"

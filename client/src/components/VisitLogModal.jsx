@@ -83,11 +83,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   const resolvedPlaceId = visit?.place_id || placeId;
   const isEditing = Boolean(visit?.visit_id);
 
-  // Trip-level facts — true of the whole visit, whoever was on it. Note
-  // next_visit_date has no field in this form but is carried through the save
-  // regardless: it's what puts this place in the route planner's commitment
-  // tier, and dropping it from the payload would silently un-schedule a
-  // promised return.
+  // Trip-level facts — true of the whole visit, whoever was on it.
   const [form, setForm] = useState({
     scheduled_date: visit?.scheduled_date || today(),
     // visit_type is no longer asked here — it exists purely as the route
@@ -103,8 +99,25 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     // optional, and a made-up default would be worse than an honest gap.
     actual_duration_minutes: visit?.actual_duration_minutes ?? VISIT_TYPE_MINUTES[visit?.visit_type] ?? '',
     notes: visit?.notes || '',
-    next_visit_date: visit?.next_visit_date || '',
   });
+
+  // Place Commitments (server/src/services/placeCommitments.js) — replaces
+  // the old bare next_visit_date field this form never actually had an input
+  // for. Two independent pieces: which of the place's OUTSTANDING commitments
+  // (fetched below via `place`) this trip resolves, and an optional brand-new
+  // promise for next time. Both travel in the save payload and are applied
+  // server-side, after the visit itself is saved — see routes/visits.js's
+  // applyCommitmentSideEffects.
+  //
+  // Seeded once `place` loads (see the effect below): every outstanding
+  // commitment already due (promised_date <= today) starts checked — the
+  // ordinary "promised the 20th, went the 20th" case in zero clicks — without
+  // ever silently clearing a promise that wasn't actually kept (unchecking is
+  // always available, and nothing here writes anything until Save).
+  const [fulfillCommitmentIds, setFulfillCommitmentIds] = useState(new Set());
+  const [promiseDate, setPromiseDate] = useState('');
+  const [promisePersonId, setPromisePersonId] = useState('');
+  const [promiseNote, setPromiseNote] = useState('');
 
   // --- Encounter state ----------------------------------------------------
   // The trip's people, expressed as the two pickers below (which kinds of
@@ -186,11 +199,32 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     api.people.listForPlace(resolvedPlaceId).then(setPeople).catch(() => {});
   }, [resolvedPlaceId]);
 
-  // Also load the place itself, to know whether it still needs pre-qualifying.
+  // Also load the place itself, to know whether it still needs pre-qualifying
+  // — its `commitments.outstanding` (see routes/places.js's GET /:id) is what
+  // seeds the fulfillment panel below too, so this one fetch covers both.
   useEffect(() => {
     if (!resolvedPlaceId) return;
     api.place(resolvedPlaceId).then(setPlace).catch(() => {});
   }, [resolvedPlaceId]);
+
+  // Runs once, when `place` first resolves (this effect's own dependency
+  // never changes again — resolvedPlaceId is fixed for the modal's
+  // lifetime) — so it seeds the initial pre-check and never fights with the
+  // rep's own subsequent clicks.
+  useEffect(() => {
+    if (!place?.commitments?.outstanding) return;
+    const due = place.commitments.outstanding.filter((c) => c.promised_date <= today()).map((c) => c.id);
+    setFulfillCommitmentIds(new Set(due));
+  }, [place]);
+
+  function toggleFulfillCommitment(id) {
+    setFulfillCommitmentIds((ids) => {
+      const next = new Set(ids);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // Meeting nobody can't produce a "substantive conversation" or any of the
   // other outcomes that presuppose talking to someone — the only thing that
@@ -221,7 +255,6 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
           visit_type: trip.visit_type || null,
           actual_duration_minutes: trip.actual_duration_minutes ?? VISIT_TYPE_MINUTES[trip.visit_type] ?? '',
           notes: trip.notes || '',
-          next_visit_date: trip.next_visit_date || '',
         });
         // A planned stop being completed has no encounters yet, so it starts
         // on the same default a brand-new visit gets rather than an empty
@@ -388,7 +421,13 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
       const payload = {
         ...form,
         status: 'completed',
-        next_visit_date: form.next_visit_date || null,
+        // Place Commitments — see routes/visits.js's applyCommitmentSideEffects.
+        // Omitted entirely (not sent as empty/null) when unused, so the
+        // server's own "was this field provided at all" checks stay simple.
+        ...(fulfillCommitmentIds.size ? { fulfill_commitment_ids: [...fulfillCommitmentIds] } : {}),
+        ...(promiseDate
+          ? { promise_next_visit: { promised_date: promiseDate, person_id: promisePersonId || null, note: promiseNote || null } }
+          : {}),
         // '' -> null rather than 0: "not recorded" and "took no time" are
         // different answers, and the column is nullable for exactly that reason.
         actual_duration_minutes:
@@ -510,6 +549,39 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                   max={today()}
                   onChange={(e) => { setConflicts([]); set('scheduled_date')(e); }}
                 />
+              </div>
+            )}
+
+            {/* Place Commitments (spec §5.1) — only shown when this place
+                actually has something outstanding; an empty section here
+                would just be noise on the far more common case of no
+                promises on file. Already-due ones start checked (see the
+                seeding effect above); a future-dated one is visible but left
+                unchecked — visiting early doesn't automatically satisfy it. */}
+            {place?.commitments?.outstanding?.length > 0 && (
+              <div>
+                <label className="field">Outstanding commitments at this place</label>
+                <div className="person-checklist">
+                  {place.commitments.outstanding.map((c) => (
+                    <div
+                      key={c.id}
+                      className={`select-row${fulfillCommitmentIds.has(c.id) ? ' selected' : ''}`}
+                      role="checkbox"
+                      aria-checked={fulfillCommitmentIds.has(c.id)}
+                      tabIndex={0}
+                      onClick={() => toggleFulfillCommitment(c.id)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFulfillCommitment(c.id); } }}
+                    >
+                      <span className="check-box-visual" aria-hidden="true" />
+                      <span>
+                        {formatDate(c.promised_date)}
+                        {c.person_name ? ` · promised to ${c.person_name}` : ''}
+                        {c.note ? ` · ${c.note}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="tiny muted" style={{ marginTop: 4 }}>Checked ones are marked fulfilled when you save.</div>
               </div>
             )}
 
@@ -640,6 +712,29 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             <div>
               <label className="field">Notes</label>
               <textarea rows={3} value={form.notes} onChange={set('notes')} placeholder="What happened, next steps…" autoFocus />
+            </div>
+
+            {/* Place Commitments (spec §5.1) — the field this form has never
+                actually had: a promise made ON this trip is a NEW
+                place_commitments row (source_visit_id = this visit), not a
+                write to any column on it. Optional — left blank, nothing is
+                created. */}
+            <div>
+              <label className="field">Promise a next visit (optional)</label>
+              <div className="tag-list" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                <input type="date" value={promiseDate} onChange={(e) => setPromiseDate(e.target.value)} />
+                <select value={promisePersonId} onChange={(e) => setPromisePersonId(e.target.value)} style={{ width: 160 }}>
+                  <option value="">No specific person</option>
+                  {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Note (optional)"
+                  value={promiseNote}
+                  onChange={(e) => setPromiseNote(e.target.value)}
+                  style={{ flex: 1, minWidth: 120 }}
+                />
+              </div>
             </div>
 
             <div className="row">

@@ -428,6 +428,12 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .icon-remove { background: none; border: none; font-size: 18px; line-height: 1; cursor: pointer; color: var(--muted); padding: 2px 6px; border-radius: var(--radius-sm); }
 .icon-remove:hover { background: var(--mauve-tint-1); color: var(--mauve); }
 .icon-remove:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Same slot as .icon-remove but already-red at rest (not muted-until-hover) —
+   for a delete that's clearing history, not detaching a live relationship,
+   so it doesn't need the softer "are you sure this is what you want" framing. */
+.icon-delete { background: #fff; border: 1px solid var(--mauve-tint-3); color: var(--mauve); font-size: 12px; line-height: 1; cursor: pointer; padding: 3px 7px; border-radius: var(--radius-sm); }
+.icon-delete:hover { background: var(--mauve); border-color: var(--mauve); color: #fff; }
+.icon-delete:disabled { opacity: 0.5; cursor: not-allowed; }
 /* The big tap-chip outcome picker in VisitLogModal (Interested / Not ready / etc). */
 .outcome-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .outcome-btn { padding: 14px 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; cursor: pointer; text-align: center; font-size: 13px; font-weight: 600; }
@@ -639,6 +645,11 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   font-size: 12px; padding: 6px 12px; white-space: normal;
   max-width: none; overflow: visible; text-overflow: clip;
 }
+/* "Plan a visit…" control (Manual Visit Planning §3) below the pills list —
+   its own section, so it gets a divider + top margin same as .modal-foot's
+   separation from .modal-body, instead of sitting flush against the last
+   pill (or EmptyState, which already carries its own padding). */
+.day-overview-plan { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
 /* Birthday badge — a day cell's 🎂, clickable, opening BirthdayModal for
    that day. Deliberately not one of the .planned-route-badge family above
    (this isn't a visit status) and not folded into .day-dots either (a

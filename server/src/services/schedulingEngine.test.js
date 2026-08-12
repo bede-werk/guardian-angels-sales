@@ -208,6 +208,38 @@ describe('eligibility() guards', () => {
       assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, true);
     });
   });
+
+  // Manual Visit Planning spec §7.1/§9 — a planned visit dated EXACTLY today
+  // is a same-day duplicate risk, distinct from the nearby-but-not-exact
+  // floor case above: a due commitment is allowed to bypass a recency
+  // judgment call, but must never bypass an outright same-day duplicate.
+  describe('same-day exclusion (Manual Visit Planning §7.1)', () => {
+    test('a planned visit dated exactly today makes the place ineligible', () => {
+      const p = place();
+      const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, plannedVisitDates: [TODAY], lockedElsewhere: false, config });
+      assert.equal(result.eligible, false);
+      assert.equal(result.reason, 'already_planned_today');
+    });
+
+    // The regression this exists to close: without this check running BEFORE
+    // commitmentDue, a place with both a due commitment and an
+    // already-planned visit today stayed eligible and could be proposed a
+    // second time on the very day it's already booked (§9's "does not
+    // schedule a second stop" guarantee depends on this).
+    test('a due commitment does NOT suppress this, unlike FLOOR_PLANNED on a nearby (non-exact) date', () => {
+      const p = place();
+      const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, nextVisitDate: TODAY, plannedVisitDates: [TODAY], lockedElsewhere: false, config });
+      assert.equal(result.eligible, false);
+      assert.equal(result.reason, 'already_planned_today');
+    });
+
+    test('a nearby but non-exact planned date is unaffected by this rule — still governed by the ordinary floor check above', () => {
+      const p = place();
+      const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, plannedVisitDates: [daysAgo(2)], lockedElsewhere: false, config });
+      assert.equal(result.eligible, false);
+      assert.equal(result.reason, 'hard_floor', 'still the ordinary floor reason, not the new same-day one');
+    });
+  });
 });
 
 describe('hard commitments jump the queue', () => {

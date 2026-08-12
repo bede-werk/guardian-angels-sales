@@ -19,14 +19,15 @@ const defaultDriveConfig = require('../config/driveTime');
 const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
 const { rankCandidates } = require('./schedulingEngine');
-const { detectConflicts, detectConflictsPure, detectConflictsForStops } = require('./conflictDetection');
+const { detectConflicts, detectConflictsPure, detectConflictsForStops, daysSince } = require('./conflictDetection');
 const { crossRepVisitsByPlace, findCrossRepFloorWarning } = require('./crossRepFloorWarning');
 const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments, defaultVisitTypeForCapacity } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
-const { orgToday } = require('./orgDate');
+const { orgToday, orgDateOf } = require('./orgDate');
 const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
 const { computeCapacityForPlaces, computeCapacityForPlace } = require('./capacity');
+const { getBindingCommitmentsForPlaces, getOutstandingCommitmentsForPlaces } = require('./placeCommitments');
 
 // Recognizes a unique-constraint violation across both engines this app runs
 // on (SQLite in dev, Postgres in prod) — see commitDay's per-row insert loop,
@@ -184,8 +185,10 @@ module.exports.partitionCommittableStops = partitionCommittableStops;
 // this file; this comment is just a signpost for anyone looking for it here.
 
 // Queries `places` plus, per place: last COMPLETED visit date, count of
-// completed visits in the trailing FATIGUE_WINDOW_DAYS before `today`,
-// next_visit_date off the most recent visit (any status) that set one, and
+// completed visits in the trailing FATIGUE_WINDOW_DAYS before `today`, the
+// binding place_commitments date (Place Commitments spec — the earliest
+// OUTSTANDING promised_date, replacing the old "most recent visit that set
+// next_visit_date" reconstruction, which never retired a kept promise), and
 // every OTHER open PLANNED visit's date (Step 3 of the 2026-08 remediation
 // ticket — see plannedDatesByPlace below for why this is a separate field,
 // not folded into lastVisitDate). Shapes rows into rankCandidates' expected
@@ -228,16 +231,15 @@ async function buildCandidatePool(db, { today }) {
     recentCounts[placeId] = days.size;
   }
 
-  const nextDateVisits = await db('visits')
-    .whereNotNull('place_id')
-    .whereNotNull('next_visit_date')
-    .orderBy('place_id')
-    .orderBy('scheduled_date', 'desc')
-    .select('place_id', 'next_visit_date');
-  const nextVisitByPlace = {};
-  for (const v of nextDateVisits) {
-    if (!nextVisitByPlace[v.place_id]) nextVisitByPlace[v.place_id] = v.next_visit_date;
-  }
+  // One query for the whole pool's binding commitments (earliest OUTSTANDING
+  // promised_date per place) — same "fetch everything, reduce to first-wins"
+  // shape the old next_visit_date reconstruction had, just sourced from
+  // place_commitments now instead of rebuilt out of visit history on every
+  // run. See services/placeCommitments.js's own header for why "binding" is
+  // earliest-by-date, not earliest-created, and why a kept promise actually
+  // retires now (fulfillCommitment discharges it) instead of pinning the
+  // place to COMMITMENT forever.
+  const bindingCommitmentByPlace = await getBindingCommitmentsForPlaces(db);
 
   // Every place's OTHER open planned visits — fed to eligibility() as its
   // own field (plannedVisitDates), never merged into lastVisitByPlace above.
@@ -281,7 +283,7 @@ async function buildCandidatePool(db, { today }) {
     place,
     lastVisitDate: lastVisitByPlace[place.id] || null,
     recentCompletedCount: recentCounts[place.id] || 0,
-    nextVisitDate: nextVisitByPlace[place.id] || null,
+    nextVisitDate: bindingCommitmentByPlace.get(place.id)?.promised_date ?? null,
     plannedVisitDates: plannedDatesByPlace[place.id] || [],
     // The EFFECTIVE level — a manual override wins over the computed value,
     // which is the whole point of the override existing.
@@ -461,6 +463,9 @@ async function committedDateSummaries(db, userId, { today } = {}) {
 async function committedDayVisits(db, userId, date) {
   const rows = await db('visits as v')
     .leftJoin('places as p', 'v.place_id', 'p.id')
+    // Manual Visit Planning spec §5/§7.3 — see committedVisitsQuery's
+    // identical join above for why this is separate from user_id/v.user_id.
+    .leftJoin('users as creator', 'creator.id', 'v.created_by_user_id')
     .where({ 'v.user_id': userId, 'v.scheduled_date': date, 'v.status': 'planned' })
     .orderBy('v.sort_order')
     .select(
@@ -472,6 +477,9 @@ async function committedDayVisits(db, userId, date) {
       'v.status',
       'v.notes',
       'v.user_id',
+      'v.planned_manually',
+      'v.created_by_user_id',
+      'creator.name as created_by_name',
       'p.category',
       'p.address',
       'p.city',
@@ -634,6 +642,12 @@ function toDraftStopShape(row) {
 function committedVisitsQuery(db, { userId }) {
   return db('visits as v')
     .leftJoin('places as p', 'p.id', 'v.place_id')
+    // Manual Visit Planning spec §7.3/§5 — the creator's name, for the
+    // "Planned by {Name}" marker on a cross-rep manual stop. Joined
+    // separately from `userId` (always the CURRENT rep in this query — a
+    // draft is always someone's own): created_by_user_id is who actually
+    // decided to plan the stop, which can be a different rep entirely.
+    .leftJoin('users as creator', 'creator.id', 'v.created_by_user_id')
     .where({ 'v.user_id': userId, 'v.status': 'planned' })
     .orderBy('v.sort_order')
     .select(
@@ -649,6 +663,13 @@ function committedVisitsQuery(db, { userId }) {
       // value to put here, and nothing was reading it.
       'v.scheduled_date',
       'v.sort_order',
+      // Manual Visit Planning spec §7.3/§5 — the "manually planned"/
+      // "Planned by {Name}" markers need these on the committed row itself;
+      // a manual visit is never a draft stop (it's already a real `visits`
+      // row), so this is the only place they can come from.
+      'v.planned_manually',
+      'v.created_by_user_id',
+      'creator.name as created_by_name',
       'p.category',
       'p.tier',
       'p.address',
@@ -771,6 +792,27 @@ function hasSameDateVisitConflict(conflicts) {
   return (conflicts || []).some((c) => c.type === 'SAME_DATE_VISIT');
 }
 
+// Shapes one place's outstanding commitments (already earliest-first — see
+// getOutstandingCommitmentsForPlaces) into the route planner's badge (Place
+// Commitments spec §6.1): who it was promised to, the date, and how overdue
+// — "promised" alone tells a rep nothing actionable when deciding whether to
+// keep a stop. `rows` empty/missing -> null (no badge). overdueDays is 0
+// both when the binding date is still in the future AND when it's due
+// exactly today — "0 days overdue" isn't a useful distinction from "not yet
+// overdue," so the client only renders the overdue clause when this is > 0.
+function commitmentBadge(rows, today) {
+  if (!rows || !rows.length) return null;
+  const [binding, ...rest] = rows;
+  return {
+    id: binding.id,
+    promisedDate: binding.promised_date,
+    personName: binding.person_name || null,
+    note: binding.note || null,
+    overdueDays: today > binding.promised_date ? daysSince(binding.promised_date, today) : 0,
+    moreCount: rest.length,
+  };
+}
+
 async function loadDraftView(db, draftId) {
   const draft = await db('schedule_drafts').where({ id: draftId }).first();
   if (!draft) return null;
@@ -828,6 +870,12 @@ async function loadDraftView(db, draftId) {
     { userId: draft.user_id, excludeDraftId: draftId }
   );
 
+  // Place Commitments badge (spec §6.1) — every outstanding commitment for
+  // this draft's places, one query, shaped per-stop below via the pure
+  // commitmentBadge helper.
+  const commitmentRowsByPlace = await getOutstandingCommitmentsForPlaces(db, stopRows.map((r) => r.id));
+  const today = orgToday();
+
   const days = [];
   for (const date of dates) {
     const rows = byDate[date] || [];
@@ -840,6 +888,7 @@ async function loadDraftView(db, draftId) {
         defaultSchedulingConfig
       ),
       conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
+      commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
     })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
     const committedForDay = committedByDate[date] || [];
     const budgetMinutes = hoursPerDayByDate[date] * 60;
@@ -873,6 +922,10 @@ async function loadDraftDayView(db, draftId, date) {
     rows.map((r) => ({ placeId: r.id, date })),
     { userId: draft.user_id, excludeDraftId: draftId }
   );
+  // Place Commitments badge — see loadDraftView's identical comment; this is
+  // its one-day sibling.
+  const commitmentRowsByPlace = await getOutstandingCommitmentsForPlaces(db, rows.map((r) => r.id));
+  const today = orgToday();
   const stops = rows.map(toDraftStopShape).map((s) => ({
     ...s,
     alreadyVisitedToday: todaySet.has(s.place_id),
@@ -882,6 +935,7 @@ async function loadDraftDayView(db, draftId, date) {
       defaultSchedulingConfig
     ),
     conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
+    commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
   })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
@@ -1037,6 +1091,38 @@ async function deleteActiveDraft({ draftId, userId }) {
   });
 }
 
+// Auto-discards any draft still sitting in the proposal stage from a
+// previous org-day — the route-planner equivalent of visitLifecycle.js's
+// skip sweep. Keyed off created_at (never bumped by day-edits/reoptimize/
+// partial commits — see createDraft), so this is deliberately "when was this
+// proposal first made," not "when was it last touched": a draft a rep is
+// still actively shaping stays exactly as fresh as the day they started it,
+// same as a 'planned' visit's scheduled_date isn't reset by editing it.
+// Comparing org-DATE (not a raw instant) matches the calendar-day cutoff the
+// skip sweep uses, not an elapsed-hours timer — a draft from 11pm yesterday
+// is stale at 12:01am today, same as one from 9am yesterday.
+async function discardStaleDrafts(db, { today } = {}) {
+  const cutoff = today || orgToday();
+  const rows = await db('schedule_drafts').select('id', 'created_at');
+  const staleIds = rows.filter((r) => orgDateOf(r.created_at) < cutoff).map((r) => r.id);
+  if (staleIds.length > 0) await db('schedule_drafts').whereIn('id', staleIds).del(); // cascades to schedule_draft_stops
+  return staleIds.length;
+}
+
+// Express middleware wrapper — same fire-and-continue convention as
+// visitLifecycle.js's skipSweepMiddleware: a failure here must never block
+// the actual request it's riding in on.
+function draftDiscardMiddleware(db) {
+  return async function draftDiscardSweep(req, res, next) {
+    try {
+      await discardStaleDrafts(db);
+    } catch (err) {
+      return next(err);
+    }
+    next();
+  };
+}
+
 async function reorderDay({ draftId, userId, date, placeIds }) {
   await knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
@@ -1140,6 +1226,10 @@ async function rankedCandidatesForDay(db, { draftId, date, userId }) {
 // own ranked-and-eligible candidates span (scheduleGenerator.orderedZones),
 // always including whatever zone the day is currently in (see
 // rankedCandidatesForDay). Read-only: no fill, no OSRM call, no write.
+// Never cached/stored — recomputed fresh on every call, same "no manual
+// fields that need upkeep" convention as loadDraftView/loadDraftDayView
+// elsewhere in this file, so it can never go stale relative to the current
+// pool.
 async function getDayZones({ draftId, userId, date }) {
   await assertOwnsDraft(knex, draftId, userId);
 
@@ -1152,7 +1242,9 @@ async function getDayZones({ draftId, userId, date }) {
   }
 
   const ranked = await rankedCandidatesForDay(knex, { draftId, date, userId });
-  return { list: orderedZones(ranked) };
+  const list = orderedZones(ranked);
+
+  return { list };
 }
 
 // "Somewhere else": the user directly picks which zone (region) a day
@@ -1263,6 +1355,15 @@ async function getSuggestions({ draftId, userId, date, limit = 5 }) {
   // approach loadDraftView/loadDraftDayView use for a proposed-but-not-yet-
   // committed stop.
   const crossRepByPlace = await crossRepVisitsByPlace(knex, top.map((c) => c.place.id));
+  // Place Commitments badge, on a SUGGESTION too — same "before it's even
+  // added" reasoning as crossRepFloorWarning above, and a real place to show
+  // it: a commitment is exactly why a place is ranked to the top of
+  // suggestions in the first place, so the badge is what explains the
+  // ranking, not just decorates it. `orgToday()`, not `date` (the day being
+  // planned for) — "how overdue" is a fact about right now, not about
+  // whatever future day a rep happens to be planning.
+  const commitmentRowsByPlace = await getOutstandingCommitmentsForPlaces(knex, top.map((c) => c.place.id));
+  const today = orgToday();
 
   return top.map((c) => ({
     place_id: c.place.id,
@@ -1275,6 +1376,7 @@ async function getSuggestions({ draftId, userId, date, limit = 5 }) {
       crossRepByPlace.get(c.place.id) || [],
       defaultSchedulingConfig
     ),
+    commitment: commitmentBadge(commitmentRowsByPlace.get(c.place.id), today),
   }));
 }
 
@@ -1434,8 +1536,17 @@ async function commitAll({ draftId, userId }) {
 // — only the still-open plan gets removed. Once this empties a date out
 // entirely, committedDateSummaries naturally stops counting it, which is
 // what frees it back up as a selectable calendar date.
+// Scoped to source: 'planner' — same reasoning reopenCommittedDay/commitDay
+// already use this exact tag for: an ad-hoc/manually-planned visit
+// (source stays 'manual', the DB default — see routes/visits.js's EDITABLE
+// comment) was never part of a plan and must not get swept into "undo this
+// day's commit" just because it shares a date with one. Before Manual Visit
+// Planning, no status:'planned' row could ever exist without source:
+// 'planner' (VisitLogModal always saves status:'completed'), so this filter
+// was previously a no-op; it stops being one the moment a manual visit can
+// share a date with a real planner commit.
 async function deleteCommittedDay(db, { userId, date }) {
-  return db('visits').where({ user_id: userId, scheduled_date: date, status: 'planned' }).del();
+  return db('visits').where({ user_id: userId, scheduled_date: date, status: 'planned', source: 'planner' }).del();
 }
 
 // Reopens a whole day's ALREADY-COMMITTED visits back into the same
@@ -1551,6 +1662,8 @@ module.exports = {
   removeStop,
   discardDay,
   deleteActiveDraft,
+  discardStaleDrafts,
+  draftDiscardMiddleware,
   reorderDay,
   setVisitType,
   reoptimizeDay,

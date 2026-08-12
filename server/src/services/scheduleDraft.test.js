@@ -2,7 +2,7 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, buildCandidatePool, loadDraftView, loadDraftDayView, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 const { estimateDriveMinutes } = require('./driveTime');
 
 describe('mergeLockedElsewhereIds', () => {
@@ -203,13 +203,70 @@ describe('deleteCommittedDay', () => {
       user_id: 7,
       scheduled_date: '2026-07-17',
       status: 'planned',
+      source: 'planner',
     });
+  });
+
+  // Manual Visit Planning spec §7 — same source:'planner' scoping
+  // commitDay/reopenCommittedDay already use: a manual visit sharing this
+  // date must survive "undo this day's commit," same as an ad-hoc "Log a
+  // visit" entry always has.
+  test('scopes the delete to source: planner, leaving a manual visit on the same date untouched', async () => {
+    const db = makeFakeDb(1);
+    await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
+    assert.equal(db.calls[0].filter.source, 'planner');
   });
 
   test('resolves to the number of rows deleted', async () => {
     const db = makeFakeDb(3);
     const result = await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
     assert.equal(result, 3);
+  });
+});
+
+describe('discardStaleDrafts', () => {
+  // Same fake-db-as-call-recorder style as deleteCommittedDay's tests above —
+  // enough to assert on which ids get deleted without standing up sqlite.
+  function makeFakeDb(rows) {
+    const calls = [];
+    const db = (table) => {
+      calls.push({ table });
+      return {
+        select: () => Promise.resolve(rows),
+        whereIn(col, ids) {
+          calls[calls.length - 1].whereIn = { col, ids };
+          return { del: () => Promise.resolve(ids.length) };
+        },
+      };
+    };
+    db.calls = calls;
+    return db;
+  }
+
+  test('deletes drafts created on an org-date before today, leaves today\'s alone', async () => {
+    const db = makeFakeDb([
+      { id: 1, created_at: '2026-08-11T23:30:00.000Z' }, // 6:30pm Central on the 11th — stale
+      { id: 2, created_at: '2026-08-12T13:00:00.000Z' }, // 8am Central on the 12th — fresh
+    ]);
+    const count = await discardStaleDrafts(db, { today: '2026-08-12' });
+
+    assert.equal(count, 1);
+    assert.equal(db.calls.length, 2);
+    assert.deepEqual(db.calls[1].whereIn, { col: 'id', ids: [1] });
+  });
+
+  test('does nothing when every draft is from today', async () => {
+    const db = makeFakeDb([{ id: 1, created_at: '2026-08-12T13:00:00.000Z' }]);
+    const count = await discardStaleDrafts(db, { today: '2026-08-12' });
+
+    assert.equal(count, 0);
+    assert.equal(db.calls.length, 1); // no whereIn/del call at all
+  });
+
+  test('does nothing when there are no drafts', async () => {
+    const db = makeFakeDb([]);
+    const count = await discardStaleDrafts(db, { today: '2026-08-12' });
+    assert.equal(count, 0);
   });
 });
 
@@ -373,6 +430,69 @@ describe('buildCandidatePool plannedVisitDates', () => {
   });
 });
 
+// A manually-planned visit is a real, still-open commitment on the
+// calendar — it counts toward "already committed" exactly the same as a
+// planner-committed one, so the date it's on is off-limits to /generate
+// (validateDays) and shows as already planned, same as any other planned
+// day. No carve-out for manual-only dates.
+describe('committedDateSummaries — a manual visit counts as committed, same as any other planned visit', () => {
+  let db;
+  const TODAY = '2026-08-12';
+
+  before(async () => {
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
+    await db('places').insert([
+      { id: 1, name: 'Manual Only Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 2, name: 'Planner Committed Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 3, name: 'Both Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 4, name: 'Both Place Two', category: 'Hospice', tier: 1, priority_score: 75 },
+    ]);
+
+    // A date with ONLY a manual visit — must appear in the summary, same as
+    // any other planned date.
+    await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-20', place_name: 'Manual Only Place' });
+
+    // A date with ONLY a real planner commit — unaffected by this change.
+    await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-21', place_name: 'Planner Committed Place' });
+
+    // A date with BOTH — both rows count.
+    await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-22', place_name: 'Both Place' });
+    await db('visits').insert({ place_id: 4, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-22', place_name: 'Both Place Two' });
+  });
+
+  after(async () => {
+    await db.destroy();
+  });
+
+  test('a manual-only date appears in the summary, off-limits to /generate like any other planned date', async () => {
+    const summaries = await committedDateSummaries(db, 1, { today: TODAY });
+    const row = summaries.find((s) => s.date === '2026-08-20');
+    assert.ok(row);
+    assert.equal(row.count, 1);
+  });
+
+  test('a planner-committed-only date still appears, count unchanged', async () => {
+    const summaries = await committedDateSummaries(db, 1, { today: TODAY });
+    const row = summaries.find((s) => s.date === '2026-08-21');
+    assert.ok(row);
+    assert.equal(row.count, 1);
+  });
+
+  test('a date with both counts both rows', async () => {
+    const summaries = await committedDateSummaries(db, 1, { today: TODAY });
+    const row = summaries.find((s) => s.date === '2026-08-22');
+    assert.ok(row);
+    assert.equal(row.count, 2, 'the manual visit is not special-cased out of the count anymore');
+  });
+});
+
 // The required knock-on the ticket calls out by name: "Verify loadDraftView
 // recomputes the full detector, not just same-date locks. If it doesn't,
 // this passes audit and fails in the field." Before Step 3, loadDraftView/
@@ -485,6 +605,83 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
 
     const after1 = await loadDraftDayView(db, draftId, DATE_B);
     assert.equal(after1.stops.find((s) => s.place_id === 1), undefined, 'a same-date completed visit must remove the stop, not just flag it');
+  });
+});
+
+// Place Commitments badge (spec §6.1) on a draft stop — loadDraftView/
+// loadDraftDayView attach it via the pure commitmentBadge helper, fed by
+// services/placeCommitments.js's getOutstandingCommitmentsForPlaces.
+// promised_date is a fixed, clearly-past date (not "N days before whatever
+// day this test happens to run") so overdueDays > 0 is true regardless of
+// when this suite executes, without asserting the exact count (which WOULD
+// depend on the real wall-clock date, since loadDraftView/loadDraftDayView
+// call orgToday() internally, same as their pre-existing alreadyVisitedToday
+// computation).
+describe('loadDraftView / loadDraftDayView — Place Commitments badge', () => {
+  let db;
+  const originalFetch = global.fetch;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+
+  before(async () => {
+    global.fetch = async () => ({ ok: false, json: async () => ({}) });
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
+    await db('places').insert([
+      { id: 1, name: 'Promised Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+    ]);
+    await db('people').insert({ id: 1, place_id: 1, name: 'Sharon Klein' });
+    // Two outstanding commitments at place 1: the binding one (earliest,
+    // overdue, named) plus a second, later one — this is what exercises
+    // moreCount.
+    await db('place_commitments').insert([
+      { place_id: 1, promised_date: '2020-01-01', person_id: 1, note: 'asked for the DON' },
+      { place_id: 1, promised_date: '2099-01-01' },
+    ]);
+
+    const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    db.draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert([
+      { draft_id: db.draftId, place_id: 1, date: DATE_A, sort_order: 0 },
+      { draft_id: db.draftId, place_id: 2, date: DATE_A, sort_order: 1 },
+    ]);
+  });
+
+  after(async () => {
+    global.fetch = originalFetch;
+    await db.destroy();
+  });
+
+  test('loadDraftDayView: a place with outstanding commitments carries the badge, correctly shaped', async () => {
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    const stop = view.stops.find((s) => s.place_id === 1);
+    assert.ok(stop.commitment, 'a place with an outstanding commitment must carry the badge');
+    assert.equal(stop.commitment.promisedDate, '2020-01-01', 'the EARLIEST outstanding commitment binds, not the later one');
+    assert.equal(stop.commitment.personName, 'Sharon Klein');
+    assert.equal(stop.commitment.note, 'asked for the DON');
+    assert.ok(stop.commitment.overdueDays > 0, 'a promised_date years in the past must be overdue');
+    assert.equal(stop.commitment.moreCount, 1, 'the second outstanding commitment counts as "+1 more", not silently dropped');
+  });
+
+  test('loadDraftDayView: a place with no outstanding commitments gets no badge', async () => {
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    const stop = view.stops.find((s) => s.place_id === 2);
+    assert.equal(stop.commitment, null);
+  });
+
+  test('loadDraftView: same badge, on the whole-draft read', async () => {
+    const view = await loadDraftView(db, db.draftId);
+    const stop = view.days[0].stops.find((s) => s.place_id === 1);
+    assert.ok(stop.commitment);
+    assert.equal(stop.commitment.moreCount, 1);
   });
 });
 

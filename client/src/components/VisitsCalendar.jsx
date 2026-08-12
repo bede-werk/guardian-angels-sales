@@ -491,8 +491,11 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
           date={overflowAnchor.date}
           anchorEl={overflowAnchor.el}
           pills={fullPillsForOverflow}
+          userId={userId}
+          users={users}
           onClose={() => setOverflowAnchor(null)}
           onSelect={(pill) => { setOverflowAnchor(null); openPill(pill, overflowAnchor.date); }}
+          onChanged={load}
         />
       )}
 
@@ -556,6 +559,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         <SkippedVisitDetailModal
           visit={viewingSkippedVisit}
           onClose={() => setViewingSkippedVisit(null)}
+          onComplete={(v) => { setViewingSkippedVisit(null); setEditingVisit(v); }}
         />
       )}
     </div>

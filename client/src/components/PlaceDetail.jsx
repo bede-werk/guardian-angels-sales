@@ -3,15 +3,17 @@ import { api, navigateUrl, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABE
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
+import PlanVisitModal from './PlanVisitModal';
 import PersonModal from './PersonModal';
 import PlaceModal from './PlaceModal';
 import AssignPersonModal from './AssignPersonModal';
 import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
-import VisitDetailModal, { encounterLabel, joinNames } from './VisitDetailModal';
+import VisitDetailModal, { encounterLabel, joinNames, commitmentMadeText } from './VisitDetailModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 import { PlaceRelationship } from './RelationshipDetail';
 import { PlaceCapacity } from './CapacityDetail';
+import { PlaceCommitments } from './PlaceCommitments';
 import useClosingTransition from '../hooks/useClosingTransition';
 
 // Who was met on one trip, as a single inline phrase: "with Flibber Gibblits,
@@ -95,6 +97,20 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   // editor open at a time).
   const [savingCapacityOverride, setSavingCapacityOverride] = useState(false);
   const [savingCapacityObservation, setSavingCapacityObservation] = useState(false);
+  // Place Commitments (see PlaceCommitments.jsx) — same "editor state lives
+  // in the child, only the in-flight save flag lives here" convention as
+  // capacity's pair above. waivingCommitmentId (not a plain boolean) so only
+  // the row actually being waived shows "Waiving…", not every row at once.
+  const [savingCommitment, setSavingCommitment] = useState(false);
+  const [reschedulingCommitmentSaving, setReschedulingCommitmentSaving] = useState(false);
+  const [waivingCommitmentId, setWaivingCommitmentId] = useState(null);
+  const [deletingCommitmentId, setDeletingCommitmentId] = useState(null);
+  // Manual Visit Planning (see server's manual-visit-planning-spec.md §3) —
+  // the "Plan a visit…" button in the Upcoming Visits card-head, next to Do
+  // not visit…. Opens PlanVisitModal rather than an inline form (that used
+  // to cram date + rep picker + warning text into one card row).
+  const [planningVisit, setPlanningVisit] = useState(false);
+  const [users, setUsers] = useState([]); // team list, for the assigned-rep picker (cross-rep planning, §5)
 
   async function load() {
     try {
@@ -109,6 +125,9 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   }, [placeId]);
   useEffect(() => {
     api.filters().then((f) => setCategories(f.allCategories)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    api.users.list().then(setUsers).catch(() => {});
   }, []);
 
   // Permanently removes only the place itself. People who were here are
@@ -217,6 +236,75 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
+  // Adds a dated promise directly, no visit involved — PlaceCommitments'
+  // own "Add…" control (see services/placeCommitments.js's module header:
+  // place-level, cross-rep, more than one outstanding promise is allowed).
+  async function addCommitment(promisedDate, personId, note) {
+    setSavingCommitment(true);
+    try {
+      await api.addCommitment(data.id, { promised_date: promisedDate, person_id: personId, note });
+      load();
+      onChanged?.();
+      return true;
+    } catch (e) {
+      window.alert(e.message);
+      return false;
+    } finally {
+      setSavingCommitment(false);
+    }
+  }
+
+  // Discharges the original as superseded and creates a new outstanding
+  // commitment for the new date (spec §6.2) — the server carries
+  // person_id/note forward unless this call overrides them.
+  async function rescheduleCommitment(commitmentId, promisedDate, personId, note) {
+    setReschedulingCommitmentSaving(true);
+    try {
+      await api.rescheduleCommitment(data.id, commitmentId, { promised_date: promisedDate, person_id: personId, note });
+      load();
+      onChanged?.();
+      return true;
+    } catch (e) {
+      window.alert(e.message);
+      return false;
+    } finally {
+      setReschedulingCommitmentSaving(false);
+    }
+  }
+
+  // Discharges as waived — "not happening; back to normal cadence." The
+  // place immediately stops binding to this promise (see getBindingCommitment).
+  async function waiveCommitment(commitmentId, note) {
+    setWaivingCommitmentId(commitmentId);
+    try {
+      await api.waiveCommitment(data.id, commitmentId, { note });
+      load();
+      onChanged?.();
+      return true;
+    } catch (e) {
+      window.alert(e.message);
+      return false;
+    } finally {
+      setWaivingCommitmentId(null);
+    }
+  }
+
+  // Hard-deletes a discharged commitment — history cleanup only (the server
+  // rejects this on a still-outstanding one; waive/reschedule it first).
+  async function deleteCommitment(commitmentId) {
+    if (!window.confirm("Delete this commitment from history? This can't be undone.")) return;
+    setDeletingCommitmentId(commitmentId);
+    try {
+      await api.deleteCommitment(data.id, commitmentId);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setDeletingCommitmentId(null);
+    }
+  }
+
   // Marks (or re-marks) do_not_visit with an explicit until-date — null
   // means indefinite. Always writes do_not_visit and do_not_visit_until
   // together (see places.js's EDITABLE comment): a stale until date left
@@ -291,8 +379,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   // cascades server-side), and it's the same trip PersonDetail reads, so
   // removing it here removes it there on next load too. Dropping only ONE
   // person from a trip is VisitDetailModal's per-encounter ✕, not this.
+  // Also reused for a still-planned (status: 'planned') visit via
+  // UpcomingVisitDetailModal's own Delete button below — those have no
+  // encounters yet, hence the conditional clause.
   async function removeVisit(visit) {
-    if (!window.confirm("Delete this visit? Everyone recorded on it goes with it. This can't be undone.")) return;
+    const warning = visit.encounters?.length ? ' Everyone recorded on it goes with it.' : '';
+    if (!window.confirm(`Delete this visit?${warning} This can't be undone.`)) return;
     setRemovingVisitId(visit.id);
     try {
       await api.deleteVisit(visit.id);
@@ -547,16 +639,33 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
               <h2>Upcoming Visits ({data.upcoming_visits.length})</h2>
-              {!isDoNotVisitActive(data) && !markingDoNotVisit && (
+              <div className="tag-list" style={{ flex: 'unset' }}>
+                {/* Manual Visit Planning (spec §3) — "I'm going to Tabitha
+                    on Thursday," said directly, no route-planner draft
+                    involved. Opens PlanVisitModal. Sits next to Do not
+                    visit… here rather than its own row further down — same
+                    "card-head is where this card's actions live" precedent
+                    the People card's Assign/New/Log a referral row already
+                    sets. */}
                 <Button
-                  variant="caution"
+                  variant="secondary"
                   size="small"
-                  title="Stop proposing this place in the route planner"
-                  onClick={() => setMarkingDoNotVisit(true)}
+                  title="Schedule a future visit directly, without the route planner"
+                  onClick={() => setPlanningVisit(true)}
                 >
-                  Do not visit…
+                  Plan a visit…
                 </Button>
-              )}
+                {!isDoNotVisitActive(data) && !markingDoNotVisit && (
+                  <Button
+                    variant="caution"
+                    size="small"
+                    title="Stop proposing this place in the route planner"
+                    onClick={() => setMarkingDoNotVisit(true)}
+                  >
+                    Do not visit…
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {/* The only visible answer to "why hasn't this place come up in
@@ -604,18 +713,27 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   <Button variant="secondary" size="small" onClick={() => { setMarkingDoNotVisit(false); setDnvCustomDate(''); }} disabled={savingDoNotVisit}>Cancel</Button>
                 </div>
               )}
-              {data.upcoming_visits.length === 0 ? (
-                // The snooze/do-not-visit banner above already answers "why
-                // is there nothing here" when one of those is active — the
-                // empty-state icon+message would just repeat it, so it's
-                // skipped in that case and shown only for a genuinely empty,
-                // unsuppressed pipeline.
-                !isSnoozeActive(data) && !isDoNotVisitActive(data) && (
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <EmptyState message="Nothing upcoming at this place." />
-                  </div>
-                )
-              ) : (
+
+              {/* Dated promises to return — replaces the old bare
+                  visits.next_visit_date line below the Visit History card
+                  (see PlaceCommitments.jsx / services/placeCommitments.js).
+                  Lives here, not down in Visit History, because a
+                  commitment constrains the PLANNER going forward — the same
+                  reason snooze/do-not-visit live in this card. */}
+              <PlaceCommitments
+                commitments={data.commitments}
+                people={data.people}
+                onAdd={addCommitment}
+                saving={savingCommitment}
+                onReschedule={rescheduleCommitment}
+                rescheduling={reschedulingCommitmentSaving}
+                onWaive={waiveCommitment}
+                waivingId={waivingCommitmentId}
+                onDelete={deleteCommitment}
+                deletingId={deletingCommitmentId}
+              />
+
+              {data.upcoming_visits.length > 0 && (
                 <ul className="list">
                   {data.upcoming_visits.map((v) => (
                     <li
@@ -703,17 +821,23 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                           )}
                         </div>
                         {v.notes && <div className="tiny">{v.notes}</div>}
-                        {v.next_visit_date && (
-                          <div className="tiny muted">
-                            {/* An active place-level snooze/do-not-visit
-                                suppresses this place entirely (schedulingEngine.js's
-                                eligibility() does not let a due commitment bypass
-                                either) — so while one is active, this date is a
-                                promise on file but not one the app will act on
-                                until it lifts. */}
-                            Next visit: {formatDate(v.next_visit_date)}{suppressionNote(data)}
+                        {/* commitments_made — the promise(s) this visit made
+                            (Place Commitments spec §6.3), via source_visit_id;
+                            replaces the old bare next_visit_date field. The
+                            suppression caveat only applies to a still-
+                            OUTSTANDING promise: an active place-level snooze/
+                            do-not-visit suppresses this place entirely
+                            (schedulingEngine.js's eligibility() does not let a
+                            due commitment bypass either), so while one is
+                            active, an unresolved promise sits unacted on
+                            until it lifts — a promise already fulfilled/
+                            rescheduled/waived has nothing left to suppress. */}
+                        {v.commitments_made?.map((c) => (
+                          <div key={c.id} className="tiny muted">
+                            Promised next visit: {commitmentMadeText(c)}
+                            {!c.discharged_at && suppressionNote(data)}
                           </div>
-                        )}
+                        ))}
                       </div>
                       <Button
                         variant="danger"
@@ -833,6 +957,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           onClose={() => setViewingUpcomingVisit(null)}
           onComplete={(v) => { setViewingUpcomingVisit(null); setEditingVisit(v); }}
           onSnoozed={() => { setViewingUpcomingVisit(null); load(); }}
+          onDelete={(v) => { setViewingUpcomingVisit(null); removeVisit(v); }}
         />
       )}
 
@@ -844,6 +969,17 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           visit={{ ...editingVisit, visit_id: editingVisit.id }}
           userId={userId}
           onClose={() => setEditingVisit(null)}
+          onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {planningVisit && (
+        <PlanVisitModal
+          placeId={data.id}
+          placeName={data.name}
+          userId={userId}
+          users={users}
+          onClose={() => setPlanningVisit(false)}
           onSaved={() => { load(); onChanged?.(); }}
         />
       )}

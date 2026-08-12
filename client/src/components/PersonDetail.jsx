@@ -5,7 +5,7 @@ import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
 import ReferralModal from './ReferralModal';
 import ReferralDetailModal from './ReferralDetailModal';
-import VisitDetailModal, { encounterLabel, joinNames } from './VisitDetailModal';
+import VisitDetailModal, { encounterLabel, joinNames, commitmentMadeText } from './VisitDetailModal';
 import VisitLogModal from './VisitLogModal';
 import { PersonRelationship } from './RelationshipDetail';
 import useClosingTransition from '../hooks/useClosingTransition';
@@ -670,13 +670,19 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                             <div className="tiny muted">Also met {joinNames(others.map(encounterLabel))}</div>
                           )}
                           {v.notes && <div className="tiny">{v.notes}</div>}
-                          {v.next_visit_date && (
-                            <div className="tiny muted">
-                              {/* The place's own snooze/do-not-visit, not this
-                                  visit's — see VisitDetailModal's identical note. */}
-                              Next visit: {formatDate(v.next_visit_date)}{suppressionNote(data.place)}
+                          {/* commitments_made — see PlaceDetail's identical
+                              block/comment (Place Commitments spec §6.3);
+                              replaces the old bare next_visit_date field.
+                              The place's own snooze/do-not-visit, not this
+                              visit's — same suppression rule VisitDetailModal
+                              applies, and only while the promise is still
+                              outstanding. */}
+                          {v.commitments_made?.map((c) => (
+                            <div key={c.id} className="tiny muted">
+                              Promised next visit: {commitmentMadeText(c)}
+                              {!c.discharged_at && suppressionNote(data.place)}
                             </div>
-                          )}
+                          ))}
                         </div>
                         <Button
                           variant="danger"

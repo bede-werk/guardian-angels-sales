@@ -217,6 +217,14 @@ async function topUpDay(packed, geocodedPool, { homeBase, budgetMinutes, optimiz
   return { stops, totalMinutes, remainingMinutes };
 }
 
+// Which zone fills a day's stops: the user's explicit pick for that date
+// (via selectDayZone, whether just now or on an earlier round a regenerate
+// is re-applying) always wins; otherwise the top-ranked remaining
+// candidate's own region.
+function pickZoneForDay({ explicitZone, algorithmZone }) {
+  return explicitZone || algorithmZone;
+}
+
 // Top-level orchestrator. `days` is the caller's explicit, already-validated
 // list of `{ date, hoursPerDay }` pairs (picked by hand on the "Plan My
 // Visits" calendar — see scheduleDraft.js's validateDays) rather than a
@@ -263,11 +271,12 @@ async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, c
     const ranked = rankCandidates(dayCandidates, { today: date, config: schedulingConfig });
 
     if (ranked.length === 0) {
-      result.push({ date, zone: null, stops: [], totalMinutes: 0, remainingMinutes: budgetMinutes, droppedCommitments: [] });
+      const zone = pickZoneForDay({ explicitZone: zoneOverrides[date] ?? null, algorithmZone: null });
+      result.push({ date, zone, stops: [], totalMinutes: 0, remainingMinutes: budgetMinutes, droppedCommitments: [] });
       continue;
     }
 
-    const zone = zoneOverrides[date] ?? ranked[0].place.region;
+    const zone = pickZoneForDay({ explicitZone: zoneOverrides[date] ?? null, algorithmZone: ranked[0].place.region });
     const { stops, totalMinutes, remainingMinutes, droppedCommitments } = await fillDayFromZone({
       candidates: ranked,
       zone,
@@ -294,5 +303,6 @@ module.exports = {
   fillDayFromZone,
   orderedZones,
   outOfZoneCommitments,
+  pickZoneForDay,
   generateDraft,
 };
