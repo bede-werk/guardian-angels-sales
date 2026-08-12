@@ -783,7 +783,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
           {addingOpen ? (
             <div className="row" style={{ alignItems: 'center' }}>
               <PlacePicker placeholder="Add a stop to this day…" onPick={addStop} excludeIds={draftPlaceIds} />
-              <Button variant="ghost" size="small" onClick={() => setAddingOpen(false)} style={{ flex: 'none', minWidth: 0 }}>Cancel</Button>
+              <Button variant="secondary" size="small" onClick={() => setAddingOpen(false)} style={{ flex: 'none', minWidth: 0 }}>Cancel</Button>
             </div>
           ) : suggestionsOpen ? (
             <div className="row" style={{ flex: 'unset', gap: 8, justifyContent: 'flex-end' }}>
@@ -1442,10 +1442,10 @@ export default function RoutePlanner({ userId }) {
               ) : (
                 <div className="stack" style={{ gap: 10 }}>
                   <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-                    <Button variant="secondary" onClick={useCurrentLocation} disabled={locating} style={{ flex: 'none' }}>
+                    <Button variant="secondary" size="small" onClick={useCurrentLocation} disabled={locating}>
                       {locating ? 'Finding you…' : 'Use my current location'}
                     </Button>
-                    <Button variant="ghost" size="small" onClick={() => setManualEntryOpen((o) => !o)} style={{ flex: 'none' }}>
+                    <Button variant="secondary" size="small" onClick={() => setManualEntryOpen((o) => !o)}>
                       {manualEntryOpen ? 'Hide manual entry' : 'Enter address manually'}
                     </Button>
                   </div>

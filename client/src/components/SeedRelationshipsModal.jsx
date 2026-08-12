@@ -22,6 +22,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import Button from './ui/Button';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Converged SCORE values, not buckets — see services/relationship.js's
 // thresholds (strong >= 3.4, medium >= 1.3). 4.0 lands a person's place
@@ -35,6 +36,8 @@ const SEED_CHOICES = [
 ];
 
 export default function SeedRelationshipsModal({ onClose, onSaved }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -100,7 +103,7 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
       const entries = Object.entries(pending).map(([person_id, seed]) => ({ person_id: Number(person_id), seed }));
       await api.people.seedRelationships(entries);
       onSaved?.();
-      onClose();
+      requestClose();
     } catch (e) {
       setError(e.message);
       setSaving(false);
@@ -108,11 +111,11 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Seed Relationships</h2>
-          <button className="close" title="Close without saving" onClick={onClose}>×</button>
+          <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -172,7 +175,7 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
           )}
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>
+          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>
             Cancel
           </Button>
           <Button

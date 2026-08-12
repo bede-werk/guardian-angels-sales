@@ -1,5 +1,6 @@
 import React from 'react';
 import Button from './Button';
+import useClosingTransition from '../../hooks/useClosingTransition';
 
 // A styled pop-up confirmation prompt — replaces window.confirm()'s native
 // browser dialog with something that looks like the rest of the app. Stacks
@@ -10,8 +11,9 @@ import Button from './Button';
 // mauve "error" styling (see .error-banner in styles.css) — rendered one per
 // line with a bolded title so the rep can scan what's wrong at a glance.
 export default function ConfirmDialog({ issues, confirmLabel = 'Add anyway', onConfirm, onCancel }) {
+  const { closing, startClosing } = useClosingTransition();
   return (
-    <div className="modal-backdrop" onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => e.stopPropagation()}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-body">
           <div className="error-banner" style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -21,8 +23,8 @@ export default function ConfirmDialog({ issues, confirmLabel = 'Add anyway', onC
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-          <Button onClick={onConfirm}>{confirmLabel}</Button>
+          <Button variant="secondary" onClick={() => startClosing(onCancel)}>Cancel</Button>
+          <Button onClick={() => startClosing(onConfirm)}>{confirmLabel}</Button>
         </div>
       </div>
     </div>

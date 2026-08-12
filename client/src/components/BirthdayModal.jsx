@@ -1,6 +1,6 @@
 import React from 'react';
-import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // A day's birthdays — the Calendar tab's 🎂 badge (VisitsCalendar.jsx).
 // Every row here is just a person + their place (if any), no visit/status
@@ -8,12 +8,14 @@ import EmptyState from './ui/EmptyState';
 // the caller-formatted "{Month} {day}" string (birthdays have no year on
 // file, so there's no real date to format via the usual formatDate helper).
 export default function BirthdayModal({ label, people, onClose, onViewPerson }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{label} · Birthdays</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {people.length === 0 ? (
@@ -35,9 +37,6 @@ export default function BirthdayModal({ label, people, onClose, onViewPerson }) 
               ))}
             </ul>
           )}
-        </div>
-        <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
     </div>

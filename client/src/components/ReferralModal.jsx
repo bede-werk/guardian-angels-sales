@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api, today } from '../api';
 import Button from './ui/Button';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Log or edit a referral. Opened either from a place (pass `people`, its
 // roster, so the form includes a picker) or from a person's own page (pass
@@ -13,6 +14,8 @@ import Button from './ui/Button';
 // people's own counts (see PlaceDetail.jsx / routes/places.js), so a
 // referral with no person would have nowhere to be counted.
 export default function ReferralModal({ people = [], person, referral, onClose, onSaved }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [form, setForm] = useState({
     person_id: referral?.person_id || person?.id || '',
     referral_date: referral?.referral_date || today(),
@@ -33,7 +36,7 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
         ? await api.referrals.update(referral.id, payload)
         : await api.referrals.create({ ...payload, person_id: form.person_id });
       onSaved?.(saved);
-      onClose();
+      requestClose();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -42,11 +45,11 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{referral ? 'Edit referral' : 'Log a referral'}</h2>
-          <button className="close" title="Close without saving" onClick={onClose}>×</button>
+          <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -76,7 +79,7 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>Cancel</Button>
           <Button
             title={canSave ? 'Save this referral' : 'Add a note first'}
             onClick={save}

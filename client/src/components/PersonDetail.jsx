@@ -8,6 +8,7 @@ import ReferralDetailModal from './ReferralDetailModal';
 import VisitDetailModal, { encounterLabel, joinNames, commitmentMadeText } from './VisitDetailModal';
 import VisitLogModal from './VisitLogModal';
 import { PersonRelationship } from './RelationshipDetail';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Everyone ELSE on a trip this person was part of. A visit is a trip, not a
 // one-to-one meeting, so their history here can list a visit that also took in
@@ -26,6 +27,8 @@ function otherAttendees(encounters, personId) {
 // contact (their personal "last time we spoke" history). Opened from
 // People.jsx (clicking a row).
 export default function PersonDetail({ personId, userId, onClose, onChanged, onDeleted, onOpenPlace }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [data, setData] = useState(null); // GET /api/people/:id response (person + place + visits)
   const [loadError, setLoadError] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -85,7 +88,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     try {
       await api.people.remove(data.id);
       onDeleted?.();
-      onClose();
+      requestClose();
     } catch (e) {
       window.alert(e.message);
       setDeleting(false);
@@ -284,18 +287,18 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
       setEditingPreferences(false);
       setEditingBirthday(false);
     } else {
-      onClose();
+      requestClose();
     }
   }
 
   if (!data) {
     return (
-      <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+      <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           {loadError ? (
             <div className="stack" style={{ padding: 20 }}>
               <div className="error-banner">{loadError}</div>
-              <Button variant="secondary" onClick={onClose}>Close</Button>
+              <Button variant="secondary" onClick={requestClose}>Close</Button>
             </div>
           ) : (
             <div className="loading">Loading…</div>
@@ -319,7 +322,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const dividerStyle = { borderTop: '1px solid var(--border)', paddingTop: 8 };
 
   return (
-    <div className="modal-backdrop" onClick={handleBackdropClick}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={handleBackdropClick}>
       <div className="modal" style={{ maxWidth: 980 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <div>
@@ -331,7 +334,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
             </div>
             {data.title && <div className="tiny muted" style={{ marginTop: 4 }}>{data.title}</div>}
           </div>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {loadError && <div className="error-banner">{loadError}</div>}

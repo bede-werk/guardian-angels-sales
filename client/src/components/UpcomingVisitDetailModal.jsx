@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Presets shown on the Snooze panel below. "1 month" is a plain +30 days,
 // not a calendar-month jump — keeps the math (and the commitment-guard
@@ -41,6 +42,9 @@ function addDaysISO(days) {
 // visit up to the caller's existing removeVisit (confirm + api.deleteVisit +
 // reload lives there, not here) rather than duplicating it.
 export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed, onDelete }) {
+export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [snoozing, setSnoozing] = useState(false); // showing the preset/date panel, vs the normal footer
   const [customDate, setCustomDate] = useState('');
   const [saving, setSaving] = useState(false);
@@ -78,11 +82,11 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Visit — {formatDate(visit.scheduled_date)}</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">
           {visit.place_name && (

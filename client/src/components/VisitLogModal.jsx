@@ -3,6 +3,7 @@ import { api, today, formatDate, VISIT_TYPE_MINUTES, OUTCOME_LABELS, MET_WITH_LA
 import Button from './ui/Button';
 import PersonModal from './PersonModal';
 import AssignPersonModal from './AssignPersonModal';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Per-type message templates (collision spec §3.1) for the structured
 // conflicts the server's pre-save check returns (see
@@ -76,6 +77,8 @@ function conflictMessage(conflict, sameDateFallback) {
 // captured, however old. Confidence-based re-asking closes that for good:
 // the prompt comes back on its own once the answer goes stale.
 export default function VisitLogModal({ visit, placeId, placeName, initialPerson, userId, onClose, onSaved }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   // Whichever way this modal was opened, we need to know which place it's for.
   const resolvedPlaceId = visit?.place_id || placeId;
   const isEditing = Boolean(visit?.visit_id);
@@ -482,7 +485,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
       // auto-closing. Any conflict worth reading was already shown (and
       // acknowledged, via "Save anyway") pre-save above — nothing left to
       // hold the modal open for here.
-      setTimeout(() => onClose(), 900);
+      setTimeout(() => requestClose(), 900);
     } catch (e) {
       if (e.code === 'VISIT_COLLISION') {
         setConflicts(e.conflicts || []);
@@ -500,7 +503,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   // reading was already shown, pre-save, above — see `conflicts`.
   if (done) {
     return (
-      <div className="modal-backdrop">
+      <div className={`modal-backdrop${closing ? ' closing' : ''}`}>
         <div className="modal" style={{ maxWidth: 360 }}>
           <div className="save-confirmation">
             <div className="check">✓</div>
@@ -512,11 +515,11 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Log Visit — {title}</h2>
-          <button className="close" title="Close without saving" onClick={onClose}>×</button>
+          <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         {/* Nothing is editable until the trip's own encounters are in hand:
             a half-hydrated form saved early would drop the very ids this
@@ -770,7 +773,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
           </div>
         )}
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>
+          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>
             Cancel
           </Button>
           <Button

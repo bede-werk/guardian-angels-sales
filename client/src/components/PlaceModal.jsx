@@ -4,11 +4,14 @@ import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
 import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Create or edit a place (organization). `place` present = editing (form is
 // pre-filled from it); absent = creating a brand-new one from a blank form.
 // Opened from Places.jsx's "Add place" button, or PlaceDetail.jsx's "Edit" button.
 export default function PlaceModal({ place, categories = [], onClose, onSaved }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   // category must be one of the categories table's values (see
   // routes/categories.js) — include the place's own current value
   // defensively even if it somehow isn't in the list (e.g. a category was
@@ -46,7 +49,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
     try {
       const saved = place ? await api.updatePlace(place.id, body) : await api.createPlace(body);
       onSaved?.(saved);
-      onClose();
+      requestClose();
       return 'ok';
     } catch (e) {
       setError(e.message);
@@ -102,11 +105,11 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
   }
 
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{place ? 'Edit place' : 'Add a place'}</h2>
-          <button className="close" title="Close without saving" onClick={onClose}>×</button>
+          <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -165,7 +168,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>Cancel</Button>
           <Button
             title={place ? "Save changes to this place's details" : 'Create this new place'}
             onClick={save}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { formatDate, VISIT_TYPE_LABELS } from '../api';
 import { CategoryChip } from './ui/Chip';
-import Button from './ui/Button';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // A skipped visit's own detail popup — distinct from VisitDetailModal (built
 // for a completed trip's encounters, which a skipped visit never has) and
@@ -19,12 +19,20 @@ import Button from './ui/Button';
 // (SkippedVisitsModal's `visits` prop) — no refetch, unlike VisitDetailModal's
 // GET /api/visits/:id.
 export default function SkippedVisitDetailModal({ visit, onClose, onComplete }) {
+// one no longer is). There's nothing to log, edit, or snooze here — just
+// what had been on the calendar before it lapsed: the place, the visit type
+// that was planned, and which rep it was planned for. Renders straight off
+// the row GET /api/visits/calendar already returned (SkippedVisitsModal's
+// `visits` prop) — no refetch, unlike VisitDetailModal's GET /api/visits/:id.
+export default function SkippedVisitDetailModal({ visit, onClose }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   return (
-    <div className="modal-backdrop" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+    <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{formatDate(visit.scheduled_date)} · Skipped Visit</h2>
-          <button className="close" title="Close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">
           {visit.place_name && (

@@ -400,8 +400,19 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
    by every *Modal.jsx component (VisitLogModal, PersonModal, PlaceDetail,
    ChangePassword, CategoriesModal). On narrow screens the @media rule
    further down turns this into a bottom slide-up sheet instead. */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); display: grid; place-items: center; padding: 20px; z-index: 50; }
-.modal { background: #fff; border-radius: var(--radius-lg); width: 100%; max-width: 560px; max-height: 90vh; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: grid; place-items: center; padding: 20px; z-index: 50; animation: modal-backdrop-in 0.15s ease-out; }
+.modal { background: #fff; border-radius: var(--radius-lg); width: 100%; max-width: 560px; max-height: 90vh; overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,0.25); animation: modal-pop-in 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+@keyframes modal-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-pop-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+/* .closing is added by useClosingTransition.js just before it tells the
+   parent to actually unmount — 0.15s here must match CLOSE_ANIMATION_MS
+   there, or the DOM node disappears mid-animation (too short) or sits idle
+   after finishing it (too long). animation-fill-mode: forwards holds the
+   faded-out end state for that gap instead of snapping back to visible. */
+.modal-backdrop.closing { animation: modal-backdrop-out 0.15s ease-in forwards; }
+.modal-backdrop.closing .modal { animation: modal-pop-out 0.15s ease-in forwards; }
+@keyframes modal-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes modal-pop-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.85); } }
 /* z-index: 1 (rather than the default auto) is required so these sticky bars reliably
    paint above scrolled-past body content — anything in the body with its own stacking
    context (e.g. EmptyState's icon, which has opacity < 1) would otherwise win on DOM

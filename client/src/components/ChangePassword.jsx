@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { api, setToken, passwordError } from '../api';
 import Button from './ui/Button';
+import useClosingTransition from '../hooks/useClosingTransition';
 
 // Modal opened from the header's "Change password" link (see App.jsx). Asks
 // for the current password (to prove it's really you) plus a new one twice.
 export default function ChangePassword({ onClose }) {
+  const { closing, startClosing } = useClosingTransition();
+  const requestClose = () => startClosing(onClose);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -36,11 +39,11 @@ export default function ChangePassword({ onClose }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={requestClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
         <div className="modal-head">
           <h2>Change password</h2>
-          <button className="close" onClick={onClose}>×</button>
+          <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
@@ -80,7 +83,7 @@ export default function ChangePassword({ onClose }) {
           )}
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</Button>
+          <Button variant="secondary" onClick={requestClose}>{done ? 'Close' : 'Cancel'}</Button>
         </div>
       </div>
     </div>
