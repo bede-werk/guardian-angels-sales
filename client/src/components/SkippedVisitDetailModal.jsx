@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatDate, VISIT_TYPE_LABELS } from '../api';
 import { CategoryChip } from './ui/Chip';
+import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
 
 // A skipped visit's own detail popup — distinct from VisitDetailModal (built
@@ -19,12 +20,6 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // (SkippedVisitsModal's `visits` prop) — no refetch, unlike VisitDetailModal's
 // GET /api/visits/:id.
 export default function SkippedVisitDetailModal({ visit, onClose, onComplete }) {
-// one no longer is). There's nothing to log, edit, or snooze here — just
-// what had been on the calendar before it lapsed: the place, the visit type
-// that was planned, and which rep it was planned for. Renders straight off
-// the row GET /api/visits/calendar already returned (SkippedVisitsModal's
-// `visits` prop) — no refetch, unlike VisitDetailModal's GET /api/visits/:id.
-export default function SkippedVisitDetailModal({ visit, onClose }) {
   const { closing, startClosing } = useClosingTransition();
   const requestClose = () => startClosing(onClose);
   return (
@@ -46,7 +41,6 @@ export default function SkippedVisitDetailModal({ visit, onClose }) {
           )}
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={onClose}>Close</Button>
           {onComplete && (
             <Button title="Log what happened and mark this visit completed" onClick={() => onComplete(visit)}>
               Log this visit
