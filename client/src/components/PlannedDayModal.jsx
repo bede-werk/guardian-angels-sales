@@ -147,12 +147,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
             </ul>
           )}
         </div>
-        {readOnly || !hasPlannerStops ? (
-          <div className="modal-foot">
-            <Button variant="secondary" onClick={onClose}>Close</Button>
-          </div>
-        ) : (
-        {!readOnly && (
+        {!readOnly && hasPlannerStops && (
           <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
             <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove this day's planned visits">
               {deletingDay ? 'Removing…' : 'Discard plan'}

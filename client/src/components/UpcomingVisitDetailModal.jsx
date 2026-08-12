@@ -42,7 +42,6 @@ function addDaysISO(days) {
 // visit up to the caller's existing removeVisit (confirm + api.deleteVisit +
 // reload lives there, not here) rather than duplicating it.
 export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed, onDelete }) {
-export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed }) {
   const { closing, startClosing } = useClosingTransition();
   const requestClose = () => startClosing(onClose);
   const [snoozing, setSnoozing] = useState(false); // showing the preset/date panel, vs the normal footer
@@ -126,7 +125,6 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
           </div>
         ) : (
           <div className="modal-foot">
-            <Button variant="secondary" onClick={onClose}>Close</Button>
             {onDelete && (
               <Button variant="danger" title="Delete this planned visit" onClick={() => onDelete(visit)}>
                 Delete
