@@ -118,7 +118,7 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .brand .logo-img { height: 100px; width: auto; display: block; }
 .brand h1 { font-size: 18px; margin: 0; }
 .brand .sub { font-size: 12px; color: var(--muted); font-family: var(--font-sans); }
-.header .controls { display: flex; align-items: center; gap: 20px; }
+.header .controls { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 
 /* Tabs — the 4-item nav in App.jsx (Dashboard / Today's Route / Places / Needs Mapping) */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
@@ -479,12 +479,22 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .splash .logo-img { height: 56px; width: auto; }
 .splash .tagline { font-family: var(--font-serif); font-size: 16px; color: #fff; opacity: 0.92; max-width: 320px; }
 
-/* Signed-in-as chip in the header (App.jsx's right-side header controls) */
-.user-menu { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
-
-/* Static (read-only) date display in the header — there's no date picker,
-   today's date is just shown as text (App.jsx) */
-.static-date { padding: 8px 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+/* Account dropdown in the header (App.jsx's UserMenu) — click the name to
+   reveal today's date + Log out. .user-menu is the positioning anchor for
+   .user-menu-dropdown, same relative/absolute pairing as .picker/.picker-menu. */
+.user-menu { position: relative; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.user-menu-trigger {
+  background: none; border: none; cursor: pointer; font: inherit; font-weight: 600; color: var(--text);
+  padding: 8px 4px; display: flex; align-items: center; gap: 4px;
+}
+.user-menu-trigger:hover { color: var(--blue); }
+.user-menu-trigger .caret { font-size: 10px; color: var(--muted); }
+.user-menu-dropdown {
+  position: absolute; top: 100%; right: 0; margin-top: 4px; z-index: 20;
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  padding: 10px 12px; min-width: 150px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+}
+.user-menu-divider { height: 1px; width: 100%; background: var(--border); }
 
 /* Progress bar — a day's running total in Route Planner. .progress-total is
    the prominent "Xh Ym of Zh" readout above the bar; .progress-label is the

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api, today, formatDate, getToken, clearToken } from './api';
 import Dashboard from './components/Dashboard';
 import RoutePlanner from './components/RoutePlanner';
@@ -20,6 +20,36 @@ const TABS = [
   { id: 'places', label: 'Places' },
   { id: 'people', label: 'People' },
 ];
+
+// Header's account control: click the name to reveal today's date, Change
+// password, and Log out. Same custom-dropdown shape as ui/PlacePicker.jsx (a
+// ref'd wrapper + a mousedown listener that closes on any outside click).
+function UserMenu({ name, date, onLogout, onChangePassword }) {
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  return (
+    <div className="user-menu" ref={boxRef}>
+      <button className="user-menu-trigger" onClick={() => setOpen((o) => !o)}>
+        {name} <span className="caret">▾</span>
+      </button>
+      {open && (
+        <div className="user-menu-dropdown">
+          <div className="tiny muted">{date}</div>
+          <div className="user-menu-divider" />
+          <Button variant="ghost" size="small" onClick={() => { setOpen(false); onChangePassword(); }}>Change password</Button>
+          <Button variant="ghost" size="small" onClick={() => { setOpen(false); onLogout(); }}>Log out</Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // The root component: handles login/session state and renders either the
 // Login screen or the main app shell (header + tabs + whichever tab is active).
@@ -71,11 +101,12 @@ export default function App() {
   return (
     <div className="app">
       <Header tagline="Sales Visit CRM · Lincoln, NE">
-        <div className="static-date"><span className="muted">Date</span> {formatDate(date)}</div>
-        <div className="user-menu">
-          <span className="muted">Signed in as</span> {authUser.name}
-          <Button variant="ghost" onClick={logout}>Log out</Button>
-        </div>
+        <UserMenu
+          name={authUser.name}
+          date={formatDate(date)}
+          onLogout={logout}
+          onChangePassword={() => setShowChangePassword(true)}
+        />
       </Header>
 
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
