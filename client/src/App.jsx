@@ -25,10 +25,10 @@ const TABS = [
 // Login screen or the main app shell (header + tabs + whichever tab is active).
 export default function App() {
   const [tab, setTab] = useState('dashboard'); // which of the tabs is showing
-  const date = today(); // always "today" — there's no date picker (see HANDOFF/README)
+  const date = today(); // always "today" - there's no date picker (see HANDOFF/README)
   // The Calendar tab's own "Mine/All reps" toggle, lifted up here (rather
   // than living in VisitsCalendar itself) so it survives switching to
-  // another tab and back — VisitsCalendar unmounts entirely when its tab
+  // another tab and back - VisitsCalendar unmounts entirely when its tab
   // isn't active. Reset on logout so a fresh session always starts on "Mine".
   const [calendarScope, setCalendarScope] = useState('mine');
 
@@ -36,7 +36,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true); // true while checking for a saved session on load
   const [showChangePassword, setShowChangePassword] = useState(false); // whether the change-password modal is open
 
-  // If any API call gets a 401 (see api.js), it fires this event — treat it as
+  // If any API call gets a 401 (see api.js), it fires this event - treat it as
   // an instant logout so the app drops back to the login screen.
   useEffect(() => {
     const onUnauthorized = () => setAuthUser(null);
@@ -53,12 +53,12 @@ export default function App() {
     }
     api.auth.me()
       .then((u) => setAuthUser(u))
-      .catch(() => clearToken()) // saved token was invalid/expired — clear it
+      .catch(() => clearToken()) // saved token was invalid/expired - clear it
       .finally(() => setAuthLoading(false));
   }, []);
 
   function logout() {
-    api.auth.logout().catch(() => {}); // best-effort — log out locally regardless
+    api.auth.logout().catch(() => {}); // best-effort - log out locally regardless
     clearToken();
     setAuthUser(null);
     setCalendarScope('mine');
@@ -80,7 +80,7 @@ export default function App() {
 
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}
 
-      {/* Tab bar — clicking a tab just swaps which component renders below. */}
+      {/* Tab bar - clicking a tab just swaps which component renders below. */}
       <nav className="tabs">
         {TABS.map((t) => (
           <button key={t.id} className={`tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
@@ -89,7 +89,7 @@ export default function App() {
         ))}
       </nav>
 
-      {/* Only the active tab's component is mounted — the others unmount entirely,
+      {/* Only the active tab's component is mounted - the others unmount entirely,
           resetting their state each time you come back to them. */}
       {tab === 'dashboard' && <Dashboard date={date} userId={authUser.id} />}
       {tab === 'planner' && <RoutePlanner userId={authUser.id} />}

@@ -3,7 +3,7 @@ import { api } from '../../api';
 
 // Searchable place picker: type a few characters, pick a matching place from
 // the dropdown, calls onPick(place). Lightweight custom autocomplete (no
-// library) — `open` controls whether the results dropdown is visible. Used
+// library) - `open` controls whether the results dropdown is visible. Used
 // by RoutePlanner.jsx for adding an ad-hoc stop to a draft day.
 export default function PlacePicker({ onPick, placeholder = 'Assign to existing place…', excludeIds, autoFocus }) {
   const [q, setQ] = useState(''); // what's typed in the search box
@@ -12,7 +12,7 @@ export default function PlacePicker({ onPick, placeholder = 'Assign to existing 
   const [error, setError] = useState(null);
   const boxRef = useRef(null); // used to detect clicks outside this component
   // Bumped on every search; a response only gets applied if it's still the
-  // most recent request when it resolves — guards against a slower earlier
+  // most recent request when it resolves - guards against a slower earlier
   // keystroke's response overwriting a faster later one (see People.jsx).
   const requestIdRef = useRef(0);
 

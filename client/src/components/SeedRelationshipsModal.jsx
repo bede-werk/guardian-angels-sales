@@ -2,7 +2,7 @@
 //
 // WHY THIS EXISTS: on the day computed relationship shipped, no visit carried
 // the met-with/outcome data the model scores against, so every place would
-// have read 'weak' — including places where a real, valuable relationship
+// have read 'weak' - including places where a real, valuable relationship
 // exists. Weak + high capacity is a 7-day cadence, so the route planner would
 // have demanded visits everywhere at once. Seeding encodes what the rep
 // already knows so day one is honest.
@@ -17,14 +17,14 @@
 // forever.
 //
 // Re-runnable on purpose: re-seeding a person overwrites their value AND
-// resets the decay clock (server-side — see routes/people.js), which is the
+// resets the decay clock (server-side - see routes/people.js), which is the
 // intended way to correct a seed you got wrong.
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// Converged SCORE values, not buckets — see services/relationship.js's
+// Converged SCORE values, not buckets - see services/relationship.js's
 // thresholds (strong >= 3.4, medium >= 1.3). 4.0 lands a person's place
 // solidly in strong on its own; 2.0 in medium; 0.8 is deliberately below the
 // medium threshold, so an acquaintance reads weak-ish rather than promoting a
@@ -44,7 +44,7 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   // person_id -> seed value (or null to clear). Only people the user actually
-  // touched land here, so an untouched person is never written at all —
+  // touched land here, so an untouched person is never written at all -
   // "skippable" in the real sense, not "silently defaulted to something."
   const [pending, setPending] = useState({});
 
@@ -122,7 +122,7 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
 
           <div className="tiny muted">
             Rate the relationships you already have, so the app doesn't start from zero. These are starting
-            estimates that fade over time — logging real visits is what makes a relationship score real.
+            estimates that fade over time - logging real visits is what makes a relationship score real.
             Skip anyone you don't have a read on.
           </div>
 
@@ -150,7 +150,7 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
                       >
                         <span className="tiny" style={{ flex: 1, minWidth: 140 }}>
                           {person.name}
-                          {person.title ? <span className="muted"> — {person.title}</span> : null}
+                          {person.title ? <span className="muted"> - {person.title}</span> : null}
                         </span>
                         <span className="tag-list" style={{ flex: 'unset' }}>
                           {SEED_CHOICES.map((choice) => (

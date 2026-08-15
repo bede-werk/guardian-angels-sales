@@ -1,5 +1,5 @@
 // Pure drive-time estimator + time-block packing for the route planner. No
-// knex, no I/O — same discipline as services/schedulingEngine.js: a later
+// knex, no I/O - same discipline as services/schedulingEngine.js: a later
 // phase's job is "query the DB, shape rows into these input shapes, call this
 // module." See config/driveTime.js for the drive-time tunables and
 // config/visitTypes.js for the visit-type durations packing budgets against.
@@ -7,7 +7,7 @@
 // Distance is straight-line (haversine) scaled by a circuity factor to
 // approximate real road distance, then converted to minutes at a
 // distance-banded average speed, plus a fixed overhead for parking/walking
-// in. This is deliberately simple — swapping in a real routing API later
+// in. This is deliberately simple - swapping in a real routing API later
 // only means rewriting estimateDriveMinutes(); packTimeBlock() doesn't
 // change.
 
@@ -30,7 +30,7 @@ function haversineMiles(a, b) {
   return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
 }
 
-// Picks the average speed for a trip of this (road, post-circuity) distance —
+// Picks the average speed for a trip of this (road, post-circuity) distance -
 // see config/driveTime.js for why one flat speed can't serve both a
 // parking-lot hop and a cross-town trip. Band edges are inclusive on their
 // lower bound: exactly SHORT_BAND_MAX_MILES is already "medium" (typical
@@ -65,13 +65,13 @@ function timeBlockMinutes({ driveMinutes, visitMinutes, prepMinutes = 0, dataEnt
   return driveMinutes + visitMinutes + prepMinutes + dataEntryMinutes;
 }
 
-// Falls back to DEFAULT_VISIT_TYPE when no type is given — a visit or place
+// Falls back to DEFAULT_VISIT_TYPE when no type is given - a visit or place
 // that predates this scheme, or simply didn't specify one.
 function resolveVisitType(visitType, config = {}) {
   return visitType ?? config.DEFAULT_VISIT_TYPE ?? defaultVisitTypesConfig.DEFAULT_VISIT_TYPE;
 }
 
-// Minutes budgeted for a visit of this type — see config/visitTypes.js for
+// Minutes budgeted for a visit of this type - see config/visitTypes.js for
 // the type list and their durations. Throws on an unrecognized type rather
 // than silently guessing a duration.
 function visitDurationMinutes(visitType, config = {}) {
@@ -84,19 +84,19 @@ function visitDurationMinutes(visitType, config = {}) {
 
 // Shared packing loop behind packTimeBlock/packOptimizedTimeBlock (trim-to-
 // budget) and evaluateTimeBlock/evaluateOptimizedTimeBlock (never-drop, for
-// the live-edit recalculation loop — see phase 6 in ROUTEPLANNER_PROGRESS.md):
+// the live-edit recalculation loop - see phase 6 in ROUTEPLANNER_PROGRESS.md):
 // walks `stops` in the given order, accumulating each one's time block.
 // `getDriveMinutes(from, stop, index)` abstracts over the only real
 // difference between the trim/never-drop pairs' own two callers each (a live
 // haversine estimate vs. a precomputed real-routing leg time); everything
-// else — visit-type resolution, prep/data-entry overhead — is identical
+// else - visit-type resolution, prep/data-entry overhead - is identical
 // across all four exported functions.
 //
-// `neverDrop: false` (the default — packTimeBlock/packOptimizedTimeBlock)
+// `neverDrop: false` (the default - packTimeBlock/packOptimizedTimeBlock)
 // breaks at the first budget-busting stop rather than skipping ahead to a
 // shorter one later, since skipping would break the caller's intended
 // sequencing. `neverDrop: true` (evaluateTimeBlock/evaluateOptimizedTimeBlock)
-// never breaks — every stop given is returned, tagged with
+// never breaks - every stop given is returned, tagged with
 // `overBudget: totalMinutes > budgetMinutes`, and `remainingMinutes` can go
 // negative to represent real overage. This is what lets a live-edit
 // recalculation flag an over-budget day without silently vanishing whichever
@@ -105,7 +105,7 @@ function visitDurationMinutes(visitType, config = {}) {
 // Each stop's visit duration comes from its own visitType if set (e.g. a
 // place's computed capacity-based default, or a visit's explicit choice),
 // falling back to `defaultVisitType` for the whole pack, then to
-// config/visitTypes.js's DEFAULT_VISIT_TYPE — never a flat assumption.
+// config/visitTypes.js's DEFAULT_VISIT_TYPE - never a flat assumption.
 // Prep and data-entry time (config/visitTypes.js's PREP_MINUTES/
 // DATA_ENTRY_MINUTES) are flat per-stop overhead, same for every visit type,
 // unlike the visit duration itself.
@@ -136,14 +136,14 @@ function packStops(stops, getDriveMinutes, { start, budgetMinutes, defaultVisitT
 }
 
 // Greedily packs already-ordered stops into a fixed time budget using the
-// haversine drive-time estimate. This does not reorder or choose stops —
+// haversine drive-time estimate. This does not reorder or choose stops -
 // that's the caller's job (zone assignment + rank order, or
 // services/routeOptimizer.js for a real-routing order); this function only
 // answers "given this sequence, how many fit and what does the day look
 // like." This is also the offline fallback when routeOptimizer.js's OSRM
-// call fails or times out — see scheduleGenerator.js's fillDayFromZone.
+// call fails or times out - see scheduleGenerator.js's fillDayFromZone.
 //
-// A stop with no lat/lng is a geocoding gap — there's no honest drive-time
+// A stop with no lat/lng is a geocoding gap - there's no honest drive-time
 // estimate to/from an unknown location. Exported so every caller that needs
 // to pre-filter a candidate pool (e.g. scheduleGenerator.js, before handing
 // stops to services/routeOptimizer.js) shares this exact definition instead
@@ -152,7 +152,7 @@ function isGeocoded(stop) {
   return stop.lat != null && stop.lng != null;
 }
 
-// Stops missing lat/lng (a geocoding gap) are dropped before packing — see
+// Stops missing lat/lng (a geocoding gap) are dropped before packing - see
 // isGeocoded().
 function packTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveConfig, visitTypesConfig } = {}) {
   const geocoded = stops.filter(isGeocoded);
@@ -167,7 +167,7 @@ function packTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveCon
 // Packs stops already ordered and timed by services/routeOptimizer.js's
 // optimizeRoute(): legMinutes[i] is the real OSRM drive time from stops[i-1]
 // (or `start` for i=0) to stops[i]. Same budget-trim semantics as
-// packTimeBlock — only the drive-time source differs. Stops here are assumed
+// packTimeBlock - only the drive-time source differs. Stops here are assumed
 // already geocoded, since they had to have lat/lng to reach the optimizer in
 // the first place.
 function packOptimizedTimeBlock(stops, legMinutes, { start, budgetMinutes, defaultVisitType, visitTypesConfig } = {}) {
@@ -176,11 +176,11 @@ function packOptimizedTimeBlock(stops, legMinutes, { start, budgetMinutes, defau
 
 // Never-drop sibling of packTimeBlock, for the live-edit recalculation loop
 // (phase 6): given a day's stops in whatever order the user currently has
-// them, returns every one of them — annotated with its running total and an
-// `overBudget` flag — instead of truncating at the budget. Uses the same
+// them, returns every one of them - annotated with its running total and an
+// `overBudget` flag - instead of truncating at the budget. Uses the same
 // haversine estimate as packTimeBlock (the fallback when a real per-leg
 // lookup isn't available). Stops missing lat/lng are dropped first, same as
-// packTimeBlock — there's no honest drive-time estimate to/from an unknown
+// packTimeBlock - there's no honest drive-time estimate to/from an unknown
 // location either way.
 function evaluateTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driveConfig, visitTypesConfig } = {}) {
   const geocoded = stops.filter(isGeocoded);
@@ -196,7 +196,7 @@ function evaluateTimeBlock(stops, { start, budgetMinutes, defaultVisitType, driv
 // Never-drop sibling of packOptimizedTimeBlock: same idea as
 // evaluateTimeBlock, but legMinutes[i] is a precomputed real per-leg drive
 // time (e.g. from services/routeOptimizer.js's getRouteLegMinutes(), which
-// respects the stops' given order rather than resequencing them — exactly
+// respects the stops' given order rather than resequencing them - exactly
 // what a live-edit recalculation needs).
 function evaluateOptimizedTimeBlock(stops, legMinutes, { start, budgetMinutes, defaultVisitType, visitTypesConfig } = {}) {
   return packStops(stops, (_from, _stop, i) => legMinutes[i], { start, budgetMinutes, defaultVisitType, visitTypesConfig, neverDrop: true });

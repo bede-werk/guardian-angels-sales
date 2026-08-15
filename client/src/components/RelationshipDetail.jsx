@@ -1,7 +1,7 @@
 // Relationship display for PlaceDetail / PersonDetail.
 //
 // Relationship level is computed, never stored (server/src/services/
-// relationship.js). This is deliberately the SHORT version — a chip plus one
+// relationship.js). This is deliberately the SHORT version - a chip plus one
 // plain-language line, no raw score, no contributor breakdown. A dedicated
 // relationship detail tab is planned for the full "why is this weak?"
 // interrogation (components, contributors, seed share); until that exists,
@@ -17,7 +17,7 @@ const LEVELS = ['strong', 'medium', 'weak'];
 // A seed is a rep's one-time judgment of an existing relationship, which then
 // decays on the same clock as real visit weight (see migration
 // 20260803000001). Below this share, a score reads as "real" rather than
-// "still mostly an initial guess" — same threshold the old detailed view used.
+// "still mostly an initial guess" - same threshold the old detailed view used.
 const SEED_MAJORITY_THRESHOLD = 0.5;
 
 function seedShare(relationship) {
@@ -25,11 +25,11 @@ function seedShare(relationship) {
   return (relationship.seed_component || 0) / relationship.score;
 }
 
-// The trend badge — 'up' | 'down' | null from services/relationship.js
+// The trend badge - 'up' | 'down' | null from services/relationship.js
 // (never computed client-side). Absent whenever the server has nothing
 // meaningful to say: no history at either point, too small a move to call
 // out, or a manual override in play (the override IS the answer at that
-// point — see the override comment on PlaceRelationship below).
+// point - see the override comment on PlaceRelationship below).
 const TREND_LABEL = { up: 'Heating up', down: 'Cooling down' };
 const TREND_ARROW = { up: '↑', down: '↓' };
 
@@ -55,7 +55,7 @@ function placeSummary({ is_overridden, contributors, floor_component, ...relatio
   return 'Built from interactions with people at this place';
 }
 
-// PLACE — includes the manual override control. An override always renders
+// PLACE - includes the manual override control. An override always renders
 // NEXT TO the computed value it replaces, never instead of it: an override
 // that silently looks like a computed value is exactly how the old manual
 // relationship field went stale without anyone noticing.
@@ -122,7 +122,7 @@ export function PlaceRelationship({ relationship, onSave, saving }) {
   );
 }
 
-// A short, plain-language line standing in for the raw score — same idea as
+// A short, plain-language line standing in for the raw score - same idea as
 // placeSummary above, minus the override case (overrides live on the place).
 function personSummary({ last_meaningful_visit: lastMeaningful, ...relationship }) {
   if (!lastMeaningful) {
@@ -131,7 +131,7 @@ function personSummary({ last_meaningful_visit: lastMeaningful, ...relationship 
   return 'Built from your visits with them';
 }
 
-// PERSON — no override (overrides live on the place, which is what the
+// PERSON - no override (overrides live on the place, which is what the
 // scheduler actually reads).
 export function PersonRelationship({ relationship }) {
   if (!relationship) return null;

@@ -11,7 +11,7 @@ const EAST_LINCOLN = { lat: 40.8140, lng: -96.6200 }; // a few miles east
 const SOUTHWEST_LINCOLN = { lat: 40.7550, lng: -96.7700 }; // clear across town
 
 // Builds a point due north of origin landing at approximately targetRoadMiles
-// of *road* (post-circuity) distance away — comfortably inside a speed band,
+// of *road* (post-circuity) distance away - comfortably inside a speed band,
 // not testing the exact boundary (see speedForRoadMiles tests for that).
 // ~69 miles per degree of latitude is a good enough approximation here: the
 // test recomputes the actual haversine/road distance from the real point
@@ -70,7 +70,7 @@ describe('estimateDriveMinutes', () => {
   test('floors at MIN_DRIVE_MINUTES for two effectively-colocated points', () => {
     // With OVERHEAD_MINUTES at its default (5), overhead alone already
     // exceeds MIN_DRIVE_MINUTES (3), so the floor can't be observed under
-    // default config — zero it out here to isolate the floor itself.
+    // default config - zero it out here to isolate the floor itself.
     const a = { lat: 40.8136, lng: -96.7026 };
     const b = { lat: 40.8137, lng: -96.7027 }; // ~15 feet away
     assert.equal(estimateDriveMinutes(a, b, { OVERHEAD_MINUTES: 0 }), config.MIN_DRIVE_MINUTES);
@@ -79,7 +79,7 @@ describe('estimateDriveMinutes', () => {
   // Each case below builds a point landing comfortably inside one band, then
   // recomputes the actual road distance from the real haversine result (not
   // the approximation used to construct the point) so the expected value is
-  // derived the same way estimateDriveMinutes derives its own answer —
+  // derived the same way estimateDriveMinutes derives its own answer -
   // exercising the plumbing between estimateDriveMinutes, speedForRoadMiles,
   // and the config, not just re-asserting a hardcoded number.
   for (const [label, targetRoadMiles] of [
@@ -227,7 +227,7 @@ describe('packTimeBlock', () => {
   test('mixed visit-type durations in a single day pack correctly', () => {
     // A realistic day: a quick drop-in, a working visit, and an in-service
     // presentation, all near each other so drive time doesn't dominate the
-    // math — this isolates that per-stop durations are actually being used.
+    // math - this isolates that per-stop durations are actually being used.
     const dropIn = stop('drop-in', EAST_LINCOLN, { visitType: 'drop_in' });
     const workingVisit = stop('working-visit', EAST_LINCOLN, { visitType: 'working_visit' });
     const presentation = stop('presentation', EAST_LINCOLN, { visitType: 'presentation' });
@@ -241,7 +241,7 @@ describe('packTimeBlock', () => {
     assert.equal(result.stops[2].visitMinutes, visitTypesConfig.VISIT_TYPES.presentation.minutes);
 
     // Every stop here is EAST_LINCOLN itself, so drive time between them is
-    // just the MIN_DRIVE_MINUTES floor (same-point distance) — the only
+    // just the MIN_DRIVE_MINUTES floor (same-point distance) - the only
     // thing that varies stop-to-stop is the visit duration. Prep/data-entry
     // are flat per stop, same as drive time in this fixture.
     const driveMinutes = result.stops[0].driveMinutes;
@@ -297,7 +297,7 @@ describe('packOptimizedTimeBlock', () => {
     assert.equal(result.stops[0].id, 'a');
   });
 
-  test('does not drop stops missing lat/lng — assumes the caller already filtered before optimizing', () => {
+  test('does not drop stops missing lat/lng - assumes the caller already filtered before optimizing', () => {
     const stops = [stop('a', { lat: null, lng: null })];
     const result = packOptimizedTimeBlock(stops, [10], { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
     assert.equal(result.stops.length, 1, 'unlike packTimeBlock, this function trusts its input is already geocoded');
@@ -317,7 +317,7 @@ describe('evaluateTimeBlock', () => {
     return { id, ...coords, ...overrides };
   }
 
-  test('never drops a stop, even one that busts the budget — unlike packTimeBlock', () => {
+  test('never drops a stop, even one that busts the budget - unlike packTimeBlock', () => {
     const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN), stop('c', EAST_LINCOLN)];
     const tightBudget = timeBlockMinutes({
       driveMinutes: estimateDriveMinutes(DOWNTOWN, EAST_LINCOLN, {}),
@@ -359,7 +359,7 @@ describe('evaluateTimeBlock', () => {
     assert.equal(result.stops[0].overBudget, true);
   });
 
-  test('packTimeBlock/packOptimizedTimeBlock output is unaffected — no overBudget field, still trims', () => {
+  test('packTimeBlock/packOptimizedTimeBlock output is unaffected - no overBudget field, still trims', () => {
     const stops = [stop('a', EAST_LINCOLN), stop('b', SOUTHWEST_LINCOLN)];
     const result = packTimeBlock(stops, { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
     assert.equal(result.stops[0].overBudget, undefined);
@@ -389,7 +389,7 @@ describe('evaluateOptimizedTimeBlock', () => {
     assert.equal(result.stops[2].overBudget, true);
   });
 
-  test('respects the exact given order (no resequencing) — legMinutes maps 1:1 to input position', () => {
+  test('respects the exact given order (no resequencing) - legMinutes maps 1:1 to input position', () => {
     const stops = [stop('first', EAST_LINCOLN), stop('second', SOUTHWEST_LINCOLN)];
     const result = evaluateOptimizedTimeBlock(stops, [5, 40], { start: DOWNTOWN, budgetMinutes: 1000, defaultVisitType: 'working_visit' });
 

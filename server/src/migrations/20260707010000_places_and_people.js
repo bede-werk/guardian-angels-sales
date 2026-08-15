@@ -4,14 +4,14 @@
 //   - contacts is new: one-to-many off partners, every contact must belong to a place.
 //   - referrals is new: links a referral to BOTH a partner and a contact so place
 //     rankings can later be informed by contact-level relationship data. Nothing reads
-//     this table yet — it's schema laid down ahead of that feature.
+//     this table yet - it's schema laid down ahead of that feature.
 //
 // Also backfills partners.priority_score onto the new scale (Tier 1 + Priority = 100,
 // Tier 1 = 75, Tier 2 = 50, Tier 3 = 25). The formula is inlined here (not imported
 // from services/priority.js) so this migration's behavior is frozen regardless of
 // future edits to that file.
 
-// Deliberately a copy of services/priority.js's formula, not an import of it —
+// Deliberately a copy of services/priority.js's formula, not an import of it -
 // see the file header comment above for why.
 function priorityScore(tier, isPriority) {
   const tierWeight = { 1: 75, 2: 50, 3: 25 }[tier] || 0;
@@ -40,7 +40,7 @@ exports.up = async function up(knex) {
     t.string('relationship_temp'); // hot | warm | cold | dormant
     t.text('preferences');
     t.text('notes');
-    t.string('birthday'); // free-form — birth year often unknown
+    t.string('birthday'); // free-form - birth year often unknown
 
     t.boolean('departed').notNullable().defaultTo(false); // turnover flag
     t.boolean('is_primary').notNullable().defaultTo(false);
@@ -83,7 +83,7 @@ exports.down = async function down(knex) {
     t.dropColumn('lat');
     t.dropColumn('lng');
   });
-  // Note: priority_score backfill is not reversed — the old scale isn't recoverable
+  // Note: priority_score backfill is not reversed - the old scale isn't recoverable
   // from tier/is_priority alone without the old formula, and down() migrations here
   // are for schema rollback, not a data time machine.
 };

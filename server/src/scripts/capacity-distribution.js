@@ -1,5 +1,5 @@
 // Prints how every place in the database distributes across the computed
-// capacity buckets — split by level, by levelSource, and by confidence —
+// capacity buckets - split by level, by levelSource, and by confidence -
 // plus the effectiveMonthly spread behind them.
 //
 // This exists for the same reason relationship-distribution.js does (see its
@@ -42,7 +42,7 @@ async function main() {
   const asOf = orgToday();
   const places = await knex('places').select('id', 'name', 'category');
   if (!places.length) {
-    console.log('No places in the database — nothing to report.');
+    console.log('No places in the database - nothing to report.');
     return;
   }
 
@@ -50,7 +50,7 @@ async function main() {
   const rows = places.map((p) => ({ ...p, cap: byPlace.get(p.id) })).filter((r) => r.cap);
   const total = rows.length;
 
-  console.log(`\nCapacity distribution — ${total} places, as of ${asOf}`);
+  console.log(`\nCapacity distribution - ${total} places, as of ${asOf}`);
   console.log(`Thresholds: low 0-${config.CAPACITY_THRESHOLDS.MEDIUM_MIN - 1}, medium ${config.CAPACITY_THRESHOLDS.MEDIUM_MIN}-${config.CAPACITY_THRESHOLDS.HIGH_MIN - 1}, high ${config.CAPACITY_THRESHOLDS.HIGH_MIN}+`);
   console.log(`Stale after ${config.CAPACITY_STALE_DAYS} days; measured floor needs >=${config.MEASURED_MIN_REFERRAL_COUNT} referrals over >=${config.MEASURED_MIN_EXPOSURE_DAYS} days of exposure.`);
 
@@ -73,7 +73,7 @@ async function main() {
     const p = (pct) => values[Math.min(values.length - 1, Math.floor((pct / 100) * values.length))];
     console.log(`  min ${values[0]}   p50 ${p(50)}   p90 ${p(90)}   max ${values[values.length - 1]}`);
   } else {
-    console.log('  (none yet — every place is still riding the category seed)');
+    console.log('  (none yet - every place is still riding the category seed)');
   }
 
   // The health check that actually matters, same spirit as
@@ -88,18 +88,18 @@ async function main() {
   if (dominantShare > 0.9) {
     console.log(`  !! ${(dominantShare * 100).toFixed(0)}% of places are '${dominantLevel}'. The level axis is not separating.`);
   } else {
-    console.log(`  OK — largest level bucket ('${dominantLevel}') holds ${(dominantShare * 100).toFixed(0)}% of places; the axis separates.`);
+    console.log(`  OK - largest level bucket ('${dominantLevel}') holds ${(dominantShare * 100).toFixed(0)}% of places; the axis separates.`);
   }
   if (neverQualifiedShare > 0.9) {
     console.log(`  !! ${(neverQualifiedShare * 100).toFixed(0)}% of places have never been pre-qualified or measured (still 'category_seed'). Ordering within EXPLORATION is currently mostly the category guess, not real signal.`);
   } else {
-    console.log(`  OK — only ${(neverQualifiedShare * 100).toFixed(0)}% of places are still on the category seed; most have a real declared and/or measured number.`);
+    console.log(`  OK - only ${(neverQualifiedShare * 100).toFixed(0)}% of places are still on the category seed; most have a real declared and/or measured number.`);
   }
 
   console.log(`\nTop 10 by effective monthly referrals:`);
   for (const r of [...rows].filter((r) => r.cap.effectiveMonthly != null).sort((a, b) => b.cap.effectiveMonthly - a.cap.effectiveMonthly).slice(0, 10)) {
     const flag = r.cap.isOverridden ? ` [override: ${r.cap.level}, computed: ${r.cap.computedLevel}]` : '';
-    console.log(`  ${String(r.cap.effectiveMonthly).padStart(4)}/mo  ${r.cap.level.padEnd(7)} ${r.cap.levelSource.padEnd(14)} ${(r.category || '—').padEnd(28)} ${r.name}${flag}`);
+    console.log(`  ${String(r.cap.effectiveMonthly).padStart(4)}/mo  ${r.cap.level.padEnd(7)} ${r.cap.levelSource.padEnd(14)} ${(r.category || '-').padEnd(28)} ${r.name}${flag}`);
   }
   console.log('');
 }

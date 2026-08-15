@@ -6,7 +6,7 @@ import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
 
 // Short, inline forms of met_with_type. MET_WITH_LABELS in api.js reads as a
-// form option ("A staff member (name unknown)") — far too long for a one-line
+// form option ("A staff member (name unknown)") - far too long for a one-line
 // list row, so it's shortened here the same way PlaceDetail.jsx shortens it
 // for its own visit history.
 const ENCOUNTER_SHORT_LABELS = { staff: 'a staff member', receptionist: 'the receptionist' };
@@ -18,7 +18,7 @@ const ENCOUNTER_SHORT_LABELS = { staff: 'a staff member', receptionist: 'the rec
 function encounterSummary(encounters) {
   if (!encounters || encounters.length === 0) return null;
   // 'nobody' is mutually exclusive with every other type at log time (see
-  // VisitLogModal), so it can only ever appear alone — and "with nobody"
+  // VisitLogModal), so it can only ever appear alone - and "with nobody"
   // doesn't read as English.
   if (encounters[0].met_with_type === 'nobody') return 'nobody in';
   const [first, ...rest] = encounters;
@@ -81,7 +81,7 @@ export default function Dashboard({ date, userId }) {
             <EmptyState message="Nothing completed yet this week." />
           ) : (
             <ul className="list">
-              {/* One row per TRIP, not per encounter — a single outcome chip
+              {/* One row per TRIP, not per encounter - a single outcome chip
                   used to sit on the right, but a trip that met three people
                   has three outcomes, so there's no one value to chip. Who was
                   met folds into the meta line instead. */}

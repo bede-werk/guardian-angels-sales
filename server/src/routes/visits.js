@@ -1,8 +1,8 @@
-// Visits — one planned/completed/skipped TRIP to a place, by a rep, on a
+// Visits - one planned/completed/skipped TRIP to a place, by a rep, on a
 // date, plus the encounters recorded on it. This covers logging a trip and its
 // outcomes/notes, correcting one afterwards, removing a single encounter from
 // it, and deleting it outright. (Creating a whole day's worth at once happens
-// via the route planner's commit flow — see services/scheduleDraft.js — not here.)
+// via the route planner's commit flow - see services/scheduleDraft.js - not here.)
 const express = require('express');
 const knex = require('../db/knex');
 const { VISIT_TYPES } = require('../config/visitTypes');
@@ -39,13 +39,13 @@ router.use(skipSweepMiddleware(knex));
 // the real old->new backfill is Bede's to write when historical data actually
 // gets imported (tracked in HANDOFF.md).
 const OUTCOMES = ['substantive', 'introduced_new', 'brief', 'materials_only', 'unavailable', 'declined'];
-// 'snoozed' — an explicit rep deferral (POST /:id/snooze below), distinct
+// 'snoozed' - an explicit rep deferral (POST /:id/snooze below), distinct
 // from 'skipped' (a passive lapse, stamped by the skip sweep in
 // services/visitLifecycle.js). Both are terminal, neither writes
 // lastVisitedAt/urgency the way 'completed' does.
 const STATUSES = ['planned', 'completed', 'skipped', 'snoozed'];
 
-// WHO the rep actually spoke to — the single biggest input to relationship
+// WHO the rep actually spoke to - the single biggest input to relationship
 // scoring, since only 'named_person' can build an individual's score.
 const MET_WITH_TYPES = ['named_person', 'staff', 'receptionist', 'nobody'];
 
@@ -56,7 +56,7 @@ const MET_WITH_TYPES = ['named_person', 'staff', 'receptionist', 'nobody'];
 //
 // This is what makes the relationship model reachable from the form: the
 // named-contact encounter scores toward THAT PERSON's relationship, while the
-// receptionist encounter scores (much lower) toward the place's floor — see
+// receptionist encounter scores (much lower) toward the place's floor - see
 // services/relationship.js's creditsPerson/visitWeight. Recording a trip as a
 // single who/what pair would force the rep to pick one and silently discard
 // the other.
@@ -65,7 +65,7 @@ const MET_WITH_TYPES = ['named_person', 'staff', 'receptionist', 'nobody'];
 // reasons: the collision check below must run ONCE for the trip (N separate
 // POSTs would have calls 2..N colliding with call 1 and falsely warning "you
 // already have a visit here"), and all-or-nothing insertion needs one
-// transaction. Fatigue counting already treats these as a single trip — see
+// transaction. Fatigue counting already treats these as a single trip - see
 // buildCandidatePool's distinct-day counting in services/scheduleDraft.js.
 const MAX_ENCOUNTERS_PER_VISIT = 20; // sanity guard, not a real-world limit
 
@@ -73,7 +73,7 @@ const MAX_ENCOUNTERS_PER_VISIT = 20; // sanity guard, not a real-world limit
 // is trip-level (EDITABLE below) or ignored.
 const ENCOUNTER_FIELDS = ['met_with_type', 'person_id', 'outcome', 'they_requested'];
 
-// Columns GET /:id returns per encounter — the full editable set, since that
+// Columns GET /:id returns per encounter - the full editable set, since that
 // route is what VisitDetailModal opens an existing trip with. List views get
 // the much shorter summary instead (services/visitEncounters.js).
 const ENCOUNTER_DETAIL_COLUMNS = [
@@ -105,23 +105,23 @@ function snapshotFromPerson(person) {
 // Captures the "avg. referrals/month discovered at pre-qual" number that
 // VisitLogModal offers on any completed visit to a place whose declared
 // capacity isn't fresh (capacity-computation-spec.md §11). Sent as a
-// transient `capacity_monthly_referrals` body field (not a `visits` column —
+// transient `capacity_monthly_referrals` body field (not a `visits` column -
 // EDITABLE below intentionally excludes it); appends a capacity_observations
-// row (source: 'prequal') rather than overwriting a column — see that
+// row (source: 'prequal') rather than overwriting a column - see that
 // table's own migration header for why nothing here is ever updated in
 // place. Silently no-ops on bad/irrelevant input, same "extra field ignored"
-// convention as the EDITABLE loops below — this is a best-effort
+// convention as the EDITABLE loops below - this is a best-effort
 // convenience, not a required part of logging a visit.
 //
 // Gate is computed confidence, NOT "is this the first visit" (the old rule
-// this replaced had exactly that trapdoor — miss the number on visit one and
+// this replaced had exactly that trapdoor - miss the number on visit one and
 // the place was never asked again). 'fresh' is the only confidence this may
-// NOT write over — 'stale' and 'unknown' both keep the prompt coming back
+// NOT write over - 'stale' and 'unknown' both keep the prompt coming back
 // until a real, CURRENT number is captured. Still re-read server-side rather
 // than trusting the client's view of the place, same reasoning the old gate
 // already had.
 //
-// encounters (already-normalized, post-validation — see ENCOUNTER_FIELDS)
+// encounters (already-normalized, post-validation - see ENCOUNTER_FIELDS)
 // attributes the observation to whichever named contact was met, when there
 // is one; a staff/receptionist/nobody-only trip leaves person_id null rather
 // than guessing.
@@ -144,7 +144,7 @@ async function maybeCapturePreQualification({ placeId, capacityMonthlyReferrals,
     visit_id: visitId,
   });
   // Stamps places.exploration_eligible_since to the date THIS observation
-  // goes stale — see capacity.js's stampExplorationEligibility for why.
+  // goes stale - see capacity.js's stampExplorationEligibility for why.
   await stampExplorationEligibility(knex, placeId, observedAt, schedulingConfig);
 
   // The step-6/7 dual-write bridge that used to sit here (writing the
@@ -158,11 +158,11 @@ async function maybeCapturePreQualification({ placeId, capacityMonthlyReferrals,
 }
 
 // promise_next_visit is a transient body field (not a `visits` column, same
-// convention as capacity_monthly_referrals above) — { promised_date,
+// convention as capacity_monthly_referrals above) - { promised_date,
 // person_id?, note? }, VisitLogModal's "promise a next visit" field (Place
 // Commitments spec §5.1). Validated up front, alongside the trip fields, so
 // a bad date can't leave a completed visit saved with the promise silently
-// dropped — unlike fulfill_commitment_ids below, this is real input the rep
+// dropped - unlike fulfill_commitment_ids below, this is real input the rep
 // deliberately typed, not a best-effort convenience.
 function promiseNextVisitError(v) {
   if (v === undefined || v === null) return null;
@@ -181,17 +181,17 @@ async function promiseNextVisitPersonError(v) {
   return null;
 }
 
-// Applied AFTER the visit itself is saved — both need the real visit id
+// Applied AFTER the visit itself is saved - both need the real visit id
 // (fulfillCommitment's discharged_by_visit_id, createCommitment's
 // source_visit_id). Two independent side effects of "log this visit," same
 // spot maybeCapturePreQualification hooks in from, gated the same way
-// (completed trips only — a still-planned stop hasn't happened yet, nothing
+// (completed trips only - a still-planned stop hasn't happened yet, nothing
 // to fulfill or promise from).
 //
 // fulfillCommitmentIds is intersected against what's ACTUALLY outstanding
 // right now, never trusted from the client's possibly-stale view (the panel
 // was fetched when the modal opened, and time passes while a rep fills out
-// the form) — anything not currently outstanding (already resolved by
+// the form) - anything not currently outstanding (already resolved by
 // someone else, wrong place, bogus id) is silently skipped, not errored,
 // same best-effort convention as maybeCapturePreQualification's own bad-input
 // handling.
@@ -218,7 +218,7 @@ async function applyCommitmentSideEffects({ placeId, visitId, fulfillCommitmentI
 // Trip-level fields a client is allowed to set when logging/updating a visit.
 // Anything not in this list in the request body is silently ignored (not
 // saved). visit_type is otherwise only ever set once, at route-planner commit
-// time (scheduleDraft.js) — included here so it can be corrected after the
+// time (scheduleDraft.js) - included here so it can be corrected after the
 // fact too, same as notes/date/etc.
 //
 // outcome/met_with_type/they_requested/person_* are deliberately absent: they
@@ -227,7 +227,7 @@ async function applyCommitmentSideEffects({ placeId, visitId, fulfillCommitmentI
 // land and no visible symptom.
 //
 // next_visit_date is ALSO deliberately absent now (removed 2026-08-11, Place
-// Commitments) — it had six readers and zero writers even before this, and
+// Commitments) - it had six readers and zero writers even before this, and
 // VisitLogModal's own "promise a next visit" field (see promise_next_visit
 // below) is its real replacement: a place_commitments row, not a visits
 // column, since a column can only ever hold one promise. The column itself
@@ -242,7 +242,7 @@ const EDITABLE = [
   'visit_type',
   // Relationship-model capture (see services/relationship.js).
   // actual_duration_minutes is captured but deliberately unread by that model
-  // — it's here to start collecting real data against which
+  // - it's here to start collecting real data against which
   // config/visitTypes.js's hardcoded per-type minutes can later be calibrated.
   'actual_duration_minutes',
 ];
@@ -261,7 +261,7 @@ function tripFieldError(payload) {
 
 // Validates and normalizes a request's `encounters` array into rows ready to
 // write, resolving each named person's contact snapshot server-side. Returns
-// { error } or { encounters } — fully checked BEFORE any insert, so one bad
+// { error } or { encounters } - fully checked BEFORE any insert, so one bad
 // entry can't leave a half-written trip behind.
 //
 // `existingIds` (PATCH only) is the set of encounter ids already on this
@@ -285,7 +285,7 @@ async function normalizeEncounters(raw, { existingIds } = {}) {
 
     if (existingIds && entry.id !== undefined && entry.id !== null && entry.id !== '') {
       const encounterId = Number(entry.id);
-      // Checked against THIS visit's own ids, not just "does it exist" — an
+      // Checked against THIS visit's own ids, not just "does it exist" - an
       // id from another trip would otherwise let one visit's save rewrite
       // another visit's encounter.
       if (!Number.isInteger(encounterId) || !existingIds.has(encounterId)) {
@@ -310,7 +310,7 @@ async function normalizeEncounters(raw, { existingIds } = {}) {
       const personId = Number(e.person_id);
       if (!Number.isInteger(personId)) return { error: 'person not found' };
       // The same person twice in one trip would double-count their
-      // relationship score for a single conversation — and would violate
+      // relationship score for a single conversation - and would violate
       // visit_encounters_unique_person besides.
       if (seenPersonIds.has(personId)) {
         return { error: 'the same person cannot be recorded twice on one visit' };
@@ -318,7 +318,7 @@ async function normalizeEncounters(raw, { existingIds } = {}) {
       seenPersonIds.add(personId);
       e.person_id = personId;
     } else {
-      // Only a named_person encounter may carry a person — anything else is
+      // Only a named_person encounter may carry a person - anything else is
       // by definition "we didn't meet anyone identifiable," and a stray
       // person_id here would wrongly credit them. The snapshot columns go
       // with it: they describe that person, not the category.
@@ -345,7 +345,7 @@ async function normalizeEncounters(raw, { existingIds } = {}) {
 }
 
 // Validates user_id when a request is actually setting it. Nullable FK (a
-// visit doesn't have to be assigned to a rep), so only checked when provided —
+// visit doesn't have to be assigned to a rep), so only checked when provided -
 // same "look it up, 400 if missing" pattern people.js uses for place_id.
 // Mutates `payload` with the coerced number. Returns an error string or null.
 async function coerceUserId(payload) {
@@ -362,7 +362,7 @@ async function coerceUserId(payload) {
 // name, and every encounter on it. This is what the client opens a visit with
 // (GET /:id) and what a create/update responds with, so the frontend never
 // needs a second request.
-// Left joins, not inner — a visit's place or rep can be gone (deleted) while
+// Left joins, not inner - a visit's place or rep can be gone (deleted) while
 // the visit itself survives; v.place_name is the durable snapshot that still
 // identifies the place either way, so it isn't overridden by the (possibly
 // absent) live join.
@@ -375,7 +375,7 @@ async function fetchVisit(id) {
       'v.*',
       'p.city as place_city',
       'p.zip as place_zip',
-      // For VisitDetailModal's "Promised next visit" annotation — a
+      // For VisitDetailModal's "Promised next visit" annotation - a
       // commitment made during this trip can sit unacted on if the PLACE is
       // currently snoozed/do-not-visited, which lives on a different row.
       'p.snooze_until as place_snooze_until',
@@ -388,7 +388,7 @@ async function fetchVisit(id) {
   const [withEncounters] = await attachEncounters(knex, [visit], { columns: ENCOUNTER_DETAIL_COLUMNS });
   const [withCommitments] = await attachCommitmentsMade(knex, [withEncounters]);
 
-  // Cross-rep hard-floor warning (informational only — see
+  // Cross-rep hard-floor warning (informational only - see
   // crossRepFloorWarning.js). No place, no floor to check against.
   if (withCommitments.place_id) {
     const byPlace = await crossRepVisitsByPlace(knex, [withCommitments.place_id]);
@@ -402,7 +402,7 @@ async function fetchVisit(id) {
 // "2026-07" -> { start: "2026-07-01", end: "2026-07-31" }. Used by the
 // calendar route below to turn a month picker value into a whereBetween range
 // against scheduled_date (a plain 'YYYY-MM-DD' string column, so plain string
-// bounds are enough — no date-library parsing needed).
+// bounds are enough - no date-library parsing needed).
 function monthRange(monthKey) {
   const [y, m] = monthKey.split('-').map(Number); // m is 1-based (7 = July)
   const lastDay = new Date(y, m, 0).getDate(); // new Date(2026, 7, 0) = July 31
@@ -413,8 +413,8 @@ function monthRange(monthKey) {
   };
 }
 
-// GET /api/visits/calendar?month=YYYY-MM[&userId=<int>] — every visit
-// scheduled in the given month, flat (not grouped by day — the frontend buckets
+// GET /api/visits/calendar?month=YYYY-MM[&userId=<int>] - every visit
+// scheduled in the given month, flat (not grouped by day - the frontend buckets
 // by scheduled_date itself). Omitting userId returns all reps' visits ("All
 // reps" mode); scoping is by the query param, not the caller's own identity.
 router.get('/calendar', async (req, res, next) => {
@@ -426,15 +426,15 @@ router.get('/calendar', async (req, res, next) => {
     const userId = req.query.userId ? Number(req.query.userId) : undefined;
     const { start, end } = monthRange(month);
 
-    // One row per TRIP — a three-person visit is one square on the calendar,
+    // One row per TRIP - a three-person visit is one square on the calendar,
     // not three.
     //
-    // Left joins, not inner — same detach-not-delete precedent as fetchVisit()
+    // Left joins, not inner - same detach-not-delete precedent as fetchVisit()
     // above and dashboard.js: a visit survives its place or rep being removed.
     // v.place_name is the durable place-name snapshot (always present); the
     // rest of the place_* fields and user_name are honestly null if detached.
     // Column list (and the `u.name as user_name` alias) deliberately mirrors
-    // places.js/people.js's own visit-history queries (`v.*` + user_name) —
+    // places.js/people.js's own visit-history queries (`v.*` + user_name) -
     // this feeds the same VisitDetailModal/UpcomingVisitDetailModal those do,
     // and a differently-named or narrower select here previously meant a
     // visit opened from the Calendar tab silently showed less than the exact
@@ -442,7 +442,7 @@ router.get('/calendar', async (req, res, next) => {
     const rows = await knex('visits as v')
       .leftJoin('places as p', 'p.id', 'v.place_id')
       .leftJoin('users as u', 'u.id', 'v.user_id')
-      // Manual Visit Planning spec §5 — the PLANNER's name (which can differ
+      // Manual Visit Planning spec §5 - the PLANNER's name (which can differ
       // from u.name/user_id above, the ASSIGNEE), for the "Planned by
       // {Name}" marker on a cross-rep manual stop (PlannedDayModal.jsx).
       .leftJoin('users as creator', 'creator.id', 'v.created_by_user_id')
@@ -471,12 +471,12 @@ router.get('/calendar', async (req, res, next) => {
         'creator.name as created_by_name'
       );
 
-    // One extra query for the whole month, grouped in JS — never one per row.
+    // One extra query for the whole month, grouped in JS - never one per row.
     const withEncounters = await attachEncounters(knex, rows);
 
-    // Cross-rep hard-floor warning (informational only — see
+    // Cross-rep hard-floor warning (informational only - see
     // crossRepFloorWarning.js). Batched once across every distinct place in
-    // the month, not once per row — VisitsCalendar.jsx passes these rows
+    // the month, not once per row - VisitsCalendar.jsx passes these rows
     // straight into VisitDetailModal/CompletedVisitsModal with no refetch,
     // so this is required for the tag to reach the Calendar tab at all.
     const crossRepByPlace = await crossRepVisitsByPlace(knex, withEncounters.map((r) => r.place_id));
@@ -486,7 +486,7 @@ router.get('/calendar', async (req, res, next) => {
   }
 });
 
-// GET /api/visits/:id — one whole trip, encounters included. The single call
+// GET /api/visits/:id - one whole trip, encounters included. The single call
 // VisitDetailModal opens a visit with. Registered after /calendar so Express
 // doesn't match "calendar" as an :id.
 router.get('/:id', async (req, res, next) => {
@@ -501,7 +501,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/visits — create an ad-hoc visit (outside the generated schedule),
+// POST /api/visits - create an ad-hoc visit (outside the generated schedule),
 // e.g. from the "Log a visit" button on a Place Detail page.
 router.post('/', async (req, res, next) => {
   try {
@@ -512,7 +512,7 @@ router.post('/', async (req, res, next) => {
     const place = await knex('places').where({ id: numericPlaceId }).first();
     if (!place) return res.status(404).json({ error: 'Place not found' });
 
-    // place_name is a one-time snapshot taken here, at logging time — a
+    // place_name is a one-time snapshot taken here, at logging time - a
     // visit's place_id is never changed after creation, so this never needs
     // re-deriving later, even if the place is later renamed or deleted.
     const payload = { place_id: numericPlaceId, place_name: place.name };
@@ -537,7 +537,7 @@ router.post('/', async (req, res, next) => {
     }
 
     // A completed trip that met nobody and no category isn't a coherent
-    // record of anything — there'd be nothing to score and nothing to show.
+    // record of anything - there'd be nothing to score and nothing to show.
     // 'planned' is exempt on purpose: a scheduled stop that hasn't happened
     // yet has no encounters by definition, and that's its normal state.
     if (payload.status === 'completed' && !encounters.length) {
@@ -546,21 +546,21 @@ router.post('/', async (req, res, next) => {
 
     // Ad-hoc creation (this route) now runs through the same detector
     // addStop uses (services/conflictDetection.js) instead of its own
-    // narrower exact-date-only check — that used to mean this was the one
+    // narrower exact-date-only check - that used to mean this was the one
     // visit-logging path with no floor protection at all: a rep could log a
     // second visit to the same place two days after their own completed one
     // with zero warning, since the floor only ever applied to the
     // auto-generator. Deliberately does NOT exclude the same rep the way
-    // crossRepFloorWarning does elsewhere — a rep's own back-to-back visits
+    // crossRepFloorWarning does elsewhere - a rep's own back-to-back visits
     // are exactly the case this exists to catch.
     //
-    // Only SAME_DATE_VISIT actually blocks (409, unchanged — same override
+    // Only SAME_DATE_VISIT actually blocks (409, unchanged - same override
     // pattern as places.js's ADDRESS_UNRECOGNIZED confirm flow: re-send with
     // `force: true` to proceed). FLOOR_COMPLETED/FLOOR_PLANNED/DRAFT_ELSEWHERE
-    // are informational findings, not errors — a 409 for those would misrepresent
+    // are informational findings, not errors - a 409 for those would misrepresent
     // the result to any consumer of this endpoint besides VisitLogModal
     // (there is other integration surface here). Nothing is created yet
-    // either, so 201 would be just as wrong a claim — 200 with the findings
+    // either, so 201 would be just as wrong a claim - 200 with the findings
     // is the honest response: request succeeded, nothing rejected, nothing
     // written. The client decides whether that's worth a confirmation click
     // before re-sending with `force: true` to actually create it.
@@ -615,7 +615,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// POST /api/visits/manual — plan a visit directly, for a future date,
+// POST /api/visits/manual - plan a visit directly, for a future date,
 // without asking the route planner to agree (Manual Visit Planning spec,
 // 2026-08-12 v2, §3-§5). Distinct from POST / above: that route creates an
 // ad-hoc COMPLETED (or occasionally already-known-outcome) trip; this one
@@ -624,17 +624,17 @@ router.post('/', async (req, res, next) => {
 // hard-blocks DRAFT_ELSEWHERE, where the route above only warns on it).
 //
 // Body: { place_id, scheduled_date, user_id?, notes?, force? }. user_id is
-// the ASSIGNEE — defaults to the caller (planning for yourself is the common
+// the ASSIGNEE - defaults to the caller (planning for yourself is the common
 // case), but any rep may plan for any other rep (§5). created_by_user_id is
-// always the authenticated caller, never client-supplied — cross-rep
+// always the authenticated caller, never client-supplied - cross-rep
 // planning must always be traceable to who actually made the decision.
 //
 // Response shapes:
-//   201 { ...full visit... }       — created.
-//   200 { warnings: [...] }        — a §4.2 warning (floor / do_not_visit)
+//   201 { ...full visit... }       - created.
+//   200 { warnings: [...] }        - a §4.2 warning (floor / do_not_visit)
 //                                    fired and `force` wasn't set; nothing
 //                                    written yet. Resend with force:true.
-//   409 { error, code, conflicts } — a §4.1 hard block; nothing written, no
+//   409 { error, code, conflicts } - a §4.1 hard block; nothing written, no
 //                                    override possible.
 router.post('/manual', async (req, res, next) => {
   try {
@@ -678,18 +678,18 @@ router.post('/manual', async (req, res, next) => {
   }
 });
 
-// PATCH /api/visits/:id — log or update a visit (notes, date, status, and the
+// PATCH /api/visits/:id - log or update a visit (notes, date, status, and the
 // people met on it). This is what the "Log Visit" form actually calls when
 // saving. A rep can complete/correct ANY visit here, including one under a
-// teammate's account and regardless of its current status — the client
+// teammate's account and regardless of its current status - the client
 // confirms that's intentional first (see the "logged under a different rep's
 // account" confirm before opening VisitLogModal in VisitsCalendar.jsx/
 // PlaceDetail.jsx/PersonDetail.jsx), but nothing is blocked server-side.
 // Deliberate: this is the ONLY caller of this route for a still-`planned`
 // visit (VisitLogModal always saves status:'completed', whatever status the
-// row started at — see its own save()), so "can I log what happened on a
+// row started at - see its own save()), so "can I log what happened on a
 // colleague's still-open stop" was ever the real question a hard 403 here
-// answered, and Bede's call was that it should be a confirm, not a block —
+// answered, and Bede's call was that it should be a confirm, not a block -
 // covering for someone, or logging on their behalf, is a normal case, not a
 // mistake to prevent.
 router.patch('/:id', async (req, res, next) => {
@@ -722,7 +722,7 @@ router.patch('/:id', async (req, res, next) => {
     // deleted. WHY it matters that ids survive: the client holds them for its
     // per-encounter delete buttons (DELETE /:id/encounters/:encounterId), so
     // a blanket replace would silently 404 every one of those buttons after
-    // any unrelated trip-level save — a note edit would invalidate the
+    // any unrelated trip-level save - a note edit would invalidate the
     // encounter list it was displayed next to.
     //
     // Encounter id churn has NO effect on scoring, in either direction:
@@ -798,22 +798,22 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-// PATCH /api/visits/:id/edit — change a still-planned visit's date and/or
+// PATCH /api/visits/:id/edit - change a still-planned visit's date and/or
 // notes: UpcomingVisitDetailModal's "Edit" button, on a manually-planned
 // visit AND a planner-committed one alike. Deliberately its own endpoint
 // rather than folded into the generic PATCH /:id above: a plain date edit
 // there just saves whatever's sent with no conflict check at all, but this
 // has to re-run every §4 check against a NEW date first (moving Tuesday to
 // Thursday is a fresh collision check against Thursday) and can come back
-// with warnings pending confirmation — a response shape PATCH /:id was
+// with warnings pending confirmation - a response shape PATCH /:id was
 // never built to return. A notes-only edit (scheduled_date omitted, or
 // unchanged) skips that recheck. See services/manualVisits.js's editVisit
-// for the promotion this performs on ANY successful save — planned_manually/
+// for the promotion this performs on ANY successful save - planned_manually/
 // source flip to look exactly like a visit planned by hand from here on,
 // whichever way it started out.
 //
 // Only the visit's ASSIGNEE may edit it (services/manualVisits.js's
-// canEditManualVisit) — narrower than the creator-may-also-delete rule on
+// canEditManualVisit) - narrower than the creator-may-also-delete rule on
 // DELETE /:id below (§5: the creator's own permission stops at delete).
 //
 // Body: { scheduled_date?, notes?, force? }. Same response shapes as POST /manual.
@@ -842,24 +842,24 @@ router.patch('/:id/edit', async (req, res, next) => {
   }
 });
 
-// POST /api/visits/:id/snooze — an explicit rep deferral of a still-planned
+// POST /api/visits/:id/snooze - an explicit rep deferral of a still-planned
 // visit (distinct from 'skipped', the passive lapse the sweep in
 // services/visitLifecycle.js stamps on its own). Two writes, and the second
 // is the one that matters: the visit resolves to 'snoozed' (the audit
-// record — who deferred what, until when), and the PLACE's own
-// `snooze_until` is set to the same date — the actual suppression.
+// record - who deferred what, until when), and the PLACE's own
+// `snooze_until` is set to the same date - the actual suppression.
 // schedulingEngine.js's eligibility() has read place.snooze_until since
 // 2026-07-12 with no write path anywhere until now; without this second
 // write a snooze would accomplish nothing; lastVisitedAt stays untouched,
 // urgency keeps climbing, and the next draft generation re-offers the place
-// right away. No background job un-suppresses it later — eligibility()
+// right away. No background job un-suppresses it later - eligibility()
 // already checks `place.snooze_until >= today` live on every ranking pass,
 // so it lapses naturally once the date passes, same as the skip sweep needs
 // no cron.
 //
 // Guarded against swallowing a real commitment: if this place already has a
 // binding place_commitments row (services/placeCommitments.js's
-// getBindingCommitment — the earliest OUTSTANDING promised_date) and the
+// getBindingCommitment - the earliest OUTSTANDING promised_date) and the
 // chosen snoozed_until would land ON OR AFTER it, that commitment would
 // never surface before the snooze lifts. A snooze that resolves BEFORE the
 // commitment is due is not a conflict and proceeds silently. Requires
@@ -867,7 +867,7 @@ router.patch('/:id/edit', async (req, res, next) => {
 // the SAME_DATE_VISIT collision in POST / above.
 //
 // force: true is deliberately NOT wired to discharge or otherwise touch the
-// commitment — it stays outstanding, the place stays suppressed for the
+// commitment - it stays outstanding, the place stays suppressed for the
 // snooze window, and once the snooze lapses the place returns to the
 // COMMITMENT tier more overdue than before. Auto-clearing it here would mean
 // this endpoint reaches into a promise's own record to make scheduling
@@ -921,13 +921,13 @@ router.post('/:id/snooze', async (req, res, next) => {
   }
 });
 
-// DELETE /api/visits/:id/encounters/:encounterId — remove ONE person/category
+// DELETE /api/visits/:id/encounters/:encounterId - remove ONE person/category
 // from a trip, leaving the trip itself (and everyone else on it) alone.
 //
 // Removing the last encounter of a COMPLETED trip deletes the trip too: a
 // completed visit with nobody on it is the same incoherent record POST/PATCH
 // refuse to create, and leaving one behind would put it in a state the edit
-// form itself can't save. Scoped to completed on purpose — an empty encounter
+// form itself can't save. Scoped to completed on purpose - an empty encounter
 // set is the normal state of a still-planned stop, so deleting one there would
 // silently wipe a scheduled visit off the route.
 router.delete('/:id/encounters/:encounterId', async (req, res, next) => {
@@ -942,8 +942,8 @@ router.delete('/:id/encounters/:encounterId', async (req, res, next) => {
     // encounter is an edit to the trip (a rep correcting what a teammate
     // logged, e.g. "that outcome was wrong" or "I wasn't actually there"),
     // not the destructive act of deleting the visit outright. A still-planned
-    // stop is different — that's someone else's not-yet-happened scheduled
-    // visit, not history to correct — so it stays restricted to its own rep.
+    // stop is different - that's someone else's not-yet-happened scheduled
+    // visit, not history to correct - so it stays restricted to its own rep.
     if (visit.status === 'planned' && visit.user_id != null && visit.user_id !== req.user.id) {
       return res.status(403).json({ error: 'You can only edit a still-planned visit under your own account' });
     }
@@ -967,8 +967,8 @@ router.delete('/:id/encounters/:encounterId', async (req, res, next) => {
   }
 });
 
-// DELETE /api/visits/:id — remove a stop from the schedule entirely (not the
-// same as skipping — this deletes the row, skip just changes its status).
+// DELETE /api/visits/:id - remove a stop from the schedule entirely (not the
+// same as skipping - this deletes the row, skip just changes its status).
 // Its encounters go with it via ON DELETE CASCADE, which is deliberate and
 // unlike the detach-not-delete rule everywhere else: an encounter has no
 // meaning without the trip it happened on.
@@ -980,7 +980,7 @@ router.delete('/:id', async (req, res, next) => {
     if (!visit) return res.status(404).json({ error: 'Visit not found' });
 
     // A manually-planned visit's CREATOR may also delete it on someone
-    // else's behalf (Manual Visit Planning spec §5) — the one case where
+    // else's behalf (Manual Visit Planning spec §5) - the one case where
     // deleting a visit that isn't "your own account" is allowed. Scoped to
     // status:'planned': once it's completed or lapsed to skipped it's real
     // history, not an open plan, and the ordinary assignee-only rule below

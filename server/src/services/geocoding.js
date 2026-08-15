@@ -1,18 +1,18 @@
 // Address -> coordinates, via the US Census Bureau's free public geocoder
 // (no API key required). Isolated here so the app only depends on this one
-// function's shape ({ lat, lng } | null) — swapping providers later only
+// function's shape ({ lat, lng } | null) - swapping providers later only
 // means rewriting this file.
 const { fetchWithTimeout } = require('./fetchWithTimeout');
 
 const ENDPOINT = 'https://geocoding.geo.census.gov/geocoder/locations/address';
 // geocodeAddress() is called directly (and awaited) from request handlers
-// (routes/places.js) — an unbounded hang here would hang the create/edit-
+// (routes/places.js) - an unbounded hang here would hang the create/edit-
 // place request itself, so this needs the same timeout discipline as
 // routeOptimizer.js's OSRM calls.
 const TIMEOUT_MS = 5000;
 
 // Looks up one address. Returns { lat, lng } for the first match, or null if
-// there's no match or the request fails (including a timeout) — geocoding is
+// there's no match or the request fails (including a timeout) - geocoding is
 // a best-effort enrichment and must never block creating/editing a place.
 async function geocodeAddress({ address, city, state, zip }) {
   if (!address && !city && !zip) return null;

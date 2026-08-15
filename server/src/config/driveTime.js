@@ -1,15 +1,15 @@
 // Tunables for the drive-time estimator (services/driveTime.js). Plain
-// module, same convention as config/scheduling.js — no settings table yet,
+// module, same convention as config/scheduling.js - no settings table yet,
 // but kept as named constants so a future settings-table phase can lift them
 // out without touching the estimator itself.
 //
 // This estimates road distance from straight-line (haversine) distance
-// rather than calling a routing API — good enough to rank and pack stops,
+// rather than calling a routing API - good enough to rank and pack stops,
 // not to turn-by-turn navigate. Swap in a real routing API later by
 // rewriting estimateDriveMinutes() alone; nothing that calls it needs to
 // change.
 module.exports = {
-  // Average driving speed isn't one number — a parking-lot-to-parking-lot
+  // Average driving speed isn't one number - a parking-lot-to-parking-lot
   // hop and a cross-town trip that gets onto arterials/highway don't drive
   // anything alike. Banded by road distance (post-CIRCUITY_FACTOR), not
   // straight-line, since it's the distance actually driven that determines
@@ -35,7 +35,7 @@ module.exports = {
   // typical urban-grid circuity ratio (road miles / straight-line miles).
   CIRCUITY_FACTOR: 1.3,
 
-  // Fixed cost of parking and walking in, added on top of drive time —
+  // Fixed cost of parking and walking in, added on top of drive time -
   // roughly constant whether the next stop is next door or across town.
   OVERHEAD_MINUTES: 5,
 

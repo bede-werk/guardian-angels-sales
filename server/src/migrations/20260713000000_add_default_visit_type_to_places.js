@@ -1,5 +1,5 @@
-// Adds a place-level default visit type — one of config/visitTypes.js's
-// VISIT_TYPES keys — that pre-fills the visit-type choice when scheduling a
+// Adds a place-level default visit type - one of config/visitTypes.js's
+// VISIT_TYPES keys - that pre-fills the visit-type choice when scheduling a
 // visit at this place; every visit can still choose a different type from
 // its place's default. Nullable: there's no existing data to backfill this
 // from, and a null default just falls through to

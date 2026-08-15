@@ -1,4 +1,4 @@
-// People — the individuals we come into contact with at a place. Covers the
+// People - the individuals we come into contact with at a place. Covers the
 // per-place roster (used by the "who did you meet?" picker and PlaceDetail's
 // "People here" card), the cross-place People directory tab, and CRUD.
 // Mounted at the bare /api prefix in index.js because these routes define
@@ -30,7 +30,7 @@ const EDITABLE = [
 
 // Checks the enum-like fields against their allowed values. Returns an error
 // string to send back to the client, or null if everything's valid. Plain
-// bounds checks, not full per-month day-count validation — the client's own
+// bounds checks, not full per-month day-count validation - the client's own
 // Day <select> only ever offers valid days for whichever month is picked, so
 // this is just a backstop.
 function validate(payload) {
@@ -46,7 +46,7 @@ function validate(payload) {
 }
 
 // relationship_seed is a converged SCORE value (see migration
-// 20260803000001), not a bucket and not a multiplier — a rep's one-time
+// 20260803000001), not a bucket and not a multiplier - a rep's one-time
 // judgment of an existing relationship, which then decays on the same clock as
 // real visit weight. Null clears it. Deliberately not in EDITABLE: setting it
 // also stamps relationship_seeded_at server-side, since that date is the
@@ -63,7 +63,7 @@ function relationshipSeedError(v) {
 }
 
 // '' (the picker's unselected option) -> null (clearing), otherwise Number(...)
-// — same coercion shape as person_id/user_id elsewhere in this app. Mutates
+// - same coercion shape as person_id/user_id elsewhere in this app. Mutates
 // payload in place; called after EDITABLE has already copied raw body values in.
 function coerceBirthdayFields(payload) {
   if (payload.birthday_month !== undefined) {
@@ -75,7 +75,7 @@ function coerceBirthdayFields(payload) {
 }
 
 // Re-sorts the already-decorated (referral_metrics attached) people list per
-// the `sort` query param. Pure (no knex) — takes/returns plain arrays. The
+// the `sort` query param. Pure (no knex) - takes/returns plain arrays. The
 // default case returns `rows` unchanged, preserving the SQL query's own
 // `p.name, pe.name` order, so "no sort picked" behaves exactly as it always
 // has. Array.prototype.sort is spec-guaranteed stable, so every case here
@@ -103,7 +103,7 @@ function sortPeople(rows, sort) {
   }
 }
 
-// GET /api/people — cross-place directory (the People tab). Query params:
+// GET /api/people - cross-place directory (the People tab). Query params:
 // search (name/title), placeId, category (of their place),
 // sort (name [default] | last_contacted_desc | last_contacted_asc |
 // my_last_contacted_desc | my_last_contacted_asc | referrals_desc |
@@ -116,7 +116,7 @@ router.get('/people', async (req, res, next) => {
     // rule used for places (see places.js's lastVisit subquery). Who was met
     // lives on `visit_encounters` now, so this joins through it; the DATE
     // still comes from the trip, which is the only place it exists. Inner
-    // join, not left — an encounter without its visit can't happen (NOT NULL
+    // join, not left - an encounter without its visit can't happen (NOT NULL
     // FK, cascade delete).
     const lastVisit = knex('visit_encounters as ve')
       .join('visits as v', 'v.id', 've.visit_id')
@@ -127,7 +127,7 @@ router.get('/people', async (req, res, next) => {
       .groupBy('ve.person_id')
       .as('lv');
 
-    // Same, but scoped to only the logged-in rep's own visits — lets
+    // Same, but scoped to only the logged-in rep's own visits - lets
     // "last contacted by me" answer "have I personally talked to this
     // person" separately from "has anyone on the team."
     const myLastVisit = knex('visit_encounters as ve')
@@ -140,7 +140,7 @@ router.get('/people', async (req, res, next) => {
       .groupBy('ve.person_id')
       .as('mlv');
 
-    // Left join, not inner — a person can now be unassigned (place_id null),
+    // Left join, not inner - a person can now be unassigned (place_id null),
     // e.g. after their place was deleted or they were manually detached, and
     // should still show up in the directory rather than disappearing.
     const query = knex('people as pe')
@@ -176,13 +176,13 @@ router.get('/people', async (req, res, next) => {
   }
 });
 
-// GET /api/people/birthdays?month=<1-12> — every person with a birthday in
+// GET /api/people/birthdays?month=<1-12> - every person with a birthday in
 // the given month, across every place, for the Calendar tab's birthday
 // badges. Registered before /people/:id so Express doesn't match "birthdays"
 // as an :id param. Not scoped to the requesting rep at all (no userId
-// filter) — a birthday isn't rep-owned data, same as places/people generally
+// filter) - a birthday isn't rep-owned data, same as places/people generally
 // aren't anywhere else in this app. No year in the query either, since
-// birthday_month/day themselves have no year — a birthday recurs every year
+// birthday_month/day themselves have no year - a birthday recurs every year
 // by construction, so this always answers "who has a birthday in month X"
 // regardless of which year's instance of that month the Calendar happens to
 // be showing.
@@ -203,12 +203,12 @@ router.get('/people/birthdays', async (req, res, next) => {
   }
 });
 
-// GET /api/people/check-duplicate?name=... — dry-run check for PersonModal's
+// GET /api/people/check-duplicate?name=... - dry-run check for PersonModal's
 // pre-save warning, no write. Deliberately its OWN endpoint rather than
-// reusing GET /people's general `search` (which also matches `title` — a
+// reusing GET /people's general `search` (which also matches `title` - a
 // duplicate check should only ever be about the person's actual name).
 // Same loose case-insensitive substring match as everywhere else in this
-// app ("similar," not exact) — org-wide, not scoped to a place, since the
+// app ("similar," not exact) - org-wide, not scoped to a place, since the
 // same person can turn up at more than one place.
 router.get('/people/check-duplicate', async (req, res, next) => {
   try {
@@ -224,7 +224,7 @@ router.get('/people/check-duplicate', async (req, res, next) => {
   }
 });
 
-// GET /api/people/:id — a person with their place, full visit history (every
+// GET /api/people/:id - a person with their place, full visit history (every
 // completed trip on which they were one of the people met), and every referral
 // they've sent us.
 router.get('/people/:id', async (req, res, next) => {
@@ -236,13 +236,13 @@ router.get('/people/:id', async (req, res, next) => {
 
     const place = await knex('places').where({ id: person.place_id }).first();
 
-    // Visit history is for what actually happened — a still-planned or
+    // Visit history is for what actually happened - a still-planned or
     // skipped visit doesn't belong here. "This person's visits" are the trips
     // that have an encounter with them on it; a person can only appear once
     // per trip (visit_encounters_unique_person enforces it), so this inner
     // join can't duplicate a trip and needs no dedup pass.
     //
-    // The attached encounters are the WHOLE trip's, not just this person's —
+    // The attached encounters are the WHOLE trip's, not just this person's -
     // that's what lets the client say "you and two others" instead of
     // pretending the rep drove out to see one person alone.
     const visitRows = await knex('visits as v')
@@ -258,7 +258,7 @@ router.get('/people/:id', async (req, res, next) => {
     // attendee who merely shares their name, rather than matching on the
     // name string itself.
     const visitsWithEncounters = await attachEncounters(knex, visitRows, { columns: [...SUMMARY_COLUMNS, 'person_id'] });
-    // "The promise made during this trip" (Place Commitments spec §6.3) —
+    // "The promise made during this trip" (Place Commitments spec §6.3) -
     // same attach this person's place-mate view (routes/places.js) uses.
     const visits = await attachCommitmentsMade(knex, visitsWithEncounters);
 
@@ -267,10 +267,10 @@ router.get('/people/:id', async (req, res, next) => {
       .orderBy('referral_date', 'desc')
       .orderBy('id', 'desc');
 
-    // Full relationship object — this screen is where "why does this person
+    // Full relationship object - this screen is where "why does this person
     // read weak?" has to be answerable (last meaningful visit, how much of the
     // score is still a fading initial estimate, what the reciprocity
-    // multiplier is doing). includeTrend: true — this is one of only two
+    // multiplier is doing). includeTrend: true - this is one of only two
     // callers that ever render it (see relationship.js's
     // computeRelationshipForPeople comment).
     const relationshipByPerson = await computeRelationshipForPeople(knex, [person.id], { includeTrend: true });
@@ -288,7 +288,7 @@ router.get('/people/:id', async (req, res, next) => {
   }
 });
 
-// GET /api/places/:placeId/people — a place's people. Used by PlaceDetail's
+// GET /api/places/:placeId/people - a place's people. Used by PlaceDetail's
 // "People here" card and the "who did you meet?" picker.
 router.get('/places/:placeId/people', async (req, res, next) => {
   try {
@@ -303,8 +303,8 @@ router.get('/places/:placeId/people', async (req, res, next) => {
   }
 });
 
-// POST /api/people — add a person. place_id is optional (a person doesn't
-// have to belong anywhere, same as a place doesn't need anyone on file) —
+// POST /api/people - add a person. place_id is optional (a person doesn't
+// have to belong anywhere, same as a place doesn't need anyone on file) -
 // pass it to create them already assigned, e.g. from PlaceDetail's
 // "Add person" button, or omit it to create them unassigned.
 router.post('/people', async (req, res, next) => {
@@ -340,7 +340,7 @@ router.post('/people', async (req, res, next) => {
   }
 });
 
-// POST /api/people/seed-relationships — bulk one-time relationship seeding
+// POST /api/people/seed-relationships - bulk one-time relationship seeding
 // (see the seeding screen). Body: [{ person_id, seed }], where a null/''
 // seed clears that person's seed instead of setting one.
 //
@@ -349,7 +349,7 @@ router.post('/people', async (req, res, next) => {
 // intended way to correct a seed you got wrong, so this deliberately does not
 // refuse to touch an already-seeded person.
 //
-// All-or-nothing in one transaction — a half-applied seeding pass would be
+// All-or-nothing in one transaction - a half-applied seeding pass would be
 // worse than none, since there'd be no way to tell which half landed.
 router.post('/people/seed-relationships', async (req, res, next) => {
   try {
@@ -395,7 +395,7 @@ router.post('/people/seed-relationships', async (req, res, next) => {
   }
 });
 
-// PATCH /api/people/:id — update any editable field.
+// PATCH /api/people/:id - update any editable field.
 router.patch('/people/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -407,7 +407,7 @@ router.patch('/people/:id', async (req, res, next) => {
     for (const f of EDITABLE) if (req.body[f] !== undefined) update[f] = req.body[f];
     coerceBirthdayFields(update);
 
-    // place_id isn't in EDITABLE — it needs its own validation and side
+    // place_id isn't in EDITABLE - it needs its own validation and side
     // effects (rather than a straight copy), since it's how a person gets
     // detached from a place (null) or reassigned to a different one.
     if (req.body.place_id !== undefined) {
@@ -449,11 +449,11 @@ router.patch('/people/:id', async (req, res, next) => {
   }
 });
 
-// DELETE /api/people/:id — permanently remove a person record. Their visit
+// DELETE /api/people/:id - permanently remove a person record. Their visit
 // history survives (visit_encounters.person_id -> null via ON DELETE SET NULL,
 // with the person_name/etc. snapshot keeping it readable), but their referrals
 // are deleted along with them rather than left floating with no one to
-// attribute them to — a referral only makes sense tied to the person who
+// attribute them to - a referral only makes sense tied to the person who
 // sent it, unlike a visit which is meaningful on its own as a record of
 // something that happened. The UI confirms this with the rep before calling here.
 router.delete('/people/:id', async (req, res, next) => {

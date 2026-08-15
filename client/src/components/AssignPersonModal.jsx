@@ -7,7 +7,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // Search across every person already on file and assign one or more of them
 // to this place at once. Reassigns them (place_id -> this place) if they're
 // currently elsewhere, same as PersonDetail's own "Assign to a place" picker
-// — this is just the mirror image, initiated from the place's side. The
+// - this is just the mirror image, initiated from the place's side. The
 // counterpart to PlaceDetail's "Create person" button, which makes a
 // brand-new record instead.
 export default function AssignPersonModal({ placeId, placeName, onClose, onAssigned }) {
@@ -41,7 +41,7 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
   }, []);
 
   // Debounced search, same 200ms pattern used elsewhere (Places.jsx, People.jsx).
-  // Searches everyone on file, not just the unassigned — a person already at
+  // Searches everyone on file, not just the unassigned - a person already at
   // another place can still be reassigned here.
   useEffect(() => {
     if (!q.trim()) { setResults([]); return; }
@@ -50,7 +50,7 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
     const t = setTimeout(async () => {
       try {
         const rows = await api.people.list({ search: q });
-        // Already here? Nothing to do — leave them out of their own pick list.
+        // Already here? Nothing to do - leave them out of their own pick list.
         if (!cancelled) setResults(rows.filter((p) => String(p.place_id) !== String(placeId)).slice(0, 20));
       } catch (e) {
         if (!cancelled) setError(e.message);

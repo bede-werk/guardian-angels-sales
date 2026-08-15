@@ -113,7 +113,7 @@ describe('validateDays', () => {
 
   // TODAY (2026-07-13) is a Monday. Counting only weekdays toward
   // MAX_DAYS_AHEAD: Tue 14(1), Wed 15(2), Thu 16(3), Fri 17(4), Sat/Sun
-  // 18-19 (skipped, don't count), Mon 20(5), Tue 21(6), Wed 22(7) — so the
+  // 18-19 (skipped, don't count), Mon 20(5), Tue 21(6), Wed 22(7) - so the
   // boundary lands on 2026-07-22, two calendar days later than a raw
   // "+7 days" count would give, because the weekend in between is free.
   test(`allows a date exactly ${MAX_DAYS_AHEAD} weekdays out (skipping the weekend in between)`, () => {
@@ -168,7 +168,7 @@ describe('deleteCommittedDay', () => {
   // deleteCommittedDay isn't pure (it issues a real `visits` delete). A
   // minimal fake db that records the filter handed to `.where()` and lets
   // `.del()` return a controllable count is enough to assert on the query
-  // shape without standing up sqlite — mirroring the query itself
+  // shape without standing up sqlite - mirroring the query itself
   // (`db('visits').where({...}).del()`) closely enough that a regression to
   // either scoping would show up here as a wrong recorded filter.
   function makeFakeDb(deletedCount) {
@@ -207,12 +207,12 @@ describe('deleteCommittedDay', () => {
   });
 
   // Deliberately NOT scoped to source: 'planner' (Bede's call, see the
-  // function's own comment) — "Discard plan" means clear the whole day,
+  // function's own comment) - "Discard plan" means clear the whole day,
   // manually-planned/promoted stops included. Unlike reopenCommittedDay
-  // (still source:'planner'-only — pulling a manual visit into
+  // (still source:'planner'-only - pulling a manual visit into
   // schedule_draft_stops would misrepresent it as a re-orderable proposal),
   // deleting is symmetric regardless of how the row got there.
-  test('does NOT scope the delete to source — a manually-planned visit on the same date is cleared too', async () => {
+  test('does NOT scope the delete to source - a manually-planned visit on the same date is cleared too', async () => {
     const db = makeFakeDb(1);
     await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
     assert.equal(db.calls[0].filter.source, undefined);
@@ -226,7 +226,7 @@ describe('deleteCommittedDay', () => {
 });
 
 describe('discardStaleDrafts', () => {
-  // Same fake-db-as-call-recorder style as deleteCommittedDay's tests above —
+  // Same fake-db-as-call-recorder style as deleteCommittedDay's tests above -
   // enough to assert on which ids get deleted without standing up sqlite.
   function makeFakeDb(rows) {
     const calls = [];
@@ -246,8 +246,8 @@ describe('discardStaleDrafts', () => {
 
   test('deletes drafts created on an org-date before today, leaves today\'s alone', async () => {
     const db = makeFakeDb([
-      { id: 1, created_at: '2026-08-11T23:30:00.000Z' }, // 6:30pm Central on the 11th — stale
-      { id: 2, created_at: '2026-08-12T13:00:00.000Z' }, // 8am Central on the 12th — fresh
+      { id: 1, created_at: '2026-08-11T23:30:00.000Z' }, // 6:30pm Central on the 11th - stale
+      { id: 2, created_at: '2026-08-12T13:00:00.000Z' }, // 8am Central on the 12th - fresh
     ]);
     const count = await discardStaleDrafts(db, { today: '2026-08-12' });
 
@@ -274,7 +274,7 @@ describe('discardStaleDrafts', () => {
 // One logged visit is a TRIP row plus one row per person/category met
 // (20260806000000_split_visit_encounters.js). Same helper as
 // relationship.test.js's, kept local rather than shared through a new module
-// — six lines each is cheaper than a file nothing else would import.
+// - six lines each is cheaper than a file nothing else would import.
 async function insertVisit(db, { encounters = [], ...trip }) {
   const [row] = await db('visits').insert(trip).returning('id');
   const visitId = row && row.id ? row.id : row;
@@ -301,7 +301,7 @@ describe('buildCandidatePool fatigue counting', () => {
     // Place 1: ONE trip, four people met that day -> one visit, four encounters.
     // Place 2: four separate trips on four different days.
     // Place 3: TWO separate trips on the SAME day (a morning drop-off and an
-    //          afternoon meeting — legitimate, and the case the distinct-day
+    //          afternoon meeting - legitimate, and the case the distinct-day
     //          dedup below still has to collapse now that a multi-contact
     //          trip is no longer expressed as several rows).
     await db('places').insert([
@@ -366,7 +366,7 @@ describe('buildCandidatePool fatigue counting', () => {
 });
 
 // Step 3 of the 2026-08 remediation ticket: buildCandidatePool must feed
-// plannedVisitDates to eligibility() as its OWN field — never widen
+// plannedVisitDates to eligibility() as its OWN field - never widen
 // lastVisitByPlace's status filter to include 'planned', since that field
 // also drives urgency()/rankKey's cadence math (a place that only LOOKS
 // recently serviced because a visit is merely planned, not completed, would
@@ -414,7 +414,7 @@ describe('buildCandidatePool plannedVisitDates', () => {
   test('a place with both keeps them as two separate fields, not merged', async () => {
     const pool = await buildCandidatePool(db, { today: TODAY });
     const place = pool.find((c) => c.place.id === 2);
-    assert.equal(place.lastVisitDate, '2026-07-20', 'lastVisitDate must stay COMPLETED-only — the planned visit must not overwrite it');
+    assert.equal(place.lastVisitDate, '2026-07-20', 'lastVisitDate must stay COMPLETED-only - the planned visit must not overwrite it');
     assert.deepEqual(place.plannedVisitDates, ['2026-08-05']);
   });
 
@@ -432,11 +432,11 @@ describe('buildCandidatePool plannedVisitDates', () => {
 });
 
 // A manually-planned visit is a real, still-open commitment on the
-// calendar — it counts toward "already committed" exactly the same as a
+// calendar - it counts toward "already committed" exactly the same as a
 // planner-committed one, so the date it's on is off-limits to /generate
 // (validateDays) and shows as already planned, same as any other planned
 // day. No carve-out for manual-only dates.
-describe('committedDateSummaries — a manual visit counts as committed, same as any other planned visit', () => {
+describe('committedDateSummaries - a manual visit counts as committed, same as any other planned visit', () => {
   let db;
   const TODAY = '2026-08-12';
 
@@ -456,14 +456,14 @@ describe('committedDateSummaries — a manual visit counts as committed, same as
       { id: 4, name: 'Both Place Two', category: 'Hospice', tier: 1, priority_score: 75 },
     ]);
 
-    // A date with ONLY a manual visit — must appear in the summary, same as
+    // A date with ONLY a manual visit - must appear in the summary, same as
     // any other planned date.
     await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-20', place_name: 'Manual Only Place' });
 
-    // A date with ONLY a real planner commit — unaffected by this change.
+    // A date with ONLY a real planner commit - unaffected by this change.
     await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-21', place_name: 'Planner Committed Place' });
 
-    // A date with BOTH — both rows count.
+    // A date with BOTH - both rows count.
     await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-22', place_name: 'Both Place' });
     await db('visits').insert({ place_id: 4, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-22', place_name: 'Both Place Two' });
   });
@@ -498,19 +498,19 @@ describe('committedDateSummaries — a manual visit counts as committed, same as
 // recomputes the full detector, not just same-date locks. If it doesn't,
 // this passes audit and fails in the field." Before Step 3, loadDraftView/
 // loadDraftDayView only ever recomputed alreadyVisitedToday and
-// crossRepFloorWarning for a draft's already-placed stops — never
+// crossRepFloorWarning for a draft's already-placed stops - never
 // SAME_DATE_VISIT/FLOOR_COMPLETED/FLOOR_PLANNED/DRAFT_ELSEWHERE. This proves
 // the fix end-to-end: build a draft, THEN have another rep commit a
 // colliding visit, THEN reload the SAME draft and confirm the collision
 // shows up without the draft itself ever being touched.
 //
 // global.fetch is mocked to fail fast (falls back to the haversine
-// evaluateTimeBlock — see driveTime.js) so this runs offline and fast, same
+// evaluateTimeBlock - see driveTime.js) so this runs offline and fast, same
 // convention as routeOptimizer.test.js. Test places carry lat/lng because
 // evaluateTimeBlock silently drops ungeocoded stops from its packed output
-// (see driveTime.js's isGeocoded/packStops) — without it, the very stop this
+// (see driveTime.js's isGeocoded/packStops) - without it, the very stop this
 // test needs to inspect would never appear in `day.stops` at all.
-describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 required knock-on)', () => {
+describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 required knock-on)', () => {
   let db;
   const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
@@ -549,15 +549,15 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
     const before1 = await loadDraftView(db, draftId);
     const stopBefore = before1.days[0].stops.find((s) => s.place_id === 1);
     assert.ok(stopBefore, 'the stop must actually appear in the packed day');
-    assert.deepEqual(stopBefore.conflicts, [], 'clean baseline — nothing has collided yet');
+    assert.deepEqual(stopBefore.conflicts, [], 'clean baseline - nothing has collided yet');
 
-    // Another rep commits a real visit to the SAME place, SAME date — after
+    // Another rep commits a real visit to the SAME place, SAME date - after
     // the draft above was already built. Nothing about the draft itself
     // changes.
     await db('visits').insert({ place_id: 1, user_id: 2, status: 'planned', scheduled_date: DATE_A, place_name: 'Same Day Place' });
 
     // A SAME_DATE_VISIT conflict isn't just informational like FLOOR_*/
-    // DRAFT_ELSEWHERE below — the place already has a real visit that exact
+    // DRAFT_ELSEWHERE below - the place already has a real visit that exact
     // day, so proposing it again is never correct. loadDraftView drops the
     // stop entirely rather than surfacing it with a warning banner (see
     // hasSameDateVisitConflict in scheduleDraft.js).
@@ -575,7 +575,7 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
     const before1 = await loadDraftDayView(db, draftId, DATE_A);
     assert.deepEqual(before1.stops.find((s) => s.place_id === 2).conflicts, []);
 
-    // Another rep commits a PLANNED visit to the same place two days later —
+    // Another rep commits a PLANNED visit to the same place two days later -
     // still within the hard floor, but NOT the same date, so this is the
     // FLOOR_PLANNED path specifically, not SAME_DATE_VISIT.
     await db('visits').insert({ place_id: 2, user_id: 2, status: 'planned', scheduled_date: '2026-08-12', place_name: 'Nearby Day Place' });
@@ -588,7 +588,7 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
   });
 
   // loadDraftDayView's own copy of the same drop-not-just-flag behavior
-  // covered above for loadDraftView — a separate function, separate query,
+  // covered above for loadDraftView - a separate function, separate query,
   // so it gets its own test rather than assuming the two stay in sync.
   // COMPLETED (not planned) here, so both real-visit statuses that trigger
   // SAME_DATE_VISIT are covered across the two tests.
@@ -600,7 +600,7 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
     await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 1, date: DATE_B, sort_order: 0 });
 
     const before1 = await loadDraftDayView(db, draftId, DATE_B);
-    assert.ok(before1.stops.find((s) => s.place_id === 1), 'clean baseline — the stop starts out present');
+    assert.ok(before1.stops.find((s) => s.place_id === 1), 'clean baseline - the stop starts out present');
 
     await db('visits').insert({ place_id: 1, user_id: 2, status: 'completed', scheduled_date: DATE_B, place_name: 'Same Day Place' });
 
@@ -609,7 +609,7 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
   });
 });
 
-// Place Commitments badge (spec §6.1) on a draft stop — loadDraftView/
+// Place Commitments badge (spec §6.1) on a draft stop - loadDraftView/
 // loadDraftDayView attach it via the pure commitmentBadge helper, fed by
 // services/placeCommitments.js's getOutstandingCommitmentsForPlaces.
 // promised_date is a fixed, clearly-past date (not "N days before whatever
@@ -618,7 +618,7 @@ describe('loadDraftView / loadDraftDayView — full detector recompute (Step 3 r
 // depend on the real wall-clock date, since loadDraftView/loadDraftDayView
 // call orgToday() internally, same as their pre-existing alreadyVisitedToday
 // computation).
-describe('loadDraftView / loadDraftDayView — Place Commitments badge', () => {
+describe('loadDraftView / loadDraftDayView - Place Commitments badge', () => {
   let db;
   const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
@@ -640,7 +640,7 @@ describe('loadDraftView / loadDraftDayView — Place Commitments badge', () => {
     ]);
     await db('people').insert({ id: 1, place_id: 1, name: 'Sharon Klein' });
     // Two outstanding commitments at place 1: the binding one (earliest,
-    // overdue, named) plus a second, later one — this is what exercises
+    // overdue, named) plus a second, later one - this is what exercises
     // moreCount.
     await db('place_commitments').insert([
       { place_id: 1, promised_date: '2020-01-01', person_id: 1, note: 'asked for the DON' },
@@ -687,13 +687,13 @@ describe('loadDraftView / loadDraftDayView — Place Commitments badge', () => {
 });
 
 // day.committed feeds RoutePlanner.jsx's "Already Planned"/"Planned" list,
-// which renders every row under a hardcoded "✓ Planned" badge — so
+// which renders every row under a hardcoded "✓ Planned" badge - so
 // committedVisitsQuery must only ever return status:'planned' rows, the same
 // scope committedDayVisits (PlannedDayModal's own query) already uses. Before
 // this fix it had no status filter at all: a completed (or skipped) visit
 // sharing the date leaked in and rendered as a second, mislabeled "✓
 // Planned" entry for a trip that already happened.
-describe('loadDraftView / loadDraftDayView — day.committed is planned-only', () => {
+describe('loadDraftView / loadDraftDayView - day.committed is planned-only', () => {
   let db;
   const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
@@ -722,7 +722,7 @@ describe('loadDraftView / loadDraftDayView — day.committed is planned-only', (
     const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
     const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
 
-    // Two separate completed trips, same rep, same place, same day — exactly
+    // Two separate completed trips, same rep, same place, same day - exactly
     // the "logged twice while testing" shape that surfaced this bug.
     await db('visits').insert([
       { place_id: 1, user_id: 1, status: 'completed', scheduled_date: DATE_A, place_name: 'Guardian Angels (Test)', notes: 'This was great' },
@@ -730,7 +730,7 @@ describe('loadDraftView / loadDraftDayView — day.committed is planned-only', (
     ]);
 
     const view = await loadDraftView(db, draftId);
-    assert.deepEqual(view.days[0].committed, [], 'completed visits must not appear in day.committed at all — that list is planned-only');
+    assert.deepEqual(view.days[0].committed, [], 'completed visits must not appear in day.committed at all - that list is planned-only');
   });
 
   test('loadDraftView: a genuinely planned visit still appears in day.committed', async () => {
@@ -746,7 +746,7 @@ describe('loadDraftView / loadDraftDayView — day.committed is planned-only', (
   });
 
   test('loadDraftDayView: same planned-only scope as loadDraftView', async () => {
-    // Its own date — DATE_A already carries a leftover 'planned' visit from
+    // Its own date - DATE_A already carries a leftover 'planned' visit from
     // the previous test in this shared in-memory db (same before()-not-
     // beforeEach() pattern the rest of this file uses), which is correct and
     // irrelevant here, but would collide with this test's own "must be empty"
@@ -768,17 +768,17 @@ describe('loadDraftView / loadDraftDayView — day.committed is planned-only', (
 
 // evaluateDay's committed-segment fix: a day's already-planned real visits
 // must count against the budget AND shift where the first proposed stop's
-// drive time is measured from — see evaluateDay's own header for the full
+// drive time is measured from - see evaluateDay's own header for the full
 // rationale. global.fetch is mocked to fail (forces the haversine fallback)
 // so this is deterministic and offline, same convention as the describe
 // blocks above.
-describe('evaluateDay via loadDraftView — committed visits count against the budget and shift the drive-time start point', () => {
+describe('evaluateDay via loadDraftView - committed visits count against the budget and shift the drive-time start point', () => {
   let db;
   const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
   const HOME_BASE = { lat: 41.85, lng: -87.65 };
   const PLACE_A = { lat: 41.9, lng: -87.6 }; // committed visit's place
-  const PLACE_B = { lat: 42.0, lng: -87.9 }; // proposed stop's place — far enough from PLACE_A, in a different direction from homeBase, that "drive from home" and "drive from PLACE_A" can't coincidentally match
+  const PLACE_B = { lat: 42.0, lng: -87.9 }; // proposed stop's place - far enough from PLACE_A, in a different direction from homeBase, that "drive from home" and "drive from PLACE_A" can't coincidentally match
 
   before(async () => {
     global.fetch = async () => ({ ok: false, json: async () => ({}) });

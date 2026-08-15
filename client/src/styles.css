@@ -1,4 +1,4 @@
-/* Guardian Angels CRM — global stylesheet.
+/* Guardian Angels CRM - global stylesheet.
    Loaded once in main.jsx; every component below relies on the same class
    names and CSS variables defined here rather than writing their own styles.
    Structure: :root design tokens (colors/fonts/spacing) first, then one
@@ -47,7 +47,7 @@
   /* ---- Semantic aliases used throughout the app ----
      Naming things by their ROLE (--text, --border, --danger) rather than
      their hue means most of the app's CSS never has to know which brand
-     color backs a given role — only this block does. */
+     color backs a given role - only this block does. */
   --brand: var(--blue);
   --brand-dark: var(--blue-dark);
   --bg: #F7F9FB;
@@ -60,14 +60,14 @@
   --danger: var(--mauve); /* mauve is reserved for attention/urgent states */
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
 
-  /* Tier badges (Tier 1/2/3 — see TierChip in ui/Chip.jsx) */
+  /* Tier badges (Tier 1/2/3 - see TierChip in ui/Chip.jsx) */
   --tier1: var(--blue-dark);
   --tier2: var(--teal-dark);
   --tier3: var(--grey-dark);
 
   /* ---- Type ----
      Source Serif 4 / Nunito Sans are free substitutes for the licensed brand
-     fonts (Minion Pro / Avenir) — loaded via Google Fonts in index.html.
+     fonts (Minion Pro / Avenir) - loaded via Google Fonts in index.html.
      Changing which fonts the app uses only ever requires editing these two lines. */
   --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif; /* headings, titles, brand moments */
   --font-sans: 'Nunito Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; /* everything functional */
@@ -86,7 +86,7 @@
 
 * { box-sizing: border-box; }
 /* Always reserve the vertical scrollbar's gutter, even on a tab short
-   enough not to need one (e.g. Route Planner) — without this, switching to/
+   enough not to need one (e.g. Route Planner) - without this, switching to/
    from a taller tab (Places, Dashboard, ...) toggles the scrollbar on and
    off, and since .app below is centered with margin: 0 auto, that toggle
    shifts the whole page a few pixels left/right on every tab change. Both
@@ -108,7 +108,7 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 
 .app { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
 
-/* Header — see ui/Header.jsx. Logo on the left, whatever App.jsx passes as
+/* Header - see ui/Header.jsx. Logo on the left, whatever App.jsx passes as
    children (date, signed-in-as) right-aligned via .controls. */
 .header {
   display: flex; align-items: center; justify-content: space-between;
@@ -120,7 +120,7 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .brand .sub { font-size: 12px; color: var(--muted); font-family: var(--font-sans); }
 .header .controls { display: flex; align-items: center; gap: 20px; }
 
-/* Tabs — the 4-item nav in App.jsx (Dashboard / Today's Route / Places / Needs Mapping) */
+/* Tabs - the 4-item nav in App.jsx (Dashboard / Today's Route / Places / Needs Mapping) */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
 .tab {
   background: none; border: none; padding: 10px 16px; cursor: pointer;
@@ -129,7 +129,7 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 600; }
 
-/* Cards / grid — .card is the white rounded box used everywhere (see
+/* Cards / grid - .card is the white rounded box used everywhere (see
    ui/Card.jsx, though most screens still write these divs by hand). .grid.stats
    is the Dashboard's stat-tile row (see ui/StatTile.jsx). */
 .grid { display: grid; gap: 16px; }
@@ -140,13 +140,13 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .card .card-head h2 { font-size: 16px; margin: 0; }
 .card .card-body { padding: 12px 16px; }
 
-/* One Dashboard stat tile (big number + label + hint) — see ui/StatTile.jsx */
+/* One Dashboard stat tile (big number + label + hint) - see ui/StatTile.jsx */
 .stat { padding: 16px; }
 .stat .num { font-family: var(--font-serif); font-size: 30px; font-weight: 700; color: var(--blue-dark); }
 .stat .label { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .stat .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
-/* Buttons — the one button system, see ui/Button.jsx for the variant/size props
+/* Buttons - the one button system, see ui/Button.jsx for the variant/size props
    that map onto these classes (.secondary/.ghost/.danger/.small/.big). Plain
    ".btn" with no extra class is the primary (solid blue) look. */
 .btn {
@@ -159,13 +159,13 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .btn.secondary:hover { background: var(--blue-tint-2); }
 .btn.ghost { background: none; color: var(--blue); padding: 6px 8px; }
 .btn.ghost:hover { background: var(--blue-tint-2); }
-/* Same weight as .ghost (no fill) but mauve, plus a thin outline — a firm
+/* Same weight as .ghost (no fill) but mauve, plus a thin outline - a firm
    suggestion ("do not visit") rather than a request to confirm destroying
    something (.danger's filled pill, reserved for actually-irreversible
    actions like Delete). The outline is what keeps a no-fill button reading
    as a button rather than plain text; .ghost gets away without one because
    it always sits among other filled buttons that establish the row as
-   clickable — this one doesn't. */
+   clickable - this one doesn't. */
 .btn.caution { background: none; color: var(--mauve); border: 1px solid var(--mauve-tint-3); padding: 5px 8px; }
 .btn.caution:hover { background: var(--mauve-tint-1); }
 .btn.small { padding: 4px 8px; font-size: 12px; }
@@ -176,7 +176,7 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .btn.chevron-toggle:hover { background: var(--blue-tint-2); color: var(--blue); }
 
 
-/* Inputs — every text field/dropdown/textarea in the app shares this look;
+/* Inputs - every text field/dropdown/textarea in the app shares this look;
    `label.field` is the small grey caption above a field (e.g. "Contact name"). */
 input, select, textarea {
   font-family: var(--font-sans); font-size: 13px; padding: 8px 10px; border: 1px solid var(--border);
@@ -188,13 +188,13 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .row > * { flex: 1; min-width: 120px; }
 
-/* A toggleable option row — VisitLogModal's stand-in for a checkbox. The row
+/* A toggleable option row - VisitLogModal's stand-in for a checkbox. The row
    itself is the hit target regardless, greying on hover and turning light
    blue once selected. Multiple rows can be selected at once (this is styling
-   only — the multi- vs single-select logic lives in each caller's toggle
+   only - the multi- vs single-select logic lives in each caller's toggle
    handler), so it reads as "tap to include," not a radio. Most uses (the
    Who did you meet / Which people checklists) skip the checkbox square
-   entirely — the bordered list container around them already signals
+   entirely - the bordered list container around them already signals
    they're selectable. A standalone toggle with no such container (e.g.
    "They asked me for something") adds `.check-box-visual` as a purely
    decorative first child so it doesn't rely on that container for the same
@@ -219,7 +219,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
   content: '✓'; color: #fff; font-size: 10px; font-weight: 700; line-height: 1;
 }
 
-/* The "who did you meet" / "which people" checklists in VisitLogModal — one
+/* The "who did you meet" / "which people" checklists in VisitLogModal - one
    encounter is written on the visit per row ticked across them. Scrolls rather
    than growing without bound, since a big place's roster would otherwise push
    the rest of the form off-screen. */
@@ -229,7 +229,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
   display: flex; flex-direction: column; gap: 2px;
 }
 
-/* One encounter's own block — its "what happened" answers in VisitLogModal,
+/* One encounter's own block - its "what happened" answers in VisitLogModal,
    its recorded detail in VisitDetailModal. Boxed so the per-person answers
    read as separate units rather than one long column of controls whose labels
    are easy to mis-associate. */
@@ -243,18 +243,18 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 /* The column of encounter-rows itself. Same reasoning as .person-checklist
    above: one more row gets appended every time another person/category is
    ticked in "Who did you meet?", and without a cap the whole modal kept
-   growing (and re-centering) on every click — capped + scrolling here instead
+   growing (and re-centering) on every click - capped + scrolling here instead
    keeps the modal's height stable while multiple selections are being made.
    VisitDetailModal reuses it for the same reason: expanding one person's
    detail there shouldn't resize the modal around it. */
 .encounter-list { max-height: 260px; overflow-y: auto; padding-right: 2px; }
 
-/* A button that reads as an inline link — for a secondary action sitting
+/* A button that reads as an inline link - for a secondary action sitting
    inside body text, where a real .btn would be too heavy. */
 .link-button { background: none; border: none; padding: 0; font: inherit; color: var(--blue); cursor: pointer; text-decoration: underline; }
 .link-button:hover { color: var(--blue-dark); }
 
-/* Chips / badges — small colored pills. See ui/Chip.jsx (TierChip/
+/* Chips / badges - small colored pills. See ui/Chip.jsx (TierChip/
    OutcomeChip) for which component renders which class below. */
 .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; white-space: nowrap; }
 .badge.t1 { background: var(--blue-tint-1); color: var(--tier1); } /* Tier 1 */
@@ -271,7 +271,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.o-materials_only { background: var(--grey-tint-1); color: var(--grey-dark); }
 .badge.o-unavailable { background: var(--grey-tint-1); color: var(--muted); }
 .badge.o-declined { background: var(--mauve-tint-1); color: var(--warn); }
-/* Pre-cutover outcome values still on old rows (see api.js's outcomeLabel) —
+/* Pre-cutover outcome values still on old rows (see api.js's outcomeLabel) -
    no dedicated color, but they inherit .badge so they never render unstyled. */
 .badge.o-interested { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.o-follow_up { background: var(--blue-tint-1); color: var(--blue); }
@@ -279,20 +279,20 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.o-no_answer { background: var(--grey-tint-1); color: var(--muted); }
 .badge.o-left_materials { background: var(--grey-tint-1); color: var(--grey-dark); }
 
-/* Computed relationship level (services/relationship.js) — see RelationshipChip. */
+/* Computed relationship level (services/relationship.js) - see RelationshipChip. */
 .badge.rel-strong { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.rel-medium { background: var(--blue-tint-1); color: var(--blue); }
 .badge.rel-weak { background: var(--grey-tint-1); color: var(--muted); }
 
-/* Computed capacity level (services/capacity.js) — see CapacityChip. Same
+/* Computed capacity level (services/capacity.js) - see CapacityChip. Same
    color scheme as the relationship chips above (best/middle/weakest ->
-   teal/blue/grey) — a different axis, but the same "which tier is this"
+   teal/blue/grey) - a different axis, but the same "which tier is this"
    visual language. */
 .badge.cap-high { background: var(--teal-tint-2); color: var(--teal-dark); }
 .badge.cap-medium { background: var(--blue-tint-1); color: var(--blue); }
 .badge.cap-low { background: var(--grey-tint-1); color: var(--muted); }
 
-/* Relationship trend badge (see RelationshipDetail.jsx) — mauve for heating
+/* Relationship trend badge (see RelationshipDetail.jsx) - mauve for heating
    up, blue for cooling down. A temperature metaphor, not this app's usual
    good/bad color convention (mauve is --warn elsewhere): text only, no
    background pill, so it doesn't compete with the level chip next to it. */
@@ -303,12 +303,12 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 /* Category chips: flat neutral style, same for every category */
 .cat-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; background: var(--grey-tint-1); color: var(--grey-dark); }
 
-/* Attention flag — a mauve left border, applied to rows in Dashboard's
+/* Attention flag - a mauve left border, applied to rows in Dashboard's
    "Needs attention" list and over-budget stops in Route Planner. Mauve is
    used sparingly on purpose (see :root above). */
 .attention-flag { border-left: 3px solid var(--mauve); }
 
-/* Lists / tables — .list/.stop is the vertical-timeline row style used by
+/* Lists / tables - .list/.stop is the vertical-timeline row style used by
    Route Planner and the Dashboard's completed-this-week/needs-attention lists. */
 .list { list-style: none; margin: 0; padding: 0; }
 .stop {
@@ -327,7 +327,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .drag-handle { color: var(--muted); cursor: grab; font-size: 14px; text-align: center; user-select: none; line-height: 1; }
 .drag-handle:active { cursor: grabbing; }
 
-/* Up/down arrow buttons — the non-drag fallback for reordering a stop (Route Planner) */
+/* Up/down arrow buttons - the non-drag fallback for reordering a stop (Route Planner) */
 .reorder { display: flex; flex-direction: column; gap: 2px; }
 .reorder button { border: 1px solid var(--border); background: #fff; border-radius: 6px; width: 24px; height: 20px;
   cursor: pointer; line-height: 1; padding: 0; color: var(--muted); }
@@ -335,7 +335,7 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .reorder button:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* Reusable hover highlight for clickable rows/blocks that aren't <button>s
-   (e.g. click-to-edit notes, a person's place, a visit row) — same subtle
+   (e.g. click-to-edit notes, a person's place, a visit row) - same subtle
    blue-tint background as the Places directory's tbody tr:hover. Full-width:
    the click target is a block-level element that already spans the width of
    its container (a card-body or flex row), so no side padding is needed to
@@ -343,26 +343,26 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .hover-row { cursor: pointer; transition: background 0.1s ease; }
 .hover-row:hover { background: var(--blue-tint-1); }
 /* Hovering a button inside the row (e.g. its "x" remove/delete action) is a
-   more specific target than the row itself — drop the row's own highlight so
+   more specific target than the row itself - drop the row's own highlight so
    only the button appears selected, instead of both lighting up at once. */
 .hover-row:has(.btn:hover) { background: none; }
 .hover-row:has(.icon-remove:hover) { background: none; }
 
 /* Route Planner's stop rows: the click-to-open-detail area is only .main
    (the drag handle + reorder buttons sit to its left, the time estimate +
-   remove button to its right, as separate flex siblings — see .stop below)
-   — painting just .main's own box on hover looked like a narrow, off-center
+   remove button to its right, as separate flex siblings - see .stop below)
+   - painting just .main's own box on hover looked like a narrow, off-center
    highlight rather than "this whole row opens the place." :has() lets the
    full-width .stop <li> (no horizontal padding, so its background already
    reaches edge to edge) repaint itself off its .main child's hover state
    instead. Both this and .main's own highlight are explicitly cancelled
-   while hovering the visit-type <select> nested inside .main — picking a
+   while hovering the visit-type <select> nested inside .main - picking a
    visit type isn't "open the detail" and shouldn't look selected as if it
    were; the extra :has(select:hover) on each makes that override reliably
    win on specificity over the plain :hover/:has(.main…) rules above, no
    source-order dependency. Hovering the reorder/remove buttons never
    triggers any of this in the first place, since they're .main's siblings,
-   not descendants. Instant on/off here (no fade) — .hover-row's shared
+   not descendants. Instant on/off here (no fade) - .hover-row's shared
    transition would only animate .main's own background, not the .stop
    background painted alongside it below, so the two layers visibly fell out
    of sync (one fading, one snapping) instead of reading as one highlight. */
@@ -371,11 +371,11 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .stop:has(.main.hover-row:hover) { background: var(--blue-tint-1); }
 .stop:has(.main.hover-row:hover):has(select:hover) { background: none; }
 /* Persistent version of the above for rows that stay picked after the click
-   (e.g. AssignPersonModal's person list) — a stronger tint so it still reads
+   (e.g. AssignPersonModal's person list) - a stronger tint so it still reads
    as "on" once the mouse moves away. */
 .hover-row.selected { background: var(--blue-tint-2); }
 
-/* Data tables — Places directory and Dashboard's "never visited" list */
+/* Data tables - Places directory and Dashboard's "never visited" list */
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
@@ -387,7 +387,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .stack { display: flex; flex-direction: column; gap: 4px; } /* vertical stack of small pieces of text */
 .tag-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } /* row of chips/badges */
 
-/* Empty state — see ui/EmptyState.jsx: the wing icon + brand-voice message
+/* Empty state - see ui/EmptyState.jsx: the wing icon + brand-voice message
    shown whenever a list/section has nothing to display. */
 .empty-state { padding: 36px 24px; text-align: center; color: var(--muted); }
 .empty-state .empty-icon { width: 56px; height: auto; opacity: 0.35; margin-bottom: 12px; }
@@ -396,7 +396,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .empty-state.compact .empty-icon { width: 32px; margin-bottom: 6px; }
 .empty-state.compact .empty-message { margin: 0 auto; }
 
-/* Modal / slide-up sheet — the dark overlay + centered white box pattern used
+/* Modal / slide-up sheet - the dark overlay + centered white box pattern used
    by every *Modal.jsx component (VisitLogModal, PersonModal, PlaceDetail,
    ChangePassword, CategoriesModal). On narrow screens the @media rule
    further down turns this into a bottom slide-up sheet instead. */
@@ -405,7 +405,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 @keyframes modal-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-pop-in { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
 /* .closing is added by useClosingTransition.js just before it tells the
-   parent to actually unmount — 0.15s here must match CLOSE_ANIMATION_MS
+   parent to actually unmount - 0.15s here must match CLOSE_ANIMATION_MS
    there, or the DOM node disappears mid-animation (too short) or sits idle
    after finishing it (too long). animation-fill-mode: forwards holds the
    faded-out end state for that gap instead of snapping back to visible. */
@@ -414,7 +414,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 @keyframes modal-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes modal-pop-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.85); } }
 /* z-index: 1 (rather than the default auto) is required so these sticky bars reliably
-   paint above scrolled-past body content — anything in the body with its own stacking
+   paint above scrolled-past body content - anything in the body with its own stacking
    context (e.g. EmptyState's icon, which has opacity < 1) would otherwise win on DOM
    order alone and show through the header/footer while scrolling. */
 .modal .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: #fff; z-index: 1; }
@@ -422,13 +422,13 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .modal .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .modal .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: #fff; z-index: 1; }
 .close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--muted); line-height: 1; }
-/* A quieter remove — plain × like .close rather than a full boxed .btn.danger,
+/* A quieter remove - plain × like .close rather than a full boxed .btn.danger,
    for a delete action that sits inline next to other content instead of
    anchoring a modal header. */
 .icon-remove { background: none; border: none; font-size: 18px; line-height: 1; cursor: pointer; color: var(--muted); padding: 2px 6px; border-radius: var(--radius-sm); }
 .icon-remove:hover { background: var(--mauve-tint-1); color: var(--mauve); }
 .icon-remove:disabled { opacity: 0.5; cursor: not-allowed; }
-/* Same slot as .icon-remove but already-red at rest (not muted-until-hover) —
+/* Same slot as .icon-remove but already-red at rest (not muted-until-hover) -
    for a delete that's clearing history, not detaching a live relationship,
    so it doesn't need the softer "are you sure this is what you want" framing. */
 .icon-delete { background: #fff; border: 1px solid var(--mauve-tint-3); color: var(--mauve); font-size: 12px; line-height: 1; cursor: pointer; padding: 3px 7px; border-radius: var(--radius-sm); }
@@ -450,7 +450,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   @keyframes sheet-up { from { transform: translateY(24px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
 }
 
-/* Place picker — the custom autocomplete dropdown in ui/PlacePicker.jsx
+/* Place picker - the custom autocomplete dropdown in ui/PlacePicker.jsx
    (used by Route Planner's ad-hoc "+ Add a stop" flow). */
 .picker { position: relative; flex: 2; }
 .picker-menu { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--border);
@@ -465,7 +465,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .notice-banner.fading { opacity: 0; }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
 
-/* Auth landing page — Login.jsx, the pick-a-name-then-password screen */
+/* Auth landing page - Login.jsx, the pick-a-name-then-password screen */
 .auth-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
 .auth-card { width: 100%; max-width: 380px; }
 .auth-card .card-body { display: flex; flex-direction: column; gap: 4px; padding: 28px 26px; }
@@ -473,7 +473,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .auth-brand .logo-img { height: 80px; width: auto; display: block; margin-bottom: 10px; }
 .auth-brand h1 { font-size: 17px; margin: 0; }
 
-/* Splash / branded loading screen — ui/Splash.jsx, shown while App.jsx checks
+/* Splash / branded loading screen - ui/Splash.jsx, shown while App.jsx checks
    for a saved login session on page load. */
 .splash { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: var(--blue); color: #fff; text-align: center; padding: 20px; }
 .splash .logo-img { height: 56px; width: auto; }
@@ -482,11 +482,11 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 /* Signed-in-as chip in the header (App.jsx's right-side header controls) */
 .user-menu { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
 
-/* Static (read-only) date display in the header — there's no date picker,
+/* Static (read-only) date display in the header - there's no date picker,
    today's date is just shown as text (App.jsx) */
 .static-date { padding: 8px 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
 
-/* Progress bar — a day's running total in Route Planner. .progress-total is
+/* Progress bar - a day's running total in Route Planner. .progress-total is
    the prominent "Xh Ym of Zh" readout above the bar; .progress-label is the
    smaller "N stops · Xh Ym free" caption below it. */
 .progress-total { font-family: var(--font-serif); font-size: 20px; font-weight: 700; color: var(--blue-dark); margin-bottom: 6px; }
@@ -494,7 +494,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .progress-bar .fill { height: 100%; background: var(--blue); border-radius: 999px; transition: width 0.3s ease; }
 .progress-label { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
-/* Calendar — Route Planner's multi-date picker (ui/Calendar.jsx). A plain
+/* Calendar - Route Planner's multi-date picker (ui/Calendar.jsx). A plain
    month grid; selection/disabled/committed states are just background +
    text color, no icons, consistent with the rest of the app's flat style. */
 .calendar { max-width: 280px; }
@@ -517,23 +517,23 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .calendar-day:disabled { color: var(--grey-tint-3); cursor: default; }
 .calendar-day.selected { background: var(--blue); color: #fff; font-weight: 700; }
 .calendar-day.committed { background: var(--teal-tint-1); color: var(--teal-dark); }
-/* A selected date that's already been generated into the active draft —
+/* A selected date that's already been generated into the active draft -
    still "selected" in the data sense, but no longer clickable (discarding
    the day's proposal is the only way to free it back up, see Calendar's own
-   comment above) — a lighter tint than the solid .selected blue signals
+   comment above) - a lighter tint than the solid .selected blue signals
    "locked in" rather than "still a plain, still-toggleable pick". Declared
    after .selected so it wins the tie on a date that's both. */
 .calendar-day.proposed { background: var(--blue-tint-4); color: var(--blue-dark); font-weight: 700; }
-/* Stamped directly over the day number (not beside it) — a deliberate
+/* Stamped directly over the day number (not beside it) - a deliberate
    one-off exception to this app's usual "success maps to blue, never green"
-   convention (see :root's --ok) — a checkmark reads as done fastest in the
+   convention (see :root's --ok) - a checkmark reads as done fastest in the
    color everyone already associates with it. */
 .calendar-day-check {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   font-size: 16px; font-weight: 700; color: #1E8E3E;
 }
 
-/* Calendar tab's Mine/All-reps scope control — one button, not two, split
+/* Calendar tab's Mine/All-reps scope control - one button, not two, split
    down the middle: the active side is filled, clicking anywhere on the
    button (not each half independently) flips scope to the other side. */
 .scope-toggle {
@@ -546,16 +546,16 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 }
 .scope-toggle-half.active { background: var(--blue); color: #fff; }
 
-/* Calendar tab (ui/MonthCalendar.jsx) — a full-width, unbounded month grid,
+/* Calendar tab (ui/MonthCalendar.jsx) - a full-width, unbounded month grid,
    distinct from .calendar above (Route Planner's 280px-capped multi-select
    date *picker*). This is a whole tab's main content, so cells get real
    room: a day number plus a row of status dots, not just a bare number.
    Reuses .calendar-head/.calendar-nav/.calendar-title as-is for the month
-   nav strip (prev/title/next) — same look at both scales. */
+   nav strip (prev/title/next) - same look at both scales. */
 .month-calendar { width: 100%; }
 .month-calendar-grid {
   display: grid;
-  /* minmax(0, 1fr), not bare 1fr — a grid track's default minimum is `auto`
+  /* minmax(0, 1fr), not bare 1fr - a grid track's default minimum is `auto`
      (its content's min-content size), so a long nowrap pill inside a day
      cell would otherwise force that whole column, and the grid alongside
      it, wider to fit it. minmax(0, 1fr) caps each track back to its fair
@@ -575,12 +575,12 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
 }
 .month-calendar-day.empty { background: var(--bg); }
-/* Today's ring — the one thing the cell itself still signals passively; the
+/* Today's ring - the one thing the cell itself still signals passively; the
    day as a whole is otherwise inert, see MonthCalendar.jsx's header. */
 .month-calendar-day.today { box-shadow: inset 0 0 0 2px var(--blue); border-radius: var(--radius-sm); }
 /* A plain <button> reset back to reading as the bare day number it always
-   was — font/color inherited from .month-calendar-day rather than the
-   browser's own button chrome — plus a hover color as the one hint that
+   was - font/color inherited from .month-calendar-day rather than the
+   browser's own button chrome - plus a hover color as the one hint that
    it's actually clickable (opens DayOverflowModal for the whole day, see
    VisitsCalendar.jsx's renderDayNum). */
 .month-calendar-daynum {
@@ -588,17 +588,17 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   background: none; border: none; padding: 0; cursor: pointer;
 }
 .month-calendar-daynum:hover { color: var(--blue); }
-/* Day number + birthday badge, side by side as the cell's own top row —
+/* Day number + birthday badge, side by side as the cell's own top row -
    keeps a birthday out of the visit-pill stack below entirely, so it never
    counts against MAX_VISIBLE_PILLS or grows the cell (see
    VisitsCalendar.jsx's renderDayTop). */
 .month-calendar-day-top { display: flex; align-items: center; gap: 6px; }
-/* "Planned Route" / "Completed" / "+N more" — the genuinely clickable things
+/* "Planned Route" / "Completed" / "+N more" - the genuinely clickable things
    in a day cell that has committed route-planner visits (one badge per rep,
-   in "All reps" scope, capped at MAX_VISIBLE_PILLS — see VisitsCalendar.jsx's
+   in "All reps" scope, capped at MAX_VISIBLE_PILLS - see VisitsCalendar.jsx's
    renderDay/splitPillsForDay), or any completed visits, on it. Same
    border-radius as .btn (var(--radius-sm), not a fully-rounded pill) so
-   these read as clickable buttons rather than plain status tags — nothing
+   these read as clickable buttons rather than plain status tags - nothing
    else on this app lets you click a rounded pill. Same color pairing
    CompletedVisitsModal/SkippedVisitsModal's own status badges use (planned →
    blue, completed → teal); "+N more" gets a neutral grey since it isn't its
@@ -607,7 +607,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   font-family: var(--font-sans); font-size: 10px; font-weight: 700;
   padding: 3px 7px; border-radius: var(--radius-sm); border: none; cursor: pointer;
   white-space: nowrap; line-height: 1.3;
-  /* Capped to the day cell's own width rather than growing it — a long rep
+  /* Capped to the day cell's own width rather than growing it - a long rep
      name (e.g. "Nikki Shasserre's Planned Route") truncates with an
      ellipsis instead of overflowing into neighboring cells or forcing the
      grid to reflow. */
@@ -619,18 +619,18 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .completed-visits-badge:hover { background: var(--teal-tint-4); }
 .pill-overflow-badge { background: var(--grey-tint-1); color: var(--grey-dark); }
 .pill-overflow-badge:hover { background: var(--grey-tint-2); }
-/* Same grey family as .pill-overflow-badge — skipped is "nothing happened,"
+/* Same grey family as .pill-overflow-badge - skipped is "nothing happened,"
    not a status worth its own color. Used both directly in the day cell
    (renderDay) and inside DayOverflowModal's enlarged view (see
    .day-overview-pill below), same as the other two badges. */
 .skipped-visits-badge { background: var(--grey-tint-1); color: var(--grey-dark); }
 .skipped-visits-badge:hover { background: var(--grey-tint-2); }
 
-/* DayOverflowModal — the "+N more" popover, a small floating card (same
+/* DayOverflowModal - the "+N more" popover, a small floating card (same
    look/z-index family as .picker-menu above) anchored to the chip that
    opened it and positioned via JS (see the component's own useLayoutEffect),
    not centered like a real modal. Its pills reuse the day cell's own pill
-   classes/colors, just oversized and untruncated — same specificity as the
+   classes/colors, just oversized and untruncated - same specificity as the
    base .planned-route-badge rule, so this only wins because it's declared
    later; keep it below that rule. */
 .day-overview-popover {
@@ -645,15 +645,15 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   font-size: 12px; padding: 6px 12px; white-space: normal;
   max-width: none; overflow: visible; text-overflow: clip;
 }
-/* "Plan a visit…" control (Manual Visit Planning §3) below the pills list —
+/* "Plan a visit…" control (Manual Visit Planning §3) below the pills list -
    its own section, so it gets a divider + top margin same as .modal-foot's
    separation from .modal-body, instead of sitting flush against the last
    pill (or EmptyState, which already carries its own padding). */
 .day-overview-plan { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--border); }
-/* Birthday badge — a day cell's 🎂, clickable, opening BirthdayModal for
+/* Birthday badge - a day cell's 🎂, clickable, opening BirthdayModal for
    that day. Deliberately not one of the .planned-route-badge family above
    (this isn't a visit status) and not folded into .day-dots either (a
-   birthday isn't a status dot, it's worth actually seeing at a glance) —
+   birthday isn't a status dot, it's worth actually seeing at a glance) -
    mauve is otherwise barely used in this palette, so it reads as its own
    distinct thing. */
 .birthday-badge {
@@ -671,7 +671,7 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .selected-days-row .date-label { flex: 1; font-size: 13px; font-weight: 600; }
 
 /* Two-part duration picker (hours + minutes) for a planned date's daily
-   budget — RoutePlanner.jsx keeps this as one field on the wire
+   budget - RoutePlanner.jsx keeps this as one field on the wire
    (`hoursPerDay`, a decimal), but shows it as two selects. Grouped inside
    one bordered pill (shared border, no border/outline of their own on the
    individual selects) so it still reads as a single "duration" control
@@ -685,16 +685,16 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .duration-picker:focus-within { outline: 2px solid var(--blue-tint-3); border-color: var(--blue); }
 .duration-sep { color: var(--muted); font-size: 12px; }
 
-/* InlineDropdown — a <select> styled to read as plain inline text (used by
+/* InlineDropdown - a <select> styled to read as plain inline text (used by
    Route Planner's zone picker, sitting inline in a card's h2). font: inherit
    on the select itself only affects the CLOSED display (so it still matches
    the surrounding h2's size); the option rule below matches every other
    <select> in the app (see the plain `input, select, textarea` rule).
    NOTE: on macOS, Chrome/Safari render the OPEN popup natively and ignore
-   font-size on <option> — confirmed 2026-07-28 (computed style reports 13px,
+   font-size on <option> - confirmed 2026-07-28 (computed style reports 13px,
    but the rendered popup doesn't reflect it). Harmless to leave in (other
    platforms do honor it), but don't rely on this to actually shrink the
-   open list on a Mac — that needs a fully custom-built dropdown instead. */
+   open list on a Mac - that needs a fully custom-built dropdown instead. */
 .inline-dropdown { font: inherit; color: inherit; background: none; border: none; padding: 0; margin: 0; cursor: pointer; }
 .inline-dropdown:hover:not(:disabled) { text-decoration: underline; }
 .inline-dropdown:focus { outline: 2px solid var(--blue-tint-3); border-radius: 2px; }
@@ -704,10 +704,10 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 /* Route Planner's generate form: "Starting point" + "Plan for these dates"
    as two EQUAL-width columns with a vertical rule dead-center between them,
    instead of stacking one above the other (which left the card mostly
-   empty — the calendar/date-list content is inherently narrower than the
+   empty - the calendar/date-list content is inherently narrower than the
    card) or an off-center split (which left the divider looking arbitrary
    rather than a deliberate midline). Grid (not flex) so the two tracks stay
-   a true 50/50 split regardless of which side's content is wider — flex's
+   a true 50/50 split regardless of which side's content is wider - flex's
    equal flex-basis only holds until one side's content forces extra width,
    which is what happened here (the calendar+date-list pair is wider than
    the starting-point controls, so it won extra flex-grow space and dragged

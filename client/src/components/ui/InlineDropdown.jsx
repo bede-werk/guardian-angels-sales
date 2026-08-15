@@ -4,7 +4,7 @@ import React from 'react';
 // inside a header line, like Route Planner's zone picker) rather than a boxy
 // form control, while still being a real <select> for native/keyboard
 // picking. `options` is a plain array of strings. If `value` isn't (yet)
-// among `options` — e.g. the list hasn't loaded — shows `placeholder` as a
+// among `options` - e.g. the list hasn't loaded - shows `placeholder` as a
 // disabled option instead of silently selecting the wrong thing.
 export default function InlineDropdown({ value, options, onChange, disabled, title, placeholder = '…' }) {
   const hasValue = options.includes(value);
@@ -17,7 +17,7 @@ export default function InlineDropdown({ value, options, onChange, disabled, tit
       disabled={disabled || options.length === 0}
       title={title}
       // A bare <select> sizes its closed box to fit its WIDEST option, not
-      // the selected one — with a long option elsewhere in the list, that
+      // the selected one - with a long option elsewhere in the list, that
       // leaves a visible gap between short selected text and the arrow.
       // Sizing to the selected text's own length (plus a little room for
       // the arrow) keeps the arrow sitting right next to what's shown,

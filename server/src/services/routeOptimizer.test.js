@@ -32,7 +32,7 @@ describe('optimizeRoute', () => {
     const stopB = { place_id: 'b', ...SOUTHWEST_LINCOLN };
 
     // Input order is [start, a, b] but OSRM decides b should be visited
-    // before a (waypoint_index 1 for b, 2 for a) — orderedStops must follow
+    // before a (waypoint_index 1 for b, 2 for a) - orderedStops must follow
     // trip order, not input order.
     global.fetch = async () => okResponse({
       code: 'Ok',
@@ -94,7 +94,7 @@ describe('optimizeRoute', () => {
   });
 
   test('returns null rather than trusting a legs array shorter than the requested stop count', async () => {
-    // 2 stops requested but OSRM only returned 1 leg — a malformed-but-200-OK
+    // 2 stops requested but OSRM only returned 1 leg - a malformed-but-200-OK
     // response the free demo server could plausibly return under load.
     global.fetch = async () => okResponse({
       code: 'Ok',
@@ -159,7 +159,7 @@ describe('getRouteLegMinutes', () => {
     assert.equal(called, false);
   });
 
-  test('chains leg minutes in the exact given order — no resequencing', async () => {
+  test('chains leg minutes in the exact given order - no resequencing', async () => {
     const stopA = { place_id: 'a', ...EAST_LINCOLN };
     const stopB = { place_id: 'b', ...SOUTHWEST_LINCOLN };
 

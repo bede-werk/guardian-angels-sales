@@ -2,8 +2,8 @@
 // relationship buckets, plus the score spread behind them.
 //
 // This exists because the buckets are only useful if they actually SEPARATE.
-// If ~everything piles into one bucket, the relationship axis is dead again —
-// exactly the failure this whole subsystem replaced — and the half-lives or
+// If ~everything piles into one bucket, the relationship axis is dead again -
+// exactly the failure this whole subsystem replaced - and the half-lives or
 // thresholds need tuning BEFORE the ranker starts consuming the values. Run
 // this against real data before wiring relationship into scheduling, and again
 // after any seeding pass.
@@ -31,7 +31,7 @@ async function main() {
   const asOf = orgToday();
   const places = await knex('places').select('id', 'name', 'category');
   if (!places.length) {
-    console.log('No places in the database — nothing to report.');
+    console.log('No places in the database - nothing to report.');
     return;
   }
 
@@ -40,7 +40,7 @@ async function main() {
   const rows = places.map((p) => ({ ...p, rel: byPlace.get(p.id) })).filter((r) => r.rel);
   const total = rows.length;
 
-  console.log(`\nRelationship distribution — ${total} places, as of ${asOf}`);
+  console.log(`\nRelationship distribution - ${total} places, as of ${asOf}`);
   console.log(`Thresholds: strong >= ${RELATIONSHIP_THRESHOLDS.strong}, medium >= ${RELATIONSHIP_THRESHOLDS.medium}, else weak\n`);
 
   const counts = Object.fromEntries(LEVELS.map((l) => [l, 0]));
@@ -67,7 +67,7 @@ async function main() {
     console.log(`  !! ${(dominantShare * 100).toFixed(0)}% of places are '${dominant}'. The axis is not separating.`);
     console.log(`     Tune half-lives/thresholds (or seed more people) before letting the ranker read this.`);
   } else {
-    console.log(`  OK — largest bucket ('${dominant}') holds ${(dominantShare * 100).toFixed(0)}% of places; the axis separates.`);
+    console.log(`  OK - largest bucket ('${dominant}') holds ${(dominantShare * 100).toFixed(0)}% of places; the axis separates.`);
   }
 
   const seeded = await knex('people').whereNotNull('relationship_seed').count('* as c').first();
@@ -77,7 +77,7 @@ async function main() {
   console.log(`\nTop 10 by score:`);
   for (const r of [...rows].sort((a, b) => b.rel.score - a.rel.score).slice(0, 10)) {
     const flag = r.rel.is_overridden ? ` [override: ${r.rel.effective_level}]` : '';
-    console.log(`  ${r.rel.score.toFixed(3).padStart(7)}  ${r.rel.level.padEnd(7)} ${(r.category || '—').padEnd(32)} ${r.name}${flag}`);
+    console.log(`  ${r.rel.score.toFixed(3).padStart(7)}  ${r.rel.level.padEnd(7)} ${(r.category || '-').padEnd(32)} ${r.name}${flag}`);
   }
   console.log('');
 }

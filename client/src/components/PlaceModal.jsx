@@ -13,7 +13,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
   const { closing, startClosing } = useClosingTransition();
   const requestClose = () => startClosing(onClose);
   // category must be one of the categories table's values (see
-  // routes/categories.js) — include the place's own current value
+  // routes/categories.js) - include the place's own current value
   // defensively even if it somehow isn't in the list (e.g. a category was
   // just retired), so editing never silently discards it.
   const categoryOptions = place?.category && !categories.includes(place.category)
@@ -33,7 +33,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null — see ConfirmDialog
+  const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null - see ConfirmDialog
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const toggle = (k) => () => setForm((f) => ({ ...f, [k]: !f[k] }));
@@ -41,7 +41,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
   // One save attempt against the API. Returns 'ok' or 'failed' ('error' is
   // already set in the latter case). `confirm_address` is always sent true
   // here since, by the time this runs, save() has already resolved any
-  // address warning up front — this is just a safety-net re-check on the
+  // address warning up front - this is just a safety-net re-check on the
   // server, not expected to fire in normal use.
   async function attemptSave(body) {
     setSaving(true);
@@ -59,13 +59,13 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
     }
   }
 
-  // Checks duplicates (by name OR address — routes/places.js's check-duplicate,
+  // Checks duplicates (by name OR address - routes/places.js's check-duplicate,
   // a dedicated endpoint, not the general list `search`) and address-validity
-  // together *before* saving — both fetched fresh right here (never from a
+  // together *before* saving - both fetched fresh right here (never from a
   // debounced background hook, which could still be mid-flight and stale at
-  // the moment of clicking) — so if both are a problem the rep sees one
+  // the moment of clicking) - so if both are a problem the rep sees one
   // combined pop-up instead of missing one. Only warn on duplicates when
-  // creating — editing an existing place will always "match" itself. Pops up
+  // creating - editing an existing place will always "match" itself. Pops up
   // only when "Add place"/"Save changes" is actually clicked, not while
   // still typing.
   async function save() {

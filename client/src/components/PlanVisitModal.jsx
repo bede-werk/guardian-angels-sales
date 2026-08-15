@@ -3,7 +3,7 @@ import { api, today, formatDate } from '../api';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
 
-// Manual Visit Planning (spec §3) — "I'm going to Tabitha on Thursday," said
+// Manual Visit Planning (spec §3) - "I'm going to Tabitha on Thursday," said
 // directly, no route-planner draft involved. Two entry points, each with one
 // side already fixed:
 //   - PlaceDetail.jsx's "Plan…" button: the PLACE is fixed (`placeId`/
@@ -13,18 +13,18 @@ import PlacePicker from './ui/PlacePicker';
 //     place/rep/notes instead, via PlacePicker.
 // Both used to be inline toggle-reveals-a-row-of-inputs forms crammed into
 // their host card/popover; pulled into one shared modal since both read as
-// too cramped, especially DayOverflowModal's — its popover had to
+// too cramped, especially DayOverflowModal's - its popover had to
 // recompute its own on-screen position every time the form grew a field.
 //
 // A 200 response with no visit means the server found a §4.2 warning
 // (recently visited nearby, or do_not_visit) and wants confirmation before
 // writing anything; the form stays open with that warning shown, and the
 // NEXT save resends with force:true. A thrown error (§4.1 hard block, or bad
-// input) surfaces as an inline banner — same convention VisitLogModal/
+// input) surfaces as an inline banner - same convention VisitLogModal/
 // ReferralModal use, not a window.alert.
 
 // Reduces buildWarnings' §4.2 list (services/manualVisits.js) down to the
-// single one worth surfacing — do_not_visit is a deliberate flag someone set
+// single one worth surfacing - do_not_visit is a deliberate flag someone set
 // on the place, which outranks a floor warning's recency guess, same
 // "certain fact beats a heuristic" ordering VisitLogModal's primaryConflict
 // uses. At most one floor warning ever reaches this array to begin with
@@ -54,14 +54,14 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
 
   // The message lives at the bottom of the form (right above Save), but on
   // a tall form (DayOverflowModal's place-picker variant, say) that can
-  // still be scrolled out of view the moment it appears — a rep shouldn't
+  // still be scrolled out of view the moment it appears - a rep shouldn't
   // have to go hunting for why Save just turned into "Plan anyway." Scrolls
   // itself into view any time a fresh error/warning shows up, so it's never
   // a guess.
   const noticeRef = useRef(null);
   useEffect(() => {
     if (error || warnings?.length > 0) {
-      // block: 'end' (not 'nearest') — 'nearest' stops as soon as any sliver
+      // block: 'end' (not 'nearest') - 'nearest' stops as soon as any sliver
       // of the target is on-screen, which can leave most of a multi-line
       // message hidden behind the sticky footer if it was already
       // half-visible. 'end' always scrolls until the target's bottom edge
@@ -90,7 +90,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
       onClose();
     } catch (e) {
       // A §4.1 hard block (SAME_DATE_VISIT/DRAFT_ELSEWHERE) carries
-      // `conflicts` same as a §4.2 warning does — style it the same plain-
+      // `conflicts` same as a §4.2 warning does - style it the same plain-
       // text way as `warnings` below rather than the generic error-banner,
       // so a rep sees one consistent "collision" look regardless of which
       // side of the block/warn split it landed on. A genuine error (bad
@@ -105,7 +105,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
     <div
       className="modal-backdrop"
       onClick={(e) => { e.stopPropagation(); onClose(); }}
-      // Stops the mousedown here too, not just the click above — DayOverflowModal
+      // Stops the mousedown here too, not just the click above - DayOverflowModal
       // (the calendar day drill-down this modal can open from) closes itself on
       // any document-level mousedown outside its own popover; without this, a
       // click anywhere in this modal would bubble past it and close the popover
@@ -114,7 +114,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
     >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Plan a Visit{resolvedPlaceName ? ` — ${resolvedPlaceName}` : ''}</h2>
+          <h2>Plan a Visit{resolvedPlaceName ? ` - ${resolvedPlaceName}` : ''}</h2>
           <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body stack">
@@ -161,7 +161,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
               value={assignedUserId}
               onChange={(e) => { setAssignedUserId(e.target.value); setWarnings(null); setError(null); }}
               disabled={saving}
-              title="Who this visit is for — any rep may plan for any other rep"
+              title="Who this visit is for - any rep may plan for any other rep"
             >
               {users.map((u) => (
                 <option key={u.id} value={u.id}>{u.id === userId ? `${u.name} (me)` : u.name}</option>
@@ -176,14 +176,14 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               disabled={saving}
-              placeholder="Optional — shows up on the visit once it's planned"
+              placeholder="Optional - shows up on the visit once it's planned"
             />
           </div>
 
         </div>
         {/* Notice sits IN the footer, left of the buttons (marginRight:
             auto against modal-foot's own justify-content: flex-end) rather
-            than stacked above it behind the divider — same move as
+            than stacked above it behind the divider - same move as
             VisitLogModal's own footer. Also means it's now inside the
             sticky footer itself, so it's on-screen at all times without
             needing the scrollIntoView effect above to do anything; that

@@ -14,7 +14,7 @@ export default function useClosingTransition() {
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   const startClosing = useCallback((callback) => {
-    if (timerRef.current) return; // already closing — ignore repeat clicks
+    if (timerRef.current) return; // already closing - ignore repeat clicks
     setClosing(true);
     timerRef.current = setTimeout(callback, CLOSE_ANIMATION_MS);
   }, []);

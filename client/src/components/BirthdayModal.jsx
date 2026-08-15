@@ -2,9 +2,9 @@ import React from 'react';
 import EmptyState from './ui/EmptyState';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// A day's birthdays — the Calendar tab's 🎂 badge (VisitsCalendar.jsx).
+// A day's birthdays - the Calendar tab's 🎂 badge (VisitsCalendar.jsx).
 // Every row here is just a person + their place (if any), no visit/status
-// involved — clicking one opens that person's full PersonDetail. `label` is
+// involved - clicking one opens that person's full PersonDetail. `label` is
 // the caller-formatted "{Month} {day}" string (birthdays have no year on
 // file, so there's no real date to format via the usual formatDate helper).
 export default function BirthdayModal({ label, people, onClose, onViewPerson }) {

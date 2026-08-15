@@ -19,13 +19,13 @@ export default function Places({ userId }) {
   const [adding, setAdding] = useState(false); // whether the Add Place modal is open
   const [managingCategories, setManagingCategories] = useState(false);
   // Bumped on every load() call; a response only gets applied if it's still
-  // the most recent request when it resolves — guards against a slower
+  // the most recent request when it resolves - guards against a slower
   // earlier keystroke's response overwriting a faster later one.
   const requestIdRef = useRef(0);
 
   // Load the filter dropdown options (distinct categories/tiers/regions).
   // Re-run via `refresh` (not just on mount) whenever a place create/edit/
-  // delete could have introduced or removed a region — otherwise a value
+  // delete could have introduced or removed a region - otherwise a value
   // added while this tab stays mounted won't show up in the dropdown until
   // the tab unmounts and remounts (e.g. by navigating away and back).
   const loadFilters = useCallback(() => {
@@ -50,14 +50,14 @@ export default function Places({ userId }) {
     }
   }, [q]);
 
-  // Debounce so typing in search doesn't hammer the API on every keystroke —
+  // Debounce so typing in search doesn't hammer the API on every keystroke -
   // waits 200ms after the last change to `q` before actually fetching.
   useEffect(() => {
     const t = setTimeout(load, 200);
     return () => clearTimeout(t);
   }, [load]);
 
-  // Refreshes both the row list and the filter dropdown options — used after
+  // Refreshes both the row list and the filter dropdown options - used after
   // any create/edit/delete, since either can change what regions exist.
   const refresh = useCallback(() => {
     load();
@@ -68,7 +68,7 @@ export default function Places({ userId }) {
   const set = (k) => (e) => setQ((s) => ({ ...s, [k]: e.target.value }));
 
   // The category dropdown's last option is a sentinel that opens the manage-
-  // categories modal instead of actually filtering — picking it never
+  // categories modal instead of actually filtering - picking it never
   // touches q.category, so the select just reverts to showing whatever was
   // already selected once the modal closes.
   const MANAGE_CATEGORIES_OPTION = '__manage_categories__';
@@ -78,7 +78,7 @@ export default function Places({ userId }) {
   };
 
   // The "Last visit" column shows whichever date the active sort is actually
-  // ordering by — team-wide by default, or just this rep's own visits when
+  // ordering by - team-wide by default, or just this rep's own visits when
   // one of the "by me" sorts is picked, so the sort order and the visible
   // column never disagree. Same logic as People.jsx's sortingByMe.
   const sortingByMe = q.sort === 'my_last_visited_desc' || q.sort === 'my_last_visited_asc';
@@ -164,7 +164,7 @@ export default function Places({ userId }) {
                   <td className="tiny">
                     {(() => {
                       const date = sortingByMe ? p.my_last_visit_date : p.last_visit_date;
-                      return date ? formatDate(date) : <span className="muted">—</span>;
+                      return date ? formatDate(date) : <span className="muted">-</span>;
                     })()}
                   </td>
                   <td className="tiny">

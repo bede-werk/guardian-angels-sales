@@ -1,6 +1,6 @@
 // Renames "partners" to "places" throughout the schema, to match the CRM's
 // Place/Person terminology (see the places-and-people data-model migration).
-// Pure renames — renameTable/renameColumn preserve all existing data, indexes,
+// Pure renames - renameTable/renameColumn preserve all existing data, indexes,
 // and foreign keys, so this needs no backfill.
 
 exports.up = async function up(knex) {

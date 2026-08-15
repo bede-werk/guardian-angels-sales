@@ -1,6 +1,6 @@
 // Small colored "pill" labels used throughout the app: tier/priority, visit
 // outcome, and category. This file replaced the old Badges.jsx during the
-// brand redesign — same idea, restyled with the brand tokens.
+// brand redesign - same idea, restyled with the brand tokens.
 import React from 'react';
 import { outcomeLabel, RELATIONSHIP_LABELS, CAPACITY_LABELS } from '../../api';
 
@@ -24,32 +24,32 @@ export function OutcomeChip({ outcome }) {
 }
 
 // A place's or person's computed relationship level. `overridden` is still
-// passed through for the tooltip — the caller's subtext line (see
+// passed through for the tooltip - the caller's subtext line (see
 // RelationshipDetail.jsx) is what actually discloses "manually set" now, so
 // the pill itself no longer repeats it as text.
 export function RelationshipChip({ level, overridden }) {
   if (!level) return null;
   return (
-    <span className={`badge rel-${level}`} title={overridden ? 'Set manually — see the subtext below for the computed value' : undefined}>
+    <span className={`badge rel-${level}`} title={overridden ? 'Set manually - see the subtext below for the computed value' : undefined}>
       {RELATIONSHIP_LABELS[level] || level}
     </span>
   );
 }
 
 // A place's computed capacity level (services/capacity.js). `overridden`
-// works the same way RelationshipChip's does — the subtext line below it
+// works the same way RelationshipChip's does - the subtext line below it
 // (see CapacityDetail.jsx) is what actually discloses "manually set."
 export function CapacityChip({ level, overridden }) {
   if (!level) return null;
   return (
-    <span className={`badge cap-${level}`} title={overridden ? 'Set manually — see the subtext below for the computed value' : undefined}>
+    <span className={`badge cap-${level}`} title={overridden ? 'Set manually - see the subtext below for the computed value' : undefined}>
       {CAPACITY_LABELS[level] || level}
     </span>
   );
 }
 
 // A place's Source Category (Hospitals, Hospice, Physicians, etc.) as a
-// plain neutral pill — all categories share the same styling (see .cat-chip
+// plain neutral pill - all categories share the same styling (see .cat-chip
 // in styles.css).
 export function CategoryChip({ category }) {
   if (!category) return null;

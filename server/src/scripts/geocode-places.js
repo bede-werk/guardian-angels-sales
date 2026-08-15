@@ -1,5 +1,5 @@
 // Backfills lat/lng for every place that hasn't been geocoded yet, using the
-// Census Bureau's free batch geocoder (up to 10,000 addresses per request —
+// Census Bureau's free batch geocoder (up to 10,000 addresses per request -
 // comfortably covers our whole places table in one call).
 //
 // Usage:
@@ -51,7 +51,7 @@ function parseResults(csvText) {
 async function geocodePlaces() {
   const places = await knex('places').whereNull('geocoded_at').select('id', 'address', 'city', 'state', 'zip');
   if (!places.length) {
-    console.log('Nothing to geocode — every place already has a geocoded_at.');
+    console.log('Nothing to geocode - every place already has a geocoded_at.');
     return { matched: 0, unmatched: 0 };
   }
 
@@ -82,7 +82,7 @@ async function geocodePlaces() {
 
   console.log(`Matched ${matched}/${places.length}.`);
   if (unmatched.length) {
-    console.log('Unmatched (left without coordinates — check these addresses):');
+    console.log('Unmatched (left without coordinates - check these addresses):');
     for (const p of unmatched) console.log(`  #${p.id} ${p.address || ''}, ${p.city || ''}, ${p.state || ''} ${p.zip || ''}`);
   }
   return { matched, unmatched: unmatched.length };

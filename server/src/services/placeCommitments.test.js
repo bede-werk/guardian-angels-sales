@@ -24,7 +24,7 @@ describe('placeCommitments', () => {
       connection: { filename: ':memory:' },
       useNullAsDefault: true,
       migrations: { directory: path.join(__dirname, '..', 'migrations') },
-      // Matches knexfile.js's development pool hook — SQLite ignores FK
+      // Matches knexfile.js's development pool hook - SQLite ignores FK
       // constraints (CASCADE/SET NULL included) unless this is set per
       // connection. Needed here specifically for the cascade tests below.
       pool: {
@@ -342,7 +342,7 @@ describe('placeCommitments', () => {
     assert.deepEqual(decorated.commitments_made, []);
   });
 
-  test('attachCommitmentsMade: includes a DISCHARGED commitment too — history should still show what was promised, even once resolved', async () => {
+  test('attachCommitmentsMade: includes a DISCHARGED commitment too - history should still show what was promised, even once resolved', async () => {
     const [visitRow] = await db('visits')
       .insert({ place_id: 1, user_id: 1, status: 'completed', scheduled_date: '2026-08-11' })
       .returning('id');
@@ -355,7 +355,7 @@ describe('placeCommitments', () => {
     assert.equal(decorated.commitments_made[0].discharge_reason, 'waived');
   });
 
-  test('attachCommitmentsMade: deleting the source visit does not orphan the array lookup — cascade already nulled source_visit_id', async () => {
+  test('attachCommitmentsMade: deleting the source visit does not orphan the array lookup - cascade already nulled source_visit_id', async () => {
     // Belt-and-suspenders: confirms attachCommitmentsMade simply finds
     // nothing for a visit id that no longer has any commitment pointing at
     // it (whether because none was ever made, or because the FK already

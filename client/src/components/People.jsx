@@ -8,7 +8,7 @@ import PlaceDetail from './PlaceDetail';
 import CategoriesModal from './CategoriesModal';
 import SeedRelationshipsModal from './SeedRelationshipsModal';
 
-// Searchable / filterable directory of every person across every place —
+// Searchable / filterable directory of every person across every place -
 // the People counterpart to Places.jsx. Clicking any row opens that
 // person's full detail (PersonDetail.jsx).
 export default function People({ userId }) {
@@ -24,12 +24,12 @@ export default function People({ userId }) {
   const [managingCategories, setManagingCategories] = useState(false);
   const [seeding, setSeeding] = useState(false); // one-time relationship-seeding screen
   // Bumped on every load() call; a response only gets applied if it's still
-  // the most recent request when it resolves — guards against a slower
+  // the most recent request when it resolves - guards against a slower
   // earlier keystroke's response overwriting a faster later one.
   const requestIdRef = useRef(0);
 
   // Re-run via `refresh` (not just on mount) whenever a person/place
-  // create/edit/delete could change these — otherwise a place renamed or
+  // create/edit/delete could change these - otherwise a place renamed or
   // added while this tab stays mounted won't show up in the Place filter
   // or the Add Person picker until the tab unmounts and remounts.
   const loadReferenceData = useCallback(() => {
@@ -61,7 +61,7 @@ export default function People({ userId }) {
     return () => clearTimeout(t);
   }, [load]);
 
-  // Refreshes both the row list and the reference data (filters/places) —
+  // Refreshes both the row list and the reference data (filters/places) -
   // used after any create/edit/delete of a person or place.
   const refresh = useCallback(() => {
     load();
@@ -71,7 +71,7 @@ export default function People({ userId }) {
   const set = (k) => (e) => setQ((s) => ({ ...s, [k]: e.target.value }));
 
   // The category dropdown's last option is a sentinel that opens the manage-
-  // categories modal instead of actually filtering — picking it never
+  // categories modal instead of actually filtering - picking it never
   // touches q.category, so the select just reverts to showing whatever was
   // already selected once the modal closes.
   const MANAGE_CATEGORIES_OPTION = '__manage_categories__';
@@ -81,7 +81,7 @@ export default function People({ userId }) {
   };
 
   // The "Last contacted" column shows whichever date the active sort is
-  // actually ordering by — team-wide by default, or just this rep's own
+  // actually ordering by - team-wide by default, or just this rep's own
   // visits when one of the "by me" sorts is picked, so the sort order and
   // the visible column never disagree.
   const sortingByMe = q.sort === 'my_last_contacted_desc' || q.sort === 'my_last_contacted_asc';
@@ -188,7 +188,7 @@ export default function People({ userId }) {
                   <td className="tiny">
                     {(() => {
                       const date = sortingByMe ? p.my_last_visit_date : p.last_visit_date;
-                      return date ? formatDate(date) : <span className="muted">—</span>;
+                      return date ? formatDate(date) : <span className="muted">-</span>;
                     })()}
                   </td>
                 </tr>

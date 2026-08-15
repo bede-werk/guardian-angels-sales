@@ -7,9 +7,9 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // roster, so the form includes a picker) or from a person's own page (pass
 // `person` directly, so who it's for is already fixed and no picker is
 // needed). Pass `referral` to edit an existing one instead of creating a new
-// one — who it's attributed to isn't editable there (delete and re-log
+// one - who it's attributed to isn't editable there (delete and re-log
 // instead), so `person`/`people` still just drive the read-only display.
-// Every referral is attributed to a specific person — there's no "unknown
+// Every referral is attributed to a specific person - there's no "unknown
 // contact" option, since a place's referral total is just the sum of its
 // people's own counts (see PlaceDetail.jsx / routes/places.js), so a
 // referral with no person would have nowhere to be counted.
@@ -62,7 +62,7 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
               <select value={form.person_id} onChange={set('person_id')} disabled={people.length === 0} autoFocus>
                 <option value="">{people.length === 0 ? 'No one on file here yet' : 'Select a person…'}</option>
                 {people.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}{p.title ? ` — ${p.title}` : ''}</option>
+                  <option key={p.id} value={p.id}>{p.name}{p.title ? ` - ${p.title}` : ''}</option>
                 ))}
               </select>
             )}

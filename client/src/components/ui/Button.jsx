@@ -2,7 +2,7 @@ import React from 'react';
 
 // One button system used everywhere, instead of every screen hand-writing its
 // own <button className="btn ..."> markup. All the actual visual styling
-// (colors, padding, hover states) lives in the ".btn" CSS rules in styles.css —
+// (colors, padding, hover states) lives in the ".btn" CSS rules in styles.css -
 // this component just picks which CSS classes apply.
 //   variant: primary (default) | secondary | ghost | caution | danger
 //   size: default | small | big

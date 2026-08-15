@@ -4,7 +4,7 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// Add / rename / retire a place category — reachable from both People.jsx
+// Add / rename / retire a place category - reachable from both People.jsx
 // and Places.jsx's Category filter (category is owned by places, but People
 // filters by it too). Each action saves immediately; there's no separate
 // Save button, matching the rest of the app's inline-edit conventions
@@ -73,7 +73,7 @@ export default function CategoriesModal({ onClose, onChanged }) {
 
   async function removeCategory(row) {
     const warning = row.place_count > 0
-      ? ` ${row.place_count} place${row.place_count === 1 ? '' : 's'} currently ${row.place_count === 1 ? 'uses' : 'use'} it — ${row.place_count === 1 ? 'it' : 'they'} will become uncategorized.`
+      ? ` ${row.place_count} place${row.place_count === 1 ? '' : 's'} currently ${row.place_count === 1 ? 'uses' : 'use'} it - ${row.place_count === 1 ? 'it' : 'they'} will become uncategorized.`
       : '';
     if (!window.confirm(`Delete "${row.name}"?${warning} This can't be undone.`)) return;
     setSavingId(row.id);

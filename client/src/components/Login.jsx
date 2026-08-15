@@ -27,7 +27,7 @@ export default function Login({ onLogin }) {
       .finally(() => setLoadingUsers(false));
   }, []);
 
-  // The full user object for whichever id is currently selected — used to
+  // The full user object for whichever id is currently selected - used to
   // decide whether to show the "log in" form or the "set a password" form.
   const selected = users.find((u) => String(u.id) === String(userId));
 
@@ -121,7 +121,7 @@ export default function Login({ onLogin }) {
                 selected && (
                   <form onSubmit={submitCreatePassword} className="stack" style={{ gap: 14, marginTop: 14 }}>
                     <div className="muted tiny">
-                      Welcome, {selected.name}! Set up a password to continue — you'll use it to log in from now on.
+                      Welcome, {selected.name}! Set up a password to continue - you'll use it to log in from now on.
                     </div>
                     <div>
                       <label className="field">New password</label>

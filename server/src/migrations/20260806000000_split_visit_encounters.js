@@ -3,7 +3,7 @@
 // BEFORE: one `visits` row WAS one encounter. A trip where a rep met three
 // people wrote three rows sharing place/date/rep/notes/duration, each
 // carrying its own person_id/met_with_type/outcome/they_requested. There was
-// no real identifier for "the trip" — only an implicit one, recoverable by
+// no real identifier for "the trip" - only an implicit one, recoverable by
 // matching the shared fields across rows (which is exactly what the client
 // was doing, for display only).
 //
@@ -14,13 +14,13 @@
 // visit-specific (vs. encounter-specific) an unambiguous place to live.
 //
 // The relationship model is unaffected by design: it scores per ENCOUNTER
-// and always did, so it reads the same field set — just sourced from a join
+// and always did, so it reads the same field set - just sourced from a join
 // instead of a flat table. See the scoring-parity test in
 // services/relationship.test.js, which asserts identical scores across this
 // migration.
 //
 // SQLite note: dropping the FK-bearing person_id column can't be done with a
-// plain .alterTable() — SQLite's alter strategy would keep the old foreign
+// plain .alterTable() - SQLite's alter strategy would keep the old foreign
 // key alongside the new table. So SQLite gets an explicit rebuild (create
 // corrected table under a temp name, copy, drop, rename) exactly as
 // 20260709000000_detach_instead_of_cascade.js does; Postgres drops the
@@ -60,7 +60,7 @@ const ENCOUNTER_COLUMNS = [
 const TRIP_KEY_FIELDS = ['place_id', 'scheduled_date', 'user_id'];
 
 // Fields that a genuine multi-row trip must ALSO agree on. Used as a
-// confirmation, never as the primary signal — see groupIntoTrips.
+// confirmation, never as the primary signal - see groupIntoTrips.
 const TRIP_CONFIRM_FIELDS = ['notes', 'next_visit_date', 'actual_duration_minutes'];
 
 // Rows written by one multi-encounter POST are inserted inside a single
@@ -75,7 +75,7 @@ const SAME_TRIP_SECONDS = 2;
 // produces source='manual', status='completed', and a non-null place_id (the
 // route 404s without a valid place). Everything else stays 1:1.
 //
-// This restriction is not paranoia — it fixes a real wrong-merge found while
+// This restriction is not paranoia - it fixes a real wrong-merge found while
 // rehearsing this migration against the actual dev database. The route
 // planner commits a whole DAY of stops in ONE transaction, so 13 stops at 13
 // DIFFERENT places all share a created_at to the second. Where those places
@@ -88,7 +88,7 @@ function couldBeMultiEncounter(row) {
 }
 
 // created_at is a 'YYYY-MM-DD HH:MM:SS' string on SQLite and a Date on
-// Postgres — normalize both to epoch ms. A missing/unparseable timestamp
+// Postgres - normalize both to epoch ms. A missing/unparseable timestamp
 // returns null, which groupIntoTrips treats as "can't prove same trip".
 function timestampMs(value) {
   if (value == null) return null;
@@ -110,20 +110,20 @@ function sameValue(a, b) {
 //
 // WHY created_at IS THE PRIMARY SIGNAL: matching on the shared trip fields
 // alone (notes/next_visit_date/duration) silently merges two genuinely
-// separate trips whenever both happen to be null — a morning drop-off and an
+// separate trips whenever both happen to be null - a morning drop-off and an
 // afternoon meeting at the same place on the same day would collapse into
 // one, and down() cannot recover the loss. Insert time can: one POST writes
 // its rows together, two separate visits don't.
 //
 // The shared fields are still checked, but only to REFUSE a merge that
 // created_at proposed. Anything refused is left as separate trips (the safe
-// direction — an over-split is visible and fixable, a wrong merge is not).
+// direction - an over-split is visible and fixable, a wrong merge is not).
 function groupIntoTrips(rows, log) {
   const byKey = new Map();
   const trips = [];
   for (const row of rows) {
     // Anything that can't have come from the fan-out is its own trip, full
-    // stop — never even a merge candidate.
+    // stop - never even a merge candidate.
     if (!couldBeMultiEncounter(row)) {
       trips.push([row]);
       continue;
@@ -161,12 +161,12 @@ function groupIntoTrips(rows, log) {
         continue;
       }
 
-      // created_at says "same trip" — now try to disprove it.
+      // created_at says "same trip" - now try to disprove it.
       const disagreeing = TRIP_CONFIRM_FIELDS.filter((f) => !sameValue(anchor[f], row[f]));
       if (disagreeing.length) {
         log(
           `[split_visit_encounters] NOT merging visit ${row.id} into ${anchor.id}: ` +
-            `same insert window but differing ${disagreeing.join('/')} — kept separate.`
+            `same insert window but differing ${disagreeing.join('/')} - kept separate.`
         );
         flush();
         cluster = [row];
@@ -179,7 +179,7 @@ function groupIntoTrips(rows, log) {
       if (row.person_id != null && cluster.some((c) => c.person_id === row.person_id)) {
         log(
           `[split_visit_encounters] NOT merging visit ${row.id} into ${anchor.id}: ` +
-            `person_id ${row.person_id} already present in that trip — kept separate.`
+            `person_id ${row.person_id} already present in that trip - kept separate.`
         );
         flush();
         cluster = [row];
@@ -196,7 +196,7 @@ function groupIntoTrips(rows, log) {
 // ORDER MATTERS HERE, and not for a cosmetic reason. `visit_encounters.visit_id`
 // is ON DELETE CASCADE, and the SQLite path below reshapes `visits` by DROPping
 // the old table. With foreign keys enforced (knexfile turns them on per
-// connection), that drop cascades and silently empties visit_encounters — an
+// connection), that drop cascades and silently empties visit_encounters - an
 // earlier draft of this migration did exactly that and left the table at 0 rows
 // while reporting a successful backfill. So: read the old rows into memory,
 // finish every change to `visits` FIRST, and only create/populate the child
@@ -280,7 +280,7 @@ exports.up = async function up(knex) {
     t.index(['person_id'], 'visit_encounters_person_id_index');
   });
 
-  // The same person can't be recorded twice on one trip — that would
+  // The same person can't be recorded twice on one trip - that would
   // double-count their decayed weight in services/relationship.js for a
   // single conversation, with no visible symptom. PARTIAL because person_id
   // is nullable by design: a trip may legitimately have several encounters
@@ -296,7 +296,7 @@ exports.up = async function up(knex) {
   // hasn't happened yet: it has no person, no met_with_type and no outcome,
   // because nobody has been met. Writing an all-null encounter row for it
   // would invent a fact ("someone was met here") that was never recorded, and
-  // the UI would read it back as a real one — a planned visit would render
+  // the UI would read it back as a real one - a planned visit would render
   // "with someone" instead of its intended "nobody recorded yet" empty state.
   // Zero encounters IS the correct representation of a planned trip.
   //
@@ -383,14 +383,14 @@ async function rebuildVisitsSqlite(knex) {
 
 // Restores the wide `visits` shape, repopulating its encounter columns from
 // each trip's FIRST encounter. A trip that recorded several people cannot
-// round-trip — the others are dropped. Same documented limitation as
+// round-trip - the others are dropped. Same documented limitation as
 // 20260709000000_detach_instead_of_cascade.js's own down(): this is a schema
 // rollback, not a data time machine. (It also can't un-merge trips that were
 // combined by up()'s backfill.)
 exports.down = async function down(knex) {
   const isPg = knex.client.config.client === 'pg';
 
-  // Read the encounters BEFORE touching `visits` — same cascade trap as up()
+  // Read the encounters BEFORE touching `visits` - same cascade trap as up()
   // (see its comment): the SQLite rebuild drops the parent table, which would
   // empty visit_encounters via ON DELETE CASCADE before there was any chance
   // to copy the data back.

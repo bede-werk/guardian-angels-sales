@@ -8,7 +8,7 @@ import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
 import useClosingTransition from '../hooks/useClosingTransition';
 
 // The place picker's last option is a sentinel that opens a nested PlaceModal
-// instead of actually picking a place — same pattern as the category filter
+// instead of actually picking a place - same pattern as the category filter
 // dropdowns' "Manage categories…" entry (People.jsx/Places.jsx).
 const ADD_PLACE_OPTION = '__add_place__';
 
@@ -34,9 +34,9 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null — see ConfirmDialog
+  const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null - see ConfirmDialog
   const [addingPlace, setAddingPlace] = useState(false); // nested "add a new place" modal open?
-  // Places created via the nested modal this session — merged into the
+  // Places created via the nested modal this session - merged into the
   // dropdown's options since the `places` prop won't include it until the
   // parent (People.jsx) reloads its own place list.
   const [extraPlaces, setExtraPlaces] = useState([]);
@@ -51,9 +51,9 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
   // The duplicate-name warning is fetched fresh right here (never from a
   // debounced background hook, which could still be mid-flight and stale at
   // the moment of clicking) and pops up when Save is actually clicked, not
-  // while the rep is still typing. Only warn on create — editing an existing
+  // while the rep is still typing. Only warn on create - editing an existing
   // person will always "match" itself. Name-only (routes/people.js's
-  // check-duplicate, a dedicated endpoint — not the general list `search`,
+  // check-duplicate, a dedicated endpoint - not the general list `search`,
   // which also matches title and would false-positive on shared job titles).
   async function save() {
     if (!isCompletePhone(form.phone)) {

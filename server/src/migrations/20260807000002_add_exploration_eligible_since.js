@@ -7,10 +7,10 @@
 //
 // Bede caught the bug that fallback would cause before it shipped: a place
 // that's been FRESH for months (recently pre-qualified) and then goes stale
-// re-enters EXPLORATION — but with no real eligible_since ever recorded, the
+// re-enters EXPLORATION - but with no real eligible_since ever recorded, the
 // live fallback would hand it `created_at`, often a year old, as its aging
 // anchor. That backdates its "waiting" clock by the better part of a year
-// and jumps it straight to rank 0 the DAY it goes stale — ahead of places
+// and jumps it straight to rank 0 the DAY it goes stale - ahead of places
 // that have genuinely never been pre-qualified at all and have been waiting
 // the honest way. A real, explicitly-stamped column has no such fallback to
 // misuse: it always holds the actual date this place became (or will next
@@ -22,14 +22,14 @@
 //   - A place is created: eligible immediately (never pre-qualified yet).
 //   - A capacity_observations row is inserted: this place will next become
 //     eligible when THAT observation goes stale, i.e.
-//     observed_at + CAPACITY_STALE_DAYS — computed and stamped immediately,
+//     observed_at + CAPACITY_STALE_DAYS - computed and stamped immediately,
 //     not derived later, so a future CAPACITY_STALE_DAYS retune doesn't
 //     retroactively reshuffle every place already waiting in EXPLORATION.
 //
 // No DB-level default: relying on a schema-level `knex.fn.now()`/CURRENT_DATE
 // default here risks a raw timestamp landing in a column every other
 // consumer (daysSince, in services/schedulingEngine.js) expects as a plain
-// 'YYYY-MM-DD' string — same convention capacity_observations.observed_at
+// 'YYYY-MM-DD' string - same convention capacity_observations.observed_at
 // documents. The application sets this column explicitly at every write
 // site instead (matches this migration's own backfill below).
 exports.up = async function up(knex) {
@@ -59,7 +59,7 @@ exports.up = async function up(knex) {
   for (const place of places) {
     const latestObservedAt = latestByPlace.get(place.id);
     // A place with a declared observation becomes eligible again once that
-    // observation goes stale — even if that date is in the past (an old
+    // observation goes stale - even if that date is in the past (an old
     // 'import' backfill observation, say) or the future (a fresh one). A
     // place with none at all has been eligible since it was created.
     const eligibleSince = latestObservedAt

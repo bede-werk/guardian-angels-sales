@@ -4,7 +4,7 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// Short, joinable labels for a non-named encounter — MET_WITH_LABELS in api.js
+// Short, joinable labels for a non-named encounter - MET_WITH_LABELS in api.js
 // reads as a form option ("A staff member (name unknown)"), too long to sit
 // inline in "with X, Y and Z". Exported (with the two helpers below) because
 // PlaceDetail and PersonDetail describe the same `encounters` arrays in their
@@ -13,8 +13,8 @@ import useClosingTransition from '../hooks/useClosingTransition';
 export const ENCOUNTER_SHORT_LABELS = {
   staff: 'a staff member',
   receptionist: 'the receptionist',
-  // Only ever appears alone — 'nobody' is mutually exclusive with every other
-  // met_with_type at log time (see VisitLogModal's toggleMetType) — so it
+  // Only ever appears alone - 'nobody' is mutually exclusive with every other
+  // met_with_type at log time (see VisitLogModal's toggleMetType) - so it
   // never has to read well mid-list.
   nobody: 'nobody',
 };
@@ -33,16 +33,16 @@ export function joinNames(names) {
 }
 
 // discharge_reason -> a short, past-tense label for a visit-history row.
-// null (still outstanding) has no label at all — an unresolved promise
+// null (still outstanding) has no label at all - an unresolved promise
 // needs no annotation beyond its date.
 const COMMITMENT_STATUS_LABELS = { fulfilled: 'fulfilled', superseded: 'rescheduled', waived: 'waived' };
 
 // One commitment made during a visit ("8/20/2026" or "8/20/2026
-// (rescheduled)") — just the date + status, no label, since PlaceDetail/
+// (rescheduled)") - just the date + status, no label, since PlaceDetail/
 // PersonDetail/this modal each prefix it differently (a bold "Promised next
 // visit:" field label here, a plain muted line there). Exported so all
 // three share one spelling of the status wording, same "one spelling, not
-// three drifting copies" convention as encounterLabel/joinNames above — all
+// three drifting copies" convention as encounterLabel/joinNames above - all
 // three now read the same `commitments_made` array (see
 // services/placeCommitments.js's attachCommitmentsMade), which replaced the
 // old per-visit next_visit_date column.
@@ -51,7 +51,7 @@ export function commitmentMadeText(c) {
   return `${formatDate(c.promised_date)}${status}`;
 }
 
-// Everything on file for one visit — a TRIP: place, date, rep, notes, and the
+// Everything on file for one visit - a TRIP: place, date, rep, notes, and the
 // list of people/categories met on it (`encounters`). The list endpoints that
 // feed the callers here only return name + category per encounter, so this
 // modal always refetches the trip through GET /api/visits/:id, which is the
@@ -61,7 +61,7 @@ export function commitmentMadeText(c) {
 // trip, and both should show the identical, complete picture.
 //
 // The encounter list is the interactive part: each person expands in place to
-// show what happened with THEM, and can be removed on its own — one person
+// show what happened with THEM, and can be removed on its own - one person
 // being mis-logged shouldn't cost the whole visit.
 //
 // `onChanged` (optional) fires whenever an encounter was removed, so the
@@ -71,7 +71,7 @@ export function commitmentMadeText(c) {
 export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onChanged }) {
   const { closing, startClosing } = useClosingTransition();
   const requestClose = () => startClosing(onClose);
-  const [trip, setTrip] = useState(null); // GET /api/visits/:id — the full trip + every encounter field
+  const [trip, setTrip] = useState(null); // GET /api/visits/:id - the full trip + every encounter field
   const [loadError, setLoadError] = useState(null);
   const [openEncounterId, setOpenEncounterId] = useState(null); // which encounter's detail is expanded, if any
   const [removingEncounterId, setRemovingEncounterId] = useState(null); // encounter currently being deleted (disables its row)
@@ -89,13 +89,13 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
   }, [visit.id]);
 
   // Removing the last encounter from an already-logged trip deletes the trip
-  // server-side — a completed visit where nobody was met isn't a record of
+  // server-side - a completed visit where nobody was met isn't a record of
   // anything. That cascade is invisible from the row being clicked, so the
   // confirm has to name what actually goes with it: just the notes now.
   // A commitment made during this trip (commitments_made) used to be named
   // here too, back when it lived as a next_visit_date column ON the visit
   // row and deleting the visit deleted it with it. Now it's its own
-  // place_commitments row with ON DELETE SET NULL on source_visit_id — the
+  // place_commitments row with ON DELETE SET NULL on source_visit_id - the
   // commitment survives a deleted visit, it only loses the "made during
   // this trip" provenance link, so there's nothing lost here worth warning
   // about.
@@ -104,15 +104,15 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
     if (trip.notes) losses.push('its notes');
     return (
       `Removing ${encounterLabel(encounter)} leaves nobody on this visit, so the whole visit will be deleted` +
-      (losses.length ? ` — including ${joinNames(losses)}` : '') +
+      (losses.length ? ` - including ${joinNames(losses)}` : '') +
       '.' +
       " This can't be undone. Continue?"
     );
   }
 
   async function removeEncounter(encounter) {
-    // A PLANNED trip legitimately holds no encounters at all — that's its
-    // normal pre-completion state — so emptying one doesn't delete it. Every
+    // A PLANNED trip legitimately holds no encounters at all - that's its
+    // normal pre-completion state - so emptying one doesn't delete it. Every
     // other status is treated as cascading: over-warning costs a sentence in a
     // confirm, under-warning costs a follow-up date nobody knew they lost.
     const deletesTrip = trip.encounters.length === 1 && trip.status === 'completed';
@@ -163,20 +163,20 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
         <div className="modal-body stack">
           {loadError && <div className="error-banner">{loadError}</div>}
 
-          {/* The trip's own facts — true of the whole visit, stated once,
+          {/* The trip's own facts - true of the whole visit, stated once,
               however many people it covered. */}
           {trip.place_name && <div className="tiny"><strong>Place:</strong> {trip.place_name}</div>}
           <div className="tiny"><strong>Type:</strong> {VISIT_TYPE_LABELS[trip.visit_type] || 'Visit'}</div>
           {trip.user_name && <div className="tiny"><strong>Logged by:</strong> {trip.user_name}</div>}
-          <div className="tiny"><strong>Notes:</strong> {trip.notes || '—'}</div>
+          <div className="tiny"><strong>Notes:</strong> {trip.notes || '-'}</div>
           {trip.actual_duration_minutes != null && (
             <div className="tiny"><strong>Took:</strong> {trip.actual_duration_minutes} min</div>
           )}
-          {/* commitments_made — the promise(s) this trip made (Place
-              Commitments spec §6.3), via source_visit_id — replaces the old
+          {/* commitments_made - the promise(s) this trip made (Place
+              Commitments spec §6.3), via source_visit_id - replaces the old
               bare next_visit_date field. Usually 0 or 1, but not enforced
               at the DB level, so every one is shown. The suppression
-              caveat only applies to a still-OUTSTANDING promise — one
+              caveat only applies to a still-OUTSTANDING promise - one
               already fulfilled/rescheduled/waived isn't "sitting unacted
               on," it's just resolved. */}
           {trip.commitments_made?.map((c) => (
@@ -186,13 +186,13 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
                 suppressionNote({ snooze_until: trip.place_snooze_until, do_not_visit: trip.place_do_not_visit, do_not_visit_until: trip.place_do_not_visit_until })}
             </div>
           ))}
-          {/* No crossRepFloorWarning pill — this modal only ever shows an
+          {/* No crossRepFloorWarning pill - this modal only ever shows an
               already-completed or already-skipped trip (see VisitsCalendar.jsx;
               a still-planned one is UpcomingVisitDetailModal's job), and the
               warning exists to help a rep pick a different stop before it
               happens. Nothing to act on once it already has. */}
 
-          {/* Who was met. Click a name to see what happened with THEM — the
+          {/* Who was met. Click a name to see what happened with THEM - the
               outcome and the contact details as they stood that day are facts
               about one encounter, not about the trip, and flattening them into
               the block above is exactly what this split exists to stop. */}
@@ -202,7 +202,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
               <EmptyState
                 message={
                   trip.status === 'planned'
-                    ? "Nobody recorded yet — this visit hasn't been logged."
+                    ? "Nobody recorded yet - this visit hasn't been logged."
                     : 'Nobody was recorded on this visit.'
                 }
               />
@@ -223,7 +223,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
                       <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                         <div className="encounter-name">
                           {open ? '▾' : '▸'} {encounterLabel(e)}
-                          {e.person_title ? <span className="muted"> — {e.person_title}</span> : null}
+                          {e.person_title ? <span className="muted"> - {e.person_title}</span> : null}
                         </div>
                         <button
                           type="button"
@@ -242,7 +242,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
                           ) : (
                             <div className="tiny muted">No outcome recorded.</div>
                           )}
-                          {/* Only worth stating when it happened — "no" is the
+                          {/* Only worth stating when it happened - "no" is the
                               default for every encounter and says nothing. The
                               ✓ marks this as an already-recorded fact, not an
                               open call to action the rep still owes someone. */}

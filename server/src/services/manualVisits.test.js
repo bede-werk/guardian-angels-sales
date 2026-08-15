@@ -35,9 +35,9 @@ describe('pastDateError', () => {
   });
 });
 
-describe('classifyConflicts — policy divergence from routes/visits.js', () => {
+describe('classifyConflicts - policy divergence from routes/visits.js', () => {
   // routes/visits.js's own ad-hoc "Log a visit" POST only ever hard-blocks
-  // SAME_DATE_VISIT (see that route's `sameDateConflict` check) — every
+  // SAME_DATE_VISIT (see that route's `sameDateConflict` check) - every
   // other finding, DRAFT_ELSEWHERE included, is informational there. Manual
   // planning is stricter on purpose (spec §4.1): a place already in another
   // rep's draft for that date is a real double-booking risk once BOTH sides
@@ -96,7 +96,7 @@ describe('permissions (§5)', () => {
     assert.equal(canEditManualVisit(visit, 3), false);
     assert.equal(canDeleteManualVisit(visit, 3), false);
   });
-  test('a visit planned for yourself is yours alone — same id on both sides', () => {
+  test('a visit planned for yourself is yours alone - same id on both sides', () => {
     const own = { user_id: 1, created_by_user_id: 1 };
     assert.equal(canEditManualVisit(own, 1), true);
     assert.equal(canDeleteManualVisit(own, 1), true);
@@ -139,7 +139,7 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     ]);
     // Separate insert: a batched multi-row insert fills any column absent
     // from one row's object with an explicit NULL for that row (to keep a
-    // single union-select statement), not the column's own default — and
+    // single union-select statement), not the column's own default - and
     // places.do_not_visit is NOT NULL, so mixing this into the array above
     // would fail every row, not just this one.
     await db('places').insert({ id: 7, name: 'Do Not Visit Place', category: 'Hospice', tier: 1, priority_score: 75, do_not_visit: true });
@@ -152,7 +152,7 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 4, date: isoOffset(3), sort_order: 0 });
 
     // Floor gap is measured against the TARGET date being planned, not
-    // real "today" (see conflictDetection.js's isFloorConflict — `today`
+    // real "today" (see conflictDetection.js's isFloorConflict - `today`
     // there is whatever date is under consideration). Both floor tests
     // below plan for TODAY itself, so these seed dates are chosen relative
     // to TODAY: 3 days back is inside the 5-day floor, 9 days back is not.
@@ -243,7 +243,7 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
 
   test('notes are saved when provided, and default to null when omitted', async () => {
     // Both on place 1 ('Clean Place'), which carries no other visits anywhere
-    // else in this file — dates kept >5 days apart so the second call doesn't
+    // else in this file - dates kept >5 days apart so the second call doesn't
     // trip a FLOOR_PLANNED warning against the first.
     const withNotes = await createManualVisit(db, { placeId: 1, scheduledDate: isoOffset(6), userId: 1, createdByUserId: 1, notes: 'Bring the updated brochure' });
     assert.ok(withNotes.visit);
@@ -261,10 +261,10 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     assert.equal(commitment.discharged_at, null, 'planning alone must never discharge a commitment');
   });
 
-  describe('editVisit — date changes (a manually-planned visit)', () => {
+  describe('editVisit - date changes (a manually-planned visit)', () => {
     // Own place (11) and widely-separated dates (>= 5 days apart from each
     // other in every combination) so none of these moves accidentally trips
-    // a FLOOR_* warning from a neighboring date in this same block — only
+    // a FLOOR_* warning from a neighboring date in this same block - only
     // the deliberate SAME_DATE_VISIT collision below should ever fire.
     const ORIGINAL_DATE = isoOffset(20);
     const COLLISION_DATE = isoOffset(30);
@@ -313,7 +313,7 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     });
 
     test('moving off the original date releases whatever block it was causing there', async () => {
-      // The manual visit moved off ORIGINAL_DATE in the previous test — a
+      // The manual visit moved off ORIGINAL_DATE in the previous test - a
       // different rep planning the same place on that now-vacated date
       // should succeed.
       const result = await createManualVisit(db, { placeId: 11, scheduledDate: ORIGINAL_DATE, userId: 2, createdByUserId: 2 });
@@ -326,11 +326,11 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     });
   });
 
-  describe('editVisit — promotes a planner-committed visit', () => {
+  describe('editVisit - promotes a planner-committed visit', () => {
     // place_id 2 ('Same Day Planned Place') was seeded above as an ordinary
     // status:'planned' visit with source:'planner' (the DB default here is
     // 'manual', so seed it explicitly) and planned_manually left at its
-    // column default (0) — exactly what a route-planner commit looks like,
+    // column default (0) - exactly what a route-planner commit looks like,
     // never touched by createManualVisit anywhere in this file.
     let plannerVisitId;
 

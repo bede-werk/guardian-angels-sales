@@ -4,7 +4,7 @@ import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
 
 // Presets shown on the Snooze panel below. "1 month" is a plain +30 days,
-// not a calendar-month jump — keeps the math (and the commitment-guard
+// not a calendar-month jump - keeps the math (and the commitment-guard
 // comparison against a place's next_visit_date) a simple date string add,
 // no month-length edge cases.
 const SNOOZE_PRESETS = [
@@ -23,7 +23,7 @@ function addDaysISO(days) {
 }
 
 // Reduces buildWarnings' §4.2 list (services/manualVisits.js) down to the
-// single one worth surfacing — same priority PlanVisitModal.jsx's
+// single one worth surfacing - same priority PlanVisitModal.jsx's
 // primaryWarning uses (do_not_visit is a deliberate flag, so it outranks a
 // floor warning's recency guess); duplicated rather than shared since
 // there's no client-side utils module these two pull from yet.
@@ -36,30 +36,30 @@ function primaryWarning(warnings) {
   return warnings[0];
 }
 
-// Read-only popup for a still-upcoming (planned) visit — the "Upcoming
+// Read-only popup for a still-upcoming (planned) visit - the "Upcoming
 // Visits" card's own equivalent of VisitDetailModal, which is for visit
 // history (completed) only. `onComplete`, when passed, hands this same
 // `visit` up to the parent to open in VisitLogModal with its visit_id
-// intact — that PATCHes this exact row to status: 'completed' rather than
+// intact - that PATCHes this exact row to status: 'completed' rather than
 // creating a new one, so it moves from planned to completed in place
 // instead of leaving a stray planned row behind.
 //
 // `onSnoozed`, when passed, is what enables the Snooze button at all (same
-// "omit the prop to omit the action" convention onComplete already uses) —
+// "omit the prop to omit the action" convention onComplete already uses) -
 // PlannedDayModal's read-only "someone else's route" mode omits both. Fires
 // with the updated (now status: 'snoozed') visit once POST /:id/snooze
 // succeeds, so the caller can drop it from whatever "planned" list it came
 // from, same as onComplete's caller does after logging.
 //
-// `onDelete`, same convention again — omitted in PlannedDayModal's
+// `onDelete`, same convention again - omitted in PlannedDayModal's
 // read-only mode. Like VisitDetailModal's own onDelete, this just hands the
 // visit up to the caller's existing removeVisit (confirm + api.deleteVisit +
 // reload lives there, not here) rather than duplicating it.
 //
-// `onEdited`, same convention again — enables the Edit button, which opens a
+// `onEdited`, same convention again - enables the Edit button, which opens a
 // date/notes panel (mirrors the Snooze panel below) and saves through
 // api.editVisit (PATCH /:id/edit). That endpoint works on ANY still-planned
-// visit, not just one already planned_manually — the FIRST successful edit
+// visit, not just one already planned_manually - the FIRST successful edit
 // through it is what promotes a planner-committed visit into a
 // manually-planned one (see services/manualVisits.js's editVisit for why),
 // so this is the one place in the app that can turn a route-planner stop
@@ -80,13 +80,13 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Same "never make a rep guess" treatment as PlanVisitModal/VisitLogModal
-  // — scrolls the notice into view the moment it appears, in case this panel
+  // - scrolls the notice into view the moment it appears, in case this panel
   // (or the modal around it) is scrolled such that the bottom isn't already
   // in view.
   const noticeRef = useRef(null);
   useEffect(() => {
     if (editError || editWarnings?.length > 0) {
-      // block: 'end', not 'nearest' — see PlanVisitModal's own comment on
+      // block: 'end', not 'nearest' - see PlanVisitModal's own comment on
       // this same call.
       noticeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
@@ -109,7 +109,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
       setEditing(false);
       onEdited?.(result);
     } catch (e) {
-      // Same conflict-vs-generic split as PlanVisitModal's save() — a §4.1
+      // Same conflict-vs-generic split as PlanVisitModal's save() - a §4.1
       // hard block (SAME_DATE_VISIT/DRAFT_ELSEWHERE) carries `conflicts` and
       // renders as plain text like editWarnings below; a genuine error
       // (permission, bad date) keeps the banner.
@@ -121,7 +121,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
 
   // Two-step by necessity, not choice: the server can't know a chosen date
   // is fine until it's checked this place's own commitment (see
-  // routes/visits.js's POST /:id/snooze) — a client-side guess here would
+  // routes/visits.js's POST /:id/snooze) - a client-side guess here would
   // just duplicate that check and could drift from it. SNOOZE_SWALLOWS_
   // COMMITMENT is the only 409 this endpoint returns, so no code check is
   // needed beyond "was there a conflict at all."
@@ -155,7 +155,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Visit — {formatDate(visit.scheduled_date)}</h2>
+          <h2>Visit - {formatDate(visit.scheduled_date)}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">
@@ -164,7 +164,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
           )}
           <div className="tiny"><strong>Type:</strong> {VISIT_TYPE_LABELS[visit.visit_type] || 'Visit'}</div>
           {/* No contact line here on purpose. Who was met lives in a visit's
-              `encounters`, which only get written when the visit is logged —
+              `encounters`, which only get written when the visit is logged -
               a planned stop having none is its normal state, not missing
               data. The completed equivalent is VisitDetailModal. */}
           {visit.user_name && (
@@ -206,7 +206,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
             </div>
             {/* Left of the buttons (marginRight: auto against modal-foot's
                 own justify-content: flex-end), same as VisitLogModal/
-                PlanVisitModal's own footer notice — not its own full-width
+                PlanVisitModal's own footer notice - not its own full-width
                 line above them. Date/Notes above keep width: 100% (they need
                 the room for their own label+input), but this row packs
                 alongside the buttons since flexWrap on modal-foot already
@@ -255,7 +255,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
             {onEdited && (
               <Button
                 variant="secondary"
-                title="Change this visit's date or notes — takes it over as a manually-planned visit"
+                title="Change this visit's date or notes - takes it over as a manually-planned visit"
                 onClick={() => setEditing(true)}
               >
                 Edit
@@ -264,7 +264,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
             {onSnoozed && (
               <Button
                 variant="secondary"
-                title="Defer this visit — suppresses this place for every rep until the date you pick"
+                title="Defer this visit - suppresses this place for every rep until the date you pick"
                 onClick={() => setSnoozing(true)}
               >
                 Snooze

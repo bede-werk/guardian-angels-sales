@@ -1,4 +1,4 @@
-// Team members. Note: this is separate from auth (routes/auth.js) — a "user"
+// Team members. Note: this is separate from auth (routes/auth.js) - a "user"
 // row here just represents a person on the sales team; login/password/session
 // concerns live in the auth routes even though they also touch this same table.
 const express = require('express');
@@ -6,12 +6,12 @@ const knex = require('../db/knex');
 
 const router = express.Router();
 
-// Columns safe to send to the browser — never password_hash or auth_token.
+// Columns safe to send to the browser - never password_hash or auth_token.
 // Mirrors routes/auth.js's publicUser (kept separate since this list also
 // includes email, which the login picker doesn't need).
 const SAFE_COLUMNS = ['id', 'name', 'email'];
 
-// GET /api/users — list team members, alphabetically.
+// GET /api/users - list team members, alphabetically.
 router.get('/', async (req, res, next) => {
   try {
     const users = await knex('users').select(SAFE_COLUMNS).orderBy('name');
@@ -21,7 +21,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /api/users — add a new team member (no password yet — they set one
+// POST /api/users - add a new team member (no password yet - they set one
 // themselves the first time they log in, see routes/auth.js's set-password).
 router.post('/', async (req, res, next) => {
   try {

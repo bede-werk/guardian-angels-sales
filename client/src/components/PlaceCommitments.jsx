@@ -1,15 +1,15 @@
-// Place Commitments panel — one section inside PlaceDetail's Upcoming Visits
+// Place Commitments panel - one section inside PlaceDetail's Upcoming Visits
 // card. See server/src/services/placeCommitments.js's module header for the
 // model this displays: a place can carry more than one outstanding dated
 // promise, the one that binds is whichever comes due FIRST, and nothing
 // resolves one except a human (fulfilling it via a visit, rescheduling it,
-// or waiving it) — a date passing on its own does nothing.
+// or waiving it) - a date passing on its own does nothing.
 //
 // Same "state/handlers live in the parent, this file is presentational"
 // convention as RelationshipDetail.jsx's PlaceRelationship and
 // CapacityDetail.jsx's PlaceCapacity: onAdd/onReschedule/onWaive do the
 // actual API call + reload in PlaceDetail.jsx and report back true/false, so
-// this component only closes its own inline editor on success — a failed
+// this component only closes its own inline editor on success - a failed
 // save leaves the draft in place instead of silently discarding it.
 import React, { useState } from 'react';
 import { formatDate, today } from '../api';
@@ -24,7 +24,7 @@ export function PlaceCommitments({ commitments, people, onAdd, saving, onResched
   const [addNote, setAddNote] = useState('');
 
   // Only one row's inline editor (reschedule OR waive) is ever open at a
-  // time — same single-editor-at-a-time convention CapacityDetail's override
+  // time - same single-editor-at-a-time convention CapacityDetail's override
   // vs. observation editors use.
   const [reschedulingId, setReschedulingId] = useState(null);
   const [rescheduleDate, setRescheduleDate] = useState('');
@@ -50,7 +50,7 @@ export function PlaceCommitments({ commitments, people, onAdd, saving, onResched
   }
 
   // person_id/note carry forward from the original into the reschedule
-  // draft (spec: "both editable") — the date field starts blank since a
+  // draft (spec: "both editable") - the date field starts blank since a
   // reschedule always needs a genuinely new date, not the one just missed.
   function startReschedule(c) {
     setWaivingDraftId(null);
@@ -174,7 +174,7 @@ export function PlaceCommitments({ commitments, people, onAdd, saving, onResched
                     <Button variant="secondary" size="small" title="Promise a new date instead" onClick={() => startReschedule(c)}>
                       Reschedule
                     </Button>
-                    <Button variant="secondary" size="small" title="Call this off — the place falls back to normal cadence" onClick={() => startWaive(c)}>
+                    <Button variant="secondary" size="small" title="Call this off - the place falls back to normal cadence" onClick={() => startWaive(c)}>
                       Waive
                     </Button>
                   </div>
@@ -199,7 +199,7 @@ export function PlaceCommitments({ commitments, people, onAdd, saving, onResched
                   style={{ padding: '4px 0', borderTop: '1px solid var(--border)', justifyContent: 'space-between', alignItems: 'center' }}
                 >
                   <span className="tiny muted">
-                    {formatDate(c.promised_date)} — {DISCHARGE_LABELS[c.discharge_reason] || c.discharge_reason}
+                    {formatDate(c.promised_date)} - {DISCHARGE_LABELS[c.discharge_reason] || c.discharge_reason}
                     {c.person_name ? ` · ${c.person_name}` : ''}
                     {c.note ? ` · ${c.note}` : ''}
                   </span>

@@ -15,7 +15,7 @@ const config = require('../config/scheduling');
 
 const ASOF = '2026-08-03';
 
-// 'YYYY-MM-DD' n days before `dateStr`, UTC-safe — same convention as
+// 'YYYY-MM-DD' n days before `dateStr`, UTC-safe - same convention as
 // relationship.test.js's own local helper.
 function daysBefore(dateStr, n) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -34,11 +34,11 @@ function memoryDb() {
 }
 
 // --- Pure resolution (computeCapacityPure) ---------------------------------
-// Tests 1, 2, 4, 5, 6 from capacity-computation-spec.md §13. No DB — these
+// Tests 1, 2, 4, 5, 6 from capacity-computation-spec.md §13. No DB - these
 // exercise the resolution logic directly, same pure/impure split as
 // schedulingEngine.js/relationship.js.
 
-describe('computeCapacityPure — asymmetry invariant', () => {
+describe('computeCapacityPure - asymmetry invariant', () => {
   test('up: measured exceeding declared raises the effective number', () => {
     const r = computeCapacityPure({
       declared: { value: 3, observedAt: ASOF, source: 'prequal', personId: null },
@@ -53,16 +53,16 @@ describe('computeCapacityPure — asymmetry invariant', () => {
     assert.equal(r.levelSource, 'measured');
   });
 
-  // THE INVARIANT TEST — see this file's own header and capacity.js's header
+  // THE INVARIANT TEST - see this file's own header and capacity.js's header
   // comment. This must fail loudly if a future change ever lets measuredFloor
   // pull effectiveMonthly below declared.value.
   //
-  // Note: the spec's own prose for this case (§13, "Asymmetry — down")
-  // says "Declared 15, measured 0 -> effective 15, level high" — but 15
+  // Note: the spec's own prose for this case (§13, "Asymmetry - down")
+  // says "Declared 15, measured 0 -> effective 15, level high" - but 15
   // buckets to 'medium' under the spec's own §4 thresholds (medium: 6-15,
   // high: 16+), which its own bucket-boundaries test (§13, "15 -> medium")
   // confirms explicitly. That's an internal inconsistency in the spec, not
-  // an ambiguity in the boundaries themselves — implementing against §4/the
+  // an ambiguity in the boundaries themselves - implementing against §4/the
   // boundaries test (the self-consistent, unambiguous source) rather than
   // the contradicting prose line. The asymmetry claim itself (effective
   // stays at declared's value, never gets pulled down to 0) is unaffected
@@ -82,7 +82,7 @@ describe('computeCapacityPure — asymmetry invariant', () => {
   });
 });
 
-describe('bucketForMonthlyReferrals — boundaries', () => {
+describe('bucketForMonthlyReferrals - boundaries', () => {
   test('5 -> low, 6 -> medium, 15 -> medium, 16 -> high, 0 -> low', () => {
     assert.equal(bucketForMonthlyReferrals(5, config.CAPACITY_THRESHOLDS), 'low');
     assert.equal(bucketForMonthlyReferrals(6, config.CAPACITY_THRESHOLDS), 'medium');
@@ -94,17 +94,17 @@ describe('bucketForMonthlyReferrals — boundaries', () => {
 
 // Step 7 (capacity-computation-spec.md §8.2's own migration): the value
 // stamped onto places.exploration_eligible_since at observation-insert time
-// — the date THIS observation goes stale, not derived later at read time.
+// - the date THIS observation goes stale, not derived later at read time.
 // See the migration's own header for why a live `?? created_at` fallback
 // was rejected.
-describe('nextExplorationEligibleSince — step 7 dual-write stamp', () => {
+describe('nextExplorationEligibleSince - step 7 dual-write stamp', () => {
   test('is exactly observedAt + CAPACITY_STALE_DAYS, independent of asOf', () => {
     const observedAt = '2026-01-01';
     assert.equal(nextExplorationEligibleSince(observedAt, config), daysBefore(observedAt, -config.CAPACITY_STALE_DAYS));
   });
 });
 
-describe('computeCapacityPure — staleness', () => {
+describe('computeCapacityPure - staleness', () => {
   test('observed exactly CAPACITY_STALE_DAYS ago is fresh; one day older is stale', () => {
     const fresh = computeCapacityPure({
       declared: { value: 8, observedAt: daysBefore(ASOF, config.CAPACITY_STALE_DAYS), source: 'prequal', personId: null },
@@ -128,7 +128,7 @@ describe('computeCapacityPure — staleness', () => {
   });
 });
 
-describe('computeCapacityPure — override precedence', () => {
+describe('computeCapacityPure - override precedence', () => {
   test('override beats computed, and does not change confidence', () => {
     const withoutOverride = computeCapacityPure({
       declared: { value: 20, observedAt: daysBefore(ASOF, config.CAPACITY_STALE_DAYS + 30), source: 'prequal', personId: null }, // stale
@@ -157,12 +157,12 @@ describe('computeCapacityPure — override precedence', () => {
 });
 
 // --- Bulk DB paths -----------------------------------------------------
-// Tests 3, 13, 14, 15 from spec §13 — measuredFloorByPlace's exposure gate,
+// Tests 3, 13, 14, 15 from spec §13 - measuredFloorByPlace's exposure gate,
 // asOf being genuinely respected, bulk/single parity, and the empty case.
 // Tests 7-12 (EXPLORATION tier ordering/aging, drop-off detector) belong to
-// build-order steps 8-9, not built yet — deliberately not attempted here.
+// build-order steps 8-9, not built yet - deliberately not attempted here.
 
-describe('measuredFloorByPlace — exposure gate', () => {
+describe('measuredFloorByPlace - exposure gate', () => {
   let db;
 
   before(async () => {
@@ -212,7 +212,7 @@ describe('measuredFloorByPlace — exposure gate', () => {
   });
 });
 
-describe('computeCapacityForPlace(s) — asOf, bulk parity, and the empty case', () => {
+describe('computeCapacityForPlace(s) - asOf, bulk parity, and the empty case', () => {
   let db;
 
   before(async () => {

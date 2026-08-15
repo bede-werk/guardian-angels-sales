@@ -2,7 +2,7 @@
 //
 // This is the single place where the database engine is chosen. Locally we use
 // SQLite (via better-sqlite3); in the cloud (Railway/Heroku) set NODE_ENV=production
-// and provide DATABASE_URL and the app talks to PostgreSQL instead — with no query
+// and provide DATABASE_URL and the app talks to PostgreSQL instead - with no query
 // changes, because all data access goes through Knex.
 require('dotenv').config();
 const path = require('path');

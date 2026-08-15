@@ -13,7 +13,7 @@ import InlineDropdown from './ui/InlineDropdown';
 
 // The per-day budget picker shows hours + minutes as two selects, but the
 // wire/schema shape is still a single decimal `hoursPerDay` (see
-// scheduleDraft.js's `budgetMinutes = hoursPerDay * 60`) — HOUR_OPTIONS
+// scheduleDraft.js's `budgetMinutes = hoursPerDay * 60`) - HOUR_OPTIONS
 // starts at 1, never 0, so hours+minutes can never both be zero and trip
 // the server's `hoursPerDay > 0` validation.
 const HOUR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -31,10 +31,10 @@ const MAX_PLAN_DATES = 10; // mirrors scheduleDraft.js's MAX_PLAN_DATES
 
 // addStop's 409 rejections (SAME_DATE_VISIT/DRAFT_ELSEWHERE) now carry
 // structured conflicts (see services/conflictDetection.js's Conflict shape)
-// alongside the generic error string — this names the other rep and date for
+// alongside the generic error string - this names the other rep and date for
 // both types instead of the old flat "already booked elsewhere" message.
 // Delegates to stopConflictMessage (defined below, hoisted) rather than
-// re-deriving the same "you" vs a name logic a second time — the two used to
+// re-deriving the same "you" vs a name logic a second time - the two used to
 // diverge here: this function used err.message as-is for SAME_DATE_VISIT,
 // which is only personalized on the manual "Log a visit" route, not here, so
 // it silently rendered the generic server string instead.
@@ -47,14 +47,14 @@ function addStopErrorMessage(err, viewerId) {
 }
 
 // Per-type message for a stop's `conflicts` (see services/scheduleDraft.js's
-// loadDraftView/loadDraftDayView — every draft stop is re-checked against
+// loadDraftView/loadDraftDayView - every draft stop is re-checked against
 // the shared detector on every read, not just at the moment it was added).
 // Mirrors VisitLogModal.jsx's conflictMessage; no shared module between the
 // two yet. addStopErrorMessage above calls this directly for its own
 // DRAFT_ELSEWHERE/SAME_DATE_VISIT 409s rather than duplicating it.
 // `viewerId` names the SAME_DATE_VISIT case correctly when it's the viewer's
 // own other visit (detectConflictsForStops doesn't exclude the caller the
-// way DRAFT_ELSEWHERE does — a rep's own duplicate is exactly as worth
+// way DRAFT_ELSEWHERE does - a rep's own duplicate is exactly as worth
 // naming as anyone else's).
 function stopConflictMessage(c, viewerId) {
   switch (c.type) {
@@ -66,7 +66,7 @@ function stopConflictMessage(c, viewerId) {
     }
     case 'FLOOR_COMPLETED': {
       const days = c.daysApart;
-      return `Visited by ${c.otherUserName || 'someone'} on ${formatDate(c.otherDate)} — ${days} day${days === 1 ? '' : 's'} ago.`;
+      return `Visited by ${c.otherUserName || 'someone'} on ${formatDate(c.otherDate)} - ${days} day${days === 1 ? '' : 's'} ago.`;
     }
     case 'FLOOR_PLANNED':
       return `Visit already planned by ${c.otherUserName || 'someone'} for ${formatDate(c.otherDate)}.`;
@@ -76,15 +76,15 @@ function stopConflictMessage(c, viewerId) {
       return null;
   }
 }
-// Place Commitments badge text (spec §6.1) — `stop.commitment`/`s.commitment`,
+// Place Commitments badge text (spec §6.1) - `stop.commitment`/`s.commitment`,
 // attached server-side by services/scheduleDraft.js's commitmentBadge. The
 // promise itself, not just a flag: who it was for (when known), the date,
-// how overdue (only once genuinely overdue — see that function's own
+// how overdue (only once genuinely overdue - see that function's own
 // comment on why "0 days overdue" is never shown), and how many OTHER
 // outstanding commitments this same place has on file.
 function commitmentBadgeText(c) {
   const base = c.personName ? `Promised to ${c.personName} for ${formatDate(c.promisedDate)}` : `Promised for ${formatDate(c.promisedDate)}`;
-  const overdue = c.overdueDays > 0 ? ` — ${c.overdueDays} day${c.overdueDays === 1 ? '' : 's'} overdue` : '';
+  const overdue = c.overdueDays > 0 ? ` - ${c.overdueDays} day${c.overdueDays === 1 ? '' : 's'} overdue` : '';
   const more = c.moreCount > 0 ? ` +${c.moreCount} more` : '';
   return `${base}${overdue}${more}`;
 }
@@ -107,12 +107,12 @@ function todayISO() {
   return isoDate(new Date());
 }
 
-// The latest selectable calendar date — a proposal generated too far out
+// The latest selectable calendar date - a proposal generated too far out
 // goes stale before the rep actually gets there (a commitment that becomes
 // due, or a higher-priority place, won't retroactively reshuffle an
 // already-proposed day). Counts only weekdays (Mon-Fri) toward
 // MAX_DAYS_AHEAD, so a weekend inside the window doesn't shrink the actual
-// planning horizon — mirrors scheduleDraft.js's validateDays/maxPlanDateUTC,
+// planning horizon - mirrors scheduleDraft.js's validateDays/maxPlanDateUTC,
 // which enforces the exact same bound server-side.
 function maxPlanDateISO() {
   const d = new Date();
@@ -125,14 +125,14 @@ function maxPlanDateISO() {
   return isoDate(d);
 }
 
-// Visits are only ever planned Mon-Fri — mirrors scheduleDraft.js's
+// Visits are only ever planned Mon-Fri - mirrors scheduleDraft.js's
 // validateDays, which rejects a weekend date server-side too.
 function isWeekendISO(iso) {
   const dow = new Date(`${iso}T00:00:00`).getDay();
   return dow === 0 || dow === 6;
 }
 
-// Same {date, hoursPerDay} selection, order-independent — used to tell
+// Same {date, hoursPerDay} selection, order-independent - used to tell
 // whether `selectedDays` has actually diverged from what the active draft
 // was last generated with (see needsRegenerate below), not just whether
 // there's technically something selected.
@@ -156,7 +156,7 @@ function formatMinutes(minutes) {
 // A day's card is worth showing while it either still has open (uncommitted)
 // stops, or never got any stops committed at all (the "nothing planned for
 // this day yet, add one" case right after generating). Once a day has been
-// fully accepted — no stops left, but it did produce committed visits — its
+// fully accepted - no stops left, but it did produce committed visits - its
 // card is a redundant empty shell (see RoutePlanner's render below) and drops
 // out. Shared between the render and load()'s "is this whole draft spent?"
 // check so they can't drift apart.
@@ -166,7 +166,7 @@ function openDays(draft) {
 
 // One day's card: stop list with reorder (drag + arrow fallback), remove,
 // visit-type change, and ad-hoc add. Every mutation calls its endpoint and
-// replaces this day's slice from the response (loadDraftDayView's return) —
+// replaces this day's slice from the response (loadDraftDayView's return) -
 // the server always recalculates running totals/overBudget fresh, so the
 // live time math and over-budget flagging just fall out of that, per the
 // interaction model: edits recalculate in place, nothing is ever auto-
@@ -176,19 +176,19 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
   // A hard-block conflict (or any other failure) from the last addStop/
-  // addSuggestion attempt — kept LOCAL to this day card rather than routed
+  // addSuggestion attempt - kept LOCAL to this day card rather than routed
   // through the shared onError page banner, so it renders right next to the
   // Add controls the rep just used instead of at the top of a page that may
   // have several days' cards scrolled well out of view.
   const [addError, setAddError] = useState(null);
   const [viewingPlaceId, setViewingPlaceId] = useState(null); // stop whose full PlaceDetail is open, if any
 
-  // Place Commitments badge actions (spec §6.2) — reschedule/waive, reachable
+  // Place Commitments badge actions (spec §6.2) - reschedule/waive, reachable
   // straight from the badge instead of only from PlaceDetail's own fuller
   // Commitments panel (PlaceCommitments.jsx). Deliberately a lighter-weight
   // surface than that panel: no person/note editing here (both are still
   // carried forward server-side per the reschedule contract, just not
-  // exposed for edit in this already-dense row) — a rep who wants to change
+  // exposed for edit in this already-dense row) - a rep who wants to change
   // those opens PlaceDetail instead. commitmentActionPlaceId is which stop's
   // mini-form is open (at most one at a time); commitmentActionMode picks
   // which of the two it is.
@@ -214,11 +214,11 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   }
 
   // Both actions hit the same place-scoped endpoints PlaceDetail's
-  // Commitments panel uses (server/src/routes/places.js) — nothing
+  // Commitments panel uses (server/src/routes/places.js) - nothing
   // draft-specific about a commitment, so there's no schedule-drafts route
   // for this. A full reload() afterward (not a patched-in-place day update,
   // unlike every other mutation in this component) since this changes
-  // ranking/eligibility, not just this one stop's own fields — simplest way
+  // ranking/eligibility, not just this one stop's own fields - simplest way
   // to guarantee the whole draft reflects the place's new commitment state.
   async function submitCommitmentReschedule(commitmentId) {
     onError(null);
@@ -249,14 +249,14 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
 
   // Two-part gate for the Re-optimize button below, both set by anything
   // that changes which stops are in the day or their order (add/remove/
-  // reorder) — NOT by a visit-type change, since that only changes a
+  // reorder) - NOT by a visit-type change, since that only changes a
   // stop's duration, never which order is fastest to drive:
   //  - everEdited: whether this day has been touched at all since it was
   //    generated (already real-OSRM-optimized at that point). Once true,
-  //    stays true — controls whether the button appears at all.
+  //    stays true - controls whether the button appears at all.
   //  - needsReoptimize: whether it's been touched since the LAST optimize
   //    (generation, or a prior Re-optimize click). Toggles back to false
-  //    right after a successful Re-optimize — controls whether the
+  //    right after a successful Re-optimize - controls whether the
   //    (still-visible) button is enabled or disabled.
   // Deliberately session-only, client-side state rather than a persisted
   // field: there's nothing to keep in sync, it just needs a safe default
@@ -375,7 +375,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   }
 
   // Adding a suggested place reuses the same addStop endpoint an ad-hoc
-  // add uses — a suggestion is just a pre-filtered candidate, not a
+  // add uses - a suggestion is just a pre-filtered candidate, not a
   // different kind of add. Pulled out of the local list on success so the
   // panel doesn't offer the same place twice without a re-fetch.
   async function addSuggestion(s) {
@@ -407,16 +407,16 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   }
 
   // Discards just THIS day's still-open proposal, as if the date had never
-  // been picked at all — every other day (and anything already accepted for
+  // been picked at all - every other day (and anything already accepted for
   // this day) is untouched, unlike the page-level "Discard all proposals"
   // button. Unlike every other mutation here, the response isn't a day view
-  // (the day itself no longer exists once its date drops out of the draft —
+  // (the day itself no longer exists once its date drops out of the draft -
   // see scheduleDraft.js's discardDay) so this goes through onDayDiscarded,
   // not onDayUpdated: the parent removes the whole card and de-selects the
   // date on the calendar, rather than patching this day's slice in place.
   async function discardThisDay() {
     if (day.stops.length === 0) return;
-    if (!window.confirm(`Discard the proposal for ${formatDate(day.date)}? ${day.stops.length} still-open visit${day.stops.length === 1 ? '' : 's'} will be removed — this can't be undone.`)) return;
+    if (!window.confirm(`Discard the proposal for ${formatDate(day.date)}? ${day.stops.length} still-open visit${day.stops.length === 1 ? '' : 's'} will be removed - this can't be undone.`)) return;
     onError(null);
     setBusy(true);
     try {
@@ -427,11 +427,11 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
     }
   }
 
-  // Re-sequences this day's stops via a real routing call — the only action
+  // Re-sequences this day's stops via a real routing call - the only action
   // in this screen that's allowed to resequence (every other edit
   // deliberately preserves whatever order the stops are already in). The
   // button (see render below) only appears once this day's been edited at
-  // all, and is only enabled while needsReoptimize is true — there's
+  // all, and is only enabled while needsReoptimize is true - there's
   // nothing to gain from re-clicking this until the stop list or order has
   // changed again since the last time it ran.
   async function reoptimize() {
@@ -447,7 +447,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
     }
   }
 
-  // The areas (regions) "Somewhere else" can offer for this day — not part
+  // The areas (regions) "Somewhere else" can offer for this day - not part
   // of the normal day view (see scheduleDraft.js's getDayZones), so it's
   // fetched separately, once per day identity. null while loading (the
   // dropdown falls back to showing day.zone as plain text until this
@@ -463,12 +463,12 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   }, [draftId, day.date]);
 
   // Re-packs this day from scratch with the user's directly-picked zone's
-  // candidates — the server already does the same real routing/budget
+  // candidates - the server already does the same real routing/budget
   // packing generate() does, so the result is as fresh as a brand-new day:
   // everEdited/needsReoptimize reset, same as right after generation, rather
   // than carrying over whatever edit history this day had under its old
   // zone. Goes through onZoneSelected (not onDayUpdated directly) so the
-  // parent can also surface the droppedCommitments notice — this day's
+  // parent can also surface the droppedCommitments notice - this day's
   // slice still gets patched in place either way, never a full draft
   // reload. Re-fetches the zone list afterward (fire-and-forget, own
   // failure ignored) since the candidate pool can shift once places move.
@@ -522,7 +522,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
               variant="secondary"
               onClick={reoptimize}
               disabled={busy || !needsReoptimize}
-              title={needsReoptimize ? "Re-sequence this day's stops for the shortest real drive route" : 'Already optimized — edit the day to re-enable'}
+              title={needsReoptimize ? "Re-sequence this day's stops for the shortest real drive route" : 'Already optimized - edit the day to re-enable'}
             >
               Re-optimize route
             </Button>
@@ -544,7 +544,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
       </div>
       <div className="card-body">
         <div style={{ marginBottom: 14 }}>
-          <div className="progress-total" title="Estimated — based on typical drive times and default visit lengths, not a guarantee of how the day will actually go.">
+          <div className="progress-total" title="Estimated - based on typical drive times and default visit lengths, not a guarantee of how the day will actually go.">
             ~{formatMinutes(day.totalMinutes)} <span className="muted" style={{ fontWeight: 400 }}>of {formatMinutes(budgetMinutes)}</span>
             {day.overBudget && <span style={{ color: 'var(--mauve)' }}> · {formatMinutes(-day.remainingMinutes)} over</span>}
           </div>
@@ -574,7 +574,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                       {v.category && <CategoryChip category={v.category} />}
                       {v.tier && <TierChip tier={v.tier} />}
                       <span className="tiny muted">{VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}</span>
-                      {/* Manual Visit Planning spec §5/§7.3 — marker(s) only
+                      {/* Manual Visit Planning spec §5/§7.3 - marker(s) only
                           on a manually-planned row; a normal
                           planner-committed stop shows nothing extra here. */}
                       {v.planned_manually === 1 && (
@@ -636,11 +636,11 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     <div className="meta">
                       {stop.address ? `${stop.address}, ` : ''}{stop.city} {stop.zip}
                     </div>
-                    {/* Informational only — doesn't block reorder/remove/commit,
+                    {/* Informational only - doesn't block reorder/remove/commit,
                         just flags that a real visit already happened today for
                         this place (routes/scheduleDraft.js's alreadyVisitedTodayPlaceIds).
                         Narrower and older than the stop.conflicts detector
-                        badge below (exact-today only, any status) — kept
+                        badge below (exact-today only, any status) - kept
                         separate rather than folded in since it answers a
                         different question ("did this already happen today")
                         than the detector's ("does this collide"). */}
@@ -654,10 +654,10 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     )}
                     {/* Same cross-rep hard-floor warning shown on already-committed
                         visits (PlaceDetail/VisitDetailModal/PlannedDayModal/
-                        CompletedVisitsModal) — surfaced here too so a rep can pick
+                        CompletedVisitsModal) - surfaced here too so a rep can pick
                         a different stop BEFORE committing, not just find out after.
                         Suppressed when stop.conflicts already names the same
-                        underlying visit (matched by id, not just name/date) —
+                        underlying visit (matched by id, not just name/date) -
                         crossRepFloorWarning and FLOOR_COMPLETED/FLOOR_PLANNED
                         are two independently-computed views of the same fact
                         for a different rep, and rendering both stacked the
@@ -674,11 +674,11 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     )}
                     {/* The shared detector, re-run fresh every time this day is
                         loaded (services/scheduleDraft.js's loadDraftView/
-                        loadDraftDayView) — not just at the moment this stop
+                        loadDraftDayView) - not just at the moment this stop
                         was added. Another rep can commit a colliding visit at
                         any point after that, and this is what catches it: a
                         stop sitting in a Thursday draft that someone else's
-                        Tuesday commit has since invalidated. Informational —
+                        Tuesday commit has since invalidated. Informational -
                         addStop allows a floor conflict through; only a same-
                         date/other-draft collision is rejected outright, at
                         add time, before it can ever reach here. */}
@@ -691,7 +691,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         {stopConflictMessage(c, userId)}
                       </div>
                     ))}
-                    {/* Place Commitments badge (spec §6.1) — a due commitment
+                    {/* Place Commitments badge (spec §6.1) - a due commitment
                         is exactly why this place jumped to the top of the
                         proposal, so the badge is what explains the ranking,
                         not just decorates it. stopPropagation throughout:
@@ -842,7 +842,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         {crossRepFloorWarningText(s.crossRepFloorWarning)}
                       </div>
                     )}
-                    {/* Display only here (no reschedule/waive) — those act on
+                    {/* Display only here (no reschedule/waive) - those act on
                         a real draft stop or PlaceDetail's own Commitments
                         panel; this row is still just a candidate, not yet
                         added. */}
@@ -868,7 +868,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
           modal Places.jsx/People.jsx/Dashboard.jsx use) so a rep can check
           capacity/notes/history/contacts before deciding what visit type
           this stop should be. onChanged/onDeleted both just reload() the
-          draft — a deleted place cascades its schedule_draft_stops row
+          draft - a deleted place cascades its schedule_draft_stops row
           server-side, so the stop simply disappears from this day on the
           next load, same as removing it here directly. */}
       {viewingPlaceId && (
@@ -885,7 +885,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
 }
 
 // Phase 6 frontend, sub-slice 3: suggestions (the "nearby eligible stop"
-// prompt on under-budget days, per DraftDay above) and commit — per-day
+// prompt on under-budget days, per DraftDay above) and commit - per-day
 // (DraftDay's "Accept proposal" button) and all-remaining-days (this
 // component's "Accept all proposals" button). Built on top of sub-slice 2's
 // live editing.
@@ -901,14 +901,14 @@ export default function RoutePlanner({ userId }) {
   const [discarding, setDiscarding] = useState(false);
 
   // The dates the rep has picked on the calendar to plan for, each with its
-  // own hours budget — [{ date, hoursPerDay }], sorted by date. Seeded from
+  // own hours budget - [{ date, hoursPerDay }], sorted by date. Seeded from
   // the active draft's own params once (see the effect below) so "Plan
   // again" starts from whatever's already generated; committedDates pulls
   // any date that gets committed back out (see the other effect below) so a
-  // day can never be re-selected once it's done — the actual fix for the
+  // day can never be re-selected once it's done - the actual fix for the
   // "still able to plan more visits for an already-committed day" bug.
   const [selectedDays, setSelectedDays] = useState([]);
-  // Raw [{ date, count }] from the server — committedDates below is just the
+  // Raw [{ date, count }] from the server - committedDates below is just the
   // date Set derived from it (what the calendar/selection-pruning need);
   // committedSummaries itself is what the "Already committed" snapshot list
   // renders, since it also wants the per-day visit count.
@@ -918,13 +918,13 @@ export default function RoutePlanner({ userId }) {
   const [reopeningDate, setReopeningDate] = useState(null); // which "Already Planned" row's Edit is in flight
   const [viewingDate, setViewingDate] = useState(null); // which "Already Planned" row's drill-down modal is open, if any
   const [viewingPlaceId, setViewingPlaceId] = useState(null); // full PlaceDetail opened from within that drill-down, if any
-  // Dates already generated into the active draft — once a day's routes
+  // Dates already generated into the active draft - once a day's routes
   // have been proposed, it can't be deselected (calendar click or the ✕ in
   // the list below); discarding that day's proposal (or the whole draft) is
   // the only way to free the date back up. See Calendar.jsx's `proposed` prop.
   const proposedDates = useMemo(() => new Set((draft?.days ?? []).map((d) => d.date)), [draft]);
   // Every place already used anywhere in the active draft (any day, not
-  // just the one being edited) — addStop rejects these as a 409 regardless
+  // just the one being edited) - addStop rejects these as a 409 regardless
   // of which day you try to add them to, so the ad-hoc "+ Add a stop"
   // picker excludes them up front rather than letting the user pick one and
   // only find out from an error.
@@ -934,14 +934,14 @@ export default function RoutePlanner({ userId }) {
   );
   const seededFromDraft = useRef(false);
 
-  // homeBase capture: browser geolocation, or a manually entered address —
+  // homeBase capture: browser geolocation, or a manually entered address -
   // no rep/user location field exists in the schema yet, so this is asked
   // for at generate time instead. Manual entry is offered as an equal
   // option alongside "Use my current location" (toggled open by its own
-  // button), not just shown after geolocation fails — `locationError` still
+  // button), not just shown after geolocation fails - `locationError` still
   // auto-opens it too, since at that point it's the only option left. Manual
   // entry itself is a single Mapbox-backed search box (AddressAutocomplete)
-  // that resolves straight to { lat, lng, label } — no separate "look up"
+  // that resolves straight to { lat, lng, label } - no separate "look up"
   // step/button, unlike the old 4-field form this replaced.
   const [homeBase, setHomeBase] = useState(null); // { lat, lng, label }
   const [locating, setLocating] = useState(false);
@@ -949,14 +949,14 @@ export default function RoutePlanner({ userId }) {
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
 
   // Once a draft exists, the starting-point/date-picker setup card collapses
-  // to a one-line summary — its full form was previously left permanently
+  // to a one-line summary - its full form was previously left permanently
   // interactive even after generating, which invited edits (nudging the
   // calendar, hitting "Change" on the starting point) that silently did
   // nothing to the actual draft until a separate "Regenerate proposal"
   // click, and that click discards whatever in-progress edits the draft
   // itself already had. Collapsing makes "nothing happens until you
   // deliberately reopen setup" visible instead of implied. Stays false
-  // (form expanded) whenever there's no draft yet — see showSetupForm below,
+  // (form expanded) whenever there's no draft yet - see showSetupForm below,
   // computed rather than reset via effect so it can't drift out of sync.
   const [editingSetup, setEditingSetup] = useState(false);
 
@@ -964,13 +964,13 @@ export default function RoutePlanner({ userId }) {
     setCommittedSummaries(await api.scheduleDrafts.committedDates());
   }, []);
 
-  // Undoes a whole day's commit — only the still-open ("planned") visits on
+  // Undoes a whole day's commit - only the still-open ("planned") visits on
   // that date are removed server-side (see scheduleDraft.deleteCommittedDay);
   // anything already completed/skipped that day survives, so the row can
   // shrink (a lower count) rather than disappear if there's real history left
   // on it. Re-fetches rather than patching locally so the resulting count is
   // always exactly what the server has, not a client-side guess.
-  // Returns whether the day was actually removed — callers (e.g. the "already
+  // Returns whether the day was actually removed - callers (e.g. the "already
   // planned" drill-down modal) use this to decide whether to close themselves,
   // since a cancelled confirm or a failed request should leave things as-is.
   async function deleteCommittedDay(date) {
@@ -991,21 +991,21 @@ export default function RoutePlanner({ userId }) {
   }
 
   // Pulls a committed day's visits back out of `visits` and into a normal
-  // editable draft day (see scheduleDraft.reopenCommittedDay) — the response
+  // editable draft day (see scheduleDraft.reopenCommittedDay) - the response
   // is a full draft view, same shape generate() returns, so it's handled the
   // same way: setDraft AND setSelectedDays together, since the reopened date
   // is now part of draft.params.days and selectedDays needs to match or it
   // silently drifts out of sync (see the seededFromDraft effect above, which
   // only syncs the two once on initial mount).
-  // Returns whether the day was actually reopened — see deleteCommittedDay's
+  // Returns whether the day was actually reopened - see deleteCommittedDay's
   // matching note above.
   async function reopenDay(date) {
-    if (!window.confirm(`Edit the planned visits for ${formatDate(date)}? They'll temporarily show as not-yet-scheduled while you make changes — accept the updated proposal again when you're done.`)) return false;
+    if (!window.confirm(`Edit the planned visits for ${formatDate(date)}? They'll temporarily show as not-yet-scheduled while you make changes - accept the updated proposal again when you're done.`)) return false;
     setError(null);
     setReopeningDate(date);
     try {
       // No starting point picked yet (e.g. a fresh session with nothing
-      // generated) — grab the current location automatically instead of
+      // generated) - grab the current location automatically instead of
       // blocking the edit on a manual step; also fills in the generate
       // form's own "Starting from" display for consistency.
       let startingPoint = homeBase;
@@ -1032,12 +1032,12 @@ export default function RoutePlanner({ userId }) {
     try {
       const next = await api.scheduleDrafts.active();
       if (next && openDays(next).length === 0) {
-        // Every day in this draft has been fully accepted — there's no open
+        // Every day in this draft has been fully accepted - there's no open
         // day left to discard/create-another/accept-all for, so the header
         // buttons would otherwise sit there enabled with nothing live left
         // to act on. Clean up the now-inert draft shell server-side and land
         // back in the pre-draft starting state, same end state as a manual
-        // "Discard all proposals" (minus the confirm — nothing here is being
+        // "Discard all proposals" (minus the confirm - nothing here is being
         // lost, every stop already became a real visit).
         await api.scheduleDrafts.discard(next.id);
         setDraft(null);
@@ -1058,18 +1058,18 @@ export default function RoutePlanner({ userId }) {
   }, [load, refreshCommittedDates]);
 
   // Seeds the calendar from the active draft's own selection exactly once
-  // (on first load, if there's already a draft) — every later change to
+  // (on first load, if there's already a draft) - every later change to
   // `selectedDays` is either the user editing the calendar directly, or an
   // explicit set after a successful generate/regenerate (see generate()
   // below), never an overwrite triggered by an unrelated draft refresh.
-  // Seeds homeBase too, same one-time-on-load rule — without this, a draft
+  // Seeds homeBase too, same one-time-on-load rule - without this, a draft
   // loaded fresh (e.g. a page reload, since homeBase is deliberately never
-  // persisted — see its declaration above) left homeBase null forever,
+  // persisted - see its declaration above) left homeBase null forever,
   // which silently blocked "Regenerate proposal" no matter what got edited
   // in the reopened setup form: canGenerate requires a truthy homeBase, and
   // there was nothing in the UI to explain why the button stayed disabled
   // after editing hours or adding a day. The draft's own params.homeBase has
-  // real lat/lng (just no human-readable label — that's never round-tripped
+  // real lat/lng (just no human-readable label - that's never round-tripped
   // through the server), so this only loses the label, not the ability to
   // regenerate; a real "Change" click still overwrites it with a proper one.
   useEffect(() => {
@@ -1081,7 +1081,7 @@ export default function RoutePlanner({ userId }) {
   }, [draft]);
 
   // A date that gains a committed visit (from committing a day, here or in
-  // another tab) can never be planned again — see scheduleDraft.js's
+  // another tab) can never be planned again - see scheduleDraft.js's
   // validateDays, which enforces the same rule server-side. Dropping it here
   // too means a stale selection can't even be submitted to hit that 409.
   useEffect(() => {
@@ -1089,7 +1089,7 @@ export default function RoutePlanner({ userId }) {
   }, [committedDates]);
 
   // Auto-dismisses the notice banner (the blue "Planned N visits…" message
-  // after an accept) ~10s after it appears — fades out over the last half
+  // after an accept) ~10s after it appears - fades out over the last half
   // second rather than just vanishing. Runs off `notice` itself, not the
   // setNotice call sites, so it self-resets on every new message (an
   // "Accept all" notice replacing an "Accept day" one gets its own fresh
@@ -1107,7 +1107,7 @@ export default function RoutePlanner({ userId }) {
   }, [notice]);
 
   // Replaces one day's slice of the draft with a freshly recalculated day
-  // view (the shape every mutation endpoint returns) — never touches any
+  // view (the shape every mutation endpoint returns) - never touches any
   // other day, and never re-derives anything client-side.
   function updateDay(dayView) {
     setDraft((prev) => ({ ...prev, days: prev.days.map((d) => (d.date === dayView.date ? dayView : d)) }));
@@ -1115,7 +1115,7 @@ export default function RoutePlanner({ userId }) {
 
   // selectZone's response IS a day view (same shape reorder/addStop/etc.
   // return, plus droppedCommitments) so this patches this day's slice in
-  // place same as updateDay — no full reload. droppedCommitments only gets
+  // place same as updateDay - no full reload. droppedCommitments only gets
   // a notice when it's actually non-empty, same "important-but-non-fatal
   // outcome" banner handleDayCommitted uses for skippedCollisions.
   function handleZoneSelected(result) {
@@ -1123,13 +1123,13 @@ export default function RoutePlanner({ userId }) {
     if (result.droppedCommitments && result.droppedCommitments.length > 0) {
       const names = result.droppedCommitments.map((c) => c.place_name).join(', ');
       setNotice(
-        `Switched to a different area for ${formatDate(result.date)} — ${result.droppedCommitments.length} commitment${result.droppedCommitments.length === 1 ? '' : 's'} outside it won't be visited today: ${names}.`
+        `Switched to a different area for ${formatDate(result.date)} - ${result.droppedCommitments.length} commitment${result.droppedCommitments.length === 1 ? '' : 's'} outside it won't be visited today: ${names}.`
       );
     }
   }
 
   // commitDay's response isn't a day view (it's { date, committed,
-  // skippedCollisions } — the committed stops just became real `visits`
+  // skippedCollisions } - the committed stops just became real `visits`
   // rows and are gone from the draft) so, unlike every other mutation here,
   // this reloads the whole draft rather than patching one day's slice.
   function handleDayCommitted(date, result) {
@@ -1141,17 +1141,17 @@ export default function RoutePlanner({ userId }) {
       parts.push(`Skipped ${result.skippedCollisions.length} (already booked elsewhere by then): ${result.skippedCollisions.map((c) => c.place_name).join(', ')}.`);
     }
     // Checked fresh at the actual moment of commit (see commitDay in
-    // scheduleDraft.js) — catches a same-window collision even if this
+    // scheduleDraft.js) - catches a same-window collision even if this
     // screen was loaded before another rep's commit landed, which the
     // draft view's own read-time warning can miss. Per-warning tense
     // (planned vs visited) matters here as much as it does on the
-    // crossRepFloorWarning pill elsewhere — this banner used to always say
+    // crossRepFloorWarning pill elsewhere - this banner used to always say
     // "visited" even when the other rep's visit was only planned.
     if (result.crossRepWarnings.length > 0) {
       const names = result.crossRepWarnings
         .map((w) => `${w.place_name} (${w.warning.status === 'planned' ? 'also planned by' : 'also visited by'} ${w.warning.userName}, ${formatDate(w.warning.scheduledDate)})`)
         .join(', ');
-      parts.push(`Heads up — another rep is close in time at: ${names}.`);
+      parts.push(`Heads up - another rep is close in time at: ${names}.`);
     }
     if (parts.length === 0) parts.push(`Nothing to accept for ${formatDate(date)}.`);
     setNotice(parts.join(' '));
@@ -1163,7 +1163,7 @@ export default function RoutePlanner({ userId }) {
   // handleDayCommitted's single `{ date, committed, skippedCollisions }` this
   // gets one of those per day committed. Same "Planned N visits for <date>"
   // phrasing as the single-day accept, just one comma-separated clause per
-  // date instead of one sentence — days with nothing committed (skip-only or
+  // date instead of one sentence - days with nothing committed (skip-only or
   // already-empty) don't get their own clause. Skipped collisions stay a
   // single rolled-up count rather than per-day, since the day-by-day skip
   // detail (place names) is already visible in each day's card while it's
@@ -1181,24 +1181,24 @@ export default function RoutePlanner({ userId }) {
     if (skipped > 0) {
       parts.push(`Skipped ${skipped} (already booked elsewhere).`);
     }
-    // Same fresh-at-commit check as the single-day accept — rolled up to a
+    // Same fresh-at-commit check as the single-day accept - rolled up to a
     // count here, same convention `skipped` above uses, since per-day detail
     // isn't available once every card has already closed.
     const crossRepCount = results.reduce((n, r) => n + r.crossRepWarnings.length, 0);
     if (crossRepCount > 0) {
-      parts.push(`Heads up — ${crossRepCount} also visited by another rep nearby in time.`);
+      parts.push(`Heads up - ${crossRepCount} also visited by another rep nearby in time.`);
     }
     if (parts.length === 0) parts.push('Nothing to accept.');
     return parts.join(' ');
   }
 
   // discardDay's response is the full recalculated draft (its days list just
-  // shrank by one) or null if that was the last date — either way, set it
+  // shrank by one) or null if that was the last date - either way, set it
   // directly rather than patching a slice, same as generate()'s result.
   // Also drops the date from selectedDays so the calendar shows it
-  // unselected again — the whole point being that discarding a day's
+  // unselected again - the whole point being that discarding a day's
   // proposal leaves things exactly as if that date had never been picked (no
-  // notice banner either — the card vanishing and the calendar deselecting
+  // notice banner either - the card vanishing and the calendar deselecting
   // are already the confirmation).
   function handleDayDiscarded(date, result) {
     setDraft(result);
@@ -1224,11 +1224,11 @@ export default function RoutePlanner({ userId }) {
     }
   }
 
-  // Discards the whole proposal — every day, not just one. Any day already
+  // Discards the whole proposal - every day, not just one. Any day already
   // committed is unaffected (its stops left the draft the moment they
   // became real visits), so this only throws away still-uncommitted work.
-  // Clears selectedDays too — same "as if it had never been picked" goal as
-  // the per-day "Discard proposal" button — so the calendar shows every
+  // Clears selectedDays too - same "as if it had never been picked" goal as
+  // the per-day "Discard proposal" button - so the calendar shows every
   // date unselected again, not just the draft gone. homeBase is deliberately
   // left as-is so a fresh "Plan my visits" doesn't force re-entering a start
   // location.
@@ -1236,7 +1236,7 @@ export default function RoutePlanner({ userId }) {
     if (!draft) return;
     const totalStops = draft.days.reduce((n, d) => n + d.stops.length, 0);
     const warning = totalStops > 0
-      ? `Discard this proposal? ${totalStops} proposed visit${totalStops === 1 ? '' : 's'} across every day will be lost — this can't be undone.`
+      ? `Discard this proposal? ${totalStops} proposed visit${totalStops === 1 ? '' : 's'} across every day will be lost - this can't be undone.`
       : 'Discard this proposal and start over?';
     if (!window.confirm(warning)) return;
     setError(null);
@@ -1301,23 +1301,23 @@ export default function RoutePlanner({ userId }) {
   }
 
   function removeDate(iso) {
-    if (proposedDates.has(iso)) return; // same lock as the calendar — discard the day's proposal instead
+    if (proposedDates.has(iso)) return; // same lock as the calendar - discard the day's proposal instead
     setSelectedDays((prev) => prev.filter((d) => d.date !== iso));
   }
 
-  // Keeps the three header buttons mutually exclusive — any one of them being
+  // Keeps the three header buttons mutually exclusive - any one of them being
   // in flight should block the other two, since they all act on the same
   // draft (e.g. regenerating while "Accept all proposals" is still
   // committing would fire a regenerate against a draft that's mid-commit).
   const busy = generating || committingAll || discarding;
   const canGenerate = !!homeBase && !generating && selectedDays.length > 0;
   // "Regenerate proposal" regenerates the WHOLE draft, so it should only
-  // be live when something has actually changed since the last generate —
+  // be live when something has actually changed since the last generate -
   // otherwise re-clicking it just re-runs the same generation for no reason.
   // A day already in the draft can't be removed/deselected without going
   // through "Discard proposal" (see proposedDates elsewhere in this file),
   // so the only ways selectedDays can diverge from what's already generated
-  // are adding a new date or editing an existing date's hours — both real
+  // are adding a new date or editing an existing date's hours - both real
   // reasons to regenerate. Comparing against draft.params directly (not some
   // separate "dirty" flag) means this can't drift out of sync with what
   // generate() actually just sent.
@@ -1328,12 +1328,12 @@ export default function RoutePlanner({ userId }) {
     || homeBase.lng !== draft.params.homeBase.lng;
 
   // The full setup form only has something to collapse away once a draft
-  // exists — with no draft yet there's nothing to summarize, so it always
+  // exists - with no draft yet there's nothing to summarize, so it always
   // shows expanded regardless of editingSetup.
   const showSetupForm = !draft || editingSetup;
 
   // "...all proposals" only makes sense once there's more than one day's
-  // card actually on screen — with a single day, the header-level button and
+  // card actually on screen - with a single day, the header-level button and
   // that day's own "Accept/Discard proposal" button act on the exact same
   // thing, so the header wording drops "all" to stop implying a plural that
   // isn't there. Same day count the cards themselves are rendered from (see
@@ -1353,7 +1353,7 @@ export default function RoutePlanner({ userId }) {
               <>
                 {/* With only one day's card on screen, these would just be a
                     second copy of that day's own "Discard/Accept proposal"
-                    buttons acting on the exact same thing — redundant, so
+                    buttons acting on the exact same thing - redundant, so
                     they only appear once there's more than one day to act
                     on "all" of. "Regenerate proposal" stays regardless:
                     it has no per-day equivalent (it regenerates the whole
@@ -1370,7 +1370,7 @@ export default function RoutePlanner({ userId }) {
                   title={needsRegenerate ? undefined : 'Nothing has changed since the current proposal was generated'}
                   style={{ flex: 'none', minWidth: 0 }}
                 >
-                  {/* selectedDays.length, not openDayCount — this pluralizes
+                  {/* selectedDays.length, not openDayCount - this pluralizes
                       on how many days the click is ABOUT to regenerate
                       (what's currently picked in the reopened setup form),
                       not how many day-cards the last generate produced. */}
@@ -1392,7 +1392,7 @@ export default function RoutePlanner({ userId }) {
         <div className="card-body">
           {!showSetupForm ? (
             // Collapsed one-line summary of what the active draft was
-            // generated with — see editingSetup's declaration above for why
+            // generated with - see editingSetup's declaration above for why
             // this replaces the full form once a draft exists. "Edit setup"
             // is the only way back into the interactive calendar/starting-
             // point form; it doesn't itself change anything, just re-expands.
@@ -1401,7 +1401,7 @@ export default function RoutePlanner({ userId }) {
                 {homeBase ? (
                   <>Starting from <strong>{homeBase.label}</strong> · </>
                 ) : (
-                  // homeBase is session-only (never persisted server-side —
+                  // homeBase is session-only (never persisted server-side -
                   // see its declaration above), so a fresh page load with an
                   // already-active draft has no label to show here even
                   // though the draft itself has real lat/lng on the server.
@@ -1423,12 +1423,12 @@ export default function RoutePlanner({ userId }) {
               </Button>
             </div>
           ) : (
-          /* Two columns — starting point on the left, the date picker on
-              the right, split by a vertical rule (see .plan-columns) — the
+          /* Two columns - starting point on the left, the date picker on
+              the right, split by a vertical rule (see .plan-columns) - the
               calendar/date-list content is inherently narrower than the
               card, so stacking them left the card mostly white space.
               Every button/pill in the starting-point rows gets an explicit
-              flex:'none' — .row's default (`.row > * { flex: 1; min-width:
+              flex:'none' - .row's default (`.row > * { flex: 1; min-width:
               120px }`) is meant for stretchy form-field rows (like the
               manual-address row below, which deliberately keeps the
               default), and otherwise blows a couple of short buttons up
@@ -1477,10 +1477,10 @@ export default function RoutePlanner({ userId }) {
                   Plan for these dates{selectedDays.length > 0 ? ` (${selectedDays.length})` : ''}
                 </div>
                 {/* Only offered when a draft already exists AND the user got
-                    here by clicking "Edit setup" — undoes exactly that,
+                    here by clicking "Edit setup" - undoes exactly that,
                     re-collapsing back to the one-line summary. With no draft
                     yet the form has nothing to collapse to (showSetupForm is
-                    true unconditionally in that case — see its declaration
+                    true unconditionally in that case - see its declaration
                     above), so this stays hidden on the very first,
                     nothing-generated-yet visit. Sits inline with this
                     column's own header (rather than floating alone above
@@ -1549,7 +1549,7 @@ export default function RoutePlanner({ userId }) {
                           size="small"
                           onClick={() => removeDate(d.date)}
                           disabled={proposedDates.has(d.date)}
-                          title={proposedDates.has(d.date) ? 'Already proposed — discard the proposal to remove this date' : 'Remove this date'}
+                          title={proposedDates.has(d.date) ? 'Already proposed - discard the proposal to remove this date' : 'Remove this date'}
                         >
                           ✕
                         </Button>
@@ -1603,14 +1603,14 @@ export default function RoutePlanner({ userId }) {
         )
       ) : (
         // A day whose proposal has been fully accepted (no stops left to
-        // propose, but it did produce committed visits) drops its card here —
+        // propose, but it did produce committed visits) drops its card here -
         // it's already reflected in "Already Planned" above, so the card would
         // just be a redundant empty shell. A day with zero stops and nothing
         // committed still shows (the "Nothing planned for this day" case,
         // right after generating), and any day with open stops still shows
-        // regardless of committed count (a partial commit — see commitDay's
-        // skippedCollisions — leaves a real proposal still active). See
-        // openDays() above — load() uses the exact same rule to auto-discard
+        // regardless of committed count (a partial commit - see commitDay's
+        // skippedCollisions - leaves a real proposal still active). See
+        // openDays() above - load() uses the exact same rule to auto-discard
         // the whole draft once every day's card would drop out here.
         openDays(draft)
           .map((day) => (
