@@ -175,6 +175,12 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   const [busy, setBusy] = useState(false); // a reorder/add/remove request is in flight for this day
   const [pendingPlaceId, setPendingPlaceId] = useState(null); // one stop's own request (visit-type change)
   const [addingOpen, setAddingOpen] = useState(false);
+  // A hard-block conflict (or any other failure) from the last addStop/
+  // addSuggestion attempt — kept LOCAL to this day card rather than routed
+  // through the shared onError page banner, so it renders right next to the
+  // Add controls the rep just used instead of at the top of a page that may
+  // have several days' cards scrolled well out of view.
+  const [addError, setAddError] = useState(null);
   const [viewingPlaceId, setViewingPlaceId] = useState(null); // stop whose full PlaceDetail is open, if any
 
   // Place Commitments badge actions (spec §6.2) — reschedule/waive, reachable
@@ -340,20 +346,21 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   }
 
   async function addStop(place) {
-    onError(null);
+    setAddError(null);
     setBusy(true);
     try {
       onDayUpdated(await api.scheduleDrafts.addStop(draftId, day.date, place.id));
       setAddingOpen(false);
       markEdited();
     } catch (e) {
-      onError(addStopErrorMessage(e, userId));
+      setAddError({ message: addStopErrorMessage(e, userId), conflict: !!e.conflicts });
     } finally {
       setBusy(false);
     }
   }
 
   async function toggleSuggestions() {
+    setAddError(null);
     if (suggestionsOpen) { setSuggestionsOpen(false); return; }
     onError(null);
     setSuggestionsOpen(true);
@@ -372,14 +379,14 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   // different kind of add. Pulled out of the local list on success so the
   // panel doesn't offer the same place twice without a re-fetch.
   async function addSuggestion(s) {
-    onError(null);
+    setAddError(null);
     setAddingSuggestionId(s.place_id);
     try {
       onDayUpdated(await api.scheduleDrafts.addStop(draftId, day.date, s.place_id));
       setSuggestions((prev) => prev.filter((x) => x.place_id !== s.place_id));
       markEdited();
     } catch (e) {
-      onError(addStopErrorMessage(e, userId));
+      setAddError({ message: addStopErrorMessage(e, userId), conflict: !!e.conflicts });
     } finally {
       setAddingSuggestionId(null);
     }
@@ -780,10 +787,15 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
         )}
 
         <div style={{ marginTop: 14, paddingTop: day.stops.length > 0 ? 14 : 0, borderTop: day.stops.length > 0 ? '1px solid var(--border)' : 'none' }}>
+          {addError && (
+            addError.conflict
+              ? <div className="tiny" style={{ color: 'var(--mauve)', marginBottom: 8 }}>{addError.message}</div>
+              : <div className="error-banner" style={{ marginBottom: 8 }}>{addError.message}</div>
+          )}
           {addingOpen ? (
             <div className="row" style={{ alignItems: 'center' }}>
               <PlacePicker placeholder="Add a stop to this day…" onPick={addStop} excludeIds={draftPlaceIds} />
-              <Button variant="secondary" size="small" onClick={() => setAddingOpen(false)} style={{ flex: 'none', minWidth: 0 }}>Cancel</Button>
+              <Button variant="secondary" size="small" onClick={() => { setAddingOpen(false); setAddError(null); }} style={{ flex: 'none', minWidth: 0 }}>Cancel</Button>
             </div>
           ) : suggestionsOpen ? (
             <div className="row" style={{ flex: 'unset', gap: 8, justifyContent: 'flex-end' }}>
@@ -791,7 +803,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
             </div>
           ) : (
             <div className="row" style={{ flex: 'unset', gap: 8, justifyContent: 'flex-end' }}>
-              <Button variant="secondary" size="small" onClick={() => setAddingOpen(true)} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>+ Add a stop</Button>
+              <Button variant="secondary" size="small" onClick={() => { setAddingOpen(true); setAddError(null); }} disabled={busy} style={{ flex: 'none', minWidth: 0 }}>+ Add a stop</Button>
               <Button
                 variant="ghost"
                 size="small"

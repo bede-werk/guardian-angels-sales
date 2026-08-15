@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api, today, formatDate, VISIT_TYPE_MINUTES, OUTCOME_LABELS, MET_WITH_LABELS } from '../api';
 import Button from './ui/Button';
 import PersonModal from './PersonModal';
@@ -25,6 +25,23 @@ function conflictMessage(conflict, sameDateFallback) {
     default:
       return sameDateFallback;
   }
+}
+
+// Reduces a full Conflict[] down to the single one worth surfacing — a same-
+// date collision (SAME_DATE_VISIT/DRAFT_ELSEWHERE, a certain same-day fact)
+// outranks a floor proximity guess (FLOOR_COMPLETED/FLOOR_PLANNED, "recently
+// active nearby in time"), and only the nearest of either floor type ever
+// reaches this array to begin with (conflictDetection.js already collapses
+// multiple qualifying visits down to one). Showing every applicable conflict
+// used to read as pile-on for what's really one "this place is spoken for"
+// signal — one line, the most certain one, is enough to act on.
+const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+function primaryConflict(conflicts) {
+  for (const type of CONFLICT_PRIORITY) {
+    const found = conflicts.find((c) => c.type === type);
+    if (found) return found;
+  }
+  return conflicts[0] || null;
 }
 
 // Modal for logging a visit. All three ways in — a brand-new ad-hoc visit, a
@@ -188,6 +205,24 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   // row server-side, never overwriting a place column.
   const [place, setPlace] = useState(null);
   const [avgReferrals, setAvgReferrals] = useState('');
+
+  // The notice lives at the bottom of the form now, right above Save — but
+  // this form routinely scrolls past a full screen (encounters, commitments,
+  // pre-qual…), so it can still land out of view the moment it appears.
+  // Scrolls itself into view whenever error/conflicts actually change to
+  // something non-empty, so a rep never has to go hunting for why Save just
+  // turned into "Save anyway."
+  const noticeRef = useRef(null);
+  useEffect(() => {
+    if (error || conflicts.length > 0) {
+      // block: 'end', not 'nearest' — see PlanVisitModal's own comment on
+      // this same call. On this form especially (routinely taller than the
+      // modal's visible area), 'nearest' could leave the message only
+      // partly clear of the sticky footer; 'end' always scrolls until the
+      // whole message is above it.
+      noticeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [error, conflicts]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const title = placeName || visit?.place_name || 'Visit';
@@ -531,15 +566,6 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
           </div>
         ) : (
           <div className="modal-body">
-            {error && <div className="error-banner">{error}</div>}
-            {conflicts.length > 0 && (
-              <div className="stack" style={{ gap: 6 }}>
-                {conflicts.map((c, i) => (
-                  <div key={`${c.type}:${i}`} className="error-banner">{conflictMessage(c, collisionMessage)}</div>
-                ))}
-              </div>
-            )}
-
             {status !== 'planned' && (
               <div>
                 <label className="field">Date</label>
@@ -772,7 +798,25 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             </div>
           </div>
         )}
-        <div className="modal-foot">
+        {/* Notice sits IN the footer, not stacked above it behind the
+            divider — left of the buttons (marginRight: auto against
+            modal-foot's own justify-content: flex-end, same trick
+            UpcomingVisitDetailModal's Delete button uses to sit apart from
+            its own row), so it reads as "here's why" right next to "here's
+            what you can do about it" rather than as a separate notice a rep
+            has to connect to the buttons below it themselves. flexWrap
+            handles a message too long to fit alongside both buttons on one
+            line. The ref (see the scrollIntoView effect above) still finds
+            it here as the sticky footer never moves off-screen. */}
+        <div className="modal-foot" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <div ref={noticeRef} style={{ marginRight: 'auto' }}>
+            {error && <div className="error-banner">{error}</div>}
+            {conflicts.length > 0 && (
+              <div className="tiny" style={{ color: 'var(--mauve)' }}>
+                {conflictMessage(primaryConflict(conflicts), collisionMessage)}
+              </div>
+            )}
+          </div>
           <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>
             Cancel
           </Button>
@@ -780,7 +824,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             variant={conflicts.length > 0 ? 'danger' : 'primary'}
             title={
               conflicts.length > 0
-                ? 'Log this visit anyway, despite the notice(s) above'
+                ? 'Log this visit anyway, despite the notice'
                 : canSave
                   ? 'Save this visit'
                   : 'Fill in who you met, what happened, and a note first'

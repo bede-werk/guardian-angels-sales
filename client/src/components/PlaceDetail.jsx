@@ -11,6 +11,7 @@ import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
 import VisitDetailModal, { encounterLabel, joinNames, commitmentMadeText } from './VisitDetailModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
+import SkippedVisitDetailModal from './SkippedVisitDetailModal';
 import { PlaceRelationship } from './RelationshipDetail';
 import { PlaceCapacity } from './CapacityDetail';
 import { PlaceCommitments } from './PlaceCommitments';
@@ -70,6 +71,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [deleting, setDeleting] = useState(false);
   const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
   const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
+  const [viewingSkippedVisit, setViewingSkippedVisit] = useState(null); // skipped visit whose read-only popup is open, if any
   const [viewingUpcomingVisit, setViewingUpcomingVisit] = useState(null); // upcoming (planned) visit whose read-only popup is open, if any
   const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
   // Durable, org-level notes (separate from any single visit's notes or a
@@ -490,12 +492,10 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 {/* Snooze/do-not-visit status + controls moved to the Upcoming
                     Visits card below (2026-08-10) — that's where a rep is
                     already looking to answer "why hasn't this place come up in
-                    routing?", and where the do-not-visit action now lives too. */}
-                {data.skipped_visit_count > 0 && (
-                  <div className="tiny muted">
-                    Skipped {data.skipped_visit_count} time{data.skipped_visit_count === 1 ? '' : 's'} — planned, then never visited.
-                  </div>
-                )}
+                    routing?", and where the do-not-visit action now lives too.
+                    Skipped visits used to get their own rollup line here too;
+                    they now show as their own rows in Visit History below,
+                    tagged "Skipped", instead of a bare count. */}
                 {editingNotes ? (
                   <div className="stack">
                     <textarea
@@ -657,7 +657,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 </Button>
                 {!isDoNotVisitActive(data) && !markingDoNotVisit && (
                   <Button
-                    variant="caution"
+                    variant="danger"
                     size="small"
                     title="Stop proposing this place in the route planner"
                     onClick={() => setMarkingDoNotVisit(true)}
@@ -773,17 +773,21 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             </div>
           </div>
 
-          {/* Every visit ever logged on this place, most recent first. One row
-              per TRIP: the server groups the encounters (see routes/visits.js),
+          {/* Every visit ever resolved for this place — completed AND
+              skipped, most recent first (routes/places.js). One row per
+              TRIP: the server groups the encounters (see routes/visits.js),
               so a visit where three people were met is one entry here listing
-              all three, not three entries. Clicking it opens the trip, where
-              each person can be opened on their own.
+              all three, not three entries. Clicking a completed row opens the
+              trip, where each person can be opened on their own; a skipped
+              row (tagged "Skipped" — no encounters, it never happened) opens
+              SkippedVisitDetailModal instead, same as the Calendar tab's
+              skipped-visit popup, with the same "Log this visit" path to turn
+              it into a completed one.
 
               No crossRepFloorWarning pill here (unlike the Upcoming Visits
-              card above) — this list is always status: 'completed' (see
-              routes/places.js), and the warning exists to help a rep pick a
-              different stop before it happens. Once it's already happened,
-              there's nothing left to act on. */}
+              card above) — the warning exists to help a rep pick a different
+              stop before it happens, and both completed and skipped rows are
+              already resolved, so there's nothing left to act on. */}
           <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
               <h2>Visit History ({data.visits.length})</h2>
@@ -801,7 +805,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={v.id}
                       className="hover-row"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); setViewingVisit(v); }}
+                      onClick={() => { setEditingNotes(false); if (v.status === 'skipped') setViewingSkippedVisit(v); else setViewingVisit(v); }}
                     >
                       {/* minWidth:0 so a long "with A, B and C" line wraps
                           within its own column instead of pushing the delete
@@ -812,6 +816,10 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       <div className="stack" style={{ minWidth: 0 }}>
                         <div className="tag-list" style={{ minWidth: 0 }}>
                           <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
+                          {/* A skipped row never has encounters (it never
+                              happened) — tag it instead of leaving it looking
+                              like a quiet completed visit. */}
+                          {v.status === 'skipped' && <strong className="tiny">· Skipped</strong>}
                           {/* "Lisa Marks with Flibber Gibblits, New Guy and a
                               staff member" — who visited, then everyone they met. */}
                           {(v.user_name || v.encounters?.length) && (
@@ -951,13 +959,26 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         />
       )}
 
+      {viewingSkippedVisit && (
+        <SkippedVisitDetailModal
+          visit={viewingSkippedVisit}
+          onClose={() => setViewingSkippedVisit(null)}
+          onComplete={(v) => { setViewingSkippedVisit(null); setEditingVisit(v); }}
+        />
+      )}
+
       {viewingUpcomingVisit && (
         <UpcomingVisitDetailModal
           visit={viewingUpcomingVisit}
           onClose={() => setViewingUpcomingVisit(null)}
-          onComplete={(v) => { setViewingUpcomingVisit(null); setEditingVisit(v); }}
+          onComplete={(v) => {
+            if (v.user_id != null && v.user_id !== userId && !window.confirm("This visit is logged under a different rep's account. Log it anyway?")) return;
+            setViewingUpcomingVisit(null);
+            setEditingVisit(v);
+          }}
           onSnoozed={() => { setViewingUpcomingVisit(null); load(); }}
           onDelete={(v) => { setViewingUpcomingVisit(null); removeVisit(v); }}
+          onEdited={() => { setViewingUpcomingVisit(null); load(); }}
         />
       )}
 

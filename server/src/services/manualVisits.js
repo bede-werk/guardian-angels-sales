@@ -176,70 +176,100 @@ async function createManualVisit(db, { placeId, scheduledDate, userId, createdBy
   return { visit: await db('visits').where({ id }).first(), warnings: [] };
 }
 
-// Fetches a visit and confirms it's one this module is allowed to touch:
-// must exist and must have been planned through THIS feature
-// (planned_manually) — editing/deleting a draft-committed or ad-hoc-logged
-// visit goes through the normal routes/visits.js paths instead, which have
-// their own (different) rules.
-async function getManualVisit(db, id) {
+// Fetches a visit and confirms it's still an open plan: must exist and
+// still be status: 'planned' — once it's completed (VisitLogModal) or
+// lapsed (skip sweep), "editing" it no longer means anything; those are
+// history now, not an open plan. Unlike the original cut of this module,
+// NOT gated on planned_manually already being set — editVisit below is
+// exactly how a planner-committed visit BECOMES a manually-planned one, so
+// requiring that up front would make it uncallable for the one case it
+// exists to handle.
+async function getEditableVisit(db, id) {
   const visit = await db('visits').where({ id }).first();
-  if (!visit || !visit.planned_manually) {
-    const err = new Error('Manual visit not found');
+  if (!visit) {
+    const err = new Error('Visit not found');
     err.status = 404;
+    throw err;
+  }
+  if (visit.status !== 'planned') {
+    const err = new Error('Only a still-planned visit can be edited');
+    err.status = 400;
     throw err;
   }
   return visit;
 }
 
-// Reschedules a manually-planned visit — re-runs every §4 check against the
-// NEW date (excluding this visit's own row, so it doesn't collide with
-// itself) rather than trusting the original checks still hold. Moving off
-// the old date releases whatever block it was causing there for free: this
-// is an UPDATE to the one row, not a delete-and-recreate, so once it
-// succeeds the old date simply has no visit at that place anymore.
+// Edits a still-planned visit's date and/or notes — UpcomingVisitDetailModal's
+// "Edit" button, for a manually-planned visit and a planner-committed one
+// alike. Only the visit's ASSIGNEE may call this (canEditManualVisit's rule
+// was never actually specific to already-manual visits, it just had no
+// other caller before this).
 //
-// Only a still-planned visit can be rescheduled — once it's completed
-// (VisitLogModal) or lapsed (skip sweep), "moving" it no longer means
-// anything; those are history now, not an open plan.
-async function rescheduleManualVisit(db, id, { scheduledDate, force = false }, actingUserId) {
-  const visit = await getManualVisit(db, id);
+// A changed date re-runs every §4 conflict check against the NEW one
+// (excluding this visit's own row, so it doesn't collide with itself)
+// rather than trusting the original checks still hold — moving Tuesday to
+// Thursday is a fresh collision check against Thursday, and can come back
+// with warnings pending confirmation (force:true resends to proceed), same
+// shape as createManualVisit. Moving off the old date releases whatever
+// block it was causing there for free: this is an UPDATE to the one row,
+// not a delete-and-recreate. An unchanged (or omitted) date skips the
+// recheck entirely — nothing about the visit's date/place changed, so
+// there's nothing new to verify; a notes-only edit is exactly this case.
+//
+// PROMOTION: any successful save through here sets planned_manually: 1 and
+// source: 'manual' — even on a visit that started life planner-committed
+// (source: 'planner', planned_manually: 0). That's the point of exposing
+// this on a planner-committed visit at all: from the moment a rep
+// hand-edits it, it IS a manually-planned visit in every sense that
+// matters downstream — the same edit/delete permission rules (§5) and the
+// same conflict-recheck on any later edit through this same function.
+// Note this does NOT protect it from scheduleDraft.js's deleteCommittedDay
+// ("Discard plan" on PlannedDayModal) — that action deliberately clears
+// the WHOLE day regardless of source/planned_manually (Bede's call, see
+// that function's own comment); promotion only changes the PER-VISIT edit/
+// delete rules, not the whole-day discard behavior. created_by_user_id
+// backfills to the acting rep only if it was never set (a planner commit
+// never sets it); an already-manual visit's real creator is never
+// overwritten by a later edit.
+async function editVisit(db, id, { scheduledDate, notes, force = false } = {}, actingUserId) {
+  const visit = await getEditableVisit(db, id);
   if (!canEditManualVisit(visit, actingUserId)) {
-    const err = new Error('Only the assigned rep can reschedule this visit');
+    const err = new Error('Only the assigned rep can edit this visit');
     err.status = 403;
     throw err;
   }
-  if (visit.status !== 'planned') {
-    const err = new Error('Only a still-planned visit can be rescheduled');
-    err.status = 400;
-    throw err;
-  }
 
-  const today = orgToday();
-  const dateError = pastDateError(scheduledDate, today);
-  if (dateError) {
-    const err = new Error(dateError);
-    err.status = 400;
-    throw err;
-  }
-
-  if (scheduledDate === visit.scheduled_date) {
-    return { visit, warnings: [] }; // no real move — nothing to recheck or reset
-  }
-
-  const place = await db('places').where({ id: visit.place_id }).first();
-  const conflicts = await detectConflicts(db, visit.place_id, scheduledDate, { userId: visit.user_id, excludeVisitId: id });
-  const { blocking, warnings: floorConflicts } = classifyConflicts(conflicts);
-  if (blocking.length > 0) throw blockedError(blocking);
-
-  const warnings = buildWarnings({ floorConflicts, place, today });
-  if (warnings.length > 0 && !force) {
-    return { visit: null, warnings };
-  }
-
-  await db('visits').where({ id }).update({
-    scheduled_date: scheduledDate,
+  const update = {
+    planned_manually: 1,
+    source: 'manual',
+    created_by_user_id: visit.created_by_user_id ?? actingUserId,
     updated_at: db.fn.now(),
-  });
+  };
+  if (notes !== undefined) update.notes = notes || null;
+
+  const dateChanged = scheduledDate !== undefined && scheduledDate !== visit.scheduled_date;
+  if (dateChanged) {
+    const today = orgToday();
+    const dateError = pastDateError(scheduledDate, today);
+    if (dateError) {
+      const err = new Error(dateError);
+      err.status = 400;
+      throw err;
+    }
+
+    const place = await db('places').where({ id: visit.place_id }).first();
+    const conflicts = await detectConflicts(db, visit.place_id, scheduledDate, { userId: visit.user_id, excludeVisitId: id });
+    const { blocking, warnings: floorConflicts } = classifyConflicts(conflicts);
+    if (blocking.length > 0) throw blockedError(blocking);
+
+    const warnings = buildWarnings({ floorConflicts, place, today });
+    if (warnings.length > 0 && !force) {
+      return { visit: null, warnings };
+    }
+    update.scheduled_date = scheduledDate;
+  }
+
+  await db('visits').where({ id }).update(update);
   return { visit: await db('visits').where({ id }).first(), warnings: [] };
 }
 
@@ -253,6 +283,6 @@ module.exports = {
   canEditManualVisit,
   canDeleteManualVisit,
   createManualVisit,
-  getManualVisit,
-  rescheduleManualVisit,
+  getEditableVisit,
+  editVisit,
 };

@@ -407,15 +407,17 @@ router.get('/:id', async (req, res, next) => {
     const place = await knex('places').where({ id }).first();
     if (!place) return res.status(404).json({ error: 'Place not found' });
 
-    // Visit history is for what actually happened — a still-planned or
-    // skipped visit doesn't belong here. One row per TRIP: a visit where the
+    // Visit history is everything that's resolved one way or another — a
+    // still-planned visit doesn't belong here, but a skipped one does: it's
+    // shown as a past row tagged "Skipped" (PlaceDetail.jsx) rather than
+    // hidden behind a separate rollup. One row per TRIP: a visit where the
     // rep met three people is one entry with three encounters, not three
     // entries (the grouping the client used to do by hand is now a fact of the
     // schema — see 20260806000000_split_visit_encounters.js).
     const visitRows = await knex('visits as v')
       .leftJoin('users as u', 'u.id', 'v.user_id')
       .where('v.place_id', place.id)
-      .where('v.status', 'completed')
+      .whereIn('v.status', ['completed', 'skipped'])
       .orderBy('v.scheduled_date', 'desc')
       .orderBy('v.id', 'desc')
       .select('v.*', 'u.name as user_name');
@@ -509,16 +511,6 @@ router.get('/:id', async (req, res, next) => {
         .select('co.*', 'pe.name as person_name'),
     ]);
 
-    // Computed, not stored — same "live count, no manual field" convention
-    // as referral metrics (§9). A plain display number: how many planned
-    // visits to this place lapsed (services/visitLifecycle.js's skip sweep)
-    // rather than actually happening. Not folded into any scoring path —
-    // see that module's header for why skip is deliberately inert.
-    const { n: skippedVisitCount } = await knex('visits')
-      .where({ place_id: place.id, status: 'skipped' })
-      .count('id as n')
-      .first();
-
     // Place Commitments (services/placeCommitments.js) — every commitment on
     // file for this place, split outstanding/discharged. Small per-place
     // dataset (commitments are rare, dated promises, not routine data), so
@@ -544,7 +536,6 @@ router.get('/:id', async (req, res, next) => {
       relationship: relationshipFor(relationshipByPlace, place.id),
       capacity,
       capacity_observations: capacityObservations,
-      skipped_visit_count: Number(skippedVisitCount),
       commitments: {
         outstanding: commitmentRows.filter((r) => !r.discharged_at),
         // Most-recently-resolved first — a history list reads newest-first,

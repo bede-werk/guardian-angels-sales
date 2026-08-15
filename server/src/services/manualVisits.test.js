@@ -10,8 +10,8 @@ const {
   canEditManualVisit,
   canDeleteManualVisit,
   createManualVisit,
-  getManualVisit,
-  rescheduleManualVisit,
+  getEditableVisit,
+  editVisit,
 } = require('./manualVisits');
 
 const TODAY = orgToday();
@@ -261,7 +261,7 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     assert.equal(commitment.discharged_at, null, 'planning alone must never discharge a commitment');
   });
 
-  describe('rescheduleManualVisit', () => {
+  describe('editVisit — date changes (a manually-planned visit)', () => {
     // Own place (11) and widely-separated dates (>= 5 days apart from each
     // other in every combination) so none of these moves accidentally trips
     // a FLOOR_* warning from a neighboring date in this same block — only
@@ -280,26 +280,26 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
       manualVisitId = result.visit.id;
     });
 
-    test('only the assignee can reschedule, not the creator or a third rep', async () => {
+    test('only the assignee can edit, not the creator or a third rep', async () => {
       await assert.rejects(
-        () => rescheduleManualVisit(db, manualVisitId, { scheduledDate: isoOffset(25) }, 2),
+        () => editVisit(db, manualVisitId, { scheduledDate: isoOffset(25) }, 2),
         (err) => { assert.equal(err.status, 403); return true; }
       );
       await assert.rejects(
-        () => rescheduleManualVisit(db, manualVisitId, { scheduledDate: isoOffset(25) }, 3),
+        () => editVisit(db, manualVisitId, { scheduledDate: isoOffset(25) }, 3),
         (err) => { assert.equal(err.status, 403); return true; }
       );
     });
 
-    test('no-op when the date is unchanged', async () => {
-      const result = await rescheduleManualVisit(db, manualVisitId, { scheduledDate: ORIGINAL_DATE }, 1);
+    test('no conflict recheck when the date is unchanged, but the save still goes through', async () => {
+      const result = await editVisit(db, manualVisitId, { scheduledDate: ORIGINAL_DATE }, 1);
       assert.equal(result.visit.id, manualVisitId);
       assert.equal(result.warnings.length, 0);
     });
 
     test('moving to a colliding date is rejected; the visit stays on its original date', async () => {
       await assert.rejects(
-        () => rescheduleManualVisit(db, manualVisitId, { scheduledDate: COLLISION_DATE }, 1),
+        () => editVisit(db, manualVisitId, { scheduledDate: COLLISION_DATE }, 1),
         (err) => { assert.equal(err.status, 409); return true; }
       );
       const stillThere = await db('visits').where({ id: manualVisitId }).first();
@@ -307,7 +307,7 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     });
 
     test('a successful move updates scheduled_date', async () => {
-      const result = await rescheduleManualVisit(db, manualVisitId, { scheduledDate: MOVED_DATE }, 1);
+      const result = await editVisit(db, manualVisitId, { scheduledDate: MOVED_DATE }, 1);
       assert.ok(result.visit);
       assert.equal(result.visit.scheduled_date, MOVED_DATE);
     });
@@ -319,19 +319,60 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
       const result = await createManualVisit(db, { placeId: 11, scheduledDate: ORIGINAL_DATE, userId: 2, createdByUserId: 2 });
       assert.ok(result.visit, 'the old date is free again once the manual visit moved off it');
     });
+
+    test('notes are saved alongside a date move', async () => {
+      const result = await editVisit(db, manualVisitId, { scheduledDate: MOVED_DATE, notes: 'Bring the brochure' }, 1);
+      assert.equal(result.visit.notes, 'Bring the brochure');
+    });
   });
 
-  describe('getManualVisit', () => {
-    test('404s on a visit that was never planned_manually', async () => {
+  describe('editVisit — promotes a planner-committed visit', () => {
+    // place_id 2 ('Same Day Planned Place') was seeded above as an ordinary
+    // status:'planned' visit with source:'planner' (the DB default here is
+    // 'manual', so seed it explicitly) and planned_manually left at its
+    // column default (0) — exactly what a route-planner commit looks like,
+    // never touched by createManualVisit anywhere in this file.
+    let plannerVisitId;
+
+    before(async () => {
+      const row = await db('visits').where({ place_id: 2 }).first();
+      await db('visits').where({ id: row.id }).update({ source: 'planner' });
+      plannerVisitId = row.id;
+    });
+
+    test('editVisit works on it even though it was never planned_manually', async () => {
+      const result = await editVisit(db, plannerVisitId, { notes: 'Took over this stop' }, 2);
+      assert.ok(result.visit);
+      assert.equal(result.visit.notes, 'Took over this stop');
+    });
+
+    test('a successful save promotes it: planned_manually and source flip, created_by_user_id backfills', async () => {
+      const row = await db('visits').where({ id: plannerVisitId }).first();
+      assert.equal(row.planned_manually, 1);
+      assert.equal(row.source, 'manual');
+      assert.equal(row.created_by_user_id, 2, 'backfilled to the rep who made the edit, since a planner commit never sets it');
+    });
+
+    test('only the assignee could have edited it, same permission as any manually-planned visit', async () => {
       await assert.rejects(
-        () => getManualVisit(db, 2), // an ordinary (non-manual) visit seeded above
+        () => editVisit(db, plannerVisitId, { notes: 'nope' }, 3),
+        (err) => { assert.equal(err.status, 403); return true; }
+      );
+    });
+  });
+
+  describe('getEditableVisit', () => {
+    test('404s on a nonexistent id', async () => {
+      await assert.rejects(
+        () => getEditableVisit(db, 999999),
         (err) => { assert.equal(err.status, 404); return true; }
       );
     });
-    test('404s on a nonexistent id', async () => {
+    test('400s on a visit that is no longer status: planned', async () => {
+      const completedVisit = await db('visits').where({ place_id: 3 }).first(); // 'Same Day Completed Place', seeded status: 'completed'
       await assert.rejects(
-        () => getManualVisit(db, 999999),
-        (err) => { assert.equal(err.status, 404); return true; }
+        () => getEditableVisit(db, completedVisit.id),
+        (err) => { assert.equal(err.status, 400); return true; }
       );
     });
   });

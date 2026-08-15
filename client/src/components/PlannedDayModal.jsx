@@ -37,16 +37,18 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
   const [viewingVisit, setViewingVisit] = useState(null); // planned visit open in UpcomingVisitDetailModal, or null
   const [loggingVisit, setLoggingVisit] = useState(null); // planned visit open in VisitLogModal for completing, or null
 
-  // A manually-planned visit counting as "already committed" (see
-  // scheduleDraft.js's committedDateSummaries) means a manual-only day is
-  // now reachable here — but the whole-day Discard plan/Edit actions below
-  // are scoped server-side to source: 'planner' (deliberately, so they never
-  // touch a manual visit — see deleteCommittedDay/reopenCommittedDay). On a
-  // manual-only day that scoping means Discard silently deletes zero rows
-  // and Edit 404s, so those buttons only render once there's at least one
-  // planner-sourced visit for them to act on. Defaults to true while still
-  // loading, so the footer doesn't flash committed-then-bare on the common
-  // (non-manual-only) day.
+  // Discard all visits (scheduleDraft.js's deleteCommittedDay) clears the
+  // WHOLE day regardless of source/planned_manually (Bede's call — see that
+  // function's own comment), so its footer just needs "is there anything
+  // here at all," visits included whether planner-committed or manual.
+  //
+  // Edit (reopenCommittedDay) is different: it's still scoped server-side to
+  // source: 'planner' only, since pulling a manual visit into
+  // schedule_draft_stops would misrepresent it as a re-orderable proposal —
+  // 404s on a manual-only day. hasPlannerStops gates the Edit button alone
+  // for that reason. Defaults to true while still loading, so it doesn't
+  // flash present-then-hidden on the common (non-manual-only) day.
+  const hasAnyStops = visits == null || visits.length > 0;
   const hasPlannerStops = visits == null || visits.some((v) => v.planned_manually !== 1);
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
   }
 
   // Deletes ONE planned visit off this day, as opposed to onDeleteDay's
-  // whole-day "Discard plan". Same confirm+delete+reload shape as
+  // whole-day "Discard all visits". Same confirm+delete+reload shape as
   // PlaceDetail.jsx's own removeVisit; not offered in readOnly mode (see
   // UpcomingVisitDetailModal below), matching onComplete/onSnoozed.
   async function removeVisit(visit) {
@@ -123,7 +125,11 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
                           either way since it compares against the row's own
                           assignee, not the viewer. */}
                       {v.planned_manually === 1 && (
-                        <> · manually planned{v.created_by_user_id != null && v.created_by_user_id !== v.user_id ? ` · planned by ${v.created_by_name || 'another rep'}` : ''}</>
+                        <>
+                          {' · '}
+                          <span style={{ color: 'var(--blue-dark)', fontWeight: 600 }}>Manually planned</span>
+                          {v.created_by_user_id != null && v.created_by_user_id !== v.user_id ? ` · planned by ${v.created_by_name || 'another rep'}` : ''}
+                        </>
                       )}
                     </div>
                     {v.crossRepFloorWarning && (
@@ -147,21 +153,23 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
             </ul>
           )}
         </div>
-        {!readOnly && hasPlannerStops && (
+        {!readOnly && hasAnyStops && (
           <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
-            <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove this day's planned visits">
-              {deletingDay ? 'Removing…' : 'Discard plan'}
+            <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove every visit planned for this day, manually-planned ones included">
+              {deletingDay ? 'Removing…' : 'Discard visits'}
             </Button>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <Button
-                variant="secondary"
-                onClick={onEditDay}
-                disabled={editingDay}
-                title="Pull this day's visits back into an editable proposal"
-              >
-                {editingDay ? 'Editing…' : 'Edit'}
-              </Button>
-            </div>
+            {hasPlannerStops && (
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Button
+                  variant="secondary"
+                  onClick={onEditDay}
+                  disabled={editingDay}
+                  title="Pull this day's visits back into an editable proposal"
+                >
+                  {editingDay ? 'Editing…' : 'Edit'}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -173,6 +181,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
           onComplete={readOnly ? undefined : (v) => { setViewingVisit(null); setLoggingVisit(v); }}
           onSnoozed={readOnly ? undefined : () => { setViewingVisit(null); reloadOwnVisits(); onChanged?.(); }}
           onDelete={readOnly ? undefined : removeVisit}
+          onEdited={readOnly ? undefined : () => { setViewingVisit(null); reloadOwnVisits(); onChanged?.(); }}
         />
       )}
 

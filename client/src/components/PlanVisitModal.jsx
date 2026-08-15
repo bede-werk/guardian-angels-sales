@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api, today, formatDate } from '../api';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
@@ -22,6 +22,24 @@ import PlacePicker from './ui/PlacePicker';
 // NEXT save resends with force:true. A thrown error (§4.1 hard block, or bad
 // input) surfaces as an inline banner — same convention VisitLogModal/
 // ReferralModal use, not a window.alert.
+
+// Reduces buildWarnings' §4.2 list (services/manualVisits.js) down to the
+// single one worth surfacing — do_not_visit is a deliberate flag someone set
+// on the place, which outranks a floor warning's recency guess, same
+// "certain fact beats a heuristic" ordering VisitLogModal's primaryConflict
+// uses. At most one floor warning ever reaches this array to begin with
+// (conflictDetection.js already collapses multiple qualifying visits to
+// one), so there's never more than DO_NOT_VISIT plus one floor type to
+// choose between.
+const WARNING_PRIORITY = ['DO_NOT_VISIT', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+function primaryWarning(warnings) {
+  for (const type of WARNING_PRIORITY) {
+    const found = warnings.find((w) => w.type === type);
+    if (found) return found;
+  }
+  return warnings[0];
+}
+
 export default function PlanVisitModal({ placeId, placeName, date: fixedDate, userId, users, onClose, onSaved }) {
   const [pickedPlace, setPickedPlace] = useState(null);
   const [date, setDate] = useState(fixedDate || '');
@@ -33,6 +51,25 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
 
   const resolvedPlaceId = placeId ?? pickedPlace?.id;
   const resolvedPlaceName = placeName ?? pickedPlace?.name;
+
+  // The message lives at the bottom of the form (right above Save), but on
+  // a tall form (DayOverflowModal's place-picker variant, say) that can
+  // still be scrolled out of view the moment it appears — a rep shouldn't
+  // have to go hunting for why Save just turned into "Plan anyway." Scrolls
+  // itself into view any time a fresh error/warning shows up, so it's never
+  // a guess.
+  const noticeRef = useRef(null);
+  useEffect(() => {
+    if (error || warnings?.length > 0) {
+      // block: 'end' (not 'nearest') — 'nearest' stops as soon as any sliver
+      // of the target is on-screen, which can leave most of a multi-line
+      // message hidden behind the sticky footer if it was already
+      // half-visible. 'end' always scrolls until the target's bottom edge
+      // sits at the bottom of the visible area, so the whole message clears
+      // the footer every time, not just a peek of it.
+      noticeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [error, warnings]);
 
   async function save() {
     setSaving(true);
@@ -52,7 +89,13 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
       onSaved?.();
       onClose();
     } catch (e) {
-      setError(e.message);
+      // A §4.1 hard block (SAME_DATE_VISIT/DRAFT_ELSEWHERE) carries
+      // `conflicts` same as a §4.2 warning does — style it the same plain-
+      // text way as `warnings` below rather than the generic error-banner,
+      // so a rep sees one consistent "collision" look regardless of which
+      // side of the block/warn split it landed on. A genuine error (bad
+      // input, network failure) has no `conflicts` and keeps the banner.
+      setError({ message: e.message, conflict: !!e.conflicts });
     } finally {
       setSaving(false);
     }
@@ -75,8 +118,6 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
           <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body stack">
-          {error && <div className="error-banner">{error}</div>}
-
           <div>
             <label className="field">Place</label>
             {placeId ? (
@@ -139,13 +180,27 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
             />
           </div>
 
-          {warnings?.length > 0 && (
-            <div className="tiny" style={{ color: 'var(--mauve)' }}>
-              {warnings.map((w) => w.message).join(' ')}
-            </div>
-          )}
         </div>
-        <div className="modal-foot">
+        {/* Notice sits IN the footer, left of the buttons (marginRight:
+            auto against modal-foot's own justify-content: flex-end) rather
+            than stacked above it behind the divider — same move as
+            VisitLogModal's own footer. Also means it's now inside the
+            sticky footer itself, so it's on-screen at all times without
+            needing the scrollIntoView effect above to do anything; that
+            effect stays as a harmless no-op/safety net. */}
+        <div className="modal-foot" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <div ref={noticeRef} style={{ marginRight: 'auto' }}>
+            {error && (
+              error.conflict
+                ? <div className="tiny" style={{ color: 'var(--mauve)' }}>{error.message}</div>
+                : <div className="error-banner">{error.message}</div>
+            )}
+            {warnings?.length > 0 && (
+              <div className="tiny" style={{ color: 'var(--mauve)' }}>
+                {primaryWarning(warnings).message}
+              </div>
+            )}
+          </div>
           <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={saving || !date || !resolvedPlaceId}>
             {saving ? 'Saving…' : warnings ? 'Plan anyway' : 'Save'}

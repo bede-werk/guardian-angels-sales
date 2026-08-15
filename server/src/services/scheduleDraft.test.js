@@ -203,18 +203,19 @@ describe('deleteCommittedDay', () => {
       user_id: 7,
       scheduled_date: '2026-07-17',
       status: 'planned',
-      source: 'planner',
     });
   });
 
-  // Manual Visit Planning spec §7 — same source:'planner' scoping
-  // commitDay/reopenCommittedDay already use: a manual visit sharing this
-  // date must survive "undo this day's commit," same as an ad-hoc "Log a
-  // visit" entry always has.
-  test('scopes the delete to source: planner, leaving a manual visit on the same date untouched', async () => {
+  // Deliberately NOT scoped to source: 'planner' (Bede's call, see the
+  // function's own comment) — "Discard plan" means clear the whole day,
+  // manually-planned/promoted stops included. Unlike reopenCommittedDay
+  // (still source:'planner'-only — pulling a manual visit into
+  // schedule_draft_stops would misrepresent it as a re-orderable proposal),
+  // deleting is symmetric regardless of how the row got there.
+  test('does NOT scope the delete to source — a manually-planned visit on the same date is cleared too', async () => {
     const db = makeFakeDb(1);
     await deleteCommittedDay(db, { userId: 5, date: '2026-07-16' });
-    assert.equal(db.calls[0].filter.source, 'planner');
+    assert.equal(db.calls[0].filter.source, undefined);
   });
 
   test('resolves to the number of rows deleted', async () => {

@@ -1536,17 +1536,18 @@ async function commitAll({ draftId, userId }) {
 // — only the still-open plan gets removed. Once this empties a date out
 // entirely, committedDateSummaries naturally stops counting it, which is
 // what frees it back up as a selectable calendar date.
-// Scoped to source: 'planner' — same reasoning reopenCommittedDay/commitDay
-// already use this exact tag for: an ad-hoc/manually-planned visit
-// (source stays 'manual', the DB default — see routes/visits.js's EDITABLE
-// comment) was never part of a plan and must not get swept into "undo this
-// day's commit" just because it shares a date with one. Before Manual Visit
-// Planning, no status:'planned' row could ever exist without source:
-// 'planner' (VisitLogModal always saves status:'completed'), so this filter
-// was previously a no-op; it stops being one the moment a manual visit can
-// share a date with a real planner commit.
+//
+// NOT scoped to source: 'planner' (deliberate reversal, Bede's call): "Discard
+// plan" on PlannedDayModal is understood as "clear my whole day," manually-
+// planned/promoted stops included — a rep hitting Discard doesn't expect a
+// leftover visit to still be sitting there afterward just because it was
+// hand-edited at some point. This is DIFFERENT from reopenCommittedDay right
+// below, which stays source:'planner'-only: pulling a manual visit into
+// schedule_draft_stops would misrepresent it as a re-orderable proposal,
+// which is a real semantic loss discard doesn't have (deleting is symmetric
+// regardless of how the row got there).
 async function deleteCommittedDay(db, { userId, date }) {
-  return db('visits').where({ user_id: userId, scheduled_date: date, status: 'planned', source: 'planner' }).del();
+  return db('visits').where({ user_id: userId, scheduled_date: date, status: 'planned' }).del();
 }
 
 // Reopens a whole day's ALREADY-COMMITTED visits back into the same

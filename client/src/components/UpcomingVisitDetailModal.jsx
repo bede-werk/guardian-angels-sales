@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import React, { useEffect, useRef, useState } from 'react';
+import { api, today, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
 
@@ -22,6 +22,20 @@ function addDaysISO(days) {
   return `${y}-${m}-${day}`;
 }
 
+// Reduces buildWarnings' §4.2 list (services/manualVisits.js) down to the
+// single one worth surfacing — same priority PlanVisitModal.jsx's
+// primaryWarning uses (do_not_visit is a deliberate flag, so it outranks a
+// floor warning's recency guess); duplicated rather than shared since
+// there's no client-side utils module these two pull from yet.
+const WARNING_PRIORITY = ['DO_NOT_VISIT', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+function primaryWarning(warnings) {
+  for (const type of WARNING_PRIORITY) {
+    const found = warnings.find((w) => w.type === type);
+    if (found) return found;
+  }
+  return warnings[0];
+}
+
 // Read-only popup for a still-upcoming (planned) visit — the "Upcoming
 // Visits" card's own equivalent of VisitDetailModal, which is for visit
 // history (completed) only. `onComplete`, when passed, hands this same
@@ -41,12 +55,69 @@ function addDaysISO(days) {
 // read-only mode. Like VisitDetailModal's own onDelete, this just hands the
 // visit up to the caller's existing removeVisit (confirm + api.deleteVisit +
 // reload lives there, not here) rather than duplicating it.
-export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed, onDelete }) {
+//
+// `onEdited`, same convention again — enables the Edit button, which opens a
+// date/notes panel (mirrors the Snooze panel below) and saves through
+// api.editVisit (PATCH /:id/edit). That endpoint works on ANY still-planned
+// visit, not just one already planned_manually — the FIRST successful edit
+// through it is what promotes a planner-committed visit into a
+// manually-planned one (see services/manualVisits.js's editVisit for why),
+// so this is the one place in the app that can turn a route-planner stop
+// into something a rep now owns and can freely reschedule. Same warn-then-
+// force response shape as Snooze/PlanVisitModal: a changed date can come
+// back with §4 floor/do-not-visit warnings pending a "Save anyway" confirm.
+export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed, onDelete, onEdited }) {
   const { closing, startClosing } = useClosingTransition();
   const requestClose = () => startClosing(onClose);
   const [snoozing, setSnoozing] = useState(false); // showing the preset/date panel, vs the normal footer
   const [customDate, setCustomDate] = useState('');
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false); // showing the date/notes edit panel, vs the normal footer
+  const [editDate, setEditDate] = useState(visit.scheduled_date || '');
+  const [editNotes, setEditNotes] = useState(visit.notes || '');
+  const [editWarnings, setEditWarnings] = useState(null);
+  const [editError, setEditError] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Same "never make a rep guess" treatment as PlanVisitModal/VisitLogModal
+  // — scrolls the notice into view the moment it appears, in case this panel
+  // (or the modal around it) is scrolled such that the bottom isn't already
+  // in view.
+  const noticeRef = useRef(null);
+  useEffect(() => {
+    if (editError || editWarnings?.length > 0) {
+      // block: 'end', not 'nearest' — see PlanVisitModal's own comment on
+      // this same call.
+      noticeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [editError, editWarnings]);
+
+  async function doEdit({ force } = {}) {
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      const visitId = visit.visit_id ?? visit.id;
+      const result = await api.editVisit(visitId, {
+        scheduled_date: editDate,
+        notes: editNotes.trim() || null,
+        force,
+      });
+      if (result && result.warnings) {
+        setEditWarnings(result.warnings);
+        return;
+      }
+      setEditing(false);
+      onEdited?.(result);
+    } catch (e) {
+      // Same conflict-vs-generic split as PlanVisitModal's save() — a §4.1
+      // hard block (SAME_DATE_VISIT/DRAFT_ELSEWHERE) carries `conflicts` and
+      // renders as plain text like editWarnings below; a genuine error
+      // (permission, bad date) keeps the banner.
+      setEditError({ message: e.message, conflict: !!e.conflicts });
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   // Two-step by necessity, not choice: the server can't know a chosen date
   // is fine until it's checked this place's own commitment (see
@@ -111,7 +182,53 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
             </div>
           )}
         </div>
-        {snoozing ? (
+        {editing ? (
+          <div className="modal-foot" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ width: '100%' }}>
+              <label className="field">Date</label>
+              <input
+                type="date"
+                value={editDate}
+                min={today()}
+                onChange={(e) => { setEditDate(e.target.value); setEditWarnings(null); setEditError(null); }}
+                disabled={savingEdit}
+                autoFocus
+              />
+            </div>
+            <div style={{ width: '100%' }}>
+              <label className="field">Notes</label>
+              <textarea
+                rows={2}
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                disabled={savingEdit}
+              />
+            </div>
+            {/* Left of the buttons (marginRight: auto against modal-foot's
+                own justify-content: flex-end), same as VisitLogModal/
+                PlanVisitModal's own footer notice — not its own full-width
+                line above them. Date/Notes above keep width: 100% (they need
+                the room for their own label+input), but this row packs
+                alongside the buttons since flexWrap on modal-foot already
+                forces a new line after each 100%-wide field. */}
+            <div ref={noticeRef} style={{ marginRight: 'auto' }}>
+              {editError && (
+                editError.conflict
+                  ? <div className="tiny" style={{ color: 'var(--mauve)' }}>{editError.message}</div>
+                  : <div className="error-banner">{editError.message}</div>
+              )}
+              {editWarnings?.length > 0 && (
+                <div className="tiny" style={{ color: 'var(--mauve)' }}>
+                  {primaryWarning(editWarnings).message}
+                </div>
+              )}
+            </div>
+            <Button variant="secondary" size="small" onClick={() => setEditing(false)} disabled={savingEdit}>Cancel</Button>
+            <Button size="small" disabled={savingEdit || !editDate} onClick={() => doEdit({ force: !!editWarnings })}>
+              {savingEdit ? 'Saving…' : editWarnings ? 'Save anyway' : 'Save'}
+            </Button>
+          </div>
+        ) : snoozing ? (
           <div className="modal-foot" style={{ flexWrap: 'wrap' }}>
             <div className="tiny muted" style={{ width: '100%' }}>Push this place out of rotation until…</div>
             {SNOOZE_PRESETS.map((p) => (
@@ -126,8 +243,22 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
         ) : (
           <div className="modal-foot">
             {onDelete && (
-              <Button variant="danger" title="Delete this planned visit" onClick={() => onDelete(visit)}>
+              <Button
+                variant="danger"
+                style={{ marginRight: 'auto' }}
+                title="Delete this planned visit"
+                onClick={() => onDelete(visit)}
+              >
                 Delete
+              </Button>
+            )}
+            {onEdited && (
+              <Button
+                variant="secondary"
+                title="Change this visit's date or notes — takes it over as a manually-planned visit"
+                onClick={() => setEditing(true)}
+              >
+                Edit
               </Button>
             )}
             {onSnoozed && (

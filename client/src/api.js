@@ -126,9 +126,13 @@ export const api = {
   // thrown error (409, `err.conflicts` set) means a §4.1 hard block, no
   // override possible.
   planVisit: (body) => request('/visits/manual', { method: 'POST', body }),
-  // Moves a manually-planned visit to a new date, re-running the same §4
-  // checks against it. Same warn-then-force response shape as planVisit.
-  rescheduleVisit: (id, body) => request(`/visits/${id}/reschedule`, { method: 'PATCH', body }),
+  // Changes a still-planned visit's date and/or notes — works on a
+  // planner-committed visit too, promoting it to manually-planned the
+  // moment it's saved (see services/manualVisits.js's editVisit). A date
+  // change re-runs the same §4 checks planVisit does against it; a
+  // notes-only edit skips that. Same warn-then-force response shape as
+  // planVisit. body: { scheduled_date?, notes?, force? }.
+  editVisit: (id, body) => request(`/visits/${id}/edit`, { method: 'PATCH', body }),
   // Explicit deferral of a still-planned visit. body: { snoozed_until, force? }.
   // A 409 (code: 'SNOOZE_SWALLOWS_COMMITMENT') means the chosen date would
   // suppress a follow-up the place is already owed — re-send with

@@ -19,7 +19,7 @@ const {
 } = require('../services/placeCommitments');
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware, snoozeSwallowsCommitment } = require('../services/visitLifecycle');
-const { createManualVisit, rescheduleManualVisit, canDeleteManualVisit } = require('../services/manualVisits');
+const { createManualVisit, editVisit, canDeleteManualVisit } = require('../services/manualVisits');
 const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
@@ -680,23 +680,24 @@ router.post('/manual', async (req, res, next) => {
 
 // PATCH /api/visits/:id — log or update a visit (notes, date, status, and the
 // people met on it). This is what the "Log Visit" form actually calls when
-// saving. A rep can correct any already-logged (completed/skipped) visit,
-// including one under a teammate's account — the client confirms that's
-// intentional first (see the "logged under a different rep's account" confirm
-// before opening VisitLogModal in VisitsCalendar.jsx/PlaceDetail.jsx/
-// PersonDetail.jsx), but isn't blocked here. A still-`planned` visit is
-// different: that's someone else's not-yet-happened scheduled stop, not
-// history to correct, so completing/editing it stays restricted to its own
-// owning rep.
+// saving. A rep can complete/correct ANY visit here, including one under a
+// teammate's account and regardless of its current status — the client
+// confirms that's intentional first (see the "logged under a different rep's
+// account" confirm before opening VisitLogModal in VisitsCalendar.jsx/
+// PlaceDetail.jsx/PersonDetail.jsx), but nothing is blocked server-side.
+// Deliberate: this is the ONLY caller of this route for a still-`planned`
+// visit (VisitLogModal always saves status:'completed', whatever status the
+// row started at — see its own save()), so "can I log what happened on a
+// colleague's still-open stop" was ever the real question a hard 403 here
+// answered, and Bede's call was that it should be a confirm, not a block —
+// covering for someone, or logging on their behalf, is a normal case, not a
+// mistake to prevent.
 router.patch('/:id', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
     const visit = await knex('visits').where({ id }).first();
     if (!visit) return res.status(404).json({ error: 'Visit not found' });
-    if (visit.status === 'planned' && visit.user_id != null && visit.user_id !== req.user.id) {
-      return res.status(403).json({ error: 'You can only edit a still-planned visit under your own account' });
-    }
 
     const update = { updated_at: knex.fn.now() };
     for (const f of EDITABLE) if (req.body[f] !== undefined) update[f] = req.body[f];
@@ -797,31 +798,35 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-// PATCH /api/visits/:id/reschedule — move a manually-planned visit to a new
-// date (Manual Visit Planning spec §6). Deliberately its own endpoint rather
-// than folded into the generic PATCH /:id above: a plain date edit there
-// just saves whatever's sent, but rescheduling a manual visit has to re-run
-// every §4 conflict check against the NEW date first (moving Tuesday to
+// PATCH /api/visits/:id/edit — change a still-planned visit's date and/or
+// notes: UpcomingVisitDetailModal's "Edit" button, on a manually-planned
+// visit AND a planner-committed one alike. Deliberately its own endpoint
+// rather than folded into the generic PATCH /:id above: a plain date edit
+// there just saves whatever's sent with no conflict check at all, but this
+// has to re-run every §4 check against a NEW date first (moving Tuesday to
 // Thursday is a fresh collision check against Thursday) and can come back
-// with warnings pending confirmation — a response shape PATCH /:id was never
-// built to return. Only touches scheduled_date; every other trip field
-// still goes through PATCH /:id.
+// with warnings pending confirmation — a response shape PATCH /:id was
+// never built to return. A notes-only edit (scheduled_date omitted, or
+// unchanged) skips that recheck. See services/manualVisits.js's editVisit
+// for the promotion this performs on ANY successful save — planned_manually/
+// source flip to look exactly like a visit planned by hand from here on,
+// whichever way it started out.
 //
-// Only the visit's ASSIGNEE may reschedule it (services/manualVisits.js's
+// Only the visit's ASSIGNEE may edit it (services/manualVisits.js's
 // canEditManualVisit) — narrower than the creator-may-also-delete rule on
 // DELETE /:id below (§5: the creator's own permission stops at delete).
 //
-// Body: { scheduled_date, force? }. Same response shapes as POST /manual.
-router.patch('/:id/reschedule', async (req, res, next) => {
+// Body: { scheduled_date?, notes?, force? }. Same response shapes as POST /manual.
+router.patch('/:id/edit', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
-    const { scheduled_date, force } = req.body;
-    if (!scheduled_date || !/^\d{4}-\d{2}-\d{2}$/.test(scheduled_date)) {
-      return res.status(400).json({ error: 'scheduled_date is required, in YYYY-MM-DD format' });
+    const { scheduled_date, notes, force } = req.body;
+    if (scheduled_date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(scheduled_date)) {
+      return res.status(400).json({ error: 'scheduled_date must be in YYYY-MM-DD format' });
     }
 
-    const result = await rescheduleManualVisit(knex, id, { scheduledDate: scheduled_date, force: !!force }, req.user.id);
+    const result = await editVisit(knex, id, { scheduledDate: scheduled_date, notes, force: !!force }, req.user.id);
     if (!result.visit) return res.status(200).json({ warnings: result.warnings });
     res.json(await fetchVisit(result.visit.id));
   } catch (err) {
