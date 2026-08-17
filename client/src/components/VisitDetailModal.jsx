@@ -231,7 +231,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
                           disabled={removingEncounterId === e.id}
                           onClick={(ev) => { ev.stopPropagation(); removeEncounter(e); }}
                         >
-                          ×
+                          ✕
                         </button>
                       </div>
                       {open && (

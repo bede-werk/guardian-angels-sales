@@ -80,7 +80,7 @@ export function PlaceCommitments({ commitments, onAddClick, onSelect, onDelete, 
                   </span>
                   <button
                     type="button"
-                    className="icon-delete"
+                    className="icon-remove"
                     title="Delete this from history"
                     onClick={() => onDelete(c.id)}
                     disabled={deletingId === c.id}

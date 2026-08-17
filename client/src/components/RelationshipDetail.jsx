@@ -122,7 +122,6 @@ export function PlaceRelationship({ relationship, onSave, saving }) {
           style={{ width: 'fit-content' }}
         >
           <RelationshipChip level={effective} overridden={overridden} />
-          <span className="edit-affordance" aria-hidden="true">✎</span>
         </div>
         <TrendIndicator trend={relationship.trend} />
       </div>

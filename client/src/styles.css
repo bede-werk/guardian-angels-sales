@@ -106,7 +106,7 @@ body {
    input rules below) uses the sans font set on <body> above. */
 h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 
-.app { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
+.app { max-width: 1400px; margin: 0 auto; padding: 0 20px 60px; }
 
 /* Header - see ui/Header.jsx. Logo on the left, whatever App.jsx passes as
    children (date, signed-in-as) right-aligned via .controls. */
@@ -383,17 +383,19 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .hover-row.selected { background: var(--blue-tint-2); }
 
 /* Click-to-override chips (RelationshipDetail/CapacityDetail's level chips)
-   - :hover/title alone is invisible on a phone (no hover state to reveal
-   it), so a small persistent pencil is the affordance that survives without
-   one. Also focusable (tabIndex + role="button" in the JSX) so keyboard/
-   assistive-tech users can reach and trigger it, not just mouse/touch. */
+   - the title tooltip is the only affordance now; still focusable (tabIndex
+   + role="button" in the JSX) so keyboard/assistive-tech users can reach
+   and trigger it, not just mouse/touch. */
 .editable-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: var(--radius-sm); }
-.editable-chip .edit-affordance { font-size: 11px; color: var(--muted); }
 .editable-chip:focus-visible { outline: 2px solid var(--blue-tint-3); outline-offset: 2px; }
 
-/* Data tables - Places directory and Dashboard's "never visited" list */
+/* Data tables - Places directory and Dashboard's "never visited" list.
+   white-space: nowrap keeps every row exactly one line tall (e.g. Places'
+   Tier + ★ Priority chips, or the Referrals cell's "N · last M/D/YYYY")
+   instead of wrapping - a too-narrow column scrolls sideways via
+   .table-scroll below rather than growing the row taller. */
 table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; white-space: nowrap; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 
@@ -408,6 +410,11 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .tiny { font-size: 12px; }
 .stack { display: flex; flex-direction: column; gap: 4px; } /* vertical stack of small pieces of text */
 .tag-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } /* row of chips/badges */
+/* Inside a table cell, force chips onto one line (e.g. Places' Tier + ★
+   Priority) so a row stays exactly one line tall - the table's own
+   white-space: nowrap above doesn't reach into a flex child's own wrap
+   behavior, so it has to be overridden here too. */
+td .tag-list { flex-wrap: nowrap; }
 
 /* Empty state - see ui/EmptyState.jsx: the wing icon + brand-voice message
    shown whenever a list/section has nothing to display. */
@@ -450,30 +457,17 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .modal .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .modal .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: #fff; z-index: 1; }
 .close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--muted); line-height: 1; }
-/* A quieter remove - plain × like .close rather than a full boxed .btn.danger,
-   for a delete action that sits inline next to other content instead of
-   anchoring a modal header. */
-.icon-remove { background: none; border: none; font-size: 18px; line-height: 1; cursor: pointer; color: var(--muted); padding: 2px 6px; border-radius: var(--radius-sm); }
-.icon-remove:hover { background: var(--mauve-tint-1); color: var(--mauve); }
+/* The one inline "remove this row" x - used anywhere a delete/remove sits
+   next to other content instead of anchoring a modal header (.close above)
+   or standing as a full pill button (.btn.danger/.btn.ghost). Used for
+   CapacityDetail's observation delete, PlaceCommitments' history delete, and
+   VisitDetailModal's per-encounter remove - previously three separate
+   classes (.icon-remove/.icon-delete/.icon-remove-danger) with different
+   sizes/borders, merged 2026-08-17 for visual consistency. Clickable area
+   (padding, not font-size) is fitted snugly to the glyph itself. */
+.icon-remove { background: none; border: none; font-size: 9px; line-height: 1; cursor: pointer; color: var(--mauve); padding: 6px 8px; border-radius: var(--radius-sm); }
+.icon-remove:hover { background: var(--mauve-tint-1); }
 .icon-remove:disabled { opacity: 0.5; cursor: not-allowed; }
-/* Same slot as .icon-remove but already-red at rest (not muted-until-hover) -
-   for a delete that's clearing history, not detaching a live relationship,
-   so it doesn't need the softer "are you sure this is what you want" framing. */
-/* padding (not font-size) does the work of getting this closer to a ~40px
-   tap target - this permanently deletes history, and the glyph itself
-   should stay small even though the hit area around it grows. */
-.icon-delete { background: #fff; border: 1px solid var(--mauve-tint-3); color: var(--mauve); font-size: 12px; line-height: 1; cursor: pointer; padding: 10px 12px; border-radius: var(--radius-sm); }
-.icon-delete:hover { background: var(--mauve); border-color: var(--mauve); color: #fff; }
-.icon-delete:disabled { opacity: 0.5; cursor: not-allowed; }
-/* Same no-border/no-fill-at-rest shape as .btn.ghost's own × (the People
-   card's unassign button) - just mauve instead of blue. CapacityDetail.jsx's
-   observation delete: still destructive, but sits inline in a dense history
-   list where .icon-delete's outline reads as too heavy. */
-/* Same tap-target reasoning as .icon-delete above (padding, not font-size) -
-   this also permanently deletes history (a capacity observation). */
-.icon-remove-danger { background: none; border: none; font-size: 9px; line-height: 1; cursor: pointer; color: var(--mauve); padding: 10px 12px; border-radius: var(--radius-sm); }
-.icon-remove-danger:hover { background: var(--mauve-tint-1); }
-.icon-remove-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 /* The big tap-chip outcome picker in VisitLogModal (Interested / Not ready / etc). */
 .outcome-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .outcome-btn { padding: 14px 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; cursor: pointer; text-align: center; font-size: 13px; font-weight: 600; }
