@@ -2,7 +2,7 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, commitDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 const { estimateDriveMinutes } = require('./driveTime');
 
 describe('mergeLockedElsewhereIds', () => {
@@ -842,5 +842,125 @@ describe('evaluateDay via loadDraftView - committed visits count against the bud
     assert.equal(day.stops.length, 0, 'nothing proposed for this day');
     assert.ok(day.totalMinutes > 60, 'the committed presentation alone already exceeds a 1-hour budget');
     assert.equal(day.overBudget, true);
+  });
+});
+
+// commitDay's per-row insert loop wraps each `visits` insert in its own
+// nested transaction (a savepoint) specifically so a Postgres unique-
+// constraint violation aborts only that one nested transaction, not the
+// whole `trx` the day's commit runs in (25P02 "transaction is aborted" -
+// see the comment above the loop in scheduleDraft.js). SQLite (what this
+// suite runs against) never enters that aborted state, so this can't
+// reproduce the literal Postgres bug - but it does prove the loop's
+// collision-recovery behavior (a row that loses the unique-constraint race
+// gets skipped into raceCollisions while every other row in the same call
+// still commits, AND the rest of the outer transaction's own statements
+// still run to completion afterward) survives being restructured through
+// `trx.transaction(async (sp) => ...)` savepoints instead of bare inserts
+// against `trx`.
+//
+// A genuine two-rows-same-place-and-date collision can't be constructed by
+// simply giving one draft two stops for the same place: schedule_draft_stops
+// has its own unique(['draft_id', 'place_id']) constraint (see
+// 20260715000000_add_schedule_drafts.js), so a place can only ever appear
+// once in a given draft - commitDay's own `rows` query can therefore never
+// see a same-place duplicate. The real race this fix targets is genuinely
+// cross-transaction (two different reps' drafts, two different `commitDay`
+// calls, racing each other), which SQLite's single-writer connection
+// serializes away entirely - there's no way to land a real competing insert
+// in the gap between commitDay's own precheck and its own insert using a
+// second, truly concurrent transaction under this driver.
+//
+// `wrapForRaceInjection` simulates that gap deterministically instead: it
+// intercepts the FIRST `visits` insert for a chosen place_id and, immediately
+// before letting it proceed, performs an equivalent side-channel insert
+// using that exact same (sub)transaction connection - standing in for
+// "another rep's commit landed first." commitDay's own insert then hits the
+// REAL visits_place_date_active_unique partial index and fails with a
+// genuine SQLITE_CONSTRAINT_UNIQUE, exercising the actual try/catch and
+// isUniqueViolation classification, not a synthetic/mocked error.
+function wrapForRaceInjection(knexLike, targetPlaceId, injectedRef) {
+  const wrapped = (table, ...rest) => {
+    const qb = knexLike(table, ...rest);
+    if (table === 'visits') {
+      const originalInsert = qb.insert.bind(qb);
+      qb.insert = async (row) => {
+        if (!injectedRef.done && row.place_id === targetPlaceId) {
+          injectedRef.done = true;
+          // The "competing" insert - same shape, same (place_id,
+          // scheduled_date, status, source), so it lands in the exact same
+          // partial-index slot commitDay's own insert is about to claim.
+          await knexLike('visits').insert({ ...row });
+        }
+        return originalInsert(row);
+      };
+    }
+    return qb;
+  };
+  // Recurse so the savepoint transaction the fix opens per row
+  // (trx.transaction(async (sp) => ...)) is wrapped the same way - the
+  // injection has to fire on whichever level actually issues the insert.
+  wrapped.transaction = (cb) => knexLike.transaction((trx) => cb(wrapForRaceInjection(trx, targetPlaceId, injectedRef)));
+  return wrapped;
+}
+
+describe('commitDay - per-row collision recovery in the insert loop', () => {
+  let db;
+  const DATE_A = '2026-08-20';
+
+  before(async () => {
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert([{ id: 1, name: 'Bede', email: 'bede@test.local' }]);
+    await db('places').insert([
+      { id: 1, name: 'Colliding Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+    ]);
+  });
+
+  after(async () => {
+    await db.destroy();
+  });
+
+  test('a row that loses a same-transaction unique-constraint race is skipped; every other row in the same call still commits', async () => {
+    const params = { days: [{ date: DATE_A, hoursPerDay: 4 }], homeBase: { lat: 41.85, lng: -87.65 }, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+
+    await db('schedule_draft_stops').insert([
+      { draft_id: draftId, place_id: 1, date: DATE_A, sort_order: 0, visit_type: 'drop_in' },
+      { draft_id: draftId, place_id: 2, date: DATE_A, sort_order: 1, visit_type: 'drop_in' },
+    ]);
+
+    const injectedRef = { done: false };
+    const raceDb = wrapForRaceInjection(db, 1, injectedRef);
+
+    const result = await commitDay({ draftId, userId: 1, date: DATE_A, db: raceDb });
+
+    assert.equal(injectedRef.done, true, 'the injection must actually have fired, or this test proves nothing');
+
+    // Place 1 lost the race (its real insert hit the constraint the
+    // side-channel insert just claimed); place 2 - processed in the same
+    // loop, after place 1 - must still commit rather than the whole day's
+    // commit rolling back, which is exactly the bug the savepoint fix
+    // prevents on Postgres (25P02 poisoning the enclosing transaction).
+    assert.deepEqual(result.committed.map((r) => r.place_id), [2]);
+    assert.equal(result.skippedCollisions.length, 1);
+    assert.equal(result.skippedCollisions[0].place_id, 1);
+
+    // The outer transaction itself must still be healthy after the
+    // collision: schedule_draft_stops for this date was cleared (a
+    // statement that runs on `trx` AFTER the insert loop) and the real
+    // `visits` table shows exactly the winning row.
+    const remainingStops = await db('schedule_draft_stops').where({ draft_id: draftId, date: DATE_A });
+    assert.equal(remainingStops.length, 0, 'post-loop trx statements must still execute - proof trx was never left in an aborted state');
+
+    const visits = await db('visits').where({ scheduled_date: DATE_A, source: 'planner' }).select('place_id');
+    assert.deepEqual(visits.map((v) => v.place_id), [2], 'only the winning row actually persisted');
   });
 });

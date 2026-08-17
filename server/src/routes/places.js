@@ -11,7 +11,7 @@ const { compareDatesAsc } = require('../services/sortHelpers');
 const { computeRelationshipForPlaces, relationshipFor, LEVELS: RELATIONSHIP_LEVELS } = require('../services/relationship');
 const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
-const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
+const { computeCapacityForPlace, stampExplorationEligibility, latestObservationsByPlace } = require('../services/capacity');
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware } = require('../services/visitLifecycle');
 const { createCommitment, rescheduleCommitment, waiveCommitment, deleteCommitment, attachCommitmentsMade } = require('../services/placeCommitments');
@@ -648,12 +648,14 @@ router.patch('/:id', async (req, res, next) => {
 // POST /api/places/:id/capacity-observations - record a fresh declared
 // capacity number (capacity-computation-spec.md §5/§11). Appends a new
 // capacity_observations row rather than overwriting a column: nothing here
-// is ever updated or deleted, so a partner's number visibly growing over
+// is ever updated in place, so a partner's number visibly growing over
 // three years of re-asks stays legible instead of only the latest answer
-// surviving. source: 'manual' - a direct place-card edit with no visit
-// behind it. routes/visits.js's own first-visit capture inserts its own
-// rows with source: 'prequal' (has a visit_id/person_id); this is the OTHER
-// entry point, PlaceDetail's own "Add/Edit pre-qualification" card.
+// surviving. DELETE below exists purely to undo a mis-entered row, not as a
+// second way to revise history - see that route's own comment. source:
+// 'manual' - a direct place-card edit with no visit behind it. routes/
+// visits.js's own first-visit capture inserts its own rows with source:
+// 'prequal' (has a visit_id/person_id); this is the OTHER entry point,
+// PlaceDetail's own "Add/Edit pre-qualification" card.
 router.post('/:id/capacity-observations', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -680,6 +682,40 @@ router.post('/:id/capacity-observations', async (req, res, next) => {
     await stampExplorationEligibility(knex, id, observedAt, schedulingConfig);
     const observation = await knex('capacity_observations').where({ id: observationId }).first();
     res.status(201).json(observation);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/places/:id/capacity-observations/:observationId - undo a
+// mis-entered row (fat-fingered number, wrong place). Deliberately does NOT
+// touch places.exploration_eligible_since even if this was the observation
+// that stamped it - that value is a one-way "stamp on write, never
+// re-derive" clock (see capacity.js's stampExplorationEligibility and the
+// migration that added the column), so the worst case here is the place
+// waits a little longer than ideal before re-entering EXPLORATION, never a
+// false-urgent flag from a phantom row.
+router.delete('/:id/capacity-observations/:observationId', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const observationId = Number(req.params.observationId);
+    if (Number.isNaN(id) || Number.isNaN(observationId)) return res.status(404).json({ error: 'Observation not found' });
+    const existing = await knex('capacity_observations').where({ id: observationId, place_id: id }).first();
+    if (!existing) return res.status(404).json({ error: 'Observation not found' });
+
+    await knex('capacity_observations').where({ id: observationId }).del();
+
+    // The deleted observation's own write stamped exploration_eligible_since
+    // up to CAPACITY_STALE_DAYS out (see capacity.js's stampExplorationEligibility) -
+    // left alone, a mis-entered observation deleted right after would freeze
+    // this place out of EXPLORATION's aging/starvation-guard credit until
+    // that stale future date. Re-stamp from whatever observation is now the
+    // newest remaining one, or back to today if none remain.
+    const remaining = await latestObservationsByPlace(knex, [id], orgToday());
+    const newest = remaining.get(id);
+    await stampExplorationEligibility(knex, id, newest ? newest.observedAt : orgToday(), schedulingConfig);
+
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

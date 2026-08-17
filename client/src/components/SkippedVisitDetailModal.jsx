@@ -20,8 +20,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // (SkippedVisitsModal's `visits` prop) - no refetch, unlike VisitDetailModal's
 // GET /api/visits/:id.
 export default function SkippedVisitDetailModal({ visit, onClose, onComplete }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   return (
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>

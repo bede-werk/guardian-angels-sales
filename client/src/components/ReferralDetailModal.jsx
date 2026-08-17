@@ -8,8 +8,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // as VisitDetailModal for visits. PersonDetail's referral list rows only show
 // date + a notes preview to stay uncluttered; this is where the full note lives.
 export default function ReferralDetailModal({ referral, onClose, onEdit, onDelete }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   return (
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>

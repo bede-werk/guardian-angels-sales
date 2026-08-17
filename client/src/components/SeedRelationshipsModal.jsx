@@ -36,8 +36,7 @@ const SEED_CHOICES = [
 ];
 
 export default function SeedRelationshipsModal({ onClose, onSaved }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

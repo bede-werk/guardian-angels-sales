@@ -5,7 +5,7 @@ import { api } from '../../api';
 // the dropdown, calls onPick(place). Lightweight custom autocomplete (no
 // library) - `open` controls whether the results dropdown is visible. Used
 // by RoutePlanner.jsx for adding an ad-hoc stop to a draft day.
-export default function PlacePicker({ onPick, placeholder = 'Assign to existing place…', excludeIds, autoFocus }) {
+export default function PlacePicker({ onPick, placeholder = 'Assign to existing place…', excludeIds, autoFocus, id }) {
   const [q, setQ] = useState(''); // what's typed in the search box
   const [results, setResults] = useState([]); // matching places from the API
   const [open, setOpen] = useState(false); // whether the results dropdown is showing
@@ -46,6 +46,7 @@ export default function PlacePicker({ onPick, placeholder = 'Assign to existing 
   return (
     <div className="picker" ref={boxRef}>
       <input
+        id={id}
         placeholder={placeholder}
         value={q}
         onChange={(e) => setQ(e.target.value)}

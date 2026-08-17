@@ -10,8 +10,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // Save button, matching the rest of the app's inline-edit conventions
 // (PlaceDetail/PersonDetail's notes fields).
 export default function CategoriesModal({ onClose, onChanged }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -131,7 +130,11 @@ export default function CategoriesModal({ onClose, onChanged }) {
                       <input
                         value={editingName}
                         onChange={(e) => setEditingName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(row); if (e.key === 'Escape') setEditingId(null); }}
+                        // stopPropagation on Escape specifically - useClosingTransition
+                        // now also listens for Escape at the document level to close
+                        // the whole modal; without this, canceling an in-progress
+                        // rename would also close the modal out from under it.
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(row); if (e.key === 'Escape') { e.stopPropagation(); setEditingId(null); } }}
                         autoFocus
                         style={{ flex: 1 }}
                       />

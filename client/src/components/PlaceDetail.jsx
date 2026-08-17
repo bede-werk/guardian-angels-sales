@@ -15,6 +15,8 @@ import SkippedVisitDetailModal from './SkippedVisitDetailModal';
 import { PlaceRelationship } from './RelationshipDetail';
 import { PlaceCapacity } from './CapacityDetail';
 import { PlaceCommitments } from './PlaceCommitments';
+import AddCommitmentModal from './AddCommitmentModal';
+import CommitmentDetailModal from './CommitmentDetailModal';
 import useClosingTransition from '../hooks/useClosingTransition';
 
 // Who was met on one trip, as a single inline phrase: "with Flibber Gibblits,
@@ -54,8 +56,7 @@ function addDaysISO(days) {
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
 // (clicking any place-linked row/card).
 export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDeleted }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + people)
   const [loadError, setLoadError] = useState(null);
   const [categories, setCategories] = useState([]); // known category names, for PlaceModal's autocomplete
@@ -105,21 +106,30 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   // CapacityDetail.jsx, triggered by clicking the chip itself) this one
   // piece of editor state has to live up here.
   const [addingCapacityObservation, setAddingCapacityObservation] = useState(false);
+  // Which observation row's delete is in flight, if any, so only that row
+  // shows a busy state.
+  const [deletingObservationId, setDeletingObservationId] = useState(null);
   // Mirrors CapacityDetail.jsx's own editingOverride (still that
   // component's local state) just so the header button above can hide
   // itself while the override editor is open in the body below.
   const [capacityOverrideEditing, setCapacityOverrideEditing] = useState(false);
-  // Place Commitments (see PlaceCommitments.jsx) - same "editor state lives
-  // in the child, only the in-flight save flag lives here" convention as
-  // capacity's pair above. waivingCommitmentId (not a plain boolean) so only
-  // the row actually being waived shows "Waiving…", not every row at once.
+  // Place Commitments (see PlaceCommitments.jsx / AddCommitmentModal.jsx /
+  // CommitmentDetailModal.jsx) - Add and Reschedule/Waive each live in their
+  // own modal now (same "Plan a visit" / UpcomingVisitDetailModal split the
+  // Upcoming Visits list already uses), so only the open/closed + in-flight
+  // save state lives up here. Discharged (fulfilled/rescheduled/waived)
+  // commitments show in PlaceCommitments' own collapsible history section -
+  // deletingCommitmentId is that section's per-row "cleanup ✕ in flight" flag,
+  // same convention as deletingObservationId above.
+  const [addingCommitment, setAddingCommitment] = useState(false);
+  const [viewingCommitment, setViewingCommitment] = useState(null);
   const [savingCommitment, setSavingCommitment] = useState(false);
   const [reschedulingCommitmentSaving, setReschedulingCommitmentSaving] = useState(false);
-  const [waivingCommitmentId, setWaivingCommitmentId] = useState(null);
+  const [waivingCommitment, setWaivingCommitment] = useState(false);
   const [deletingCommitmentId, setDeletingCommitmentId] = useState(null);
   // Manual Visit Planning (see server's manual-visit-planning-spec.md §3) -
-  // the "Plan a visit…" button in the Upcoming Visits card-head, next to Do
-  // not visit…. Opens PlanVisitModal rather than an inline form (that used
+  // the "Plan a visit" button in the Upcoming Visits card-head, next to Do
+  // not visit. Opens PlanVisitModal rather than an inline form (that used
   // to cram date + rep picker + warning text into one card row).
   const [planningVisit, setPlanningVisit] = useState(false);
   const [users, setUsers] = useState([]); // team list, for the assigned-rep picker (cross-rep planning, §5)
@@ -248,8 +258,25 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
+  // Undoes a mis-entered observation - history cleanup only. Doesn't touch
+  // exploration_eligible_since even if this row stamped it (see the route's
+  // own comment for why that's fine).
+  async function deleteCapacityObservation(observationId) {
+    if (!window.confirm("Delete this observation from history? This can't be undone.")) return;
+    setDeletingObservationId(observationId);
+    try {
+      await api.deleteCapacityObservation(data.id, observationId);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setDeletingObservationId(null);
+    }
+  }
+
   // Adds a dated promise directly, no visit involved - PlaceCommitments'
-  // own "Add…" control (see services/placeCommitments.js's module header:
+  // own "Add a commitment" control (see services/placeCommitments.js's module header:
   // place-level, cross-rep, more than one outstanding promise is allowed).
   async function addCommitment(promisedDate, personId, note) {
     setSavingCommitment(true);
@@ -286,8 +313,11 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
 
   // Discharges as waived - "not happening; back to normal cadence." The
   // place immediately stops binding to this promise (see getBindingCommitment).
+  // The confirm() gate lives in CommitmentDetailModal itself (right before
+  // this is called) since that's where the specific promise being waived is
+  // in view - this function just does the actual call + reload.
   async function waiveCommitment(commitmentId, note) {
-    setWaivingCommitmentId(commitmentId);
+    setWaivingCommitment(true);
     try {
       await api.waiveCommitment(data.id, commitmentId, { note });
       load();
@@ -297,14 +327,15 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       window.alert(e.message);
       return false;
     } finally {
-      setWaivingCommitmentId(null);
+      setWaivingCommitment(false);
     }
   }
 
-  // Hard-deletes a discharged commitment - history cleanup only (the server
-  // rejects this on a still-outstanding one; waive/reschedule it first).
+  // History cleanup only - only a discharged commitment can be deleted this
+  // way (server rejects an outstanding one). Same pattern as
+  // deleteCapacityObservation above.
   async function deleteCommitment(commitmentId) {
-    if (!window.confirm("Delete this commitment from history? This can't be undone.")) return;
+    if (!window.confirm("Delete this from history? This can't be undone.")) return;
     setDeletingCommitmentId(commitmentId);
     try {
       await api.deleteCommitment(data.id, commitmentId);
@@ -468,21 +499,54 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               height here (unlike the two rows below) - this row's content is
               always short and bounded (address, one notes field, a status
               line), so it can just size to whatever it actually needs. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-            <div className="card" style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
+            <div className="card" style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column' }}>
               <div className="card-head"><h2>Contact Info</h2></div>
               <div className="card-body stack" style={{ flex: 1, justifyContent: 'center' }}>
                 <div className="tiny">
                   {data.address && <div>{data.address}</div>}
                   <div>{data.city}, {data.state} {data.zip} · <strong>{data.region}</strong></div>
-                  {data.phone && <div>{data.phone}</div>}
+                  {/* Phone itself is the tap/click target (tel: - the field
+                      rep is usually looking this up mid-drive) rather than a
+                      separate "Call" button next to inert text. */}
+                  {data.phone && (
+                    <div>
+                      <a href={`tel:${data.phone}`} className="link-button" title={`Call ${data.phone}`}>{data.phone}</a>
+                    </div>
+                  )}
+                </div>
+                {/* navigateUrl() builds a Google Maps directions link from
+                    address/city/state/zip - the single biggest field-usability
+                    gap flagged in review: this card used to have a Navigate
+                    button (removed by accident in a modal-redesign pass, see
+                    git blame on this file), and a rep pulling up a place while
+                    already on the road has no other way to get directions from
+                    here. Real <a> (not a Button+window.open) so a long-press/
+                    right-click "open in new tab" still works, and
+                    rel="noopener noreferrer" since it's an external site. */}
+                <div className="tag-list">
+                  <a
+                    className="btn secondary small"
+                    href={navigateUrl(data)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open directions to this address in Google Maps"
+                  >
+                    Navigate
+                  </a>
                 </div>
               </div>
             </div>
 
             {/* Durable notes about the organization itself - not tied to any one
-                visit or person (e.g. "front desk is picky about walk-ins"). */}
-            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+                visit or person (e.g. "front desk is picky about walk-ins").
+                flex-basis 250px (not the bare `flex: 1`/basis-0% this used to
+                be) so it actually participates in the row's flex-wrap: wrap -
+                a basis-0% item's hypothetical size is 0, so the browser never
+                considers it "too big to fit" and it just gets squeezed into
+                whatever sliver of space is left on the line instead of
+                wrapping, however little room remains. */}
+            <div className="card" style={{ flex: '1 1 250px', minWidth: 0 }}>
               <div className="card-head">
                 <h2>Details</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -545,7 +609,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               </div>
             </div>
 
-            <div className="card" style={{ flex: '0 0 250px' }}>
+            <div className="card" style={{ flex: '1 1 250px' }}>
               <div className="card-head"><h2>Relationship</h2></div>
               <div className="card-body stack">
                 <PlaceRelationship
@@ -560,13 +624,13 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           {/* People + Capacity on the next line - both are the denser,
               scrollable cards, same fixed-height/scroll pattern as
               PersonDetail's Details/Referrals row. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
             {/* People here: names, click one to open their full detail
                 (PersonDetail) - each person's own referral metrics show in
                 their row (the per-person breakdown); the place-level roll-up
                 lives up top next to the category/tier badges, and again below
                 as a one-line summary since it's important place-level info. */}
-            <div className="card" style={{ flex: 1, minWidth: 0, height: 240, display: 'flex', flexDirection: 'column' }}>
+            <div className="card detail-card-240" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>People ({data.people.length})</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -622,7 +686,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 axis, has more to explain than Relationship's short version
                 (resolution source, staleness, override, observation
                 history) - see CapacityDetail.jsx. */}
-            <div className="card" style={{ flex: 1, minWidth: 0, height: 240, display: 'flex', flexDirection: 'column' }}>
+            <div className="card detail-card-240" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Capacity</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -651,6 +715,8 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   setAddingObservation={setAddingCapacityObservation}
                   onEditingOverrideChange={setCapacityOverrideEditing}
                   onMarkDoNotVisit={() => setDoNotVisit(null)}
+                  onDeleteObservation={deleteCapacityObservation}
+                  deletingObservationId={deletingObservationId}
                 />
               </div>
             </div>
@@ -658,30 +724,15 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
 
           {/* Upcoming Visits + Visit History on the last line, same
               fixed-height/scroll pattern as the row above. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
           {/* Still-open route-planner-committed visits, soonest first. View
               only for now - editing a planned visit will come later, through
               the same Route Planner/schedule-drafts flow a route's own days
               already use, not this card. */}
-          <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
+          <div className="card detail-card-268" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
-              <h2>Upcoming Visits ({data.upcoming_visits.length})</h2>
+              <h2>Upcoming Visits</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                {/* Manual Visit Planning (spec §3) - "I'm going to Tabitha
-                    on Thursday," said directly, no route-planner draft
-                    involved. Opens PlanVisitModal. Sits next to Do not
-                    visit… here rather than its own row further down - same
-                    "card-head is where this card's actions live" precedent
-                    the People card's Assign/New/Log a referral row already
-                    sets. */}
-                <Button
-                  variant="secondary"
-                  size="small"
-                  title="Schedule a future visit directly, without the route planner"
-                  onClick={() => setPlanningVisit(true)}
-                >
-                  Plan a visit…
-                </Button>
                 {!isDoNotVisitActive(data) && !markingDoNotVisit && (
                   <Button
                     variant="danger"
@@ -689,7 +740,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                     title="Stop proposing this place in the route planner"
                     onClick={() => setMarkingDoNotVisit(true)}
                   >
-                    Do not visit…
+                    Do not visit
                   </Button>
                 )}
               </div>
@@ -749,54 +800,78 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   reason snooze/do-not-visit live in this card. */}
               <PlaceCommitments
                 commitments={data.commitments}
-                people={data.people}
-                onAdd={addCommitment}
-                saving={savingCommitment}
-                onReschedule={rescheduleCommitment}
-                rescheduling={reschedulingCommitmentSaving}
-                onWaive={waiveCommitment}
-                waivingId={waivingCommitmentId}
+                onAddClick={() => setAddingCommitment(true)}
+                onSelect={setViewingCommitment}
                 onDelete={deleteCommitment}
                 deletingId={deletingCommitmentId}
               />
 
-              {data.upcoming_visits.length > 0 && (
-                <ul className="list">
-                  {data.upcoming_visits.map((v) => (
-                    <li
-                      key={v.id}
-                      className="stack hover-row"
-                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); setViewingUpcomingVisit(v); }}
-                    >
-                      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                        <div className="tag-list" style={{ flex: 'unset' }}>
-                          <strong className="tiny">{formatDate(v.scheduled_date)}</strong>
-                          {/* A planned stop normally has no encounters yet, so
-                              this is usually just the rep's name. */}
-                          {(v.user_name || v.encounters?.length) && (
-                            <span className="tiny muted">
-                              · {[v.user_name, encounterSummary(v.encounters)].filter(Boolean).join(' ')}
-                            </span>
-                          )}
+              {/* Labeled to match Commitments' own caption above, plus a full
+                  divider (not just the list rows' own thin top-borders) -
+                  the two lists used to run together with no boundary between
+                  them (both are bold-date rows separated by the same thin
+                  top-border), so a plain glance couldn't tell a commitment
+                  row from a visit row. Same margin-top/padding-top/border-top
+                  section-break pattern as .day-overview-plan in
+                  styles.css. */}
+              <div className="stack" style={{ gap: 6, marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border)' }}>
+                <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                    Visits{data.upcoming_visits.length > 0 ? ` (${data.upcoming_visits.length})` : ''}
+                  </div>
+                  {/* Manual Visit Planning (spec §3) - "I'm going to Tabitha
+                      on Thursday," said directly, no route-planner draft
+                      involved. Opens PlanVisitModal. Lives on this label row
+                      rather than the card-head now, same "Add…" placement
+                      Commitments' own label row above uses. */}
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    title="Schedule a future visit directly, without the route planner"
+                    onClick={() => setPlanningVisit(true)}
+                  >
+                    + Plan a visit
+                  </Button>
+                </div>
+                {data.upcoming_visits.length === 0 && <div className="tiny muted">No upcoming visits.</div>}
+                {data.upcoming_visits.length > 0 && (
+                  <ul className="list">
+                    {data.upcoming_visits.map((v) => (
+                      <li
+                        key={v.id}
+                        className="stack hover-row"
+                        style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
+                        onClick={() => { setEditingNotes(false); setViewingUpcomingVisit(v); }}
+                      >
+                        <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                          <div className="tag-list" style={{ flex: 'unset' }}>
+                            <strong className="tiny">{formatDate(v.scheduled_date)}</strong>
+                            {/* A planned stop normally has no encounters yet, so
+                                this is usually just the rep's name. */}
+                            {(v.user_name || v.encounters?.length) && (
+                              <span className="tiny muted">
+                                · {[v.user_name, encounterSummary(v.encounters)].filter(Boolean).join(' ')}
+                              </span>
+                            )}
+                          </div>
+                          <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
+                            {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
+                          </span>
                         </div>
-                        <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
-                          {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
-                        </span>
-                      </div>
-                      {v.notes && <div className="tiny">{v.notes}</div>}
-                      {v.crossRepFloorWarning && (
-                        <div
-                          className="tiny"
-                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
-                        >
-                          {crossRepFloorWarningText(v.crossRepFloorWarning)}
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+                        {v.notes && <div className="tiny">{v.notes}</div>}
+                        {v.crossRepFloorWarning && (
+                          <div
+                            className="tiny"
+                            style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+                          >
+                            {crossRepFloorWarningText(v.crossRepFloorWarning)}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
 
@@ -815,7 +890,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               card above) - the warning exists to help a rep pick a different
               stop before it happens, and both completed and skipped rows are
               already resolved, so there's nothing left to act on. */}
-          <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
+          <div className="card detail-card-268" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
               <h2>Visit History ({data.visits.length})</h2>
               <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setLogging(true); }}>Log a visit</Button>
@@ -1029,6 +1104,27 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           users={users}
           onClose={() => setPlanningVisit(false)}
           onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {addingCommitment && (
+        <AddCommitmentModal
+          people={data.people}
+          onAdd={addCommitment}
+          saving={savingCommitment}
+          onClose={() => setAddingCommitment(false)}
+        />
+      )}
+
+      {viewingCommitment && (
+        <CommitmentDetailModal
+          commitment={viewingCommitment}
+          people={data.people}
+          onReschedule={rescheduleCommitment}
+          rescheduling={reschedulingCommitmentSaving}
+          onWaive={waiveCommitment}
+          waiving={waivingCommitment}
+          onClose={() => setViewingCommitment(null)}
         />
       )}
     </div>

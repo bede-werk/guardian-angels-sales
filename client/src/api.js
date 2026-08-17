@@ -90,6 +90,10 @@ export const api = {
   // Appends a new capacity_observations row (capacity-computation-spec.md
   // §5/§11) - never overwrites a column. body: { monthly_referrals, note }.
   addCapacityObservation: (id, body) => request(`/places/${id}/capacity-observations`, { method: 'POST', body }),
+  // Undoes a mis-entered observation. Doesn't touch exploration_eligible_since
+  // even if this row stamped it - see that route's own comment.
+  deleteCapacityObservation: (placeId, observationId) =>
+    request(`/places/${placeId}/capacity-observations/${observationId}`, { method: 'DELETE' }),
   // Lifts an active snooze early - the visit that set it keeps its own
   // 'snoozed' record; this only clears the place-level suppression.
   unsnoozePlace: (id) => request(`/places/${id}/snooze`, { method: 'DELETE' }),
@@ -311,9 +315,22 @@ export const VISIT_TYPE_MINUTES = {
   pre_qualification: 15,
 };
 
-// Today's date as 'YYYY-MM-DD', matching how dates are stored/compared everywhere else.
+// Today's local date as 'YYYY-MM-DD', matching how dates are stored/compared
+// everywhere else. Built from local Date getters rather than
+// `new Date().toISOString().slice(0, 10)` - toISOString() converts to UTC
+// first, which rolls this over to tomorrow's date for the whole
+// early-evening-through-midnight stretch in any timezone behind UTC (this
+// org runs on US Central, UTC-5/-6) - a rep logging a visit at 7pm would
+// silently get it dated a day ahead, corrupting cadence/relationship/
+// dashboard math that all key off this value. Same local-getters pattern as
+// RoutePlanner.jsx's isoDate/todayISO and ui/Calendar.jsx / ui/MonthCalendar.jsx's
+// toISODate - keep this in sync with those if the approach ever changes.
 export function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 // A place-level snooze/do-not-visit never gets cleared automatically once it

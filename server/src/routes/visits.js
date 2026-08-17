@@ -19,7 +19,7 @@ const {
 } = require('../services/placeCommitments');
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware, snoozeSwallowsCommitment } = require('../services/visitLifecycle');
-const { createManualVisit, editVisit, canDeleteManualVisit } = require('../services/manualVisits');
+const { createManualVisit, editVisit, canDeleteManualVisit, canEditManualVisit } = require('../services/manualVisits');
 const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
@@ -698,6 +698,17 @@ router.patch('/:id', async (req, res, next) => {
     if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
     const visit = await knex('visits').where({ id }).first();
     if (!visit) return res.status(404).json({ error: 'Visit not found' });
+
+    // Logging/completing a colleague's still-planned visit is deliberately
+    // unrestricted here (VisitLogModal always saves as completed regardless
+    // of starting status - see PATCH /:id/edit's own comment above). But
+    // reassigning WHO or WHEN a still-planned visit happens is exactly what
+    // that narrower /:id/edit endpoint exists to govern (assignee-only,
+    // full conflict recheck) - this plain endpoint must not let a second
+    // rep bypass that by PATCHing scheduled_date/user_id directly.
+    if (visit.status === 'planned' && (req.body.scheduled_date !== undefined || req.body.user_id !== undefined) && !canEditManualVisit(visit, req.user.id)) {
+      return res.status(403).json({ error: 'Only the assigned rep can change who or when this visit is for' });
+    }
 
     const update = { updated_at: knex.fn.now() };
     for (const f of EDITABLE) if (req.body[f] !== undefined) update[f] = req.body[f];

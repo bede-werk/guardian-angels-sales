@@ -69,8 +69,7 @@ export function commitmentMadeText(c) {
 // removeEncounter) the modal closes itself as well, since there's nothing
 // left to show.
 export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onChanged }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [trip, setTrip] = useState(null); // GET /api/visits/:id - the full trip + every encounter field
   const [loadError, setLoadError] = useState(null);
   const [openEncounterId, setOpenEncounterId] = useState(null); // which encounter's detail is expanded, if any

@@ -258,6 +258,16 @@ async function editVisit(db, id, { scheduledDate, notes, force = false } = {}, a
     }
 
     const place = await db('places').where({ id: visit.place_id }).first();
+    // A planned visit's place_id goes NULL the moment its place is deleted
+    // (detach-not-delete - see the detach_instead_of_cascade migration), but
+    // the visit itself stays visible/editable on the Calendar until its date
+    // passes. Without this, buildWarnings/doNotVisitWarning below dereferences
+    // an undefined place and 500s.
+    if (!place) {
+      const err = new Error('This visit\'s place has been deleted');
+      err.status = 404;
+      throw err;
+    }
     const conflicts = await detectConflicts(db, visit.place_id, scheduledDate, { userId: visit.user_id, excludeVisitId: id });
     const { blocking, warnings: floorConflicts } = classifyConflicts(conflicts);
     if (blocking.length > 0) throw blockedError(blocking);

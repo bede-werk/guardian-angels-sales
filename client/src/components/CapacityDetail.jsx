@@ -18,6 +18,12 @@ import { CapacityChip } from './ui/Chip';
 
 const LEVELS = ['high', 'medium', 'low'];
 
+// obs.source is a raw capacity_observations.source enum value ('prequal' /
+// 'manual', see that table's migration) - plain-language stand-ins so the
+// history reads like the rest of this app's copy rather than a database
+// value. Falls back to the raw value itself for anything not yet mapped.
+const OBSERVATION_SOURCE_LABELS = { prequal: 'asked on a visit', manual: 'entered by hand' };
+
 // 'YYYY-MM-DD' -> "3 days ago" / "6 months ago" / "1 year ago" - coarse on
 // purpose, this is a "does this feel current" read, not a precise clock.
 function relativeAge(dateStr) {
@@ -72,14 +78,25 @@ function capacitySummary(capacity) {
   return base;
 }
 
-function ObservationRow({ obs }) {
+function ObservationRow({ obs, onDelete, deleting }) {
   return (
-    <div className="tiny" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+    <div className="observation-row tiny" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
       <span>
         <strong>{obs.monthly_referrals}/month</strong> · {formatDate(obs.observed_at)}
         {obs.person_name ? ` · ${obs.person_name}` : ''}
       </span>
-      <span className="muted">{obs.source}</span>
+      <span className="tag-list" style={{ flex: 'unset', alignItems: 'center' }}>
+        <span className="muted">{OBSERVATION_SOURCE_LABELS[obs.source] || obs.source}</span>
+        <button
+          type="button"
+          className="icon-remove-danger"
+          title="Delete this observation from history"
+          onClick={() => onDelete(obs.id)}
+          disabled={deleting}
+        >
+          ✕
+        </button>
+      </span>
     </div>
   );
 }
@@ -96,6 +113,8 @@ export function PlaceCapacity({
   setAddingObservation,
   onEditingOverrideChange,
   onMarkDoNotVisit,
+  onDeleteObservation,
+  deletingObservationId,
 }) {
   const [editingOverride, setEditingOverride] = useState(false);
   const [overrideDraft, setOverrideDraft] = useState('');
@@ -141,13 +160,29 @@ export function PlaceCapacity({
     }
   }
 
+  // Server sends newest-first (see routes/places.js) for a stable API
+  // contract; this card is the one place that wants the opposite - a
+  // chat-log reading order, oldest at the top, so a fresh entry lands at
+  // the bottom next to the rest of the card's content instead of shoving
+  // everything else down.
+  const observationsOldestFirst = observations ? [...observations].reverse() : observations;
+
   return (
-    <div className="stack">
+    <div className="stack" style={{ flex: 1, minHeight: 0 }}>
       <div className="tag-list" style={{ alignItems: 'center' }}>
         <span className="tiny muted">Capacity:</span>
         {editingOverride ? null : (
-          <div className="hover-row" title="Click to override the computed capacity level" onClick={startOverrideEdit} style={{ width: 'fit-content' }}>
+          <div
+            className="hover-row editable-chip"
+            title="Click to override the computed capacity level"
+            onClick={startOverrideEdit}
+            tabIndex={0}
+            role="button"
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startOverrideEdit(); } }}
+            style={{ width: 'fit-content' }}
+          >
             <CapacityChip level={level} overridden={isOverridden} />
+            <span className="edit-affordance" aria-hidden="true">✎</span>
           </div>
         )}
         {effectiveMonthly != null && !editingOverride && <span className="tiny muted">~{effectiveMonthly}/month</span>}
@@ -228,10 +263,12 @@ export function PlaceCapacity({
         </div>
       )}
 
-      {observations && observations.length > 0 && (
-        <div className="stack" style={{ gap: 4, marginTop: 4 }}>
+      {observationsOldestFirst && observationsOldestFirst.length > 0 && (
+        <div className="stack" style={{ gap: 4, marginTop: 'auto', paddingTop: 8 }}>
           <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>History</div>
-          {observations.map((obs) => <ObservationRow key={obs.id} obs={obs} />)}
+          {observationsOldestFirst.map((obs) => (
+            <ObservationRow key={obs.id} obs={obs} onDelete={onDeleteObservation} deleting={deletingObservationId === obs.id} />
+          ))}
         </div>
       )}
     </div>

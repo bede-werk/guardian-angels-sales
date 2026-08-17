@@ -15,8 +15,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // PlannedDayModal/CompletedVisitsModal's main/actions split - a "View place"
 // button is the way into PlaceDetail, separate from the row click (visit).
 export default function SkippedVisitsModal({ date, visits, showRepName, onClose, onViewVisit, onViewPlace }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   return (
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>

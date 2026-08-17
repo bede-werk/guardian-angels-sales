@@ -6,8 +6,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // Modal opened from the header's "Change password" link (see App.jsx). Asks
 // for the current password (to prove it's really you) plus a new one twice.
 export default function ChangePassword({ onClose }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

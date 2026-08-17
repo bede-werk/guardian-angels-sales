@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { api, MONTH_NAMES, daysInMonth } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
@@ -19,8 +19,10 @@ const ADD_PLACE_OPTION = '__add_place__';
 // "+ Add person" button (passes `places`/`categories` instead, so the form
 // includes a place picker that can also create a brand-new place on the fly).
 export default function PersonModal({ placeId, placeName, places, categories, person, onClose, onSaved }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
+  // See PlaceModal's identical comment - pairs every label.field below with
+  // its input via htmlFor/id.
+  const uid = useId();
   const [form, setForm] = useState({
     place_id: placeId || person?.place_id || '',
     name: person?.name || '',
@@ -108,8 +110,8 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
 
           {needsPlacePicker && (
             <div>
-              <label className="field">Place</label>
-              <select value={form.place_id} onChange={handlePlaceChange}>
+              <label className="field" htmlFor={`${uid}-place`}>Place</label>
+              <select id={`${uid}-place`} value={form.place_id} onChange={handlePlaceChange}>
                 <option value="">No place (unassigned)</option>
                 <option value={ADD_PLACE_OPTION}>+ Add a new place…</option>
                 <option disabled>──────────</option>
@@ -121,47 +123,54 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
 
           <div className="row">
             <div>
-              <label className="field">Name</label>
-              <input value={form.name} onChange={set('name')} autoFocus />
+              <label className="field" htmlFor={`${uid}-name`}>Name</label>
+              <input id={`${uid}-name`} value={form.name} onChange={set('name')} autoFocus />
             </div>
             <div>
-              <label className="field">Title</label>
-              <input value={form.title} onChange={set('title')} />
+              <label className="field" htmlFor={`${uid}-title`}>Title</label>
+              <input id={`${uid}-title`} value={form.title} onChange={set('title')} />
             </div>
           </div>
 
           <div className="row">
             <div>
-              <label className="field">Email</label>
-              <input type="email" value={form.email} onChange={set('email')} />
+              <label className="field" htmlFor={`${uid}-email`}>Email</label>
+              <input id={`${uid}-email`} type="email" value={form.email} onChange={set('email')} />
             </div>
             <div>
-              <label className="field">Phone</label>
-              <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
+              <label className="field" htmlFor={`${uid}-phone`}>Phone</label>
+              <PhoneInput id={`${uid}-phone`} value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
             </div>
           </div>
 
           <div>
-            <label className="field">Preferences</label>
-            <input value={form.preferences} onChange={set('preferences')} placeholder="Coffee order, how they like to be reached…" />
+            <label className="field" htmlFor={`${uid}-preferences`}>Preferences</label>
+            <input id={`${uid}-preferences`} value={form.preferences} onChange={set('preferences')} placeholder="Coffee order, how they like to be reached…" />
           </div>
 
           <div>
-            <label className="field">Notes</label>
-            <textarea rows={2} value={form.notes} onChange={set('notes')} />
+            <label className="field" htmlFor={`${uid}-notes`}>Notes</label>
+            <textarea id={`${uid}-notes`} rows={2} value={form.notes} onChange={set('notes')} />
           </div>
 
           <div>
-            <label className="field">Birthday</label>
+            <label className="field" htmlFor={`${uid}-birthday-month`}>Birthday</label>
             <div className="row">
               <select
+                id={`${uid}-birthday-month`}
                 value={form.birthday_month}
                 onChange={(e) => setForm((f) => ({ ...f, birthday_month: e.target.value, birthday_day: '' }))}
               >
                 <option value="">Month</option>
                 {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
               </select>
-              <select value={form.birthday_day} onChange={set('birthday_day')} disabled={!form.birthday_month}>
+              <select
+                id={`${uid}-birthday-day`}
+                aria-label="Day"
+                value={form.birthday_day}
+                onChange={set('birthday_day')}
+                disabled={!form.birthday_month}
+              >
                 <option value="">Day</option>
                 {Array.from({ length: daysInMonth(Number(form.birthday_month)) }, (_, i) => i + 1).map((d) => (
                   <option key={d} value={d}>{d}</option>

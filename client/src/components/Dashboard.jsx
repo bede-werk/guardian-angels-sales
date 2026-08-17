@@ -106,7 +106,7 @@ export default function Dashboard({ date, userId }) {
           <h2>High-priority places never visited</h2>
           <span className="muted tiny">top {Math.min(12, data.never_visited.places.length)} by priority</span>
         </div>
-        <div className="card-body" style={{ padding: 0 }}>
+        <div className="card-body table-scroll" style={{ padding: 0 }}>
           <table>
             <thead>
               <tr><th>Organization</th><th>Category</th><th>Priority</th><th>Location</th></tr>
@@ -120,6 +120,9 @@ export default function Dashboard({ date, userId }) {
                   <td className="muted tiny">{p.city} {p.zip} · {p.region}</td>
                 </tr>
               ))}
+              {data.never_visited.places.length === 0 && (
+                <tr><td colSpan={4}><EmptyState message="Every high-priority place has been visited." /></td></tr>
+              )}
             </tbody>
           </table>
         </div>

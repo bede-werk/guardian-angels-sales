@@ -112,8 +112,17 @@ export function PlaceRelationship({ relationship, onSave, saving }) {
     <div className="stack">
       <div className="tag-list" style={{ alignItems: 'center' }}>
         <span className="tiny muted">Status:</span>
-        <div className="hover-row" title="Click to override the computed relationship level" onClick={startEdit} style={{ width: 'fit-content' }}>
+        <div
+          className="hover-row editable-chip"
+          title="Click to override the computed relationship level"
+          onClick={startEdit}
+          tabIndex={0}
+          role="button"
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(); } }}
+          style={{ width: 'fit-content' }}
+        >
           <RelationshipChip level={effective} overridden={overridden} />
+          <span className="edit-affordance" aria-hidden="true">✎</span>
         </div>
         <TrendIndicator trend={relationship.trend} />
       </div>

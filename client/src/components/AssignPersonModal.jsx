@@ -11,8 +11,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // counterpart to PlaceDetail's "Create person" button, which makes a
 // brand-new record instead.
 export default function AssignPersonModal({ placeId, placeName, onClose, onAssigned }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);

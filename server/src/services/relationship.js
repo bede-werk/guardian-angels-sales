@@ -32,6 +32,7 @@
 
 const { daysSince, urgency } = require('./schedulingEngine');
 const { orgToday } = require('./orgDate');
+const { computeCapacityForPlaces } = require('./capacity');
 const schedulingConfig = require('../config/scheduling');
 
 // --- Weights -------------------------------------------------------------
@@ -270,9 +271,9 @@ function isHeatingUp(current, historical) {
 // itself stretches it - see schedulingEngine.js's urgency). A never-visited
 // place (lastVisitDate null) has nothing to be overdue FROM, so it's never
 // "cooling" - that's what EMPTY/no-history already communicates.
-function isPlaceCoolingDown({ place, lastVisitDate, recentCompletedCount, relationshipLevel, today }) {
+function isPlaceCoolingDown({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today }) {
   if (!lastVisitDate) return false;
-  const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, today, config: schedulingConfig });
+  const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today, config: schedulingConfig });
   return u > COOLING_THRESHOLD;
 }
 
@@ -552,14 +553,31 @@ async function computeRelationshipForPlaces(knex, placeIds, { asOf, includeTrend
     .select('u.name as override_by_name');
 
   const people = await knex('people').whereIn('place_id', placeIds).select(PERSON_FIELDS);
+  const peopleIds = people.map((p) => p.id);
 
+  // Place-scoped: only for floorVisits/visitsByPlace below (visits that
+  // didn't credit a named person, and the place-level "we showed up here"
+  // rollup for the trend check).
   const visits = await completedEncounters(knex).whereIn('v.place_id', placeIds);
+  // Person-scoped, separately: a person's own visit history has to travel
+  // with them regardless of which place is being asked about right now, or
+  // the SAME person/place scores differently depending on whether the
+  // caller requested one place or all of them (their history at any place
+  // outside the current placeIds batch would otherwise just be invisible).
+  const personVisits = peopleIds.length ? await completedEncounters(knex).whereIn('ve.person_id', peopleIds) : [];
 
-  const referred = await referredPersonIds(knex, people.map((p) => p.id));
+  const referred = await referredPersonIds(knex, peopleIds);
+
+  // Only fetched when trend is actually requested - the cooling-down check
+  // below needs each place's CURRENT computed capacity level, not the
+  // frozen places.capacity_level column that effectiveCapacityLevel()
+  // otherwise silently falls back to (a tests-only fallback per that
+  // function's own comment - it must not fire here in production).
+  const capacityByPlace = includeTrend ? await computeCapacityForPlaces(knex, placeIds, { asOf: date }) : null;
 
   const peopleByPlace = groupBy(people, 'place_id');
   const visitsByPlace = groupBy(visits, 'place_id');
-  const visitsByPerson = groupBy(visits, 'person_id');
+  const visitsByPerson = groupBy(personVisits, 'person_id');
 
   for (const place of places) {
     const placeVisits = visitsByPlace.get(place.id) || [];
@@ -623,7 +641,8 @@ async function computeRelationshipForPlaces(knex, placeIds, { asOf, includeTrend
         const recentCompletedCount = new Set(
           placeVisits.filter((v) => daysSince(v.scheduled_date, date) <= schedulingConfig.FATIGUE_WINDOW_DAYS).map((v) => v.scheduled_date)
         ).size;
-        if (isPlaceCoolingDown({ place, lastVisitDate, recentCompletedCount, relationshipLevel: current.level, today: date })) {
+        const capacityLevel = capacityByPlace.get(place.id)?.level;
+        if (isPlaceCoolingDown({ place, lastVisitDate, recentCompletedCount, relationshipLevel: current.level, capacityLevel, today: date })) {
           trend = 'down';
         }
       }

@@ -67,8 +67,7 @@ function primaryWarning(warnings) {
 // force response shape as Snooze/PlanVisitModal: a changed date can come
 // back with §4 floor/do-not-visit warnings pending a "Save anyway" confirm.
 export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed, onDelete, onEdited }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [snoozing, setSnoozing] = useState(false); // showing the preset/date panel, vs the normal footer
   const [customDate, setCustomDate] = useState('');
   const [saving, setSaving] = useState(false);

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { api, today, formatDate } from '../api';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
@@ -41,6 +41,9 @@ function primaryWarning(warnings) {
 }
 
 export default function PlanVisitModal({ placeId, placeName, date: fixedDate, userId, users, onClose, onSaved }) {
+  // See PlaceModal's identical comment - pairs every label.field below with
+  // its input via htmlFor/id.
+  const uid = useId();
   const [pickedPlace, setPickedPlace] = useState(null);
   const [date, setDate] = useState(fixedDate || '');
   const [assignedUserId, setAssignedUserId] = useState(String(userId));
@@ -119,7 +122,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
         </div>
         <div className="modal-body stack">
           <div>
-            <label className="field">Place</label>
+            <label className="field" htmlFor={`${uid}-place`}>Place</label>
             {placeId ? (
               <div className="tiny"><strong>{placeName}</strong></div>
             ) : pickedPlace ? (
@@ -135,16 +138,17 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
                 </Button>
               </div>
             ) : (
-              <PlacePicker autoFocus onPick={(p) => { setPickedPlace(p); setWarnings(null); setError(null); }} />
+              <PlacePicker id={`${uid}-place`} autoFocus onPick={(p) => { setPickedPlace(p); setWarnings(null); setError(null); }} />
             )}
           </div>
 
           <div>
-            <label className="field">Date</label>
+            <label className="field" htmlFor={`${uid}-date`}>Date</label>
             {fixedDate ? (
               <div className="tiny"><strong>{formatDate(fixedDate)}</strong></div>
             ) : (
               <input
+                id={`${uid}-date`}
                 type="date"
                 value={date}
                 min={today()}
@@ -156,8 +160,9 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
           </div>
 
           <div>
-            <label className="field">Rep</label>
+            <label className="field" htmlFor={`${uid}-rep`}>Rep</label>
             <select
+              id={`${uid}-rep`}
               value={assignedUserId}
               onChange={(e) => { setAssignedUserId(e.target.value); setWarnings(null); setError(null); }}
               disabled={saving}
@@ -170,8 +175,9 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
           </div>
 
           <div>
-            <label className="field">Notes</label>
+            <label className="field" htmlFor={`${uid}-notes`}>Notes</label>
             <textarea
+              id={`${uid}-notes`}
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}

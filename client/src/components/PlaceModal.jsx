@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { api } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
@@ -10,8 +10,11 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // pre-filled from it); absent = creating a brand-new one from a blank form.
 // Opened from Places.jsx's "Add place" button, or PlaceDetail.jsx's "Edit" button.
 export default function PlaceModal({ place, categories = [], onClose, onSaved }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
+  // Stable per-instance id prefix so every label.field below can pair with
+  // its input via htmlFor/id - tapping a label now actually focuses the
+  // field it names, on top of just visually captioning it.
+  const uid = useId();
   // category must be one of the categories table's values (see
   // routes/categories.js) - include the place's own current value
   // defensively even if it somehow isn't in the list (e.g. a category was
@@ -115,21 +118,21 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
           {error && <div className="error-banner">{error}</div>}
 
           <div>
-            <label className="field">Organization name</label>
-            <input value={form.name} onChange={set('name')} autoFocus />
+            <label className="field" htmlFor={`${uid}-name`}>Organization name</label>
+            <input id={`${uid}-name`} value={form.name} onChange={set('name')} autoFocus />
           </div>
 
           <div className="row">
             <div>
-              <label className="field">Category</label>
-              <select value={form.category} onChange={set('category')}>
+              <label className="field" htmlFor={`${uid}-category`}>Category</label>
+              <select id={`${uid}-category`} value={form.category} onChange={set('category')}>
                 <option value="">None</option>
                 {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="field">Tier</label>
-              <select value={form.tier} onChange={set('tier')}>
+              <label className="field" htmlFor={`${uid}-tier`}>Tier</label>
+              <select id={`${uid}-tier`} value={form.tier} onChange={set('tier')}>
                 <option value="1">Tier 1</option>
                 <option value="2">Tier 2</option>
                 <option value="3">Tier 3</option>
@@ -137,34 +140,34 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
             </div>
           </div>
 
-          <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" style={{ width: 'auto' }} checked={form.is_priority} onChange={toggle('is_priority')} />
+          <label className="tiny" htmlFor={`${uid}-priority`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input id={`${uid}-priority`} type="checkbox" style={{ width: 'auto' }} checked={form.is_priority} onChange={toggle('is_priority')} />
             ★ Priority
           </label>
 
           <div>
-            <label className="field">Address</label>
-            <input value={form.address} onChange={set('address')} />
+            <label className="field" htmlFor={`${uid}-address`}>Address</label>
+            <input id={`${uid}-address`} value={form.address} onChange={set('address')} />
           </div>
 
           <div className="row">
             <div>
-              <label className="field">City</label>
-              <input value={form.city} onChange={set('city')} />
+              <label className="field" htmlFor={`${uid}-city`}>City</label>
+              <input id={`${uid}-city`} value={form.city} onChange={set('city')} />
             </div>
             <div style={{ maxWidth: 100 }}>
-              <label className="field">State</label>
-              <input value={form.state} onChange={set('state')} />
+              <label className="field" htmlFor={`${uid}-state`}>State</label>
+              <input id={`${uid}-state`} value={form.state} onChange={set('state')} />
             </div>
             <div style={{ maxWidth: 140 }}>
-              <label className="field">Zip</label>
-              <input value={form.zip} onChange={set('zip')} />
+              <label className="field" htmlFor={`${uid}-zip`}>Zip</label>
+              <input id={`${uid}-zip`} value={form.zip} onChange={set('zip')} />
             </div>
           </div>
 
           <div>
-            <label className="field">Phone</label>
-            <PhoneInput value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
+            <label className="field" htmlFor={`${uid}-phone`}>Phone</label>
+            <PhoneInput id={`${uid}-phone`} value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
           </div>
         </div>
         <div className="modal-foot">

@@ -613,11 +613,19 @@ describe('bulk DB paths', () => {
       { id: 1, name: 'Fast Place', category: 'Hospice', tier: 1, priority_score: 75 },
       { id: 2, name: 'Slow Place', category: 'Churches', tier: 3, priority_score: 25 },
       { id: 3, name: 'Empty Place', category: 'Churches', tier: 3, priority_score: 25 },
+      // Exists specifically to hold a person with CROSS-PLACE history - see
+      // person 6 below and the "single vs bulk parity" test.
+      { id: 6, name: 'Cross-Place Place', category: 'Hospice', tier: 1, priority_score: 75 },
     ]);
     await db('people').insert([
       { id: 1, place_id: 1, name: 'Sharon K.', email: 's@test.local', phone: '(402) 555-0100' },
       { id: 2, place_id: 1, name: 'Marcus T.' },
       { id: 3, place_id: 2, name: 'Seeded Only', relationship_seed: 4.0, relationship_seeded_at: daysBefore(ASOF, 60) },
+      // Currently assigned to place 6, but their only completed visit was
+      // logged at place 1 (e.g. before they moved) - a person's score must
+      // travel with THEM, not stay pinned to whichever place the visit
+      // happened at.
+      { id: 6, place_id: 6, name: 'Moved Contact' },
     ]);
     await insertVisit(db, {
       place_id: 1, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 15), place_name: 'Fast Place',
@@ -639,6 +647,13 @@ describe('bulk DB paths', () => {
       encounters: [{ person_id: 1, met_with_type: 'named_person', outcome: 'substantive' }],
     });
     await db('referrals').insert({ place_id: 1, person_id: 1, user_id: 1, referral_date: daysBefore(ASOF, 20) });
+
+    // Person 6's ONLY completed visit is at place 1, not their current place
+    // (place 6) - see the cross-place-history parity test below.
+    await insertVisit(db, {
+      place_id: 1, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 10), place_name: 'Fast Place',
+      encounters: [{ person_id: 6, met_with_type: 'named_person', outcome: 'substantive' }],
+    });
   });
 
   after(async () => {
@@ -690,24 +705,48 @@ describe('bulk DB paths', () => {
     assert.deepEqual(r.contributors, []);
   });
 
-  test('bulk parity: one call for three places equals three single-place calls', async () => {
-    const bulk = await computeRelationshipForPlaces(db, [1, 2, 3], { asOf: ASOF });
+  test('bulk parity: one call for four places equals four single-place calls', async () => {
+    const bulk = await computeRelationshipForPlaces(db, [1, 2, 3, 6], { asOf: ASOF });
     const single = new Map();
-    for (const id of [1, 2, 3]) {
+    for (const id of [1, 2, 3, 6]) {
       const one = await computeRelationshipForPlaces(db, [id], { asOf: ASOF });
       single.set(id, one.get(id));
     }
-    for (const id of [1, 2, 3]) {
+    for (const id of [1, 2, 3, 6]) {
       assert.deepEqual(bulk.get(id), single.get(id), `place ${id} must be identical via either path`);
     }
   });
 
   test('bulk parity holds for people too', async () => {
-    const bulk = await computeRelationshipForPeople(db, [1, 2, 3], { asOf: ASOF });
-    for (const id of [1, 2, 3]) {
+    const bulk = await computeRelationshipForPeople(db, [1, 2, 3, 6], { asOf: ASOF });
+    for (const id of [1, 2, 3, 6]) {
       const one = await computeRelationshipForPeople(db, [id], { asOf: ASOF });
       assert.deepEqual(bulk.get(id), one.get(id), `person ${id} must be identical via either path`);
     }
+  });
+
+  // The bug this guards against: computeRelationshipForPlaces used to build
+  // each person's visit history from the PLACE-scoped encounters query (the
+  // one now used only for the floor component), instead of a query scoped by
+  // person_id. Person 6's only completed visit is at place 1, but they're
+  // currently assigned to place 6 (see the `before` fixture above) - so
+  // GET /places/:id=6 (placeIds=[6]) previously couldn't see that visit at
+  // all (place 1 isn't in its place-scoped query), scoring them 0, while
+  // GET /places (placeIds=[1,2,3,6], which happens to include place 1 too)
+  // accidentally could. Same person, same place, two different scores
+  // depending on which endpoint asked.
+  test("a person's score at their current place includes visits logged at a DIFFERENT place - identical whether asked about alone or in bulk", async () => {
+    const single = await computeRelationshipForPlaces(db, [6], { asOf: ASOF });
+    const bulk = await computeRelationshipForPlaces(db, [1, 2, 3, 6], { asOf: ASOF });
+
+    const rSingle = single.get(6);
+    const rBulk = bulk.get(6);
+
+    assert.ok(rSingle.score > 0, "person 6's cross-place visit must be visible even when place 1 is outside the request");
+    assert.equal(rSingle.contributors.length, 1);
+    assert.equal(rSingle.contributors[0].name, 'Moved Contact');
+
+    assert.deepEqual(rSingle, rBulk, "place 6's computed relationship must not depend on which other places were asked about in the same call");
   });
 
   test('an empty id list short-circuits to an empty map without querying', async () => {

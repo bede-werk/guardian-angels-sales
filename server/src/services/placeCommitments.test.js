@@ -307,11 +307,12 @@ describe('placeCommitments', () => {
     assert.equal(row.promised_date, '2026-08-27', 'and it is still a real, live outstanding commitment');
   });
 
-  test('deleting the place cascades to its commitments', async () => {
+  test('deleting the place detaches its commitments instead of destroying them (place_id -> null, row survives)', async () => {
     const commitment = await createCommitment(db, { placeId: 1, promisedDate: '2026-08-27' });
     await db('places').where({ id: 1 }).del();
     const row = await db('place_commitments').where({ id: commitment.id }).first();
-    assert.equal(row, undefined);
+    assert.notEqual(row, undefined);
+    assert.equal(row.place_id, null);
   });
 
   test('attachCommitmentsMade: a visit that promised a next visit shows it, joined to the person name', async () => {

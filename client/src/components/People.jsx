@@ -151,7 +151,7 @@ export default function People({ userId }) {
             <Button variant="secondary" size="small" title="Create a brand-new person" onClick={() => setAdding(true)}>+ Add person</Button>
           </div>
         </div>
-        <div className="card-body" style={{ padding: 0 }}>
+        <div className="card-body table-scroll" style={{ padding: 0 }}>
           <table>
             <thead>
               <tr>

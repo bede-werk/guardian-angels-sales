@@ -1387,8 +1387,8 @@ async function getSuggestions({ draftId, userId, date, limit = 5 }) {
 // the day's draft stops are cleared afterward - a collided stop can't be
 // committed here, and leaving it in the still-draft view would just invite
 // hitting the same collision again.
-async function commitDay({ draftId, userId, date }) {
-  return knex.transaction(async (trx) => {
+async function commitDay({ draftId, userId, date, db = knex }) {
+  return db.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
 
     const rows = await trx('schedule_draft_stops as s')
@@ -1436,12 +1436,22 @@ async function commitDay({ draftId, userId, date }) {
     // unique-constraint violation on a single row - the TOCTOU race the
     // pre-check above can miss under READ COMMITTED, now closed by the
     // visits_place_date_active_unique partial index - only knocks that one
-    // row out instead of failing the whole day's commit.
+    // row out instead of failing the whole day's commit. Each insert runs in
+    // its own nested transaction (a Postgres SAVEPOINT) rather than directly
+    // against `trx`: on Postgres a failed statement aborts the enclosing
+    // transaction outright (25P02), so every later statement in this loop -
+    // and the schedule_draft_stops delete after it - would throw too, and
+    // that second error wouldn't match isUniqueViolation and would rethrow,
+    // rolling back rows that never actually collided. The savepoint contains
+    // the failure to just the one row. See services/placeCommitments.js for
+    // the same trx.transaction()-as-savepoint pattern already in use here.
     const committedRows = [];
     const raceCollisions = [];
     for (const row of visitRows) {
       try {
-        await trx('visits').insert(row);
+        await trx.transaction(async (sp) => {
+          await sp('visits').insert(row);
+        });
         committedRows.push(row);
       } catch (err) {
         if (isUniqueViolation(err)) {

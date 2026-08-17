@@ -142,7 +142,7 @@ export default function Places({ userId }) {
           <h2>{loading ? 'Loading…' : `${rows.length} places`}</h2>
           <Button variant="secondary" size="small" title="Create a brand-new place" onClick={() => setAdding(true)}>+ Add place</Button>
         </div>
-        <div className="card-body" style={{ padding: 0 }}>
+        <div className="card-body table-scroll" style={{ padding: 0 }}>
           <table>
             <thead>
               <tr>
@@ -150,8 +150,8 @@ export default function Places({ userId }) {
                 <th>Category</th>
                 <th>Priority</th>
                 <th>Region</th>
-                <th>{sortingByMe ? 'Last visit (you)' : 'Last visit'}</th>
                 <th>Referrals</th>
+                <th>{sortingByMe ? 'Last visit (you)' : 'Last visit'}</th>
               </tr>
             </thead>
             <tbody>
@@ -162,17 +162,20 @@ export default function Places({ userId }) {
                   <td><TierChip tier={p.tier} isPriority={p.is_priority} /></td>
                   <td className="muted tiny">{p.region}</td>
                   <td className="tiny">
+                    {p.referral_metrics.lifetime_referrals > 0 ? (
+                      <>
+                        <strong style={{ color: 'var(--teal-dark)', fontSize: 16 }}>{p.referral_metrics.lifetime_referrals}</strong>
+                        {' '}· last {formatDate(p.referral_metrics.last_referral_date)}
+                      </>
+                    ) : (
+                      <span className="muted">None yet</span>
+                    )}
+                  </td>
+                  <td className="tiny">
                     {(() => {
                       const date = sortingByMe ? p.my_last_visit_date : p.last_visit_date;
                       return date ? formatDate(date) : <span className="muted">-</span>;
                     })()}
-                  </td>
-                  <td className="tiny">
-                    {p.referral_metrics.lifetime_referrals > 0 ? (
-                      <strong style={{ color: 'var(--teal-dark)', fontSize: 16 }}>{p.referral_metrics.lifetime_referrals}</strong>
-                    ) : (
-                      <span className="muted">None yet</span>
-                    )}
                   </td>
                 </tr>
               ))}

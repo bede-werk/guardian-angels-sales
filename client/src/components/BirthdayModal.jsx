@@ -8,8 +8,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // the caller-formatted "{Month} {day}" string (birthdays have no year on
 // file, so there's no real date to format via the usual formatDate helper).
 export default function BirthdayModal({ label, people, onClose, onViewPerson }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   return (
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>

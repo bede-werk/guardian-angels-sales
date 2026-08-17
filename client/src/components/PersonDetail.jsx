@@ -27,8 +27,7 @@ function otherAttendees(encounters, personId) {
 // contact (their personal "last time we spoke" history). Opened from
 // People.jsx (clicking a row).
 export default function PersonDetail({ personId, userId, onClose, onChanged, onDeleted, onOpenPlace }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [data, setData] = useState(null); // GET /api/people/:id response (person + place + visits)
   const [loadError, setLoadError] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -346,8 +345,8 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               Contact Info is pinned to that same width so the row reads as
               symmetric, and Place - flex:1 - fills and centers in whatever
               room is left between them. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-            <div className="card" style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
+            <div className="card" style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column' }}>
               <div className="card-head"><h2>Contact Info</h2></div>
               <div className="card-body stack" style={{ flex: 1, justifyContent: 'center' }}>
                 {data.phone || data.email ? (
@@ -363,7 +362,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
 
             {/* Which place they belong to - or, since a person doesn't have to
                 be tied to one, a way to assign them to one. */}
-            <div className="card" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <div className="card" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Place</h2>
                 {!data.place && !assigning && (
@@ -411,7 +410,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               </div>
             </div>
 
-            <div className="card" style={{ flex: '0 0 250px' }}>
+            <div className="card" style={{ flex: '1 1 250px' }}>
               <div className="card-head"><h2>Relationship</h2></div>
               <div className="card-body stack">
                 <PersonRelationship relationship={data.relationship} />
@@ -423,8 +422,8 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               fixed height (display:flex column so the head stays put and
               card-body - flex:1, minHeight:0, overflow-y:auto - is what
               actually scrolls once its content outgrows that height). */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-            <div className="card" style={{ flex: 1, minWidth: 0, height: 230, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
+            <div className="card detail-card-230" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Details</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -587,7 +586,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               </div>
             </div>
 
-            <div className="card" style={{ flex: 1, minWidth: 0, height: 230, display: 'flex', flexDirection: 'column' }}>
+            <div className="card detail-card-230" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Referrals ({metrics.lifetime_referrals})</h2>
                 <Button size="small" title="Record a new referral from this person" onClick={() => { exitFieldEdits(); setLoggingReferral(true); }}>Log a referral</Button>

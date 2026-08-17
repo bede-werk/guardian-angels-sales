@@ -135,7 +135,14 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .grid { display: grid; gap: 16px; }
 .grid.stats { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 
-.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+/* min-width: 0 - a grid/flex item's default min-width is auto (its content's
+   intrinsic width), which lets a wide child (e.g. a data table) push the
+   whole card wider than its track/viewport even with overflow-x: auto on an
+   inner .table-scroll - the overflow container can't do its job until the
+   card itself is allowed to shrink below that. Same fix this codebase
+   already applies to .plan-col-start/.plan-col-dates for the identical
+   flexbox version of this problem. */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); min-width: 0; }
 .card .card-head { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
 .card .card-head h2 { font-size: 16px; margin: 0; }
 .card .card-body { padding: 12px 16px; }
@@ -375,11 +382,26 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    as "on" once the mouse moves away. */
 .hover-row.selected { background: var(--blue-tint-2); }
 
+/* Click-to-override chips (RelationshipDetail/CapacityDetail's level chips)
+   - :hover/title alone is invisible on a phone (no hover state to reveal
+   it), so a small persistent pencil is the affordance that survives without
+   one. Also focusable (tabIndex + role="button" in the JSX) so keyboard/
+   assistive-tech users can reach and trigger it, not just mouse/touch. */
+.editable-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: var(--radius-sm); }
+.editable-chip .edit-affordance { font-size: 11px; color: var(--muted); }
+.editable-chip:focus-visible { outline: 2px solid var(--blue-tint-3); outline-offset: 2px; }
+
 /* Data tables - Places directory and Dashboard's "never visited" list */
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
+
+/* Wraps a <table> that's sitting inside a zero-padding .card-body (Places/
+   People/Dashboard directories) so a screen too narrow for every column
+   scrolls just the table sideways, not the whole page around it - table's
+   own `width: 100%` above otherwise forces the page itself to overflow. */
+.table-scroll { overflow-x: auto; }
 
 /* Small general-purpose utility classes used all over the JSX */
 .muted { color: var(--muted); }
@@ -413,6 +435,12 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .modal-backdrop.closing .modal { animation: modal-pop-out 0.15s ease-in forwards; }
 @keyframes modal-backdrop-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes modal-pop-out { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.85); } }
+/* CapacityDetail.jsx's observation history - newest row is last in the DOM
+   (chat-log order), so relying on React's key-based reconciliation, this
+   animation only ever actually plays for a just-added row: everything above
+   it keeps its existing DOM node across a re-render and never remounts. */
+.observation-row { animation: observation-row-in 0.25s ease-out; }
+@keyframes observation-row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 /* z-index: 1 (rather than the default auto) is required so these sticky bars reliably
    paint above scrolled-past body content - anything in the body with its own stacking
    context (e.g. EmptyState's icon, which has opacity < 1) would otherwise win on DOM
@@ -431,9 +459,21 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 /* Same slot as .icon-remove but already-red at rest (not muted-until-hover) -
    for a delete that's clearing history, not detaching a live relationship,
    so it doesn't need the softer "are you sure this is what you want" framing. */
-.icon-delete { background: #fff; border: 1px solid var(--mauve-tint-3); color: var(--mauve); font-size: 12px; line-height: 1; cursor: pointer; padding: 3px 7px; border-radius: var(--radius-sm); }
+/* padding (not font-size) does the work of getting this closer to a ~40px
+   tap target - this permanently deletes history, and the glyph itself
+   should stay small even though the hit area around it grows. */
+.icon-delete { background: #fff; border: 1px solid var(--mauve-tint-3); color: var(--mauve); font-size: 12px; line-height: 1; cursor: pointer; padding: 10px 12px; border-radius: var(--radius-sm); }
 .icon-delete:hover { background: var(--mauve); border-color: var(--mauve); color: #fff; }
 .icon-delete:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Same no-border/no-fill-at-rest shape as .btn.ghost's own × (the People
+   card's unassign button) - just mauve instead of blue. CapacityDetail.jsx's
+   observation delete: still destructive, but sits inline in a dense history
+   list where .icon-delete's outline reads as too heavy. */
+/* Same tap-target reasoning as .icon-delete above (padding, not font-size) -
+   this also permanently deletes history (a capacity observation). */
+.icon-remove-danger { background: none; border: none; font-size: 9px; line-height: 1; cursor: pointer; color: var(--mauve); padding: 10px 12px; border-radius: var(--radius-sm); }
+.icon-remove-danger:hover { background: var(--mauve-tint-1); }
+.icon-remove-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 /* The big tap-chip outcome picker in VisitLogModal (Interested / Not ready / etc). */
 .outcome-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .outcome-btn { padding: 14px 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; cursor: pointer; text-align: center; font-size: 13px; font-weight: 600; }
@@ -724,4 +764,22 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 @media (max-width: 760px) {
   .plan-columns { grid-template-columns: 1fr; }
   .plan-col-dates { border-left: none; padding-left: 0; }
+}
+
+/* Fixed-height scrolling cards - PlaceDetail's People/Capacity/Upcoming
+   Visits/Visit History row and PersonDetail's Details/Referrals row all
+   pin themselves to a set height (so a short one doesn't dwarf a tall
+   sibling) with the actual content scrolling inside via overflow-y: auto
+   on their own .card-body. That height only makes sense once there's
+   enough screen width for two cards to sit side by side - on a phone the
+   same fixed box turns into a cramped little scroll well (the Upcoming
+   Visits card in particular has a snooze banner, a do-not-visit banner, a
+   commitments list AND a visits list to fit inside it), so below 760px
+   (this file's existing narrow-screen breakpoint - see .plan-columns
+   above) these are left unset entirely and the card just grows to fit
+   whatever it holds. */
+@media (min-width: 760px) {
+  .detail-card-230 { height: 230px; }
+  .detail-card-240 { height: 240px; }
+  .detail-card-268 { height: 268px; }
 }

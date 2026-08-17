@@ -23,8 +23,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // No crossRepFloorWarning pill, for the same reason VisitDetailModal drops
 // it: every row here already happened, so there's nothing left to act on.
 export default function CompletedVisitsModal({ date, visits, showContact, onClose, onViewVisit, onViewPlace }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   return (
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>

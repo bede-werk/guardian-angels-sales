@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { api, today, formatDate, VISIT_TYPE_MINUTES, OUTCOME_LABELS, MET_WITH_LABELS } from '../api';
 import Button from './ui/Button';
 import PersonModal from './PersonModal';
@@ -94,8 +94,14 @@ function primaryConflict(conflicts) {
 // captured, however old. Confidence-based re-asking closes that for good:
 // the prompt comes back on its own once the answer goes stale.
 export default function VisitLogModal({ visit, placeId, placeName, initialPerson, userId, onClose, onSaved }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
+  // See PlaceModal's identical comment - pairs the form's single-control
+  // label.field fields (Date/Notes/duration/pre-qual/promise-date) with
+  // their input via htmlFor/id. The checklist-style fields above them
+  // ("Who did you meet?", "Which people?", "What happened?") are groups of
+  // custom role="checkbox" rows, not one native control, so there's nothing
+  // for a single id to point at there.
+  const uid = useId();
   // Whichever way this modal was opened, we need to know which place it's for.
   const resolvedPlaceId = visit?.place_id || placeId;
   const isEditing = Boolean(visit?.visit_id);
@@ -568,8 +574,9 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
           <div className="modal-body">
             {status !== 'planned' && (
               <div>
-                <label className="field">Date</label>
+                <label className="field" htmlFor={`${uid}-date`}>Date</label>
                 <input
+                  id={`${uid}-date`}
                   type="date"
                   value={form.scheduled_date}
                   max={today()}
@@ -736,8 +743,8 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             )}
 
             <div>
-              <label className="field">Notes</label>
-              <textarea rows={3} value={form.notes} onChange={set('notes')} placeholder="What happened, next steps…" autoFocus />
+              <label className="field" htmlFor={`${uid}-notes`}>Notes</label>
+              <textarea id={`${uid}-notes`} rows={3} value={form.notes} onChange={set('notes')} placeholder="What happened, next steps…" autoFocus />
             </div>
 
             {/* Place Commitments (spec §5.1) - the field this form has never
@@ -746,15 +753,16 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                 write to any column on it. Optional - left blank, nothing is
                 created. */}
             <div>
-              <label className="field">Promise a next visit (optional)</label>
+              <label className="field" htmlFor={`${uid}-promise-date`}>Promise a next visit (optional)</label>
               <div className="tag-list" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                <input type="date" value={promiseDate} onChange={(e) => setPromiseDate(e.target.value)} />
-                <select value={promisePersonId} onChange={(e) => setPromisePersonId(e.target.value)} style={{ width: 160 }}>
+                <input id={`${uid}-promise-date`} type="date" value={promiseDate} onChange={(e) => setPromiseDate(e.target.value)} />
+                <select aria-label="Promised to" value={promisePersonId} onChange={(e) => setPromisePersonId(e.target.value)} style={{ width: 160 }}>
                   <option value="">No specific person</option>
                   {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <input
                   type="text"
+                  aria-label="Note"
                   placeholder="Note (optional)"
                   value={promiseNote}
                   onChange={(e) => setPromiseNote(e.target.value)}
@@ -765,8 +773,9 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
 
             <div className="row">
               <div>
-                <label className="field">How long did it take? (minutes)</label>
+                <label className="field" htmlFor={`${uid}-duration`}>How long did it take? (minutes)</label>
                 <input
+                  id={`${uid}-duration`}
                   type="number"
                   min="0"
                   step="1"
@@ -780,12 +789,13 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                   {/* Stale is a refresh of a real prior answer, not a first
                       ask - phrased accordingly (spec §11). 'unknown' (never
                       pre-qualified) keeps the original first-ask wording. */}
-                  <label className="field">
+                  <label className="field" htmlFor={`${uid}-avg-referrals`}>
                     {place.capacity.confidence === 'stale' && place.capacity.declared
                       ? `Last time we heard ~${place.capacity.declared.value}/month. Still about right?`
                       : 'Avg. referrals/month discovered at pre-qual'}
                   </label>
                   <input
+                    id={`${uid}-avg-referrals`}
                     type="number"
                     min="0"
                     step="1"
