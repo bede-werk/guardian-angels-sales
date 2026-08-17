@@ -6,25 +6,24 @@ import EmptyState from './ui/EmptyState';
 import { encounterLabel, joinNames } from './VisitDetailModal';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// A day's completed visits — the Calendar tab's "Completed Visits" pill
+// A day's completed visits - the Calendar tab's "Completed Visits" pill
 // (VisitsCalendar.jsx). Every row here is always `status: 'completed'` (the
 // caller already filtered before handing them over), so unlike the old
 // shared CalendarDayModal this split off from, there's no per-row status
 // branching to do: every row just opens VisitDetailModal on click (outcome/
-// tier aren't shown here — full detail's one click away). A separate "View
-// place" button is the way into full PlaceDetail (onViewPlace) — same
+// tier aren't shown here - full detail's one click away). A separate "View
+// place" button is the way into full PlaceDetail (onViewPlace) - same
 // main/actions split as PlannedDayModal, so the row click (visit) and the
 // button (place) never fight over the same click. `showContact`, when true,
 // folds the rep who logged it and who they met into the same line as the
-// visit type ("{rep} · with {who}") — the same phrasing PlaceDetail.jsx's own
+// visit type ("{rep} · with {who}") - the same phrasing PlaceDetail.jsx's own
 // visit-history rows use, built from the trip's `encounters` summary. Both
 // are gated by the same flag: in "Mine" scope the rep is redundant (you're
 // already looking at your own visits), so neither identifying detail shows.
 // No crossRepFloorWarning pill, for the same reason VisitDetailModal drops
 // it: every row here already happened, so there's nothing left to act on.
 export default function CompletedVisitsModal({ date, visits, showContact, onClose, onViewVisit, onViewPlace }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   return (
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>

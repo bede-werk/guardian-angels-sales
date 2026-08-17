@@ -15,12 +15,12 @@ module.exports = async function requireAuth(req, res, next) {
   try {
     // A user "has a session" simply by having this exact token stored on
     // their row (users.auth_token). Login/logout/change-password are what set
-    // or clear that column — see routes/auth.js.
+    // or clear that column - see routes/auth.js.
     const user = await knex('users').where({ auth_token: token }).first();
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
     req.user = user; // downstream route handlers read req.user.id / req.user.name
-    next(); // token is valid — let the request continue to the real route
+    next(); // token is valid - let the request continue to the real route
   } catch (err) {
-    next(err); // unexpected error (e.g. DB down) — hand off to the error handler in index.js
+    next(err); // unexpected error (e.g. DB down) - hand off to the error handler in index.js
   }
 };

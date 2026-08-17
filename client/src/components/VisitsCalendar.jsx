@@ -13,7 +13,7 @@ import PersonDetail from './PersonDetail';
 import VisitLogModal from './VisitLogModal';
 import VisitDetailModal from './VisitDetailModal';
 
-// "YYYY-MM" for a given Date, computed off its local year/month fields —
+// "YYYY-MM" for a given Date, computed off its local year/month fields -
 // never .toISOString() (see the module-level warning below and
 // ui/MonthCalendar.jsx's own toISODate), which would round-trip through UTC
 // and can land on the wrong month near a local midnight.
@@ -21,32 +21,32 @@ function monthKeyOf(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
-// A day is never clickable as a whole (see ui/MonthCalendar.jsx) — instead
+// A day is never clickable as a whole (see ui/MonthCalendar.jsx) - instead
 // each day cell splits its visits into independently-clickable pieces. Three
 // possible buckets per visit: a rep's still-open planned route
-// (plannedGroups, one group per rep — own group opens PlannedDayModal, the
+// (plannedGroups, one group per rep - own group opens PlannedDayModal, the
 // exact same component/read-as-you're-used-to-it-in-Route-Planner view;
 // every other rep's group opens PlannedDayModal too, read-only), completed
-// visits (completedVisits — any rep, opens CompletedVisitsModal), and
-// skipped visits (otherVisits — status: 'skipped' specifically, opens
+// visits (completedVisits - any rep, opens CompletedVisitsModal), and
+// skipped visits (otherVisits - status: 'skipped' specifically, opens
 // SkippedVisitsModal, which assumes every row it's handed IS 'skipped').
 // Planned and completed are kept strictly separate buckets by design: a
 // visit only ever moves from one to the other by its own `status` actually
-// changing (e.g. logging a planned visit marks that same row completed —
-// see VisitLogModal), never by any special-casing here — the next load()
+// changing (e.g. logging a planned visit marks that same row completed -
+// see VisitLogModal), never by any special-casing here - the next load()
 // just re-buckets it based on whatever status is now on the row.
 //
 // 'snoozed' visits (services/visitLifecycle.js) are deliberately dropped
-// here, not folded into otherVisits — otherVisits used to be "whatever's
+// here, not folded into otherVisits - otherVisits used to be "whatever's
 // left once planned/completed are accounted for," which quietly meant
 // "skipped" until 'snoozed' became a fourth status, silently mislabeling a
 // deliberate deferral as a passive lapse. A snoozed visit never gets a new
 // scheduled_date (snoozing only sets places.snooze_until; it doesn't move
 // the row), so there's no date on the calendar that's actually "about" the
-// snooze — the only current UI for it is PlaceDetail's own snooze banner.
+// snooze - the only current UI for it is PlaceDetail's own snooze banner.
 //
 // One further pass turns plannedGroups/completedVisits into a flat, capped
-// list of "pills" for the cell to actually render — see buildDayPills/
+// list of "pills" for the cell to actually render - see buildDayPills/
 // splitPillsForDay below.
 function splitDayVisits(dayVisits, userId) {
   const plannedByUser = new Map(); // user_id -> { userId, repName, visits }
@@ -75,7 +75,7 @@ function splitDayVisits(dayVisits, userId) {
 // A day cell's pill badges, in priority order: your own planned route (if
 // any), then completed visits (if any), then every other rep's planned
 // route alphabetically. Used both to decide what's visible in the cell and
-// what's listed in the "+N more" overflow modal — same order either way, so
+// what's listed in the "+N more" overflow modal - same order either way, so
 // a pill never seems to jump around between the two.
 function buildDayPills(dayVisits, userId) {
   const { plannedGroups, completedVisits } = splitDayVisits(dayVisits, userId);
@@ -95,7 +95,7 @@ function buildDayPills(dayVisits, userId) {
 }
 
 // However many reps have a route (or completed visits) on a given day, the
-// cell itself never grows to fit them — see the grid-track/badge overflow
+// cell itself never grows to fit them - see the grid-track/badge overflow
 // rules in styles.css. Past MAX_VISIBLE_PILLS, the rest collapse into a
 // single "+N more" chip (DayOverflowModal) instead.
 const MAX_VISIBLE_PILLS = 3;
@@ -107,7 +107,7 @@ function splitPillsForDay(dayVisits, userId) {
 }
 
 // The "+N more" chip opens an enlarged view of the *whole* day, not just the
-// overflowed pills — so unlike buildDayPills (cell-only, capped at
+// overflowed pills - so unlike buildDayPills (cell-only, capped at
 // MAX_VISIBLE_PILLS), this also folds in a "Skipped Visits" pill when there
 // are any, same badge the day cell itself renders directly (renderDay),
 // just untruncated and with no cap here since there's a whole modal to
@@ -131,12 +131,12 @@ function buildFullDayPills(dayVisits, userId) {
 // VisitDetailModal/VisitLogModal popups.
 //
 // Visits are grouped into `byDate` keyed by their raw `scheduled_date`
-// string exactly as the API returns it (e.g. "2026-07-14") — never routed
+// string exactly as the API returns it (e.g. "2026-07-14") - never routed
 // through `new Date(...).toISOString()`, which shifts near midnight in
 // timezones behind UTC and would misfile a visit onto the wrong day. Both
 // this map's keys and MonthCalendar's `iso` callback argument are already
 // local Y-M-D strings, so a plain string compare is all that's needed.
-// `scope`/`onScopeChange` are lifted up to App.jsx rather than owned here —
+// `scope`/`onScopeChange` are lifted up to App.jsx rather than owned here -
 // this component unmounts entirely on every tab switch (see App.jsx), so a
 // plain local useState would silently reset back to "Mine" each time you
 // left and returned to this tab. Living in App.jsx instead lets it survive
@@ -145,15 +145,15 @@ function buildFullDayPills(dayVisits, userId) {
 export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onScopeChange }) {
   const [monthCursor, setMonthCursor] = useState(() => new Date());
   const [visits, setVisits] = useState(null); // flat rows from the API, or null before the first load resolves
-  const [users, setUsers] = useState([]); // every team member, fetched once — for rep lookups if a row's own user_name snapshot is ever missing
+  const [users, setUsers] = useState([]); // every team member, fetched once - for rep lookups if a row's own user_name snapshot is ever missing
   const [selectedDate, setSelectedDate] = useState(null); // iso string driving SkippedVisitsModal (otherVisits), or null
   const [completedDate, setCompletedDate] = useState(null); // iso string driving CompletedVisitsModal, or null
   const [plannedRouteView, setPlannedRouteView] = useState(null); // { date, group } driving the planned-route modal (own or another rep's), or null
-  const [overflowAnchor, setOverflowAnchor] = useState(null); // { date, el } driving the "+N more" popover (DayOverflowModal) — `el` is the whole day cell, so the popover can land right on top of it — or null
-  const [error, setError] = useState(null); // blocks the whole tab — only for the month load itself
-  const [actionError, setActionError] = useState(null); // inline banner — edit/delete-day failures, doesn't blow away the grid/modal
+  const [overflowAnchor, setOverflowAnchor] = useState(null); // { date, el } driving the "+N more" popover (DayOverflowModal) - `el` is the whole day cell, so the popover can land right on top of it - or null
+  const [error, setError] = useState(null); // blocks the whole tab - only for the month load itself
+  const [actionError, setActionError] = useState(null); // inline banner - edit/delete-day failures, doesn't blow away the grid/modal
 
-  // Birthdays — a separate fetch from `visits`, keyed by month only (1-12,
+  // Birthdays - a separate fetch from `visits`, keyed by month only (1-12,
   // no year: a birthday has none on file, and recurs every year by
   // construction) and never scoped by scope/userId, since a birthday isn't
   // rep-owned data any more than a place or person is elsewhere in this app.
@@ -161,7 +161,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
   const [viewingBirthdaysFor, setViewingBirthdaysFor] = useState(null); // day number driving BirthdayModal, or null
   const [viewingPersonId, setViewingPersonId] = useState(null); // person whose full PersonDetail is open, if any
 
-  // The "modal on top of the day modal" flags — mirrors PlaceDetail's own
+  // The "modal on top of the day modal" flags - mirrors PlaceDetail's own
   // viewingVisit/editingVisit pattern.
   const [viewingPlaceId, setViewingPlaceId] = useState(null);
   const [viewingVisit, setViewingVisit] = useState(null); // completed visit open in VisitDetailModal
@@ -169,7 +169,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
   const [editingVisit, setEditingVisit] = useState(null); // visit open in VisitLogModal from VisitDetailModal's Edit
 
   // Mirrors RoutePlanner.jsx's own reopenDay/deleteCommittedDay busy-state
-  // flags — PlannedDayModal's Edit/Delete buttons expect the same shape.
+  // flags - PlannedDayModal's Edit/Delete buttons expect the same shape.
   const [reopeningDate, setReopeningDate] = useState(null);
   const [deletingPlannedDate, setDeletingPlannedDate] = useState(null);
 
@@ -179,7 +179,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
 
   const monthKey = monthKeyOf(monthCursor);
 
-  // The popover is anchored to a specific chip button in the grid — changing
+  // The popover is anchored to a specific chip button in the grid - changing
   // months re-renders the whole grid (that button included), so close it
   // rather than leave it floating over a now-different month with a stale
   // anchor. BirthdayModal is keyed off a plain day number, meaningless once
@@ -202,14 +202,14 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         });
         setBirthdaysByDay(m);
       })
-      .catch(() => {}); // non-critical — a failed birthday fetch shouldn't block the calendar itself
+      .catch(() => {}); // non-critical - a failed birthday fetch shouldn't block the calendar itself
   }, [birthdayMonth]);
 
   useEffect(() => {
     loadBirthdays();
   }, [loadBirthdays]);
 
-  // No setVisits(null) here on purpose — same shape as Dashboard.jsx's own
+  // No setVisits(null) here on purpose - same shape as Dashboard.jsx's own
   // load(): after the first successful load, later month/scope changes just
   // replace `visits` in place rather than flashing the whole tab back to the
   // loading screen.
@@ -235,7 +235,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
   }, [visits]);
 
   // Rare, but possible: editing a completed visit open in CompletedVisitsModal
-  // can move it off this day entirely (e.g. correcting its date) — once a
+  // can move it off this day entirely (e.g. correcting its date) - once a
   // reload reflects that, this day has nothing completed left to show, so
   // close the modal instead of leaving it open on an empty list.
   useEffect(() => {
@@ -244,7 +244,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
     if (!stillHasCompleted) setCompletedDate(null);
   }, [completedDate, byDate]);
 
-  // A pill's own action — same target whether it's clicked directly off the
+  // A pill's own action - same target whether it's clicked directly off the
   // day cell or picked out of DayOverflowModal's enlarged view.
   function openPill(pill, iso) {
     if (pill.kind === 'completed') setCompletedDate(iso);
@@ -252,7 +252,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
     else setPlannedRouteView({ date: iso, group: pill.group });
   }
 
-  // The day number itself is always clickable — same DayOverflowModal the
+  // The day number itself is always clickable - same DayOverflowModal the
   // "+N more" chip opens, just with every pill for the day (buildFullDayPills)
   // rather than only the overflow, and with no chip needed to get there.
   // Works even on an empty day (an empty pills list, handled by
@@ -272,7 +272,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
   }
 
   // The day number plus its birthday badge (if any), as one row at the top
-  // of the cell — kept out of the visit-pill stack below entirely, so a
+  // of the cell - kept out of the visit-pill stack below entirely, so a
   // birthday never eats into MAX_VISIBLE_PILLS or forces the cell to grow.
   function renderDayTop(dateObj, iso, dayBirthdays) {
     if (dayBirthdays.length === 0) return renderDayNum(dateObj, iso);
@@ -337,7 +337,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
     );
   }
 
-  // Shared by the visit-detail popup's Delete action — same shape as
+  // Shared by the visit-detail popup's Delete action - same shape as
   // PlaceDetail.jsx/PersonDetail.jsx's own removeVisit.
   async function removeVisit(visit) {
     if (!window.confirm("Delete this visit? This can't be undone.")) return;
@@ -350,13 +350,13 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
   }
 
   // Pulls a committed day's visits back out into an editable route-planner
-  // draft — same endpoint and auto-locate-if-no-starting-point behavior as
+  // draft - same endpoint and auto-locate-if-no-starting-point behavior as
   // RoutePlanner.jsx's own reopenDay (this tab has no draft workspace of its
   // own to show the result in, so a successful reopen hands off to the
   // Route Planner tab via onNavigateToPlanner instead of rendering anything
   // here itself).
   async function reopenPlannedDay(date) {
-    if (!window.confirm(`Edit the planned visits for ${formatDate(date)}? They'll temporarily show as not-yet-scheduled while you make changes — accept the updated proposal again when you're done.`)) return false;
+    if (!window.confirm(`Edit the planned visits for ${formatDate(date)}? They'll temporarily show as not-yet-scheduled while you make changes - accept the updated proposal again when you're done.`)) return false;
     setActionError(null);
     setReopeningDate(date);
     try {
@@ -405,7 +405,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         <div className="card-head">
           <h2>Calendar</h2>
           <div className="tag-list" style={{ flex: 'unset' }}>
-            {/* One button, not two — split down the middle, the filled half
+            {/* One button, not two - split down the middle, the filled half
                 shows the current scope. Clicking anywhere on it flips to the
                 other side, rather than each half being its own click target. */}
             <button
@@ -430,7 +430,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
 
       {/* Own group fetches fresh from the server and gets the full whole-day
           Edit/Delete footer. Another rep's group reuses the same component/
-          look (already-loaded data passed straight in), just read-only —
+          look (already-loaded data passed straight in), just read-only -
           reopening/deleting a route only makes sense for the rep who owns
           it (see PlannedDayModal's own comment). */}
       {plannedRouteView && isPlannedViewMine && (
@@ -539,8 +539,8 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
             setEditingVisit(v);
           }}
           onDelete={(v) => { setViewingVisit(null); removeVisit(v); }}
-          // Removing one person from a trip can change what the grid shows —
-          // and can delete the trip outright when it was the last encounter —
+          // Removing one person from a trip can change what the grid shows -
+          // and can delete the trip outright when it was the last encounter -
           // so the month has to be refetched, not just the open modal.
           onChanged={load}
         />

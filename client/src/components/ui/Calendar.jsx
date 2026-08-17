@@ -18,29 +18,29 @@ function startOfMonth(d) {
 }
 
 // Month-grid, multi-select calendar for Route Planner's date picker (see
-// RoutePlanner.jsx) — a rep hand-picks which calendar dates to plan for
+// RoutePlanner.jsx) - a rep hand-picks which calendar dates to plan for
 // instead of the old "N days ahead" auto-window.
 //   selected/committed: Sets of 'YYYY-MM-DD' strings.
-//   minDate: 'YYYY-MM-DD' — the earliest selectable date (today itself is
-//     fine — see RoutePlanner.jsx's todayISO()).
-//   maxDate: 'YYYY-MM-DD' — the latest selectable date (a proposal generated
-//     too far out goes stale before the rep gets there — see RoutePlanner.jsx's
+//   minDate: 'YYYY-MM-DD' - the earliest selectable date (today itself is
+//     fine - see RoutePlanner.jsx's todayISO()).
+//   maxDate: 'YYYY-MM-DD' - the latest selectable date (a proposal generated
+//     too far out goes stale before the rep gets there - see RoutePlanner.jsx's
 //     MAX_DAYS_AHEAD, mirrored from scheduleDraft.js's validateDays, which
 //     enforces the same bound server-side). Can't navigate the calendar past
 //     the month containing it, same as minDate's month floor.
 //   maxSelected: once `selected.size` hits this, every NOT-yet-selected date
 //     disables too (an already-selected one can still be clicked off, unless
-//     it's also in `proposed` — see below).
+//     it's also in `proposed` - see below).
 //   proposed: Set of 'YYYY-MM-DD' strings already generated into the active
-//     draft (see RoutePlanner.jsx's proposedDates) — once a day has a real
+//     draft (see RoutePlanner.jsx's proposedDates) - once a day has a real
 //     proposal, deselecting it on the calendar would silently drop it from
 //     the next regenerate without actually removing its proposed visits, so
 //     a selected+proposed date can't be clicked off; the day's own "Discard
 //     proposal" (or the page-level "Discard all proposals") is the only way
 //     to free it back up.
-//   A committed date can never be selected at all — see scheduleDraft.js's
+//   A committed date can never be selected at all - see scheduleDraft.js's
 //   validateDays, which enforces the same rule server-side. Same for
-//   weekends — visits are only ever planned Mon-Fri, and validateDays
+//   weekends - visits are only ever planned Mon-Fri, and validateDays
 //   rejects a Saturday/Sunday outright rather than just leaving it out of
 //   the MAX_DAYS_AHEAD count (see its maxPlanDateUTC, which already skips
 //   weekends when measuring the 7-day window for exactly this reason).
@@ -88,10 +88,10 @@ export default function Calendar({ selected, committed, proposed, minDate, maxDa
               className={`calendar-day ${isSelected ? 'selected' : ''} ${isCommitted ? 'committed' : ''} ${isProposed ? 'proposed' : ''}`.trim()}
               disabled={disabled}
               title={
-                isCommitted ? 'Already planned — pick a different date'
-                  : isProposed ? 'Already proposed — discard the proposal to change this date'
-                    : isTooFarOut ? "Too far out — plans can't be made more than a week ahead"
-                      : isWeekend ? "Weekends aren't plannable — pick a weekday"
+                isCommitted ? 'Already planned - pick a different date'
+                  : isProposed ? 'Already proposed - discard the proposal to change this date'
+                    : isTooFarOut ? "Too far out - plans can't be made more than a week ahead"
+                      : isWeekend ? "Weekends aren't plannable - pick a weekday"
                         : undefined
               }
               onClick={() => onToggle(iso)}

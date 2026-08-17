@@ -1,28 +1,28 @@
-// Computed capacity — the objective, ratchet-only replacement for the manual
+// Computed capacity - the objective, ratchet-only replacement for the manual
 // places.capacity_level, the frozen places.capacity_monthly_referrals, and
 // the one-way capacity_status latch. Modelled on services/referralMetrics.js
 // (asOf-aware, nothing stored beyond the observation history itself) and
 // services/relationship.js (pure computation + bulk DB layer, computed value
-// with a clearly-flagged manual override) — the two spec's own companion.
+// with a clearly-flagged manual override) - the two spec's own companion.
 //
 // DEFINITION (locked): capacity is the number of homecare referrals a place
 // SENDS per month, to any agency, excluding whatever their own in-house
-// service absorbs. It is potential, not realized — "how much they COULD
+// service absorbs. It is potential, not realized - "how much they COULD
 // send," not "how much they send US." See capacity-computation-spec.md §2
 // for the full "why," including the self-confirming-guess failure mode this
 // exists to prevent.
 //
-// THE CORE INVARIANT — READ BEFORE TOUCHING effectiveMonthly BELOW:
+// THE CORE INVARIANT - READ BEFORE TOUCHING effectiveMonthly BELOW:
 // declared (their own pre-qual answer) and measuredFloor (our own referral
-// throughput) measure different quantities — declared is "total to anyone,"
+// throughput) measure different quantities - declared is "total to anyone,"
 // measured is "just to us." Measurement may therefore only RAISE the
 // capacity number, never lower it: our own volume is proof of a floor, but
 // zero volume from us proves nothing about what they send elsewhere (could
-// be a competitor getting all of it — the highest-value target in the
+// be a competitor getting all of it - the highest-value target in the
 // database, not a demotion candidate). This is why effectiveMonthly is a
 // Math.max(), never an average, override, or replacement, and why there is
 // no code path anywhere in this file that lets measuredFloor push the
-// number down. See the "Asymmetry — down" test in capacity.test.js, which
+// number down. See the "Asymmetry - down" test in capacity.test.js, which
 // exists specifically to fail loudly if this ever becomes bidirectional.
 
 const { daysSince } = require('./schedulingEngine');
@@ -31,14 +31,14 @@ const defaultConfig = require('../config/scheduling');
 
 // --- Pure date helpers -----------------------------------------------------
 
-// 'YYYY-MM-DD' n days after dateStr (n may be negative) — UTC-safe, same
+// 'YYYY-MM-DD' n days after dateStr (n may be negative) - UTC-safe, same
 // convention as relationship.js's daysBefore/schedulingEngine.js's daysSince.
 function addDays(dateStr, n) {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d) + n * 86400000).toISOString().slice(0, 10);
 }
 
-// A DB timestamp (string or Date, depending on driver — better-sqlite3 vs
+// A DB timestamp (string or Date, depending on driver - better-sqlite3 vs
 // pg) reduced to a plain 'YYYY-MM-DD' date string, matching every other date
 // field in this service.
 function toDateOnly(value) {
@@ -55,7 +55,7 @@ function bucketForMonthlyReferrals(value, thresholds) {
 }
 
 // Spec §6.5. Ordered first-match-wins, case-insensitive substring match
-// against a place's (free-text, unnormalized) category — same shape as the
+// against a place's (free-text, unnormalized) category - same shape as the
 // 20260712000000 migration's one-time seed, kept as a fresh, independent
 // copy in config/scheduling.js (see that config's own comment for why).
 function categorySeedLevel(category, seedTable, defaultLevel) {
@@ -68,13 +68,13 @@ function categorySeedLevel(category, seedTable, defaultLevel) {
 
 // --- Pure resolution (spec §6.3-6.6) ---------------------------------------
 
-// Everything here is plain data in, plain data out — no knex — so the
+// Everything here is plain data in, plain data out - no knex - so the
 // resolution logic (the asymmetry invariant, the override precedence, the
 // staleness clock) is directly unit-testable without a DB, same pure/impure
 // split as schedulingEngine.js and relationship.js.
 //
 // declared: { value, observedAt, source, personId } | null
-// measuredFloor: number | null (already gated — see measuredFloorByPlace;
+// measuredFloor: number | null (already gated - see measuredFloorByPlace;
 //   this function never re-applies the exposure/count gate itself)
 // overrideLevel: 'high' | 'medium' | 'low' | null
 function computeCapacityPure({ declared, measuredFloor, overrideLevel, category, asOf, config }) {
@@ -86,7 +86,7 @@ function computeCapacityPure({ declared, measuredFloor, overrideLevel, category,
   let computedLevelSource;
   if (effectiveMonthly != null) {
     computedLevel = bucketForMonthlyReferrals(effectiveMonthly, config.CAPACITY_THRESHOLDS);
-    // Which side actually produced effectiveMonthly — ties (declared exactly
+    // Which side actually produced effectiveMonthly - ties (declared exactly
     // equals measuredFloor) credit 'measured', since the point of the floor
     // winning is "our own numbers confirm/exceed the claim," which a tie
     // still does.
@@ -99,13 +99,13 @@ function computeCapacityPure({ declared, measuredFloor, overrideLevel, category,
 
   // Override wins outright, but the computed value underneath is still
   // carried on the result (computedLevel) so the UI can show both side by
-  // side when they diverge — same "override and computed shown together"
+  // side when they diverge - same "override and computed shown together"
   // contract as relationship.js's rollUpPlace (places.relationship_level_override).
   const isOverridden = Boolean(overrideLevel);
   const level = overrideLevel || computedLevel;
   const levelSource = isOverridden ? 'override' : computedLevelSource;
 
-  // Confidence is about the DECLARED observation's age only — an override
+  // Confidence is about the DECLARED observation's age only - an override
   // does not reset this clock (spec §6.6: "the override just says you don't
   // trust the stale number in the meantime," it doesn't refresh it).
   let confidence;
@@ -134,7 +134,7 @@ function computeCapacityPure({ declared, measuredFloor, overrideLevel, category,
     levelSource,
     // Extension beyond the spec's literal return shape (§6): needed for
     // §11's PlaceDetail requirement to show "computed vs. override side by
-    // side when they diverge" — there's no way to render that without
+    // side when they diverge" - there's no way to render that without
     // knowing what the computed value WOULD be under an active override.
     computedLevel,
     isOverridden,
@@ -147,11 +147,11 @@ function computeCapacityPure({ declared, measuredFloor, overrideLevel, category,
 // --- EXPLORATION tier eligibility stamp (spec §8.2, step 7) ---------------
 //
 // places.exploration_eligible_since holds the date this place next becomes
-// eligible for the EXPLORATION tier — see the migration that added it for
+// eligible for the EXPLORATION tier - see the migration that added it for
 // why this is a real, explicitly-stamped column rather than a `?? created_at`
 // fallback computed at read time. A fresh declared observation means this
 // place will next become eligible once THAT observation goes stale, so the
-// value is knowable (and stamped) the moment the observation is written —
+// value is knowable (and stamped) the moment the observation is written -
 // never derived later, so a future CAPACITY_STALE_DAYS retune doesn't
 // retroactively reshuffle every place already waiting in EXPLORATION.
 
@@ -172,13 +172,13 @@ async function stampExplorationEligibility(knex, placeId, observedAt, config = d
 // --- Bulk DB paths -----------------------------------------------------
 //
 // Both take knex explicitly (matching referralMetrics.js/relationship.js's
-// convention) and stay strictly bulk — a fixed number of queries regardless
+// convention) and stay strictly bulk - a fixed number of queries regardless
 // of how many placeIds are asked for, then group-and-compute in JS. This
 // runs over every place in the candidate pool on every draft generation
-// once wired into schedulingEngine.js (not yet — see the spec's build
+// once wired into schedulingEngine.js (not yet - see the spec's build
 // order), so a per-place query here would be catastrophic there.
 
-// Latest capacity_observations row per place, as of `asOf` — spec §6.1.
+// Latest capacity_observations row per place, as of `asOf` - spec §6.1.
 // ORDER BY + first-row-per-key-wins-in-JS, same reduce pattern
 // buildCandidatePool/scheduleDraft.js already use throughout this codebase
 // (see e.g. buildCandidatePool's lastVisitByPlace) rather than a
@@ -203,7 +203,7 @@ async function latestObservationsByPlace(knex, placeIds, asOf) {
   return out;
 }
 
-// Our own measured referral floor per place, as of `asOf` — spec §6.2.
+// Our own measured referral floor per place, as of `asOf` - spec §6.2.
 // Gated by MEASURED_MIN_EXPOSURE_DAYS/MEASURED_MIN_REFERRAL_COUNT; a
 // place that doesn't clear both is simply absent from the returned map
 // (read as null by the caller), not present with a 0.
@@ -212,7 +212,7 @@ async function latestObservationsByPlace(knex, placeIds, asOf) {
 // building the referral actually came from), NOT the live people.place_id
 // join referralMetrics.js's referralMetricsByPlaceId uses for its own,
 // different purpose. That join exists because a PERSON's relationship score
-// should follow them if they change employer — but capacity is explicitly a
+// should follow them if they change employer - but capacity is explicitly a
 // property of the BUILDING, not the contact (spec §14), so a referral a
 // place's building generated should stay attributed to that building even
 // after whichever staff member logged it moves on.
@@ -231,7 +231,7 @@ async function measuredFloorByPlace(knex, placeIds, asOf, config) {
     datesByPlace.get(r.place_id).push(r.referral_date);
   }
 
-  const windowStart = addDays(asOf, -365); // exclusive lower bound — spec's (asOf-365d, asOf]
+  const windowStart = addDays(asOf, -365); // exclusive lower bound - spec's (asOf-365d, asOf]
 
   for (const placeId of placeIds) {
     const dates = datesByPlace.get(placeId);
@@ -286,7 +286,7 @@ async function computeCapacityForPlaces(knex, placeIds, { asOf, config = default
   return out;
 }
 
-// Single-place convenience wrapper — implemented literally as a one-element
+// Single-place convenience wrapper - implemented literally as a one-element
 // call into computeCapacityForPlaces so the two can never drift apart (see
 // the "Bulk parity" test in capacity.test.js). Returns null for a place id
 // that doesn't exist in `places` at all.

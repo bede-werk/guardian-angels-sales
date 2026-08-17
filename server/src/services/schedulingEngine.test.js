@@ -24,7 +24,7 @@ function place(overrides = {}) {
     snooze_until: null,
     priority_score: 0,
     // Step 7: EXPLORATION tier ordering reads this directly (no created_at
-    // fallback — see the migration that added it). Defaulted to TODAY here
+    // fallback - see the migration that added it). Defaulted to TODAY here
     // (daysWaiting = 0, the aging guard's own inert case) so every existing
     // fixture that doesn't care about aging stays meaningful unchanged.
     exploration_eligible_since: TODAY,
@@ -148,7 +148,7 @@ describe('eligibility() guards', () => {
     assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, false);
   });
 
-  test('do_not_visit_until in the past has lapsed — no longer excludes', () => {
+  test('do_not_visit_until in the past has lapsed - no longer excludes', () => {
     const p = place({ do_not_visit: true, do_not_visit_until: daysAgo(1) });
     assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, true);
   });
@@ -162,7 +162,7 @@ describe('eligibility() guards', () => {
 
   // Step 3 of the 2026-08 remediation ticket: a planned (not yet happened)
   // visit consumes the hard floor exactly like a completed one, via its own
-  // field — lastVisitDate stays null/whatever it already was, so ranking
+  // field - lastVisitDate stays null/whatever it already was, so ranking
   // (urgency/cadence) never sees it, only eligibility does.
   describe('plannedVisitDates guard (FLOOR_PLANNED)', () => {
     test('a planned visit within the floor makes an otherwise-never-visited place ineligible', () => {
@@ -203,13 +203,13 @@ describe('eligibility() guards', () => {
       assert.equal(result.eligible, true);
     });
 
-    test('defaults to [] when omitted — every existing caller/test that never mentions plannedVisitDates is unaffected', () => {
+    test('defaults to [] when omitted - every existing caller/test that never mentions plannedVisitDates is unaffected', () => {
       const p = place();
       assert.equal(eligibility({ place: p, today: TODAY, lastVisitDate: null, lockedElsewhere: false, config }).eligible, true);
     });
   });
 
-  // Manual Visit Planning spec §7.1/§9 — a planned visit dated EXACTLY today
+  // Manual Visit Planning spec §7.1/§9 - a planned visit dated EXACTLY today
   // is a same-day duplicate risk, distinct from the nearby-but-not-exact
   // floor case above: a due commitment is allowed to bypass a recency
   // judgment call, but must never bypass an outright same-day duplicate.
@@ -233,7 +233,7 @@ describe('eligibility() guards', () => {
       assert.equal(result.reason, 'already_planned_today');
     });
 
-    test('a nearby but non-exact planned date is unaffected by this rule — still governed by the ordinary floor check above', () => {
+    test('a nearby but non-exact planned date is unaffected by this rule - still governed by the ordinary floor check above', () => {
       const p = place();
       const result = eligibility({ place: p, today: TODAY, lastVisitDate: null, plannedVisitDates: [daysAgo(2)], lockedElsewhere: false, config });
       assert.equal(result.eligible, false);
@@ -260,7 +260,7 @@ describe('hard commitments jump the queue', () => {
     assert.equal(ranked[0].place, committed);
   });
 
-  test('a due commitment bypasses the hard floor — a human asking us back is exactly what the floor is for', () => {
+  test('a due commitment bypasses the hard floor - a human asking us back is exactly what the floor is for', () => {
     const p = place({ capacity_status: 'verified', capacity_level: 'medium', relationship_level: 'medium' });
 
     const result = eligibility({ place: p, today: TODAY, lastVisitDate: daysAgo(3), nextVisitDate: TODAY, lockedElsewhere: false, config });
@@ -285,7 +285,7 @@ describe('neglect threshold (endangered tier)', () => {
     return place({ capacity_status: 'verified', capacity_level: 'high', relationship_level: 'strong' });
   }
 
-  test('below NEGLECT_MULTIPLIER stays in maintenance — exploration still wins', () => {
+  test('below NEGLECT_MULTIPLIER stays in maintenance - exploration still wins', () => {
     const p = verifiedHighStrong();
     const key = rankKey({ place: p, lastVisitDate: daysAgo(21), recentCompletedCount: 0, nextVisitDate: null, today: TODAY, config });
     assert.equal(key[0], TIERS.MAINTENANCE);
@@ -349,7 +349,7 @@ describe('neglect threshold (endangered tier)', () => {
     const keyFatigued = rankKey({ place: fatigued, lastVisitDate: daysAgo(14), recentCompletedCount: config.FATIGUE_THRESHOLD, nextVisitDate: null, today: TODAY, config });
 
     assert.equal(keyNotFatigued[0], TIERS.ENDANGERED, 'without fatigue, 2x base cadence should already qualify for rescue');
-    assert.equal(keyFatigued[0], TIERS.MAINTENANCE, 'with fatigue, the same 14 days is only ~1.33x the stretched cadence — not neglected yet');
+    assert.equal(keyFatigued[0], TIERS.MAINTENANCE, 'with fatigue, the same 14 days is only ~1.33x the stretched cadence - not neglected yet');
   });
 });
 
@@ -393,17 +393,17 @@ describe("spec's acceptance test, updated for the endangered tier", () => {
 });
 
 // Step 7 (capacity-computation-spec.md §8): EXPLORATION tier tie-break.
-describe('explorationRank() — spec §8.2', () => {
+describe('explorationRank() - spec §8.2', () => {
   test('base ordering: high < medium < low at zero wait (pure capacity guess)', () => {
     assert.equal(explorationRank({ level: 'high', confidence: 'unknown', daysWaiting: 0, config }), 0);
     assert.equal(explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: 0, config }), 1);
     assert.equal(explorationRank({ level: 'low', confidence: 'unknown', daysWaiting: 0, config }), 2);
   });
 
-  test('stale sorts below unknown at equal capacity — "never-asked outranks re-asked"', () => {
+  test('stale sorts below unknown at equal capacity - "never-asked outranks re-asked"', () => {
     const unknownMedium = explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: 0, config });
     const staleMedium = explorationRank({ level: 'medium', confidence: 'stale', daysWaiting: 0, config });
-    assert.ok(unknownMedium < staleMedium, 'a lower explorationRank sorts first — unknown must be lower than stale here');
+    assert.ok(unknownMedium < staleMedium, 'a lower explorationRank sorts first - unknown must be lower than stale here');
   });
 
   test('aging pulls the rank down exactly at EXPLORATION_AGING_DAYS multiples, inert before them', () => {
@@ -416,17 +416,17 @@ describe('explorationRank() — spec §8.2', () => {
     assert.equal(explorationRank({ level: 'low', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS * 2, config }), 0, 'two aging windows -> reaches rank 0');
   });
 
-  test('clamped at 0, never negative — a place cannot age past the front of the tier', () => {
+  test('clamped at 0, never negative - a place cannot age past the front of the tier', () => {
     assert.equal(explorationRank({ level: 'high', confidence: 'unknown', daysWaiting: 10000, config }), 0);
     assert.equal(explorationRank({ level: 'medium', confidence: 'unknown', daysWaiting: config.EXPLORATION_AGING_DAYS * 5, config }), 0);
   });
 
   // A tightened CAPACITY_STALE_DAYS can make confidence flip to 'stale'
   // before a place's already-stamped exploration_eligible_since date
-  // arrives (see the migration's header) — daysWaiting comes out negative
+  // arrives (see the migration's header) - daysWaiting comes out negative
   // for a little while in that window. A negative wait must never make the
   // rank WORSE than baseRank (no credit yet is not the same as being
-  // pushed backward) — this is the input clamp, distinct from the output
+  // pushed backward) - this is the input clamp, distinct from the output
   // clamp the test above covers.
   test('a negative daysWaiting behaves exactly like zero, never penalizes the rank further', () => {
     assert.equal(
@@ -447,7 +447,7 @@ describe('explorationRank() — spec §8.2', () => {
   });
 });
 
-describe('EXPLORATION tier membership — governed by confidence, not the legacy capacity_status latch', () => {
+describe('EXPLORATION tier membership - governed by confidence, not the legacy capacity_status latch', () => {
   test('capacityConfidence: "fresh" keeps a place OUT of exploration even if the legacy column still says "estimated"', () => {
     const p = place({ capacity_status: 'estimated', capacity_level: 'high', relationship_level: 'weak' }); // cadence 7
     const key = rankKey({ place: p, lastVisitDate: daysAgo(3), recentCompletedCount: 0, nextVisitDate: null, capacityConfidence: 'fresh', today: TODAY, config });
@@ -455,7 +455,7 @@ describe('EXPLORATION tier membership — governed by confidence, not the legacy
     assert.equal(key[0], TIERS.MAINTENANCE, 'mildly overdue, fresh, and not neglected -> ordinary maintenance ordering');
   });
 
-  test('capacityConfidence: "stale" RE-ENTERS exploration even if the legacy column still says "verified" — impossible under the old one-way latch', () => {
+  test('capacityConfidence: "stale" RE-ENTERS exploration even if the legacy column still says "verified" - impossible under the old one-way latch', () => {
     const p = place({ capacity_status: 'verified', capacity_level: 'medium', relationship_level: 'weak' });
     const key = rankKey({ place: p, lastVisitDate: daysAgo(3), recentCompletedCount: 0, nextVisitDate: null, capacityConfidence: 'stale', today: TODAY, config });
     assert.equal(key[0], TIERS.EXPLORATION, 'a place whose declared number has gone stale must re-enter EXPLORATION for a fresh re-ask');
@@ -469,7 +469,7 @@ describe('EXPLORATION tier membership — governed by confidence, not the legacy
   });
 });
 
-describe('EXPLORATION ordering determinism and tiebreaks — spec §8.1/§13', () => {
+describe('EXPLORATION ordering determinism and tiebreaks - spec §8.1/§13', () => {
   test('priority_score breaks a tie in explorationRank, descending', () => {
     const lowPriority = place({ capacity_status: 'estimated', capacity_level: 'medium', priority_score: 10 });
     const highPriority = place({ capacity_status: 'estimated', capacity_level: 'medium', priority_score: 90 });
@@ -516,7 +516,7 @@ describe('EXPLORATION ordering determinism and tiebreaks — spec §8.1/§13', (
   test('compareRankKeys generalizes cleanly to EXPLORATION\'s 4-element key alongside every other tier\'s 2-element key', () => {
     const commitmentKey = [TIERS.COMMITMENT, 3];
     const explorationKeyIdTwo = [TIERS.EXPLORATION, -1, 50, -2]; // place.id 2 (negated)
-    const explorationKeyIdOne = [TIERS.EXPLORATION, -1, 50, -1]; // place.id 1 (negated) — should sort first
+    const explorationKeyIdOne = [TIERS.EXPLORATION, -1, 50, -1]; // place.id 1 (negated) - should sort first
     assert.ok(compareRankKeys(commitmentKey, explorationKeyIdTwo) < 0, 'lower tier always wins regardless of within-tier key length');
     assert.ok(compareRankKeys(explorationKeyIdTwo, explorationKeyIdOne) > 0, 'tier and rank tied -> the key encoding the smaller place.id must sort first');
   });

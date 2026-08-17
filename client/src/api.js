@@ -36,7 +36,7 @@ async function request(path, options = {}) {
       msg = j.error || msg;
       code = j.code;
       // Structured, named/dated collision detail (see
-      // server/src/services/conflictDetection.js's Conflict shape) — carried
+      // server/src/services/conflictDetection.js's Conflict shape) - carried
       // by addStop/POST-visits 409s so a caller can render every applicable
       // notice instead of just the one summary string in `error`.
       conflicts = j.conflicts;
@@ -44,7 +44,7 @@ async function request(path, options = {}) {
       /* ignore */
     }
     if (res.status === 401) {
-      // The token is missing/invalid/expired — clear it and tell App.jsx to
+      // The token is missing/invalid/expired - clear it and tell App.jsx to
       // drop back to the login screen (it listens for this event).
       clearToken();
       window.dispatchEvent(new Event('ga:unauthorized'));
@@ -61,7 +61,7 @@ async function request(path, options = {}) {
 // Every function below is grouped by the backend route file it talks to
 // (see server/src/routes/*.js) and just builds the URL/body for `request()`.
 export const api = {
-  // Places — server/src/routes/places.js
+  // Places - server/src/routes/places.js
   places: (params = {}) => {
     // Turns { search: 'foo', tier: 1 } into "?search=foo&tier=1", dropping
     // any empty/undefined filter so it doesn't get sent at all.
@@ -88,12 +88,16 @@ export const api = {
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
   // Appends a new capacity_observations row (capacity-computation-spec.md
-  // §5/§11) — never overwrites a column. body: { monthly_referrals, note }.
+  // §5/§11) - never overwrites a column. body: { monthly_referrals, note }.
   addCapacityObservation: (id, body) => request(`/places/${id}/capacity-observations`, { method: 'POST', body }),
-  // Lifts an active snooze early — the visit that set it keeps its own
+  // Undoes a mis-entered observation. Doesn't touch exploration_eligible_since
+  // even if this row stamped it - see that route's own comment.
+  deleteCapacityObservation: (placeId, observationId) =>
+    request(`/places/${placeId}/capacity-observations/${observationId}`, { method: 'DELETE' }),
+  // Lifts an active snooze early - the visit that set it keeps its own
   // 'snoozed' record; this only clears the place-level suppression.
   unsnoozePlace: (id) => request(`/places/${id}/snooze`, { method: 'DELETE' }),
-  // Place Commitments (server/src/services/placeCommitments.js) — a dated
+  // Place Commitments (server/src/services/placeCommitments.js) - a dated
   // promise to return, replacing visits.next_visit_date. body: {
   // promised_date, person_id?, note? }. GET /places/:id already includes
   // `commitments: { outstanding, discharged }`, so there's no separate list call.
@@ -102,15 +106,15 @@ export const api = {
   // commitment for the new date. body: { promised_date, person_id?, note? }.
   rescheduleCommitment: (placeId, commitmentId, body) =>
     request(`/places/${placeId}/commitments/${commitmentId}/reschedule`, { method: 'POST', body }),
-  // Discharges as waived — the place falls back to normal cadence. body: { note? }.
+  // Discharges as waived - the place falls back to normal cadence. body: { note? }.
   waiveCommitment: (placeId, commitmentId, body) =>
     request(`/places/${placeId}/commitments/${commitmentId}/waive`, { method: 'POST', body }),
-  // Hard-deletes a discharged commitment — history cleanup only, rejected
+  // Hard-deletes a discharged commitment - history cleanup only, rejected
   // server-side if the commitment is still outstanding.
   deleteCommitment: (placeId, commitmentId) =>
     request(`/places/${placeId}/commitments/${commitmentId}`, { method: 'DELETE' }),
 
-  // Visits (logging a call) — server/src/routes/visits.js
+  // Visits (logging a call) - server/src/routes/visits.js
   // A visit is a TRIP (place, date, rep, notes); who was met lives in its
   // `encounters` array. List endpoints return a lightweight summary of that
   // array; `visit(id)` is the only call that returns every encounter in full.
@@ -118,34 +122,38 @@ export const api = {
   createVisit: (body) => request('/visits', { method: 'POST', body }),
   updateVisit: (id, body) => request(`/visits/${id}`, { method: 'PATCH', body }),
   deleteVisit: (id) => request(`/visits/${id}`, { method: 'DELETE' }),
-  // Manual Visit Planning (server/src/routes/visits.js's POST /manual) —
+  // Manual Visit Planning (server/src/routes/visits.js's POST /manual) -
   // plans a still-open, future visit directly, without a route-planner
   // draft. body: { place_id, scheduled_date, user_id?, force? }. A 200 with
   // no visit (just `{ warnings }`) means a §4.2 warning fired and nothing
-  // was written yet — resend with `force: true` once the user confirms; a
+  // was written yet - resend with `force: true` once the user confirms; a
   // thrown error (409, `err.conflicts` set) means a §4.1 hard block, no
   // override possible.
   planVisit: (body) => request('/visits/manual', { method: 'POST', body }),
-  // Moves a manually-planned visit to a new date, re-running the same §4
-  // checks against it. Same warn-then-force response shape as planVisit.
-  rescheduleVisit: (id, body) => request(`/visits/${id}/reschedule`, { method: 'PATCH', body }),
+  // Changes a still-planned visit's date and/or notes - works on a
+  // planner-committed visit too, promoting it to manually-planned the
+  // moment it's saved (see services/manualVisits.js's editVisit). A date
+  // change re-runs the same §4 checks planVisit does against it; a
+  // notes-only edit skips that. Same warn-then-force response shape as
+  // planVisit. body: { scheduled_date?, notes?, force? }.
+  editVisit: (id, body) => request(`/visits/${id}/edit`, { method: 'PATCH', body }),
   // Explicit deferral of a still-planned visit. body: { snoozed_until, force? }.
   // A 409 (code: 'SNOOZE_SWALLOWS_COMMITMENT') means the chosen date would
-  // suppress a follow-up the place is already owed — re-send with
+  // suppress a follow-up the place is already owed - re-send with
   // `force: true` once the caller has confirmed that's intentional.
   snoozeVisit: (id, body) => request(`/visits/${id}/snooze`, { method: 'POST', body }),
   // Removes ONE person/category from a trip. If it was the last encounter on
-  // a completed trip the server deletes the trip too — callers must confirm
+  // a completed trip the server deletes the trip too - callers must confirm
   // that with the user first (see VisitDetailModal).
   deleteVisitEncounter: (visitId, encounterId) =>
     request(`/visits/${visitId}/encounters/${encounterId}`, { method: 'DELETE' }),
   visitsCalendar: (month, userId) => request(`/visits/calendar?month=${month}${userId ? `&userId=${userId}` : ''}`),
 
-  // Dashboard rollup — server/src/routes/dashboard.js
+  // Dashboard rollup - server/src/routes/dashboard.js
   dashboard: (userId, date) =>
     request(`/dashboard?${userId ? `userId=${userId}&` : ''}${date ? `date=${date}` : ''}`),
 
-  // People — server/src/routes/people.js
+  // People - server/src/routes/people.js
   people: {
     // Cross-place People directory tab. params: search, placeId, category, sort
     list: (params = {}) => {
@@ -162,19 +170,19 @@ export const api = {
     remove: (id) => request(`/people/${id}`, { method: 'DELETE' }),
     birthdays: (month) => request(`/people/birthdays?month=${month}`), // month is 1-12; Calendar tab's birthday badges
     // One-time relationship seeding (see the Seed Relationships screen).
-    // Body: [{ person_id, seed }] — a null/'' seed clears that person's.
+    // Body: [{ person_id, seed }] - a null/'' seed clears that person's.
     // All-or-nothing server-side; re-runnable (re-seeding resets the decay clock).
     seedRelationships: (entries) => request('/people/seed-relationships', { method: 'POST', body: entries }),
   },
 
-  // Referrals — server/src/routes/referrals.js
+  // Referrals - server/src/routes/referrals.js
   referrals: {
     create: (body) => request('/referrals', { method: 'POST', body }),
     update: (id, body) => request(`/referrals/${id}`, { method: 'PATCH', body }),
     remove: (id) => request(`/referrals/${id}`, { method: 'DELETE' }),
   },
 
-  // Route planner draft/commit lifecycle — server/src/routes/scheduleDrafts.js
+  // Route planner draft/commit lifecycle - server/src/routes/scheduleDrafts.js
   scheduleDrafts: {
     generate: (body) => request('/schedule-drafts/generate', { method: 'POST', body }),
     active: () => request('/schedule-drafts/active'),
@@ -207,7 +215,7 @@ export const api = {
       request(`/schedule-drafts/days/${date}/reopen`, { method: 'POST', body: { homeBase } }),
   },
 
-  // Categories (add/rename/retire a place category) — server/src/routes/categories.js
+  // Categories (add/rename/retire a place category) - server/src/routes/categories.js
   categories: {
     list: () => request('/categories'), // [{ id, name, place_count }], alphabetical
     create: (name) => request('/categories', { method: 'POST', body: { name } }),
@@ -215,12 +223,12 @@ export const api = {
     remove: (id) => request(`/categories/${id}`, { method: 'DELETE' }), // { deleted, affectedPlaces }
   },
 
-  // Team members — server/src/routes/users.js
+  // Team members - server/src/routes/users.js
   users: {
     list: () => request('/users'),
   },
 
-  // Auth (login/logout/password) — server/src/routes/auth.js
+  // Auth (login/logout/password) - server/src/routes/auth.js
   auth: {
     users: () => request('/auth/users'), // list for the login picker (name + hasPassword only)
     setPassword: (userId, newPassword) =>
@@ -236,7 +244,7 @@ export const api = {
 
 // Display labels for the visit outcome enum (server/src/routes/visits.js's
 // OUTCOMES). These six replaced the original evaluative set
-// (interested/not_ready/follow_up/no_answer/left_materials) — they describe
+// (interested/not_ready/follow_up/no_answer/left_materials) - they describe
 // what OBSERVABLY happened rather than how it felt, which is what makes them
 // safe to score a relationship against without inflating over time.
 // Ordered strongest-signal-first, which is also the order they're offered in
@@ -259,14 +267,14 @@ export function outcomeLabel(outcome) {
 }
 
 // Who the rep actually spoke to (server/src/routes/visits.js's MET_WITH_TYPES).
-// The single biggest input to relationship scoring — only 'named_person'
+// The single biggest input to relationship scoring - only 'named_person'
 // builds an individual's score, so this is deliberately asked as a required
 // question rather than inferred from whether a person happened to be picked.
 export const MET_WITH_LABELS = {
   named_person: 'A specific person',
   staff: 'A staff member (name unknown)',
   receptionist: 'Receptionist or front desk',
-  nobody: 'Nobody — drop-off',
+  nobody: 'Nobody - drop-off',
 };
 
 // Display labels for a computed relationship level (services/relationship.js).
@@ -293,12 +301,12 @@ export const VISIT_TYPE_LABELS = {
   pre_qualification: 'Pre-qualification',
 };
 
-// Planned minutes per visit type — a MIRROR of server/src/config/visitTypes.js's
+// Planned minutes per visit type - a MIRROR of server/src/config/visitTypes.js's
 // VISIT_TYPES[*].minutes, used only to prefill the "how long did it actually
 // take?" field so the rep is correcting a sensible number instead of typing
 // into a blank. Keep in sync with that file (same standing arrangement as
 // VISIT_TYPE_LABELS mirroring its keys). Nothing is computed from this
-// client-side — the server never reads it back.
+// client-side - the server never reads it back.
 export const VISIT_TYPE_MINUTES = {
   drop_in: 7,
   check_in: 18,
@@ -307,14 +315,27 @@ export const VISIT_TYPE_MINUTES = {
   pre_qualification: 15,
 };
 
-// Today's date as 'YYYY-MM-DD', matching how dates are stored/compared everywhere else.
+// Today's local date as 'YYYY-MM-DD', matching how dates are stored/compared
+// everywhere else. Built from local Date getters rather than
+// `new Date().toISOString().slice(0, 10)` - toISOString() converts to UTC
+// first, which rolls this over to tomorrow's date for the whole
+// early-evening-through-midnight stretch in any timezone behind UTC (this
+// org runs on US Central, UTC-5/-6) - a rep logging a visit at 7pm would
+// silently get it dated a day ahead, corrupting cadence/relationship/
+// dashboard math that all key off this value. Same local-getters pattern as
+// RoutePlanner.jsx's isoDate/todayISO and ui/Calendar.jsx / ui/MonthCalendar.jsx's
+// toISODate - keep this in sync with those if the approach ever changes.
 export function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 // A place-level snooze/do-not-visit never gets cleared automatically once it
 // lapses (same convention as the server's schedulingEngine.js eligibility()
-// guard) — every reader does its own live >= today() compare instead. These
+// guard) - every reader does its own live >= today() compare instead. These
 // three helpers are that one compare, shared so PlaceDetail's own card,
 // CapacityDetail's zero-capacity suggestion, and the "Next visit" annotation
 // on VisitDetailModal/PersonDetail can't drift out of sync with each other
@@ -327,7 +348,7 @@ export function isDoNotVisitActive(place) {
   return !!(place && place.do_not_visit && (!place.do_not_visit_until || place.do_not_visit_until >= today()));
 }
 
-// Suffix for a bare "Next visit: {date}" line — that promise sits unacted on
+// Suffix for a bare "Next visit: {date}" line - that promise sits unacted on
 // while either suppression is active. '' (not null) so it's always safe to
 // interpolate directly.
 export function suppressionNote(place) {
@@ -337,7 +358,7 @@ export function suppressionNote(place) {
 }
 
 // Month names for the birthday picker (PersonModal.jsx/PersonDetail.jsx) and
-// the Calendar tab's birthday badges — a separate array from
+// the Calendar tab's birthday badges - a separate array from
 // ui/MonthCalendar.jsx's own internal one rather than a refactor of that
 // working file, same small-duplication tradeoff as VISIT_TYPE_LABELS above.
 export const MONTH_NAMES = [
@@ -346,7 +367,7 @@ export const MONTH_NAMES = [
 ];
 
 // Birthdays have no year on file (often unknown), so this is generic per
-// month rather than leap-year-aware for a specific year — February is
+// month rather than leap-year-aware for a specific year - February is
 // capped at 29 so a leap-day birthday can still be entered.
 const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 export function daysInMonth(month) {
@@ -355,7 +376,7 @@ export function daysInMonth(month) {
 
 // Formats a 'YYYY-MM-DD' date string as 'M/D/YYYY' for display (no leading
 // zeros on month/day). Dates are stored/compared as 'YYYY-MM-DD' throughout
-// the app (see today() above) — this is only for rendering, never for
+// the app (see today() above) - this is only for rendering, never for
 // <input type="date"> values.
 export function formatDate(dateStr) {
   if (!dateStr) return dateStr;
@@ -364,12 +385,12 @@ export function formatDate(dateStr) {
   return `${Number(month)}/${Number(day)}/${year}`;
 }
 
-// Phrases a `crossRepFloorWarning` ({ userName, scheduledDate, status }) —
+// Phrases a `crossRepFloorWarning` ({ userName, scheduledDate, status }) -
 // shared by every surface that renders one (PlaceDetail, VisitDetailModal,
 // PlannedDayModal, CompletedVisitsModal, UpcomingVisitDetailModal,
 // RoutePlanner) so the tense always matches reality: a completed visit is a
 // past fact ("visited... on"), a planned one is still upcoming
-// ("planned... for") — using one sentence for both misrepresents whichever
+// ("planned... for") - using one sentence for both misrepresents whichever
 // one it doesn't match.
 export function crossRepFloorWarningText(warning) {
   if (!warning) return '';

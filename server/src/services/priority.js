@@ -9,7 +9,7 @@
 //   Tier 2                        = 50
 //   Tier 3                        = 25
 //
-// This is a place-level score (drives routing) — a manual Tier/⭐ judgment today.
+// This is a place-level score (drives routing) - a manual Tier/⭐ judgment today.
 // It may later be adjusted by linked people's referral history (see
 // services/referralMetrics.js and the `referrals` table), but that feedback
 // loop isn't wired in yet.

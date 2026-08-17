@@ -11,15 +11,18 @@ import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
 import VisitDetailModal, { encounterLabel, joinNames, commitmentMadeText } from './VisitDetailModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
+import SkippedVisitDetailModal from './SkippedVisitDetailModal';
 import { PlaceRelationship } from './RelationshipDetail';
 import { PlaceCapacity } from './CapacityDetail';
 import { PlaceCommitments } from './PlaceCommitments';
+import AddCommitmentModal from './AddCommitmentModal';
+import CommitmentDetailModal from './CommitmentDetailModal';
 import useClosingTransition from '../hooks/useClosingTransition';
 
 // Who was met on one trip, as a single inline phrase: "with Flibber Gibblits,
 // New Guy and a staff member". The visit list endpoint returns a name-only
 // summary of each trip's encounters (full per-encounter detail needs
-// GET /api/visits/:id — see VisitDetailModal), which is exactly enough for
+// GET /api/visits/:id - see VisitDetailModal), which is exactly enough for
 // this. A planned trip has no encounters yet and gets no phrase at all rather
 // than an empty "with".
 function encounterSummary(encounters) {
@@ -27,7 +30,7 @@ function encounterSummary(encounters) {
   return `with ${joinNames(encounters.map(encounterLabel))}`;
 }
 
-// Presets for the "Do not visit until…" panel — longer-scale than
+// Presets for the "Do not visit until…" panel - longer-scale than
 // UpcomingVisitDetailModal's own SNOOZE_PRESETS (1/2 weeks, 1 month) on
 // purpose: do-not-visit is a deliberate "stop proposing this place" call,
 // not a short rotation nudge, so the defaults skew toward the kind of
@@ -53,8 +56,7 @@ function addDaysISO(days) {
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
 // (clicking any place-linked row/card).
 export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDeleted }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [data, setData] = useState(null); // GET /api/places/:id response (place + visits + people)
   const [loadError, setLoadError] = useState(null);
   const [categories, setCategories] = useState([]); // known category names, for PlaceModal's autocomplete
@@ -70,16 +72,17 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [deleting, setDeleting] = useState(false);
   const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
   const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
+  const [viewingSkippedVisit, setViewingSkippedVisit] = useState(null); // skipped visit whose read-only popup is open, if any
   const [viewingUpcomingVisit, setViewingUpcomingVisit] = useState(null); // upcoming (planned) visit whose read-only popup is open, if any
   const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
   // Durable, org-level notes (separate from any single visit's notes or a
-  // person's notes) — editable inline via a small textarea + Save.
+  // person's notes) - editable inline via a small textarea + Save.
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [removingNotes, setRemovingNotes] = useState(false);
   const [liftingSnooze, setLiftingSnooze] = useState(false);
-  // Do-not-visit panel on the Upcoming Visits card — same "editor state
+  // Do-not-visit panel on the Upcoming Visits card - same "editor state
   // lives in this component, not the card itself" shape as the snooze flag
   // above, since both act on `data.id` directly with no per-row target.
   const [markingDoNotVisit, setMarkingDoNotVisit] = useState(false);
@@ -90,24 +93,43 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   // own open/closed state lives in that component; only the in-flight save
   // needs to be known here, since this is what triggers the reload.
   const [savingRelationship, setSavingRelationship] = useState(false);
-  // Capacity (see CapacityDetail.jsx) — same "editor state lives in the
+  // Capacity (see CapacityDetail.jsx) - same "editor state lives in the
   // child component" convention as relationship above. Two separate
   // in-flight flags since the override and a fresh observation are two
   // independent actions that can't collide (the child only ever shows one
   // editor open at a time).
   const [savingCapacityOverride, setSavingCapacityOverride] = useState(false);
   const [savingCapacityObservation, setSavingCapacityObservation] = useState(false);
-  // Place Commitments (see PlaceCommitments.jsx) — same "editor state lives
-  // in the child, only the in-flight save flag lives here" convention as
-  // capacity's pair above. waivingCommitmentId (not a plain boolean) so only
-  // the row actually being waived shows "Waiving…", not every row at once.
+  // Whether the "Add/Update pre-qualification" form is open - the trigger
+  // button lives in the card-head (same convention as People/Details'
+  // header buttons), so unlike editingOverride (still fully local to
+  // CapacityDetail.jsx, triggered by clicking the chip itself) this one
+  // piece of editor state has to live up here.
+  const [addingCapacityObservation, setAddingCapacityObservation] = useState(false);
+  // Which observation row's delete is in flight, if any, so only that row
+  // shows a busy state.
+  const [deletingObservationId, setDeletingObservationId] = useState(null);
+  // Mirrors CapacityDetail.jsx's own editingOverride (still that
+  // component's local state) just so the header button above can hide
+  // itself while the override editor is open in the body below.
+  const [capacityOverrideEditing, setCapacityOverrideEditing] = useState(false);
+  // Place Commitments (see PlaceCommitments.jsx / AddCommitmentModal.jsx /
+  // CommitmentDetailModal.jsx) - Add and Reschedule/Waive each live in their
+  // own modal now (same "Plan a visit" / UpcomingVisitDetailModal split the
+  // Upcoming Visits list already uses), so only the open/closed + in-flight
+  // save state lives up here. Discharged (fulfilled/rescheduled/waived)
+  // commitments show in PlaceCommitments' own collapsible history section -
+  // deletingCommitmentId is that section's per-row "cleanup ✕ in flight" flag,
+  // same convention as deletingObservationId above.
+  const [addingCommitment, setAddingCommitment] = useState(false);
+  const [viewingCommitment, setViewingCommitment] = useState(null);
   const [savingCommitment, setSavingCommitment] = useState(false);
   const [reschedulingCommitmentSaving, setReschedulingCommitmentSaving] = useState(false);
-  const [waivingCommitmentId, setWaivingCommitmentId] = useState(null);
+  const [waivingCommitment, setWaivingCommitment] = useState(false);
   const [deletingCommitmentId, setDeletingCommitmentId] = useState(null);
-  // Manual Visit Planning (see server's manual-visit-planning-spec.md §3) —
-  // the "Plan a visit…" button in the Upcoming Visits card-head, next to Do
-  // not visit…. Opens PlanVisitModal rather than an inline form (that used
+  // Manual Visit Planning (see server's manual-visit-planning-spec.md §3) -
+  // the "Plan a visit" button in the Upcoming Visits card-head, next to Do
+  // not visit. Opens PlanVisitModal rather than an inline form (that used
   // to cram date + rep picker + warning text into one card row).
   const [planningVisit, setPlanningVisit] = useState(false);
   const [users, setUsers] = useState([]); // team list, for the assigned-rep picker (cross-rep planning, §5)
@@ -132,7 +154,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
 
   // Permanently removes only the place itself. People who were here are
   // detached (not deleted) and every visit logged here survives, still
-  // visible from each person's own page — only this place's own record is
+  // visible from each person's own page - only this place's own record is
   // gone for good.
   async function deletePlace() {
     if (!window.confirm(`Delete ${data.name}? People who were here will stay on file (just unassigned from this place), and all visit history is preserved. This can't be undone.`)) return;
@@ -177,7 +199,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   }
 
   // Sets (or, with null, clears) the manual relationship override. The
-  // server stamps who/when — see routes/places.js — so nothing about the
+  // server stamps who/when - see routes/places.js - so nothing about the
   // attribution is client-supplied. Returns false on failure so the editor
   // stays open with the user's choice intact rather than silently closing.
   async function saveRelationshipOverride(level) {
@@ -196,7 +218,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   }
 
   // Same override pattern, capacity's own field pair (level + free-text
-  // reason — see 20260807000001_add_place_capacity_override.js). `reason`
+  // reason - see 20260807000001_add_place_capacity_override.js). `reason`
   // is only meaningful alongside a real level; clearing (level: null) drops
   // it too, same "stale attribution on a cleared override would be a lie"
   // rule relationship's own override already follows.
@@ -215,7 +237,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // Appends a fresh capacity_observations row — never overwrites the
+  // Appends a fresh capacity_observations row - never overwrites the
   // previous one (see that table's own migration header). value is
   // whatever raw string the number input held; rounded client-side for the
   // same reason the old pre-qual field used to (a non-integer silently
@@ -236,8 +258,25 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // Adds a dated promise directly, no visit involved — PlaceCommitments'
-  // own "Add…" control (see services/placeCommitments.js's module header:
+  // Undoes a mis-entered observation - history cleanup only. Doesn't touch
+  // exploration_eligible_since even if this row stamped it (see the route's
+  // own comment for why that's fine).
+  async function deleteCapacityObservation(observationId) {
+    if (!window.confirm("Delete this observation from history? This can't be undone.")) return;
+    setDeletingObservationId(observationId);
+    try {
+      await api.deleteCapacityObservation(data.id, observationId);
+      load();
+      onChanged?.();
+    } catch (e) {
+      window.alert(e.message);
+    } finally {
+      setDeletingObservationId(null);
+    }
+  }
+
+  // Adds a dated promise directly, no visit involved - PlaceCommitments'
+  // own "Add a commitment" control (see services/placeCommitments.js's module header:
   // place-level, cross-rep, more than one outstanding promise is allowed).
   async function addCommitment(promisedDate, personId, note) {
     setSavingCommitment(true);
@@ -255,7 +294,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   }
 
   // Discharges the original as superseded and creates a new outstanding
-  // commitment for the new date (spec §6.2) — the server carries
+  // commitment for the new date (spec §6.2) - the server carries
   // person_id/note forward unless this call overrides them.
   async function rescheduleCommitment(commitmentId, promisedDate, personId, note) {
     setReschedulingCommitmentSaving(true);
@@ -272,10 +311,13 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // Discharges as waived — "not happening; back to normal cadence." The
+  // Discharges as waived - "not happening; back to normal cadence." The
   // place immediately stops binding to this promise (see getBindingCommitment).
+  // The confirm() gate lives in CommitmentDetailModal itself (right before
+  // this is called) since that's where the specific promise being waived is
+  // in view - this function just does the actual call + reload.
   async function waiveCommitment(commitmentId, note) {
-    setWaivingCommitmentId(commitmentId);
+    setWaivingCommitment(true);
     try {
       await api.waiveCommitment(data.id, commitmentId, { note });
       load();
@@ -285,14 +327,15 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       window.alert(e.message);
       return false;
     } finally {
-      setWaivingCommitmentId(null);
+      setWaivingCommitment(false);
     }
   }
 
-  // Hard-deletes a discharged commitment — history cleanup only (the server
-  // rejects this on a still-outstanding one; waive/reschedule it first).
+  // History cleanup only - only a discharged commitment can be deleted this
+  // way (server rejects an outstanding one). Same pattern as
+  // deleteCapacityObservation above.
   async function deleteCommitment(commitmentId) {
-    if (!window.confirm("Delete this commitment from history? This can't be undone.")) return;
+    if (!window.confirm("Delete this from history? This can't be undone.")) return;
     setDeletingCommitmentId(commitmentId);
     try {
       await api.deleteCommitment(data.id, commitmentId);
@@ -305,12 +348,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // Marks (or re-marks) do_not_visit with an explicit until-date — null
+  // Marks (or re-marks) do_not_visit with an explicit until-date - null
   // means indefinite. Always writes do_not_visit and do_not_visit_until
   // together (see places.js's EDITABLE comment): a stale until date left
   // over from an already-lapsed mark must never silently cap a fresh one.
   // Also the dismissible zero-capacity suggestion's action button (see
-  // CapacityDetail.jsx) — do_not_visit only ever SKIPS this place in future
+  // CapacityDetail.jsx) - do_not_visit only ever SKIPS this place in future
   // route proposals, it never deletes or hides anything already on file, so
   // no confirm is needed here.
   async function setDoNotVisit(until) {
@@ -341,8 +384,8 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // Clears the place-level suppression early (POST /api/visits/:id/snooze —
-  // fired from UpcomingVisitDetailModal — is the only way it gets set). The
+  // Clears the place-level suppression early (POST /api/visits/:id/snooze -
+  // fired from UpcomingVisitDetailModal - is the only way it gets set). The
   // visit that set it keeps its own 'snoozed' record; this only undoes what
   // schedulingEngine.js's eligibility() reads.
   async function liftSnooze() {
@@ -359,7 +402,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   }
 
   // Detaches a person from this place (place_id -> null) without deleting
-  // them — same as PersonDetail's own "Remove from place", just reachable
+  // them - same as PersonDetail's own "Remove from place", just reachable
   // straight from the list here too.
   async function removePerson(person) {
     if (!window.confirm(`Remove ${person.name} from ${data.name}? Their visit history will stay on file.`)) return;
@@ -375,12 +418,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     }
   }
 
-  // Deletes a whole trip — every encounter on it goes with it (the FK
+  // Deletes a whole trip - every encounter on it goes with it (the FK
   // cascades server-side), and it's the same trip PersonDetail reads, so
   // removing it here removes it there on next load too. Dropping only ONE
   // person from a trip is VisitDetailModal's per-encounter ✕, not this.
   // Also reused for a still-planned (status: 'planned') visit via
-  // UpcomingVisitDetailModal's own Delete button below — those have no
+  // UpcomingVisitDetailModal's own Delete button below - those have no
   // encounters yet, hence the conditional clause.
   async function removeVisit(visit) {
     const warning = visit.encounters?.length ? ' Everyone recorded on it goes with it.' : '';
@@ -416,7 +459,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   }
 
   // Clicking the backdrop backs out of an in-progress inline notes edit
-  // instead of closing the whole card out from under it — a second backdrop
+  // instead of closing the whole card out from under it - a second backdrop
   // click (with nothing left open) closes the card as normal. stopPropagation
   // so this doesn't bubble up to any ancestor modal-backdrop this card might
   // itself be nested inside.
@@ -447,30 +490,63 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         </div>
         <div className="modal-body">
           {loadError && <div className="error-banner">{loadError}</div>}
-          {/* Contact Info, Details, and Relationship in one row — Details
+          {/* Contact Info, Details, and Relationship in one row - Details
               (just standing notes) is the simplest of the three, so it's
-              what keeps this row short; People (busier — a scrollable list
+              what keeps this row short; People (busier - a scrollable list
               plus header actions) moved down to pair with Capacity instead.
               Contact Info/Relationship stay pinned to a fixed width (wide
               enough that Relationship's status+trend never wraps). No fixed
-              height here (unlike the two rows below) — this row's content is
+              height here (unlike the two rows below) - this row's content is
               always short and bounded (address, one notes field, a status
               line), so it can just size to whatever it actually needs. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-            <div className="card" style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
+            <div className="card" style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column' }}>
               <div className="card-head"><h2>Contact Info</h2></div>
               <div className="card-body stack" style={{ flex: 1, justifyContent: 'center' }}>
                 <div className="tiny">
                   {data.address && <div>{data.address}</div>}
                   <div>{data.city}, {data.state} {data.zip} · <strong>{data.region}</strong></div>
-                  {data.phone && <div>{data.phone}</div>}
+                  {/* Phone itself is the tap/click target (tel: - the field
+                      rep is usually looking this up mid-drive) rather than a
+                      separate "Call" button next to inert text. */}
+                  {data.phone && (
+                    <div>
+                      <a href={`tel:${data.phone}`} className="link-button" title={`Call ${data.phone}`}>{data.phone}</a>
+                    </div>
+                  )}
+                </div>
+                {/* navigateUrl() builds a Google Maps directions link from
+                    address/city/state/zip - the single biggest field-usability
+                    gap flagged in review: this card used to have a Navigate
+                    button (removed by accident in a modal-redesign pass, see
+                    git blame on this file), and a rep pulling up a place while
+                    already on the road has no other way to get directions from
+                    here. Real <a> (not a Button+window.open) so a long-press/
+                    right-click "open in new tab" still works, and
+                    rel="noopener noreferrer" since it's an external site. */}
+                <div className="tag-list">
+                  <a
+                    className="btn secondary small"
+                    href={navigateUrl(data)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open directions to this address in Google Maps"
+                  >
+                    Navigate
+                  </a>
                 </div>
               </div>
             </div>
 
-            {/* Durable notes about the organization itself — not tied to any one
-                visit or person (e.g. "front desk is picky about walk-ins"). */}
-            <div className="card" style={{ flex: 1, minWidth: 0 }}>
+            {/* Durable notes about the organization itself - not tied to any one
+                visit or person (e.g. "front desk is picky about walk-ins").
+                flex-basis 250px (not the bare `flex: 1`/basis-0% this used to
+                be) so it actually participates in the row's flex-wrap: wrap -
+                a basis-0% item's hypothetical size is 0, so the browser never
+                considers it "too big to fit" and it just gets squeezed into
+                whatever sliver of space is left on the line instead of
+                wrapping, however little room remains. */}
+            <div className="card" style={{ flex: '1 1 250px', minWidth: 0 }}>
               <div className="card-head">
                 <h2>Details</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -488,14 +564,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               </div>
               <div className="card-body stack">
                 {/* Snooze/do-not-visit status + controls moved to the Upcoming
-                    Visits card below (2026-08-10) — that's where a rep is
+                    Visits card below (2026-08-10) - that's where a rep is
                     already looking to answer "why hasn't this place come up in
-                    routing?", and where the do-not-visit action now lives too. */}
-                {data.skipped_visit_count > 0 && (
-                  <div className="tiny muted">
-                    Skipped {data.skipped_visit_count} time{data.skipped_visit_count === 1 ? '' : 's'} — planned, then never visited.
-                  </div>
-                )}
+                    routing?", and where the do-not-visit action now lives too.
+                    Skipped visits used to get their own rollup line here too;
+                    they now show as their own rows in Visit History below,
+                    tagged "Skipped", instead of a bare count. */}
                 {editingNotes ? (
                   <div className="stack">
                     <textarea
@@ -507,7 +581,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                     />
                     <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                       {data.notes ? (
-                        <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
+                        <Button variant="danger" size="small" title="Delete this note - can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
                           {removingNotes ? 'Deleting…' : 'Delete'}
                         </Button>
                       ) : <span />}
@@ -535,7 +609,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               </div>
             </div>
 
-            <div className="card" style={{ flex: '0 0 250px' }}>
+            <div className="card" style={{ flex: '1 1 250px' }}>
               <div className="card-head"><h2>Relationship</h2></div>
               <div className="card-body stack">
                 <PlaceRelationship
@@ -547,16 +621,16 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             </div>
           </div>
 
-          {/* People + Capacity on the next line — both are the denser,
+          {/* People + Capacity on the next line - both are the denser,
               scrollable cards, same fixed-height/scroll pattern as
               PersonDetail's Details/Referrals row. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
             {/* People here: names, click one to open their full detail
-                (PersonDetail) — each person's own referral metrics show in
+                (PersonDetail) - each person's own referral metrics show in
                 their row (the per-person breakdown); the place-level roll-up
                 lives up top next to the category/tier badges, and again below
                 as a one-line summary since it's important place-level info. */}
-            <div className="card" style={{ flex: 1, minWidth: 0, height: 240, display: 'flex', flexDirection: 'column' }}>
+            <div className="card detail-card-240" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>People ({data.people.length})</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -594,7 +668,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                           <Button
                             variant="ghost"
                             size="small"
-                            title="Unassign person — they stay on file, just no longer linked to this place"
+                            title="Unassign person - they stay on file, just no longer linked to this place"
                             disabled={removingPersonId === p.id}
                             onClick={(e) => { e.stopPropagation(); removePerson(p); }}
                           >
@@ -608,12 +682,26 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               </div>
             </div>
 
-            {/* Capacity (capacity-computation-spec.md) — the OTHER cadence
+            {/* Capacity (capacity-computation-spec.md) - the OTHER cadence
                 axis, has more to explain than Relationship's short version
                 (resolution source, staleness, override, observation
-                history) — see CapacityDetail.jsx. */}
-            <div className="card" style={{ flex: 1, minWidth: 0, height: 240, display: 'flex', flexDirection: 'column' }}>
-              <div className="card-head"><h2>Capacity</h2></div>
+                history) - see CapacityDetail.jsx. */}
+            <div className="card detail-card-240" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <div className="card-head">
+                <h2>Capacity</h2>
+                <div className="tag-list" style={{ flex: 'unset' }}>
+                  {!addingCapacityObservation && !capacityOverrideEditing && (
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      title={data.capacity?.declared ? 'Record a fresh pre-qualification answer' : "Record this place's pre-qualification answer"}
+                      onClick={() => setAddingCapacityObservation(true)}
+                    >
+                      {data.capacity?.declared ? 'Update pre-qualification' : 'Add pre-qualification'}
+                    </Button>
+                  )}
+                </div>
+              </div>
               <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                 <PlaceCapacity
                   place={data}
@@ -623,7 +711,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   savingOverride={savingCapacityOverride}
                   onAddObservation={addCapacityObservation}
                   savingObservation={savingCapacityObservation}
+                  addingObservation={addingCapacityObservation}
+                  setAddingObservation={setAddingCapacityObservation}
+                  onEditingOverrideChange={setCapacityOverrideEditing}
                   onMarkDoNotVisit={() => setDoNotVisit(null)}
+                  onDeleteObservation={deleteCapacityObservation}
+                  deletingObservationId={deletingObservationId}
                 />
               </div>
             </div>
@@ -631,52 +724,37 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
 
           {/* Upcoming Visits + Visit History on the last line, same
               fixed-height/scroll pattern as the row above. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
           {/* Still-open route-planner-committed visits, soonest first. View
-              only for now — editing a planned visit will come later, through
+              only for now - editing a planned visit will come later, through
               the same Route Planner/schedule-drafts flow a route's own days
               already use, not this card. */}
-          <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
+          <div className="card detail-card-268" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
-              <h2>Upcoming Visits ({data.upcoming_visits.length})</h2>
+              <h2>Upcoming Visits</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                {/* Manual Visit Planning (spec §3) — "I'm going to Tabitha
-                    on Thursday," said directly, no route-planner draft
-                    involved. Opens PlanVisitModal. Sits next to Do not
-                    visit… here rather than its own row further down — same
-                    "card-head is where this card's actions live" precedent
-                    the People card's Assign/New/Log a referral row already
-                    sets. */}
-                <Button
-                  variant="secondary"
-                  size="small"
-                  title="Schedule a future visit directly, without the route planner"
-                  onClick={() => setPlanningVisit(true)}
-                >
-                  Plan a visit…
-                </Button>
                 {!isDoNotVisitActive(data) && !markingDoNotVisit && (
                   <Button
-                    variant="caution"
+                    variant="danger"
                     size="small"
                     title="Stop proposing this place in the route planner"
                     onClick={() => setMarkingDoNotVisit(true)}
                   >
-                    Do not visit…
+                    Do not visit
                   </Button>
                 )}
               </div>
             </div>
             <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {/* The only visible answer to "why hasn't this place come up in
-                  routing?" — both flags act on the whole place, not any one
+                  routing?" - both flags act on the whole place, not any one
                   visit, so they live here rather than inside a specific
                   upcoming visit's own popup. Plain text + a small secondary
-                  action, not a warning — both are deliberate rep choices,
+                  action, not a warning - both are deliberate rep choices,
                   not problems. */}
               {isSnoozeActive(data) && (
                 <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="tiny">Snoozed — out of routing until {formatDate(data.snooze_until)}.</div>
+                  <div className="tiny">Snoozed - out of routing until {formatDate(data.snooze_until)}.</div>
                   <Button variant="secondary" size="small" onClick={liftSnooze} disabled={liftingSnooze} title="Make this place eligible for routing again now">
                     {liftingSnooze ? 'Lifting…' : 'Lift snooze'}
                   </Button>
@@ -685,7 +763,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               {isDoNotVisitActive(data) && (
                 <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <div className="tiny">
-                    Do not visit — {data.do_not_visit_until ? `until ${formatDate(data.do_not_visit_until)}` : 'indefinitely'}.
+                    Do not visit - {data.do_not_visit_until ? `until ${formatDate(data.do_not_visit_until)}` : 'indefinitely'}.
                   </div>
                   <span className="tag-list" style={{ flex: 'unset' }}>
                     <Button variant="secondary" size="small" onClick={() => setMarkingDoNotVisit(true)} title="Change the until-date" disabled={liftingDoNotVisit}>
@@ -714,77 +792,105 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 </div>
               )}
 
-              {/* Dated promises to return — replaces the old bare
+              {/* Dated promises to return - replaces the old bare
                   visits.next_visit_date line below the Visit History card
                   (see PlaceCommitments.jsx / services/placeCommitments.js).
                   Lives here, not down in Visit History, because a
-                  commitment constrains the PLANNER going forward — the same
+                  commitment constrains the PLANNER going forward - the same
                   reason snooze/do-not-visit live in this card. */}
               <PlaceCommitments
                 commitments={data.commitments}
-                people={data.people}
-                onAdd={addCommitment}
-                saving={savingCommitment}
-                onReschedule={rescheduleCommitment}
-                rescheduling={reschedulingCommitmentSaving}
-                onWaive={waiveCommitment}
-                waivingId={waivingCommitmentId}
+                onAddClick={() => setAddingCommitment(true)}
+                onSelect={setViewingCommitment}
                 onDelete={deleteCommitment}
                 deletingId={deletingCommitmentId}
               />
 
-              {data.upcoming_visits.length > 0 && (
-                <ul className="list">
-                  {data.upcoming_visits.map((v) => (
-                    <li
-                      key={v.id}
-                      className="stack hover-row"
-                      style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); setViewingUpcomingVisit(v); }}
-                    >
-                      <div className="tag-list" style={{ justifyContent: 'space-between' }}>
-                        <div className="tag-list" style={{ flex: 'unset' }}>
-                          <strong className="tiny">{formatDate(v.scheduled_date)}</strong>
-                          {/* A planned stop normally has no encounters yet, so
-                              this is usually just the rep's name. */}
-                          {(v.user_name || v.encounters?.length) && (
-                            <span className="tiny muted">
-                              · {[v.user_name, encounterSummary(v.encounters)].filter(Boolean).join(' ')}
-                            </span>
-                          )}
+              {/* Labeled to match Commitments' own caption above, plus a full
+                  divider (not just the list rows' own thin top-borders) -
+                  the two lists used to run together with no boundary between
+                  them (both are bold-date rows separated by the same thin
+                  top-border), so a plain glance couldn't tell a commitment
+                  row from a visit row. Same margin-top/padding-top/border-top
+                  section-break pattern as .day-overview-plan in
+                  styles.css. */}
+              <div className="stack" style={{ gap: 6, marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border)' }}>
+                <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+                    Visits{data.upcoming_visits.length > 0 ? ` (${data.upcoming_visits.length})` : ''}
+                  </div>
+                  {/* Manual Visit Planning (spec §3) - "I'm going to Tabitha
+                      on Thursday," said directly, no route-planner draft
+                      involved. Opens PlanVisitModal. Lives on this label row
+                      rather than the card-head now, same "Add…" placement
+                      Commitments' own label row above uses. */}
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    title="Schedule a future visit directly, without the route planner"
+                    onClick={() => setPlanningVisit(true)}
+                  >
+                    + Plan a visit
+                  </Button>
+                </div>
+                {data.upcoming_visits.length === 0 && <div className="tiny muted">No upcoming visits.</div>}
+                {data.upcoming_visits.length > 0 && (
+                  <ul className="list">
+                    {data.upcoming_visits.map((v) => (
+                      <li
+                        key={v.id}
+                        className="stack hover-row"
+                        style={{ padding: '10px 0', borderTop: '1px solid var(--border)' }}
+                        onClick={() => { setEditingNotes(false); setViewingUpcomingVisit(v); }}
+                      >
+                        <div className="tag-list" style={{ justifyContent: 'space-between' }}>
+                          <div className="tag-list" style={{ flex: 'unset' }}>
+                            <strong className="tiny">{formatDate(v.scheduled_date)}</strong>
+                            {/* A planned stop normally has no encounters yet, so
+                                this is usually just the rep's name. */}
+                            {(v.user_name || v.encounters?.length) && (
+                              <span className="tiny muted">
+                                · {[v.user_name, encounterSummary(v.encounters)].filter(Boolean).join(' ')}
+                              </span>
+                            )}
+                          </div>
+                          <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
+                            {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
+                          </span>
                         </div>
-                        <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
-                          {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
-                        </span>
-                      </div>
-                      {v.notes && <div className="tiny">{v.notes}</div>}
-                      {v.crossRepFloorWarning && (
-                        <div
-                          className="tiny"
-                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
-                        >
-                          {crossRepFloorWarningText(v.crossRepFloorWarning)}
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+                        {v.notes && <div className="tiny">{v.notes}</div>}
+                        {v.crossRepFloorWarning && (
+                          <div
+                            className="tiny"
+                            style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+                          >
+                            {crossRepFloorWarningText(v.crossRepFloorWarning)}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Every visit ever logged on this place, most recent first. One row
-              per TRIP: the server groups the encounters (see routes/visits.js),
+          {/* Every visit ever resolved for this place - completed AND
+              skipped, most recent first (routes/places.js). One row per
+              TRIP: the server groups the encounters (see routes/visits.js),
               so a visit where three people were met is one entry here listing
-              all three, not three entries. Clicking it opens the trip, where
-              each person can be opened on their own.
+              all three, not three entries. Clicking a completed row opens the
+              trip, where each person can be opened on their own; a skipped
+              row (tagged "Skipped" - no encounters, it never happened) opens
+              SkippedVisitDetailModal instead, same as the Calendar tab's
+              skipped-visit popup, with the same "Log this visit" path to turn
+              it into a completed one.
 
               No crossRepFloorWarning pill here (unlike the Upcoming Visits
-              card above) — this list is always status: 'completed' (see
-              routes/places.js), and the warning exists to help a rep pick a
-              different stop before it happens. Once it's already happened,
-              there's nothing left to act on. */}
-          <div className="card" style={{ flex: 1, minWidth: 0, height: 268, display: 'flex', flexDirection: 'column' }}>
+              card above) - the warning exists to help a rep pick a different
+              stop before it happens, and both completed and skipped rows are
+              already resolved, so there's nothing left to act on. */}
+          <div className="card detail-card-268" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <div className="card-head">
               <h2>Visit History ({data.visits.length})</h2>
               <Button size="small" title="Record a visit to this place" onClick={() => { setEditingNotes(false); setLogging(true); }}>Log a visit</Button>
@@ -801,7 +907,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={v.id}
                       className="hover-row"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); setViewingVisit(v); }}
+                      onClick={() => { setEditingNotes(false); if (v.status === 'skipped') setViewingSkippedVisit(v); else setViewingVisit(v); }}
                     >
                       {/* minWidth:0 so a long "with A, B and C" line wraps
                           within its own column instead of pushing the delete
@@ -812,8 +918,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       <div className="stack" style={{ minWidth: 0 }}>
                         <div className="tag-list" style={{ minWidth: 0 }}>
                           <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
+                          {/* A skipped row never has encounters (it never
+                              happened) - tag it instead of leaving it looking
+                              like a quiet completed visit. */}
+                          {v.status === 'skipped' && <strong className="tiny">· Skipped</strong>}
                           {/* "Lisa Marks with Flibber Gibblits, New Guy and a
-                              staff member" — who visited, then everyone they met. */}
+                              staff member" - who visited, then everyone they met. */}
                           {(v.user_name || v.encounters?.length) && (
                             <span className="tiny muted">
                               · {[v.user_name, encounterSummary(v.encounters)].filter(Boolean).join(' ')}
@@ -821,7 +931,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                           )}
                         </div>
                         {v.notes && <div className="tiny">{v.notes}</div>}
-                        {/* commitments_made — the promise(s) this visit made
+                        {/* commitments_made - the promise(s) this visit made
                             (Place Commitments spec §6.3), via source_visit_id;
                             replaces the old bare next_visit_date field. The
                             suppression caveat only applies to a still-
@@ -830,7 +940,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                             (schedulingEngine.js's eligibility() does not let a
                             due commitment bypass either), so while one is
                             active, an unresolved promise sits unacted on
-                            until it lifts — a promise already fulfilled/
+                            until it lifts - a promise already fulfilled/
                             rescheduled/waived has nothing left to suppress. */}
                         {v.commitments_made?.map((c) => (
                           <div key={c.id} className="tiny muted">
@@ -861,7 +971,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           <Button
             variant="danger"
             style={{ marginRight: 'auto' }}
-            title="Permanently delete this place — can't be undone. People and visit history stay on file, just no longer linked to it."
+            title="Permanently delete this place - can't be undone. People and visit history stay on file, just no longer linked to it."
             onClick={deletePlace}
             disabled={deleting}
           >
@@ -880,7 +990,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         />
       )}
 
-      {/* Ad-hoc visit logging — not tied to today's generated route, just this place. */}
+      {/* Ad-hoc visit logging - not tied to today's generated route, just this place. */}
       {logging && (
         <VisitLogModal
           placeId={data.id}
@@ -891,7 +1001,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         />
       )}
 
-      {/* Create/Edit person modal — only rendered when editingPerson isn't undefined. */}
+      {/* Create/Edit person modal - only rendered when editingPerson isn't undefined. */}
       {editingPerson !== undefined && (
         <PersonModal
           placeId={data.id}
@@ -902,7 +1012,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         />
       )}
 
-      {/* "Assign person" — assign someone who already exists elsewhere (or is
+      {/* "Assign person" - assign someone who already exists elsewhere (or is
           unassigned) to this place, instead of creating a new record. */}
       {assigningPerson && (
         <AssignPersonModal
@@ -951,17 +1061,30 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         />
       )}
 
+      {viewingSkippedVisit && (
+        <SkippedVisitDetailModal
+          visit={viewingSkippedVisit}
+          onClose={() => setViewingSkippedVisit(null)}
+          onComplete={(v) => { setViewingSkippedVisit(null); setEditingVisit(v); }}
+        />
+      )}
+
       {viewingUpcomingVisit && (
         <UpcomingVisitDetailModal
           visit={viewingUpcomingVisit}
           onClose={() => setViewingUpcomingVisit(null)}
-          onComplete={(v) => { setViewingUpcomingVisit(null); setEditingVisit(v); }}
+          onComplete={(v) => {
+            if (v.user_id != null && v.user_id !== userId && !window.confirm("This visit is logged under a different rep's account. Log it anyway?")) return;
+            setViewingUpcomingVisit(null);
+            setEditingVisit(v);
+          }}
           onSnoozed={() => { setViewingUpcomingVisit(null); load(); }}
           onDelete={(v) => { setViewingUpcomingVisit(null); removeVisit(v); }}
+          onEdited={() => { setViewingUpcomingVisit(null); load(); }}
         />
       )}
 
-      {/* VisitLogModal expects `visit_id`, not `id` — map our row's `id` to
+      {/* VisitLogModal expects `visit_id`, not `id` - map our row's `id` to
           it here so editing an existing visit PATCHes instead of creating a
           new one. */}
       {editingVisit && (
@@ -981,6 +1104,27 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           users={users}
           onClose={() => setPlanningVisit(false)}
           onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {addingCommitment && (
+        <AddCommitmentModal
+          people={data.people}
+          onAdd={addCommitment}
+          saving={savingCommitment}
+          onClose={() => setAddingCommitment(false)}
+        />
+      )}
+
+      {viewingCommitment && (
+        <CommitmentDetailModal
+          commitment={viewingCommitment}
+          people={data.people}
+          onReschedule={rescheduleCommitment}
+          rescheduling={reschedulingCommitmentSaving}
+          onWaive={waiveCommitment}
+          waiving={waivingCommitment}
+          onClose={() => setViewingCommitment(null)}
         />
       )}
     </div>

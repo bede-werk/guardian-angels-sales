@@ -1,10 +1,10 @@
 // Single source of "does placing a visit at this place, on this date,
-// collide with something" — the floor/collision rules that used to live
+// collide with something" - the floor/collision rules that used to live
 // only inside schedulingEngine.js's eligibility() (the generation path) and
 // were separately, narrowly reinvented (or simply missing) everywhere else
 // a visit/stop gets created: scheduleDraft.js's addStop (own-draft dedupe +
 // same-date lock only, no floor at all) and routes/visits.js's manual
-// "Log a visit" (exact-date collision only, no floor at all — see that
+// "Log a visit" (exact-date collision only, no floor at all - see that
 // route's own comment admitting it). One rule set, several callers.
 //
 // Follows this stack's existing pure/impure split (schedulingEngine.js
@@ -14,13 +14,13 @@
 // separate async layer does the real DB reads and calls into them.
 //
 // daysSince lives HERE (not schedulingEngine.js, where it used to be
-// defined) so this module has no dependency on schedulingEngine.js at all —
+// defined) so this module has no dependency on schedulingEngine.js at all -
 // schedulingEngine.js depends on THIS module instead, and re-exports
 // daysSince unchanged so its other existing consumers (crossRepFloorWarning.js,
 // relationship.js) don't need to change their require() at all. The reverse
 // direction (this module requiring schedulingEngine.js for daysSince, which
 // in turn requires this module for isFloorConflict/isCommitmentDue) would be
-// a circular require — harmless-looking until whichever module loads second
+// a circular require - harmless-looking until whichever module loads second
 // destructures a function off the other's still-empty module.exports and
 // gets undefined. Not worth the risk for one function.
 const defaultSchedulingConfig = require('../config/scheduling');
@@ -30,7 +30,7 @@ const { getBindingCommitment, getBindingCommitmentsForPlaces } = require('./plac
 
 // Integer day count between two 'YYYY-MM-DD' strings (today - dateStr).
 // Parsed as UTC calendar dates (not Date.parse) so this is immune to the
-// host machine's local timezone. Moved verbatim from schedulingEngine.js —
+// host machine's local timezone. Moved verbatim from schedulingEngine.js -
 // byte-identical, not re-derived.
 function daysSince(dateStr, today) {
   const [y1, m1, d1] = dateStr.split('-').map(Number);
@@ -40,10 +40,10 @@ function daysSince(dateStr, today) {
   return Math.round((b - a) / 86400000);
 }
 
-// A due commitment (a human explicitly asking us back — a place_commitments
+// A due commitment (a human explicitly asking us back - a place_commitments
 // row now, not visits.next_visit_date, though the parameter name is kept
 // since every caller here still speaks in this pure-function vocabulary)
-// bypasses the hard floor — see isFloorConflict. Ported verbatim from
+// bypasses the hard floor - see isFloorConflict. Ported verbatim from
 // schedulingEngine.js's eligibility(), which used to inline this same
 // `Boolean(...)` check.
 function isCommitmentDue({ nextVisitDate, today }) {
@@ -54,7 +54,7 @@ function isCommitmentDue({ nextVisitDate, today }) {
 // comparison (`daysSince(lastVisitDate, today) < config.HARD_FLOOR_DAYS`),
 // with one generalization: Math.abs on the gap. A completed visit is always
 // dated on or before `today` in practice, so this was a no-op for
-// FLOOR_COMPLETED. It stops being a no-op for FLOOR_PLANNED (Step 3) — a
+// FLOOR_COMPLETED. It stops being a no-op for FLOOR_PLANNED (Step 3) - a
 // planned visit is routinely dated AFTER `today` (a place planned for day 1
 // of a window, evaluated again as a candidate for day 5), and an unsigned
 // gap there would read as an enormous negative number, which is always
@@ -71,20 +71,20 @@ function isFloorConflict({ lastVisitDate, today, config }) {
 }
 
 // Assembles the full Conflict[] list for one place+date from already-
-// fetched, pre-shaped inputs — no knex, no async, directly unit-testable.
+// fetched, pre-shaped inputs - no knex, no async, directly unit-testable.
 // Every field on `input` besides placeId/today/config is optional: a caller
 // only supplies what it fetched / is relevant to its call site. Generation's
 // pool-wide pass (via schedulingEngine.js's eligibility()) never has a
 // sameDateVisit/draftElsewhere/ownDraftDuplicate to give, since ranking a
 // ~280-place pool doesn't work against one single target place+date the way
-// addStop/manual-log do — those still only ever call the two rule
+// addStop/manual-log do - those still only ever call the two rule
 // functions above directly (isCommitmentDue/isFloorConflict), not this.
 //
 // today: the date conflicts are being evaluated FOR, not necessarily the
 // real calendar date. Matches every existing caller's convention (see e.g.
 // scheduleDraft.js's rankedCandidatesForDay/getSuggestions, which both pass
-// `today: date` — the day being planned — into buildCandidatePool/
-// rankCandidates, not org-today) — the floor is measured relative to the
+// `today: date` - the day being planned - into buildCandidatePool/
+// rankCandidates, not org-today) - the floor is measured relative to the
 // visit date under consideration, not to whenever the query happens to run.
 //
 // Conflict shape:
@@ -110,7 +110,7 @@ function detectConflictsPure(input) {
     });
   }
 
-  // Commitment exemption suppresses FLOOR_COMPLETED and FLOOR_PLANNED —
+  // Commitment exemption suppresses FLOOR_COMPLETED and FLOOR_PLANNED -
   // never SAME_DATE_VISIT, which is a same-day fact, not a recency guess a
   // commitment could override.
   const commitmentDue = isCommitmentDue({ nextVisitDate: input.nextVisitDate, today });
@@ -118,12 +118,12 @@ function detectConflictsPure(input) {
     // Same guard as plannedVisits below: SAME_DATE_VISIT is always dated
     // exactly `today` (see detectConflicts/detectConflictsForStops), so if
     // the most recent completed visit is ALSO dated today, that fact is
-    // already fully reported by SAME_DATE_VISIT — don't report it again as
+    // already fully reported by SAME_DATE_VISIT - don't report it again as
     // a floor conflict too. Compared by date, not by visit id: a place can
     // easily have more than one completed trip on the same day (a rep
     // logging a third stop there after two earlier ones), in which case the
     // "same date" and "most recent completed" queries are free to each pick
-    // a DIFFERENT row that both happen to fall on today — an id match would
+    // a DIFFERENT row that both happen to fall on today - an id match would
     // miss that, but they're the same day either way.
     const todayAlreadyCovered = input.sameDateVisit && input.lastVisitDate === today;
     const floor = todayAlreadyCovered ? null : isFloorConflict({ lastVisitDate: input.lastVisitDate, today, config });
@@ -142,7 +142,7 @@ function detectConflictsPure(input) {
     }
 
     // input.plannedVisits: every OTHER planned visit at this place (the one
-    // exactly on `today`, if any, is already SAME_DATE_VISIT's job — callers
+    // exactly on `today`, if any, is already SAME_DATE_VISIT's job - callers
     // exclude it so the two conflicts don't both fire for the same row).
     // More than one can exist in theory (nothing before this ticket stopped
     // two reps from independently planning the same place on different
@@ -205,29 +205,29 @@ function detectConflictsPure(input) {
 // -- DB-touching layer ------------------------------------------------------
 
 // One place, one target date. Fetches everything detectConflictsPure needs
-// and resolves user names via join — callers get names, never bare ids (see
+// and resolves user names via join - callers get names, never bare ids (see
 // the remediation ticket: an unresolved id is how the generic "already
 // booked elsewhere" 409 message happened in addStop).
 //
 // No production caller yet as of this extraction (Step 1): addStop and the
 // manual visit-log route are wired to call this in Step 2. Built now,
 // against real tables, because Step 1's job is landing one correct detector
-// for those steps to call — not because anything invokes it today.
+// for those steps to call - not because anything invokes it today.
 //
-// db: knex or an open transaction — same convention every other DB-touching
+// db: knex or an open transaction - same convention every other DB-touching
 // function in scheduleDraft.js uses for this parameter.
 // ctx.userId: the requesting user (excluded from DRAFT_ELSEWHERE's "other
-//   user" search — a place in your OWN open draft elsewhere is
+//   user" search - a place in your OWN open draft elsewhere is
 //   ownDraftDuplicate's job, not this).
 // ctx.excludeVisitId: ignore this visit row (editing one in place).
-// ctx.excludeDraftId: the caller's own draft id, if any — both excludes it
+// ctx.excludeDraftId: the caller's own draft id, if any - both excludes it
 //   from the DRAFT_ELSEWHERE search and is what OWN_DRAFT_DUPLICATE checks
 //   against.
 // ctx.workingSet: place_ids already placed in an in-progress, not-yet-
 //   persisted proposal (a caller building several stops in one request
-//   before any of them are written). No current caller needs this — every
+//   before any of them are written). No current caller needs this - every
 //   existing/Step-2 caller persists one stop per call, already covered by
-//   ownDraftDuplicate via a DB read — accepted now so a future bulk caller
+//   ownDraftDuplicate via a DB read - accepted now so a future bulk caller
 //   doesn't need a signature change.
 async function detectConflicts(db, placeId, targetDate, ctx = {}) {
   const { userId, excludeVisitId = null, excludeDraftId = null, workingSet = [] } = ctx;
@@ -251,14 +251,14 @@ async function detectConflicts(db, placeId, targetDate, ctx = {}) {
     .first();
 
   // The binding place_commitments row (services/placeCommitments.js's
-  // getBindingCommitment — earliest OUTSTANDING promised_date). Commitments
+  // getBindingCommitment - earliest OUTSTANDING promised_date). Commitments
   // are no longer tied to a visit's status at all (a promise can be added
-  // standalone from PlaceDetail, with no visit behind it) — this replaces
+  // standalone from PlaceDetail, with no visit behind it) - this replaces
   // the old "any status visit that set next_visit_date" reconstruction.
   const bindingCommitment = await getBindingCommitment(db, placeId);
 
   // FLOOR_PLANNED's candidates (Step 3): every OTHER planned visit at this
-  // place — excludes exactly `targetDate` since a planned visit dated there
+  // place - excludes exactly `targetDate` since a planned visit dated there
   // is already sameDateVisitRow's job (see detectConflictsPure's comment).
   // Every row within HARD_FLOOR_DAYS gets reduced to the single nearest by
   // the pure layer, not here.
@@ -314,7 +314,7 @@ async function detectConflicts(db, placeId, targetDate, ctx = {}) {
 
 // Batched sibling of detectConflicts: the same rules, for MANY place+date
 // pairs in one pass, instead of one detectConflicts call (5 queries) per
-// pair. Built for loadDraftView/loadDraftDayView (scheduleDraft.js) — a
+// pair. Built for loadDraftView/loadDraftDayView (scheduleDraft.js) - a
 // draft's own already-placed stops need re-checking against the detector on
 // every read (another rep can commit a colliding visit at any time after a
 // stop was added), and calling detectConflicts once per stop would turn
@@ -322,12 +322,12 @@ async function detectConflicts(db, placeId, targetDate, ctx = {}) {
 // this codebase's other batched lookups (buildCandidatePool,
 // crossRepVisitsByPlace, lockedElsewherePlaceIdsByDate) all exist to avoid.
 //
-// `stops`: [{ placeId, date }] — a draft's own stops (or a single day's).
+// `stops`: [{ placeId, date }] - a draft's own stops (or a single day's).
 // Returns Map<`${placeId}|${date}`, Conflict[]>.
 //
 // Does not check OWN_DRAFT_DUPLICATE: every stop passed in is already
 // legitimately placed (own-draft dedupe already ran at addStop time), so
-// there is nothing to detect there on a read — unlike detectConflicts,
+// there is nothing to detect there on a read - unlike detectConflicts,
 // which runs BEFORE a placement to decide whether to allow it.
 async function detectConflictsForStops(db, stops, ctx = {}) {
   const { userId, excludeDraftId = null } = ctx;
@@ -338,7 +338,7 @@ async function detectConflictsForStops(db, stops, ctx = {}) {
   if (placeIds.length === 0) return result;
 
   // Every status: sameDateVisit/lastVisitDate/plannedVisits each need their
-  // own status filter (see detectConflicts above) — so this fetches
+  // own status filter (see detectConflicts above) - so this fetches
   // everything for these places and lets the per-stop loop below filter,
   // exactly like detectConflicts' separate single-place queries, just
   // gathered as one multi-place query instead of several.
@@ -352,7 +352,7 @@ async function detectConflictsForStops(db, stops, ctx = {}) {
     visitsByPlace.get(row.placeId).push(row);
   }
 
-  // Binding place_commitments per place (services/placeCommitments.js) — no
+  // Binding place_commitments per place (services/placeCommitments.js) - no
   // longer derived from visits at all (see detectConflicts above for why).
   const bindingCommitmentByPlace = await getBindingCommitmentsForPlaces(db, placeIds);
 

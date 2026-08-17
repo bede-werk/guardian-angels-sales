@@ -1,4 +1,4 @@
-// Manage the canonical list of place categories — promoted from a hardcoded
+// Manage the canonical list of place categories - promoted from a hardcoded
 // config/categories.js enum (see migration 20260727000000) to a real table so
 // it can be edited from the app instead of needing a code change/redeploy
 // every time the business needs a new one.
@@ -7,7 +7,7 @@ const knex = require('../db/knex');
 
 const router = express.Router();
 
-// GET /api/categories — every category, alphabetical, with how many places
+// GET /api/categories - every category, alphabetical, with how many places
 // currently use each (so the "manage categories" UI can warn before a
 // delete that would affect real data).
 router.get('/', async (req, res, next) => {
@@ -24,7 +24,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /api/categories — add a new one.
+// POST /api/categories - add a new one.
 router.post('/', async (req, res, next) => {
   try {
     const name = String(req.body.name || '').trim();
@@ -39,8 +39,8 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// PATCH /api/categories/:id — rename. Cascades to every place currently
-// using the old name so the taxonomy and the actual data never diverge —
+// PATCH /api/categories/:id - rename. Cascades to every place currently
+// using the old name so the taxonomy and the actual data never diverge -
 // unlike deleting a place/person, a category rename isn't a historical
 // record, it's just relabeling a classification value.
 router.patch('/:id', async (req, res, next) => {
@@ -62,8 +62,8 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-// DELETE /api/categories/:id — retire a category. Any place currently using
-// it isn't blocked or destroyed — it falls back to uncategorized (category =
+// DELETE /api/categories/:id - retire a category. Any place currently using
+// it isn't blocked or destroyed - it falls back to uncategorized (category =
 // null, already a normal state for a place), matching this app's
 // detach-not-destroy convention for removing a referenced value.
 router.delete('/:id', async (req, res, next) => {

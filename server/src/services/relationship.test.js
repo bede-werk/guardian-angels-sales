@@ -26,7 +26,7 @@ const {
 
 const ASOF = '2026-08-03';
 
-// 'YYYY-MM-DD' n days before `dateStr`, UTC-safe — same convention as
+// 'YYYY-MM-DD' n days before `dateStr`, UTC-safe - same convention as
 // schedulingEngine.js's daysSince, which this module's decay reads through.
 function daysBefore(dateStr, n) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -130,7 +130,7 @@ describe('decay math', () => {
   });
 
   // The steady-state score for a constant cadence c under half-life H is
-  // 1 / (1 - 0.5^(c/H)) — a function of the RATIO only, which is what lets one
+  // 1 / (1 - 0.5^(c/H)) - a function of the RATIO only, which is what lets one
   // set of thresholds serve both the 30-day and 60-day clocks.
   test('the documented cadence-to-bucket table holds', () => {
     const scoreAtCadence = (cadence) => {
@@ -146,7 +146,7 @@ describe('decay math', () => {
     close(scoreAtCadence(HALF_LIFE_DEFAULT * 2), 1.3333, 0.02);
   });
 
-  // Bede decided (2026-08-10): the prose table's intent wins — "visited half
+  // Bede decided (2026-08-10): the prose table's intent wins - "visited half
   // as often as the half-life" reads weak. RELATIONSHIP_THRESHOLDS.medium
   // moved to 1.4 to put the 1.3333 convergence value on the weak side.
   test('a place visited at half its half-life rate lands in weak', () => {
@@ -160,12 +160,12 @@ describe('decay math', () => {
 });
 
 describe('trend (heating up / cooling down)', () => {
-  test('isHeatingUp is false when both sides are effectively zero — no history either way', () => {
+  test('isHeatingUp is false when both sides are effectively zero - no history either way', () => {
     assert.equal(isHeatingUp(0, 0), false);
     assert.equal(isHeatingUp(0.005, 0.008), false);
   });
 
-  test('isHeatingUp requires clearing the relative threshold — small moves read as noise', () => {
+  test('isHeatingUp requires clearing the relative threshold - small moves read as noise', () => {
     assert.equal(isHeatingUp(1.05, 1.0), false, 'a 5% bump does not clear the 10% threshold');
     assert.equal(isHeatingUp(1.11, 1.0), true);
   });
@@ -184,7 +184,7 @@ describe('trend (heating up / cooling down)', () => {
     assert.equal(isHeatingUp(pureDecayRatio, 1.0), false);
   });
 
-  test('isPlaceCoolingDown is false with no visit history at all — nothing to be overdue from', () => {
+  test('isPlaceCoolingDown is false with no visit history at all - nothing to be overdue from', () => {
     assert.equal(
       isPlaceCoolingDown({ place: { capacity_level: 'medium' }, lastVisitDate: null, recentCompletedCount: 0, relationshipLevel: 'medium', today: ASOF }),
       false
@@ -310,7 +310,7 @@ describe('met-with weighting', () => {
       floorVisits: [visit(ASOF, { met_with_type: 'nobody', outcome: 'materials_only' })],
       asOf: ASOF,
     });
-    close(r.floor_component, 0.05 * 0.25); // 0.0125 — present but shallow
+    close(r.floor_component, 0.05 * 0.25); // 0.0125 - present but shallow
     assert.equal(r.people_component, 0);
     close(r.score, 0.0125);
     assert.equal(r.level, 'weak');
@@ -333,7 +333,7 @@ describe('met-with weighting', () => {
     const r = computePersonRelationship({
       person: barePerson(),
       visits: [
-        visit(daysBefore(ASOF, 400)), // substantive but ancient — still meaningful
+        visit(daysBefore(ASOF, 400)), // substantive but ancient - still meaningful
         visit(daysBefore(ASOF, 5), { outcome: 'materials_only' }), // recent but only 0.25 raw
       ],
       hasReferral: false,
@@ -360,21 +360,21 @@ describe('reciprocity multiplier', () => {
     close(reciprocityMultiplier(barePerson({ preferences: '   ', email: '' }), { hasReferral: false, requestedRecently: false }), 1.0);
   });
 
-  test('a half-set birthday does not count — both month and day are required', () => {
+  test('a half-set birthday does not count - both month and day are required', () => {
     close(reciprocityMultiplier(barePerson({ birthday_month: 3 }), { hasReferral: false, requestedRecently: false }), 1.0);
   });
 
   test('has-ever-referred is binary (x1.15) and never scales with volume', () => {
     const p = barePerson();
     close(reciprocityMultiplier(p, { hasReferral: true, requestedRecently: false }), 1.15);
-    // There is deliberately no way to express "referred 50 times" here — the
+    // There is deliberately no way to express "referred 50 times" here - the
     // model has no access to a count. See the axis-separation rule.
   });
 
   test('a person with every signal set never exceeds the x1.6 cap', () => {
     const maxed = barePerson({ email: 'a@b.c', phone: '(402) 555-1234', preferences: 'likes coffee', birthday_month: 3, birthday_day: 14 });
     const m = reciprocityMultiplier(maxed, { hasReferral: true, requestedRecently: true });
-    close(m, 1.25 * 1.15 * 1.1); // 1.58125 — under the cap naturally
+    close(m, 1.25 * 1.15 * 1.1); // 1.58125 - under the cap naturally
     assert.ok(m <= MAX_RECIPROCITY, `multiplier ${m} must never exceed ${MAX_RECIPROCITY}`);
   });
 
@@ -398,7 +398,7 @@ describe('reciprocity multiplier', () => {
 describe('seed decay', () => {
   // NOTE: the written spec's example ("a 4.0 seed at 30-day half-life reads
   // ~2.0 after 30 days, ~0.5 after 60") is arithmetically off for the 60-day
-  // figure — 4.0 halves to 2.0 at 30 days, 1.0 at 60, and only reaches 0.5 at
+  // figure - 4.0 halves to 2.0 at 30 days, 1.0 at 60, and only reaches 0.5 at
   // 90. The formula itself is unambiguous, so these assert the formula.
   const seeded = (seedDaysAgo) =>
     computePersonRelationship({
@@ -456,7 +456,7 @@ describe('seed decay', () => {
 describe('place rollup', () => {
   const entry = (id, score) => ({ person: { id, name: `P${id}` }, relationship: { score } });
 
-  test('three people at 4.0 roll up to 7.0 — not 12.0 (plain sum) and not 4.0 (max only)', () => {
+  test('three people at 4.0 roll up to 7.0 - not 12.0 (plain sum) and not 4.0 (max only)', () => {
     const r = rollUpPlace({
       place: { id: 1, category: 'Churches' },
       personEntries: [entry(1, 4.0), entry(2, 4.0), entry(3, 4.0)],
@@ -591,7 +591,7 @@ describe('empty cases', () => {
   });
 });
 
-// The pure suite above can't catch a bad column name or a mis-keyed groupBy —
+// The pure suite above can't catch a bad column name or a mis-keyed groupBy -
 // exactly the class of bug that shipped once before in this subsystem (a
 // `r.place_id` that was really `r.id`, which the pure tests sailed past and
 // only a live run caught). These run the real queries against a real,
@@ -613,11 +613,19 @@ describe('bulk DB paths', () => {
       { id: 1, name: 'Fast Place', category: 'Hospice', tier: 1, priority_score: 75 },
       { id: 2, name: 'Slow Place', category: 'Churches', tier: 3, priority_score: 25 },
       { id: 3, name: 'Empty Place', category: 'Churches', tier: 3, priority_score: 25 },
+      // Exists specifically to hold a person with CROSS-PLACE history - see
+      // person 6 below and the "single vs bulk parity" test.
+      { id: 6, name: 'Cross-Place Place', category: 'Hospice', tier: 1, priority_score: 75 },
     ]);
     await db('people').insert([
       { id: 1, place_id: 1, name: 'Sharon K.', email: 's@test.local', phone: '(402) 555-0100' },
       { id: 2, place_id: 1, name: 'Marcus T.' },
       { id: 3, place_id: 2, name: 'Seeded Only', relationship_seed: 4.0, relationship_seeded_at: daysBefore(ASOF, 60) },
+      // Currently assigned to place 6, but their only completed visit was
+      // logged at place 1 (e.g. before they moved) - a person's score must
+      // travel with THEM, not stay pinned to whichever place the visit
+      // happened at.
+      { id: 6, place_id: 6, name: 'Moved Contact' },
     ]);
     await insertVisit(db, {
       place_id: 1, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 15), place_name: 'Fast Place',
@@ -631,7 +639,7 @@ describe('bulk DB paths', () => {
       place_id: 1, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 5), place_name: 'Fast Place',
       encounters: [{ person_id: null, met_with_type: 'receptionist', outcome: 'materials_only' }],
     });
-    // A planned (not completed) visit must be ignored entirely — including
+    // A planned (not completed) visit must be ignored entirely - including
     // its encounter, which is exactly what the join's `v.status` filter is
     // for now that the two live in different tables.
     await insertVisit(db, {
@@ -639,6 +647,13 @@ describe('bulk DB paths', () => {
       encounters: [{ person_id: 1, met_with_type: 'named_person', outcome: 'substantive' }],
     });
     await db('referrals').insert({ place_id: 1, person_id: 1, user_id: 1, referral_date: daysBefore(ASOF, 20) });
+
+    // Person 6's ONLY completed visit is at place 1, not their current place
+    // (place 6) - see the cross-place-history parity test below.
+    await insertVisit(db, {
+      place_id: 1, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 10), place_name: 'Fast Place',
+      encounters: [{ person_id: 6, met_with_type: 'named_person', outcome: 'substantive' }],
+    });
   });
 
   after(async () => {
@@ -656,7 +671,7 @@ describe('bulk DB paths', () => {
     assert.equal(r.contributors[0].name, 'Sharon K.', 'the substantive+referring contact should rank first');
   });
 
-  test('a completed visit is required — planned visits are ignored', async () => {
+  test('a completed visit is required - planned visits are ignored', async () => {
     const byPerson = await computeRelationshipForPeople(db, [1], { asOf: ASOF });
     const r = byPerson.get(1);
     // One completed substantive visit 15 days ago on a 30-day (Hospice) clock:
@@ -690,24 +705,48 @@ describe('bulk DB paths', () => {
     assert.deepEqual(r.contributors, []);
   });
 
-  test('bulk parity: one call for three places equals three single-place calls', async () => {
-    const bulk = await computeRelationshipForPlaces(db, [1, 2, 3], { asOf: ASOF });
+  test('bulk parity: one call for four places equals four single-place calls', async () => {
+    const bulk = await computeRelationshipForPlaces(db, [1, 2, 3, 6], { asOf: ASOF });
     const single = new Map();
-    for (const id of [1, 2, 3]) {
+    for (const id of [1, 2, 3, 6]) {
       const one = await computeRelationshipForPlaces(db, [id], { asOf: ASOF });
       single.set(id, one.get(id));
     }
-    for (const id of [1, 2, 3]) {
+    for (const id of [1, 2, 3, 6]) {
       assert.deepEqual(bulk.get(id), single.get(id), `place ${id} must be identical via either path`);
     }
   });
 
   test('bulk parity holds for people too', async () => {
-    const bulk = await computeRelationshipForPeople(db, [1, 2, 3], { asOf: ASOF });
-    for (const id of [1, 2, 3]) {
+    const bulk = await computeRelationshipForPeople(db, [1, 2, 3, 6], { asOf: ASOF });
+    for (const id of [1, 2, 3, 6]) {
       const one = await computeRelationshipForPeople(db, [id], { asOf: ASOF });
       assert.deepEqual(bulk.get(id), one.get(id), `person ${id} must be identical via either path`);
     }
+  });
+
+  // The bug this guards against: computeRelationshipForPlaces used to build
+  // each person's visit history from the PLACE-scoped encounters query (the
+  // one now used only for the floor component), instead of a query scoped by
+  // person_id. Person 6's only completed visit is at place 1, but they're
+  // currently assigned to place 6 (see the `before` fixture above) - so
+  // GET /places/:id=6 (placeIds=[6]) previously couldn't see that visit at
+  // all (place 1 isn't in its place-scoped query), scoring them 0, while
+  // GET /places (placeIds=[1,2,3,6], which happens to include place 1 too)
+  // accidentally could. Same person, same place, two different scores
+  // depending on which endpoint asked.
+  test("a person's score at their current place includes visits logged at a DIFFERENT place - identical whether asked about alone or in bulk", async () => {
+    const single = await computeRelationshipForPlaces(db, [6], { asOf: ASOF });
+    const bulk = await computeRelationshipForPlaces(db, [1, 2, 3, 6], { asOf: ASOF });
+
+    const rSingle = single.get(6);
+    const rBulk = bulk.get(6);
+
+    assert.ok(rSingle.score > 0, "person 6's cross-place visit must be visible even when place 1 is outside the request");
+    assert.equal(rSingle.contributors.length, 1);
+    assert.equal(rSingle.contributors[0].name, 'Moved Contact');
+
+    assert.deepEqual(rSingle, rBulk, "place 6's computed relationship must not depend on which other places were asked about in the same call");
   });
 
   test('an empty id list short-circuits to an empty map without querying', async () => {
@@ -734,7 +773,7 @@ describe('bulk DB paths', () => {
     });
   });
 
-  test('includeTrend defaults to false — the bulk/list path never computes it', async () => {
+  test('includeTrend defaults to false - the bulk/list path never computes it', async () => {
     const r = (await computeRelationshipForPlaces(db, [1], { asOf: ASOF })).get(1);
     assert.equal(r.trend, null);
     const p = (await computeRelationshipForPeople(db, [1], { asOf: ASOF })).get(1);
@@ -742,8 +781,8 @@ describe('bulk DB paths', () => {
   });
 
   test('a place with a recent (even non-meaningful) visit is neither heating nor cooling', async () => {
-    // Place 1's most recent completed visit — of ANY kind, including the
-    // receptionist drop-off — was 5 days ago, well inside its ~21-day target
+    // Place 1's most recent completed visit - of ANY kind, including the
+    // receptionist drop-off - was 5 days ago, well inside its ~21-day target
     // cadence (medium capacity default x weak relationship). Cooling down
     // cares about "did we show up," not "did we meet someone," so this must
     // NOT read as cooling just because its named-person contacts are stale.
@@ -756,7 +795,7 @@ describe('bulk DB paths', () => {
     // A single old, unremarkable visit: enough to give the place a
     // (barely-nonzero, 'weak') score and a lastVisitDate, without any
     // named-person contact to make it 'heating up' territory. 40 days on a
-    // medium/weak 21-day cadence is 1.9x — well past the 1.25x line.
+    // medium/weak 21-day cadence is 1.9x - well past the 1.25x line.
     await insertVisit(db, {
       place_id: 5, user_id: 1, status: 'completed',
       scheduled_date: daysBefore(ASOF, 40), place_name: 'Overdue Place',
@@ -767,7 +806,7 @@ describe('bulk DB paths', () => {
     assert.equal(r.trend, 'down');
   });
 
-  test('a never-visited place is not cooling down — there is nothing to be overdue from', async () => {
+  test('a never-visited place is not cooling down - there is nothing to be overdue from', async () => {
     const r = (await computeRelationshipForPlaces(db, [3], { asOf: ASOF, includeTrend: true })).get(3);
     assert.equal(r.score, 0);
     assert.equal(r.trend, null);
@@ -777,7 +816,7 @@ describe('bulk DB paths', () => {
     await db('places').insert({ id: 4, name: 'Fresh Place', category: 'Hospice', tier: 1, priority_score: 75 });
     await db('people').insert({ id: 4, place_id: 4, name: 'New Contact' });
     // A substantive visit just 2 days ago, inside the ~4-day heating-up
-    // window for a 30-day (Hospice) half-life — there was no relationship at
+    // window for a 30-day (Hospice) half-life - there was no relationship at
     // all as of the reference date, so this must register as a real gain.
     await insertVisit(db, {
       place_id: 4, user_id: 1, status: 'completed',
@@ -791,9 +830,9 @@ describe('bulk DB paths', () => {
     assert.equal(person.trend, 'up');
   });
 
-  test('a person\'s own cooldown is independent of their place — it does not inherit the place\'s status', async () => {
+  test('a person\'s own cooldown is independent of their place - it does not inherit the place\'s status', async () => {
     // Marcus (person 2, at Fast Place/Hospice) has one 'brief' visit 30 days
-    // ago — his last MEANINGFUL visit — which is past half of Hospice's
+    // ago - his last MEANINGFUL visit - which is past half of Hospice's
     // 30-day half-life (15 days), so HE reads as cooling down even though
     // Fast Place itself (person 1's more recent activity) does not.
     const marcus = (await computeRelationshipForPeople(db, [2], { asOf: ASOF, includeTrend: true })).get(2);
@@ -806,7 +845,7 @@ describe('bulk DB paths', () => {
     });
     const r = (await computeRelationshipForPlaces(db, [1], { asOf: ASOF, includeTrend: true })).get(1);
     assert.equal(r.is_overridden, true);
-    assert.equal(r.trend, null, 'an override is the answer — a computed direction alongside it would just contradict it');
+    assert.equal(r.trend, null, 'an override is the answer - a computed direction alongside it would just contradict it');
     await db('places').where({ id: 1 }).update({
       relationship_level_override: null, relationship_override_at: null, relationship_override_by: null,
     });
@@ -814,12 +853,12 @@ describe('bulk DB paths', () => {
 });
 
 // The single real risk in the visit_encounters split is that the new join
-// silently changes WHAT the scoring functions see — a wrong column name, a
+// silently changes WHAT the scoring functions see - a wrong column name, a
 // dropped row, a row duplicated by a bad join condition. None of those
 // announce themselves; they just quietly move every number in the app. So
 // this suite pins the math across the migration itself: seed FLAT pre-split
 // rows, compute what the scores SHOULD be straight from those rows using the
-// pure functions (which take plain arrays and are untouched by any schema —
+// pure functions (which take plain arrays and are untouched by any schema -
 // they ARE the math), run the split, then assert the real post-split DB path
 // lands on exactly those numbers.
 //
@@ -836,7 +875,7 @@ describe('the visit_encounters split', () => {
   const TRIP_M_CREATED = '2026-07-22 14:30:00';
   const TRIP_M_CREATED_1S = '2026-07-22 14:30:01';
 
-  // Two genuinely separate trips to place 11 on the same day — a morning
+  // Two genuinely separate trips to place 11 on the same day - a morning
   // drop-off and an afternoon meeting. Their created_at values are inside the
   // merge window, so ONLY the differing notes stop them collapsing into one.
   // This is the exact bug class the grouping key was designed around.
@@ -870,21 +909,21 @@ describe('the visit_encounters split', () => {
       person_id: 100, met_with_type: 'named_person', outcome: 'materials_only', they_requested: false },
     { place_id: 10, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 3), place_name: 'Hospice A', created_at: '2026-07-31 16:00:00',
       person_id: null, met_with_type: 'nobody', outcome: 'unavailable', they_requested: false },
-    // A 'named_person' row whose person record was since detached — must fall
+    // A 'named_person' row whose person record was since detached - must fall
     // through to the place FLOOR, never credit anyone. The exact case
     // creditsPerson exists for, and the one most likely to be mis-shuffled by
     // a join that reads person_id off the wrong side.
     { place_id: 10, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 8), place_name: 'Hospice A', created_at: '2026-07-26 11:00:00',
       person_id: null, person_name: 'Departed D.', met_with_type: 'named_person', outcome: 'substantive', they_requested: false },
-    // they_requested TRUE but ancient — outside the trailing half-life, so it
+    // they_requested TRUE but ancient - outside the trailing half-life, so it
     // must NOT switch the reciprocity multiplier on.
     { place_id: 11, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 90), place_name: 'Church B', created_at: '2026-05-05 09:00:00',
       person_id: 102, met_with_type: 'named_person', outcome: 'introduced_new', they_requested: true },
-    // Legacy/unrecognized values on both axes — these must land on the
+    // Legacy/unrecognized values on both axes - these must land on the
     // documented floors rather than vanish or produce NaN.
     { place_id: 11, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 60), place_name: 'Church B', created_at: '2026-06-04 09:00:00',
       person_id: null, met_with_type: 'carrier_pigeon', outcome: 'left_materials', they_requested: false },
-    // A place with no people at all — pure floor.
+    // A place with no people at all - pure floor.
     { place_id: 12, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 30), place_name: 'Bare Place', created_at: '2026-07-04 09:00:00',
       person_id: null, met_with_type: 'receptionist', outcome: 'declined', they_requested: false },
     { place_id: 12, user_id: 1, status: 'completed', scheduled_date: daysBefore(ASOF, 200), place_name: 'Bare Place', created_at: '2026-01-15 09:00:00',
@@ -909,7 +948,7 @@ describe('the visit_encounters split', () => {
     // Migrate to the point IMMEDIATELY BEFORE the split: everything, then
     // step back one migration at a time (migrate.down() reverts a single
     // migration; migrate.rollback() would undo the whole batch) until the
-    // split itself is undone. Not just one down() call — the split is no
+    // split itself is undone. Not just one down() call - the split is no
     // longer guaranteed to be the LAST migration (e.g. capacity_observations/
     // capacity_override landed after it, 2026-08-07), and this loop stays
     // correct no matter how many more land after it in the future, instead
@@ -919,7 +958,7 @@ describe('the visit_encounters split', () => {
       await db.migrate.down();
     }
 
-    // Guard the assumption above rather than trusting it — if this ever
+    // Guard the assumption above rather than trusting it - if this ever
     // rolls back too FAR (e.g. visit_encounters was dropped by some other
     // migration entirely), this suite would otherwise silently start testing
     // the wrong boundary.
@@ -940,7 +979,7 @@ describe('the visit_encounters split', () => {
       { id: 101, place_id: 10, name: 'Bob B.' },
       { id: 102, place_id: 11, name: 'Cara C.', preferences: 'black coffee', birthday_month: 4, birthday_day: 9,
         relationship_seed: 3.0, relationship_seeded_at: daysBefore(ASOF, 40) },
-      { id: 103, place_id: 11, name: 'Dan D.' }, // no visits — a genuine zero
+      { id: 103, place_id: 11, name: 'Dan D.' }, // no visits - a genuine zero
     ]);
     await db('referrals').insert({ place_id: 10, person_id: 100, user_id: 1, referral_date: daysBefore(ASOF, 25) });
     await db('visits').insert(PRE_SPLIT_VISITS);
@@ -1053,7 +1092,7 @@ describe('the visit_encounters split', () => {
       const places = await computeRelationshipForPlaces(db, PLACE_IDS, { asOf: ASOF });
       assert.ok(people.get(100).score > 0, 'Alice must score something');
       assert.ok(people.get(102).seed_component > 0, 'Cara must carry a live seed');
-      assert.equal(people.get(103).score, 0, 'Dan has no history at all — a real zero, not a missing row');
+      assert.equal(people.get(103).score, 0, 'Dan has no history at all - a real zero, not a missing row');
       for (const id of PLACE_IDS) assert.ok(places.get(id).score > 0, `place ${id} must score something`);
       assert.ok(places.get(10).floor_component > 0, 'the detached-person and nobody visits must land on the floor');
       assert.ok(places.get(12).people_component === 0, 'a place with no people has no people component');
@@ -1074,7 +1113,7 @@ describe('the visit_encounters split', () => {
   });
 
   describe('the migration itself', () => {
-    test('no encounter was lost or invented — one per pre-split row', async () => {
+    test('no encounter was lost or invented - one per pre-split row', async () => {
       const [{ count }] = await db('visit_encounters').count('* as count');
       assert.equal(Number(count), preSplitVisitCount);
     });
@@ -1095,7 +1134,7 @@ describe('the visit_encounters split', () => {
       // The whole reason created_at is only the FIRST half of the grouping
       // key: these two rows landed inside the same insert window, so a
       // created_at-only rule would have merged a morning drop-off and an
-      // afternoon meeting into one trip — an unrecoverable loss, since down()
+      // afternoon meeting into one trip - an unrecoverable loss, since down()
       // cannot un-merge. The differing notes veto the merge.
       const trips = await db('visits').where({ place_id: 11, scheduled_date: PAIR_DATE }).orderBy('id').select('*');
       assert.equal(trips.length, 2, 'two genuinely separate trips must stay two trips');
@@ -1106,7 +1145,7 @@ describe('the visit_encounters split', () => {
       }
     });
 
-    test('encounter data survived intact — met_with_type, outcome, they_requested and the person snapshot', async () => {
+    test('encounter data survived intact - met_with_type, outcome, they_requested and the person snapshot', async () => {
       const alice = await db('visit_encounters').where({ person_id: 100, met_with_type: 'named_person', outcome: 'substantive' }).first();
       assert.equal(alice.person_name, 'Alice A.');
       assert.equal(alice.person_title, 'Director');
@@ -1115,18 +1154,18 @@ describe('the visit_encounters split', () => {
       assert.ok(alice.they_requested, 'they_requested must survive as true');
 
       // The detached-person snapshot: no person_id, but the name is still
-      // readable — the whole point of detach-not-delete carrying over.
+      // readable - the whole point of detach-not-delete carrying over.
       const departed = await db('visit_encounters').where({ person_name: 'Departed D.' }).first();
       assert.equal(departed.person_id, null);
       assert.equal(departed.met_with_type, 'named_person');
 
-      // Legacy values are moved verbatim, not normalized — the model floors
+      // Legacy values are moved verbatim, not normalized - the model floors
       // them at read time (see UNKNOWN_*_WEIGHT), the migration doesn't guess.
       const legacy = await db('visit_encounters').where({ met_with_type: 'carrier_pigeon' }).first();
       assert.equal(legacy.outcome, 'left_materials');
     });
 
-    test('non-completed trips kept their encounters too — they are hidden by status, not deleted', async () => {
+    test('non-completed trips kept their encounters too - they are hidden by status, not deleted', async () => {
       const planned = await db('visits').where({ status: 'planned' }).first();
       const encounters = await db('visit_encounters').where({ visit_id: planned.id });
       assert.equal(encounters.length, 1, 'a planned trip still owns its encounter row');
@@ -1174,13 +1213,13 @@ describe('visit_encounters unique-person index', () => {
     assert.equal(rows.length, 2);
   });
 
-  test('the same person on a DIFFERENT trip is fine — the constraint is per-trip', async () => {
+  test('the same person on a DIFFERENT trip is fine - the constraint is per-trip', async () => {
     await db('visit_encounters').insert({ visit_id: 2, person_id: 1, met_with_type: 'named_person', outcome: 'substantive' });
     const rows = await db('visit_encounters').where({ person_id: 1 });
     assert.equal(rows.length, 2);
   });
 
-  test('several person-less encounters on one trip are allowed — that is what PARTIAL buys', async () => {
+  test('several person-less encounters on one trip are allowed - that is what PARTIAL buys', async () => {
     await db('visit_encounters').insert([
       { visit_id: 1, person_id: null, met_with_type: 'staff', outcome: 'brief' },
       { visit_id: 1, person_id: null, met_with_type: 'receptionist', outcome: 'materials_only' },

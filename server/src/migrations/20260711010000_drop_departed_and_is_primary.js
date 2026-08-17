@@ -1,5 +1,5 @@
 // Removes the "primary contact" and "departed" flags on people. Both were
-// manually-set markers; there's no computed replacement — the app just no
+// manually-set markers; there's no computed replacement - the app just no
 // longer distinguishes people this way.
 exports.up = async function up(knex) {
   await knex.schema.alterTable('people', (t) => {

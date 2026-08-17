@@ -7,46 +7,47 @@ import VisitLogModal from './VisitLogModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// "Already Planned" day drill-down — clicking a committed date's row (see
+// "Already Planned" day drill-down - clicking a committed date's row (see
 // RoutePlanner.jsx) opens this instead of exposing Edit/Delete directly on the
 // row, matching how Places.jsx/People.jsx keep a list row plain and put the
 // actual actions inside the detail modal it opens. This is a list of
 // VISITS first and foremost: clicking a row opens the same read-only
 // UpcomingVisitDetailModal PlaceDetail's own "Upcoming visits" card uses,
 // whose "Complete Visit" action is what actually opens VisitLogModal (see
-// onComplete below) — this is how a planned stop becomes a completed one;
+// onComplete below) - this is how a planned stop becomes a completed one;
 // logging it drops the row out of this list (reloadOwnVisits) and, via
 // onChanged, tells VisitsCalendar to reload so the day cell's pills
 // (planned -> completed) update too. A separate "View place" button is the
-// way into full PlaceDetail (onViewPlace) instead — the inverse of the row
+// way into full PlaceDetail (onViewPlace) instead - the inverse of the row
 // click, on purpose, since this modal's whole point is showing what's
 // planned for the day, not the places themselves.
 //
 // Also reused read-only for another rep's planned route (VisitsCalendar.jsx,
-// "All reps" scope) — pass `visits` directly (already-loaded calendar rows,
+// "All reps" scope) - pass `visits` directly (already-loaded calendar rows,
 // skipping this component's own fetch), `readOnly` to drop the whole-day
 // Edit/Delete footer down to a bare Close, and `title` to swap the header
 // from "Planned Route" to e.g. "Nikki Shasserre's Planned Route". Someone
-// else's route can never be reopened/deleted from here — only the owning
+// else's route can never be reopened/deleted from here - only the owning
 // rep's own committed-day endpoints support that (see scheduleDrafts.js).
 export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, title, readOnly, userId, onChanged }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [visits, setVisits] = useState(providedVisits ?? null);
   const [loadError, setLoadError] = useState(null);
   const [viewingVisit, setViewingVisit] = useState(null); // planned visit open in UpcomingVisitDetailModal, or null
   const [loggingVisit, setLoggingVisit] = useState(null); // planned visit open in VisitLogModal for completing, or null
 
-  // A manually-planned visit counting as "already committed" (see
-  // scheduleDraft.js's committedDateSummaries) means a manual-only day is
-  // now reachable here — but the whole-day Discard plan/Edit actions below
-  // are scoped server-side to source: 'planner' (deliberately, so they never
-  // touch a manual visit — see deleteCommittedDay/reopenCommittedDay). On a
-  // manual-only day that scoping means Discard silently deletes zero rows
-  // and Edit 404s, so those buttons only render once there's at least one
-  // planner-sourced visit for them to act on. Defaults to true while still
-  // loading, so the footer doesn't flash committed-then-bare on the common
-  // (non-manual-only) day.
+  // Discard all visits (scheduleDraft.js's deleteCommittedDay) clears the
+  // WHOLE day regardless of source/planned_manually (Bede's call - see that
+  // function's own comment), so its footer just needs "is there anything
+  // here at all," visits included whether planner-committed or manual.
+  //
+  // Edit (reopenCommittedDay) is different: it's still scoped server-side to
+  // source: 'planner' only, since pulling a manual visit into
+  // schedule_draft_stops would misrepresent it as a re-orderable proposal -
+  // 404s on a manual-only day. hasPlannerStops gates the Edit button alone
+  // for that reason. Defaults to true while still loading, so it doesn't
+  // flash present-then-hidden on the common (non-manual-only) day.
+  const hasAnyStops = visits == null || visits.length > 0;
   const hasPlannerStops = visits == null || visits.some((v) => v.planned_manually !== 1);
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
   }, [date, providedVisits]);
 
   // A logged visit is no longer `status: 'planned'`, so it should drop out of
-  // this list — same server call the mount effect above uses, just re-run on
+  // this list - same server call the mount effect above uses, just re-run on
   // demand instead of only once. Not applicable to the read-only other-rep
   // case (no reload prop, and the Log button never renders there anyway).
   function reloadOwnVisits() {
@@ -70,7 +71,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
   }
 
   // Deletes ONE planned visit off this day, as opposed to onDeleteDay's
-  // whole-day "Discard plan". Same confirm+delete+reload shape as
+  // whole-day "Discard all visits". Same confirm+delete+reload shape as
   // PlaceDetail.jsx's own removeVisit; not offered in readOnly mode (see
   // UpcomingVisitDetailModal below), matching onComplete/onSnoozed.
   async function removeVisit(visit) {
@@ -114,16 +115,20 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
                     </div>
                     <div className="tiny muted">
                       {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
-                      {/* Manual Visit Planning spec §5/§7.3 — "manually
+                      {/* Manual Visit Planning spec §5/§7.3 - "manually
                           planned" always shown for a manual stop; "Planned
                           by {Name}" only when someone OTHER than the
                           assignee planned it (cross-rep). userId is this
-                          modal's OWN viewer, not necessarily v.user_id —
+                          modal's OWN viewer, not necessarily v.user_id -
                           "planned it for someone else" reads correctly
                           either way since it compares against the row's own
                           assignee, not the viewer. */}
                       {v.planned_manually === 1 && (
-                        <> · manually planned{v.created_by_user_id != null && v.created_by_user_id !== v.user_id ? ` · planned by ${v.created_by_name || 'another rep'}` : ''}</>
+                        <>
+                          {' · '}
+                          <span style={{ color: 'var(--blue-dark)', fontWeight: 600 }}>Manually planned</span>
+                          {v.created_by_user_id != null && v.created_by_user_id !== v.user_id ? ` · planned by ${v.created_by_name || 'another rep'}` : ''}
+                        </>
                       )}
                     </div>
                     {v.crossRepFloorWarning && (
@@ -147,21 +152,23 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
             </ul>
           )}
         </div>
-        {!readOnly && hasPlannerStops && (
+        {!readOnly && hasAnyStops && (
           <div className="modal-foot" style={{ justifyContent: 'space-between' }}>
-            <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove this day's planned visits">
-              {deletingDay ? 'Removing…' : 'Discard plan'}
+            <Button variant="danger" onClick={onDeleteDay} disabled={deletingDay} title="Remove every visit planned for this day, manually-planned ones included">
+              {deletingDay ? 'Removing…' : 'Discard visits'}
             </Button>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <Button
-                variant="secondary"
-                onClick={onEditDay}
-                disabled={editingDay}
-                title="Pull this day's visits back into an editable proposal"
-              >
-                {editingDay ? 'Editing…' : 'Edit'}
-              </Button>
-            </div>
+            {hasPlannerStops && (
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Button
+                  variant="secondary"
+                  onClick={onEditDay}
+                  disabled={editingDay}
+                  title="Pull this day's visits back into an editable proposal"
+                >
+                  {editingDay ? 'Editing…' : 'Edit'}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -173,6 +180,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
           onComplete={readOnly ? undefined : (v) => { setViewingVisit(null); setLoggingVisit(v); }}
           onSnoozed={readOnly ? undefined : () => { setViewingVisit(null); reloadOwnVisits(); onChanged?.(); }}
           onDelete={readOnly ? undefined : removeVisit}
+          onEdited={readOnly ? undefined : () => { setViewingVisit(null); reloadOwnVisits(); onChanged?.(); }}
         />
       )}
 

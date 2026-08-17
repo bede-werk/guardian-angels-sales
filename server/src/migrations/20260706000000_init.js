@@ -40,7 +40,7 @@ exports.up = async function up(knex) {
     t.integer('partner_id').notNullable().references('id').inTable('partners').onDelete('CASCADE');
     t.integer('user_id').references('id').inTable('users').onDelete('SET NULL');
 
-    t.string('scheduled_date'); // 'YYYY-MM-DD' — kept as text for SQLite/Postgres parity
+    t.string('scheduled_date'); // 'YYYY-MM-DD' - kept as text for SQLite/Postgres parity
     t.string('status').notNullable().defaultTo('planned'); // planned | completed | skipped
     t.integer('sort_order').notNullable().defaultTo(0); // route order within a day (manual reorder)
 

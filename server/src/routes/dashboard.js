@@ -27,14 +27,14 @@ router.get('/', async (req, res, next) => {
       await Promise.all([
         // One row per completed TRIP. This used to be one row per encounter,
         // which counted a visit where the rep met three people as three
-        // visits — "12 visits this week" has to mean twelve times a rep drove
+        // visits - "12 visits this week" has to mean twelve times a rep drove
         // somewhere, not twelve conversations.
         //
         // No `outcome` column: a trip now has one per person met, so a single
         // field for it can only ever be a lie. The lightweight `encounters`
         // summary attached below is what the card shows instead.
         //
-        // Left join, not inner — a completed visit is history that should
+        // Left join, not inner - a completed visit is history that should
         // survive its place being deleted later (detach-not-delete). Prefer
         // the durable v.place_name snapshot for the name; city/tier have no
         // snapshot column, so those are honestly null for a detached visit
@@ -64,7 +64,7 @@ router.get('/', async (req, res, next) => {
         knex('places').count({ c: '*' }).first(),
       ]);
 
-    // One extra query for the week's trips, grouped in JS — never one per row.
+    // One extra query for the week's trips, grouped in JS - never one per row.
     // Sequenced after the Promise.all rather than inside it because it needs
     // the visit ids that query returns.
     const completedWithEncounters = await attachEncounters(knex, completedThisWeek, { idKey: 'visit_id' });

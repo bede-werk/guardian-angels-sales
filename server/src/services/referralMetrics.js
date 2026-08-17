@@ -1,11 +1,11 @@
-// Referral metrics — the objective, time-aware replacement for the old manual
+// Referral metrics - the objective, time-aware replacement for the old manual
 // relationship_temp field (hot/warm/cold/dormant). Everything here is derived
 // live from the `referrals` table: nothing is stored, nothing needs upkeep.
 //
 // Three numbers per person (and, rolled up, per place):
-//   lifetime_referrals      — total referral rows attributed to them, ever
-//   last_referral_date      — the most recent referral_date on file, or null
-//   referrals_last_90_days  — how many landed within the trailing 90-day window
+//   lifetime_referrals      - total referral rows attributed to them, ever
+//   last_referral_date      - the most recent referral_date on file, or null
+//   referrals_last_90_days  - how many landed within the trailing 90-day window
 
 const RECENT_WINDOW_DAYS = 90;
 
@@ -20,7 +20,7 @@ const EMPTY_METRICS = {
 // comparison against this cutoff is all a "recent" check needs.
 // UTC throughout (not .getDate()/.setDate(), which read/write the host's
 // LOCAL calendar day) so the cutoff can't shift by a day depending on the
-// server's timezone — same convention schedulingEngine.js's daysSince() uses.
+// server's timezone - same convention schedulingEngine.js's daysSince() uses.
 function recentWindowCutoff(now = new Date()) {
   const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return new Date(todayUTC - RECENT_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
@@ -65,7 +65,7 @@ async function referralMetricsByPersonId(knex, personIds, now = new Date()) {
   return rowsToMetricsMap(rows, 'person_id');
 }
 
-// Batch per-place metrics, rolled up across each place's *current* people —
+// Batch per-place metrics, rolled up across each place's *current* people -
 // same "live membership, not the referral's own place_id snapshot" rule the
 // old referral_total used (see routes/places.js). Used by the places directory.
 //
@@ -74,7 +74,7 @@ async function referralMetricsByPersonId(knex, personIds, now = new Date()) {
 // source when they change jobs, and the place they left should stop getting
 // credit for a relationship that's no longer there. Investigated as a
 // possible bug 2026-08-07 (by analogy to capacity.js's measuredFloorByPlace,
-// which deliberately reads referrals.place_id directly instead — because
+// which deliberately reads referrals.place_id directly instead - because
 // capacity IS a property of the building, a different question this rollup
 // isn't answering) and closed 2026-08-10 as working as intended. See
 // HANDOFF.md's mental model principle #2 and §18.
@@ -95,7 +95,7 @@ async function referralMetricsByPlaceId(knex, placeIds, now = new Date()) {
 }
 
 // For a single entity whose referral rows are already in hand (e.g. a person
-// detail page that already fetched its own `referrals` array) — computes the
+// detail page that already fetched its own `referrals` array) - computes the
 // same three metrics without a second query.
 function summarizeReferralDates(dates, now = new Date()) {
   const lifetime = dates.length;

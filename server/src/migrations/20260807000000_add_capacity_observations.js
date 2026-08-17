@@ -1,17 +1,17 @@
 // Migration A of the computed-capacity work (see capacity-computation-spec.md
-// §5, services/capacity.js — built next). Source of truth for DECLARED
+// §5, services/capacity.js - built next). Source of truth for DECLARED
 // capacity: every pre-qual answer or manual adjustment appends a row here;
 // nothing is ever overwritten or updated in place. 280 places at roughly one
-// observation per year is a trivially small table on any real time horizon —
+// observation per year is a trivially small table on any real time horizon -
 // deliberately not denormalized onto `places` for performance.
 //
-// No DB-level CHECK constraints (monthly_referrals >= 0, source enum) —
+// No DB-level CHECK constraints (monthly_referrals >= 0, source enum) -
 // matches this codebase's existing convention (capacity_status/
 // relationship_level etc. are validated at the route layer, not the DB
 // layer), and keeps the migration portable across both real backends
-// (better-sqlite3 in dev, pg in production — see knexfile.js).
+// (better-sqlite3 in dev, pg in production - see knexfile.js).
 //
-// person_id is nullable + ON DELETE SET NULL (not a hard requirement — a
+// person_id is nullable + ON DELETE SET NULL (not a hard requirement - a
 // pre-qual answer might come from someone not yet on file, and the UI needs
 // to keep showing "verified by Sharon, who no longer works here" even after
 // Sharon herself is removed). Same for visit_id: an observation can exist
@@ -23,9 +23,9 @@ exports.up = async function up(knex) {
     t.integer('place_id').notNullable().references('id').inTable('places').onDelete('CASCADE');
     t.integer('monthly_referrals').notNullable();
     t.string('source').notNullable(); // 'prequal' | 'manual' | 'seed' | 'import'
-    t.string('observed_at').notNullable(); // 'YYYY-MM-DD' — matches referral_date/scheduled_date convention
+    t.string('observed_at').notNullable(); // 'YYYY-MM-DD' - matches referral_date/scheduled_date convention
     t.integer('person_id').references('id').inTable('people').onDelete('SET NULL'); // who answered, nullable
-    t.integer('visit_id').references('id').inTable('visits').onDelete('SET NULL'); // nullable — see header
+    t.integer('visit_id').references('id').inTable('visits').onDelete('SET NULL'); // nullable - see header
     t.text('note');
     t.timestamp('created_at').defaultTo(knex.fn.now());
 
@@ -38,13 +38,13 @@ exports.up = async function up(knex) {
   // pre-qualified place back to 'unknown' confidence.
   //
   // observed_at uses the real best-known date where one exists: for a
-  // 'verified' place, that's its earliest completed visit's scheduled_date —
+  // 'verified' place, that's its earliest completed visit's scheduled_date -
   // routes/visits.js's maybeCapturePreQualification only ever writes the
   // number on a place's FIRST completed visit, so that visit's date is
   // genuinely when the number was captured, not a guess. Every other case
   // (capacity_status: 'adjusted', a direct place-card edit with no
   // associated visit at all) has no reliable dated signal, so it falls back
-  // to the place's own created_at — which will correctly read as stale
+  // to the place's own created_at - which will correctly read as stale
   // immediately. That's the honest answer, not a fabricated precision (see
   // the spec's own §5 note making this exact call).
   const places = await knex('places')

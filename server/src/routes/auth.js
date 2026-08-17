@@ -16,7 +16,7 @@ function publicUser(user) {
   return { id: user.id, name: user.name };
 }
 
-// GET /api/auth/users — for the login picker. Never exposes the password hash;
+// GET /api/auth/users - for the login picker. Never exposes the password hash;
 // `hasPassword` tells the frontend whether to show a "log in" or "set a
 // password for the first time" form for the selected user.
 router.get('/users', async (req, res, next) => {
@@ -28,7 +28,7 @@ router.get('/users', async (req, res, next) => {
   }
 });
 
-// POST /api/auth/set-password — first-time password creation for a user that
+// POST /api/auth/set-password - first-time password creation for a user that
 // doesn't have one yet. Logs them in immediately (returns a session token).
 router.post('/set-password', async (req, res, next) => {
   try {
@@ -40,9 +40,9 @@ router.post('/set-password', async (req, res, next) => {
 
     const user = await knex('users').where({ id: userId }).first();
     if (!user) return res.status(404).json({ error: 'User not found' });
-    // This endpoint is only for *first-time* setup — once a hash exists, /login is
+    // This endpoint is only for *first-time* setup - once a hash exists, /login is
     // the correct path (prevents someone from silently resetting another user's password).
-    if (user.password_hash) return res.status(400).json({ error: 'Password already set — log in instead' });
+    if (user.password_hash) return res.status(400).json({ error: 'Password already set - log in instead' });
 
     const password_hash = await hashPassword(newPassword);
     const auth_token = generateToken();
@@ -53,7 +53,7 @@ router.post('/set-password', async (req, res, next) => {
   }
 });
 
-// POST /api/auth/login — verify the password and hand back a fresh session token.
+// POST /api/auth/login - verify the password and hand back a fresh session token.
 router.post('/login', async (req, res, next) => {
   try {
     const { userId, password } = req.body;
@@ -61,12 +61,12 @@ router.post('/login', async (req, res, next) => {
 
     const user = await knex('users').where({ id: userId }).first();
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (!user.password_hash) return res.status(400).json({ error: 'No password set yet — create one first' });
+    if (!user.password_hash) return res.status(400).json({ error: 'No password set yet - create one first' });
 
     const ok = await verifyPassword(password, user.password_hash);
     if (!ok) return res.status(401).json({ error: 'Incorrect password' });
 
-    // A brand-new token each login — this also invalidates any previous token,
+    // A brand-new token each login - this also invalidates any previous token,
     // so signing in on a new device signs the old one out.
     const auth_token = generateToken();
     await knex('users').where({ id: userId }).update({ auth_token });
@@ -76,13 +76,13 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-// GET /api/auth/me — used on app load to restore a session from a saved token
+// GET /api/auth/me - used on app load to restore a session from a saved token
 // (requireAuth already validated the token and attached req.user before this runs).
 router.get('/me', requireAuth, (req, res) => {
   res.json(publicUser(req.user));
 });
 
-// POST /api/auth/change-password — rotates the token, so other signed-in
+// POST /api/auth/change-password - rotates the token, so other signed-in
 // devices are signed out; the caller gets the new token back in the response
 // so their own current session stays logged in.
 router.post('/change-password', requireAuth, async (req, res, next) => {
@@ -108,7 +108,7 @@ router.post('/change-password', requireAuth, async (req, res, next) => {
   }
 });
 
-// POST /api/auth/logout — clears the stored token so it can no longer be used.
+// POST /api/auth/logout - clears the stored token so it can no longer be used.
 router.post('/logout', requireAuth, async (req, res, next) => {
   try {
     await knex('users').where({ id: req.user.id }).update({ auth_token: null });

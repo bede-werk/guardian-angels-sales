@@ -14,7 +14,7 @@ const EAST_LINCOLN = { lat: 40.8140, lng: -96.6200 };
 const SOUTHWEST_LINCOLN = { lat: 40.7550, lng: -96.7700 };
 
 // Test-only helper: builds `n` explicit { date, hoursPerDay } entries for
-// generateDraft, one per weekday starting the day after `from` — mirrors the
+// generateDraft, one per weekday starting the day after `from` - mirrors the
 // date list a caller (scheduleDraft.js) would hand in after the user picks
 // weekday dates on the calendar. Weekday-only (not calendar-day) so existing
 // test assertions about specific resulting dates stay valid; generateDraft
@@ -66,7 +66,7 @@ function candidate(p, overrides = {}) {
 }
 
 // A stub optimizeRoute that just puts stops in reverse of whatever order
-// they're given, with a flat legMinutes for every leg — deterministic and
+// they're given, with a flat legMinutes for every leg - deterministic and
 // distinguishable from packTimeBlock's rank-order fallback, so tests can
 // prove fillDayFromZone actually used the optimizer's answer.
 function reversingOptimizer(legMinutes = 10) {
@@ -163,7 +163,7 @@ describe('fillDayFromZone', () => {
     test('caps the optimizer input pool at routeOptimizerConfig.MAX_OPTIMIZE_STOPS', async () => {
       // A generous budget means the top-up pass will keep calling the
       // optimizer with progressively larger stop sets after the initial
-      // call — capture only the FIRST call to isolate the pool-cap behavior
+      // call - capture only the FIRST call to isolate the pool-cap behavior
       // itself from top-up's separate, intentional reach-past-the-cap logic.
       const candidates = Array.from({ length: 5 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln' })));
       let firstCallStopCount = null;
@@ -187,7 +187,7 @@ describe('fillDayFromZone', () => {
     test('tops up leftover budget with the next-best-ranked candidate beyond the pool cap', async () => {
       // 4 same-zone drop_in candidates (each a 16min block: 1min flat drive +
       // 7 visit + 3 prep + 5 data-entry), cap of 2 for the initial optimize
-      // call. Budget of 50 fits exactly 3 blocks (48) but not 4 (64) — the
+      // call. Budget of 50 fits exactly 3 blocks (48) but not 4 (64) - the
       // top-up pass should reach past the pool cap to pull candidate 3 in,
       // then reject candidate 4 once it no longer fits.
       const candidates = Array.from({ length: 4 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })));
@@ -257,7 +257,7 @@ describe('fillDayFromZone', () => {
       const otherPlace = candidate(place(2, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' }));
 
       // The optimizer sequences the commitment LAST despite rank order
-      // putting it first in the input — the accepted sequencing tradeoff —
+      // putting it first in the input - the accepted sequencing tradeoff -
       // but here the tight budget only fits one stop, so the commitment
       // loses its spot on the day entirely, not just its position.
       const reorderingOptimizer = async ({ stops }) => ({ orderedStops: [...stops].reverse(), legMinutes: stops.map(() => 1) });
@@ -295,7 +295,7 @@ describe('fillDayFromZone', () => {
         candidates,
         zone: 'East Lincoln',
         homeBase: DOWNTOWN,
-        budgetMinutes: 1000, // generous — budget alone would fit all 6
+        budgetMinutes: 1000, // generous - budget alone would fit all 6
         optimizeRoute: optimizer,
         routeOptimizerConfig: { MAX_OPTIMIZE_STOPS: 2, MAX_TOPUP_STOPS: 3, MIN_TOPUP_MINUTES: 1 },
       });
@@ -350,7 +350,7 @@ describe('fillDayFromZone', () => {
     test('batches multiple leftover candidates into one re-optimize call instead of one call per stop', async () => {
       // 5 same-zone drop_in candidates, cap of 2 for the initial call. A
       // generous budget means all 3 leftover candidates can plausibly fit
-      // together — top-up should fold them into ONE re-optimize call
+      // together - top-up should fold them into ONE re-optimize call
       // rather than three separate one-at-a-time round-trips.
       const candidates = Array.from({ length: 5 }, (_, i) => candidate(place(i + 1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })));
       let topUpCallCount = 0;
@@ -377,7 +377,7 @@ describe('fillDayFromZone', () => {
     test('a batch candidate that would overflow the batch total is skipped in favor of a cheaper later one, within the same round', async () => {
       // candidate 2 (working_visit, 39min block) would blow the batch total
       // on its own; candidates 3 and 4 (drop_in, 16min blocks) are cheaper
-      // and rank-ordered right behind it — the batch builder should skip 2
+      // and rank-ordered right behind it - the batch builder should skip 2
       // and still include 3 and 4 in the same round.
       const candidates = [
         candidate(place(1, { region: 'East Lincoln', capacity_status: 'verified', capacity_level: 'low' })),
@@ -444,7 +444,7 @@ describe('orderedZones', () => {
 
 describe('outOfZoneCommitments', () => {
   test('a commitment in a zone that is NOT selected is surfaced, even though it was never a candidate for the selected zone at all', () => {
-    // This is the case fillDayFromZone's own droppedCommitments can't see —
+    // This is the case fillDayFromZone's own droppedCommitments can't see -
     // it only ever looks in-zone. A rep using "Somewhere else" to move from
     // zone A to zone B must still be told zone A's promise didn't get kept
     // today, not have it silently vanish because it was never considered.
@@ -456,12 +456,12 @@ describe('outOfZoneCommitments', () => {
     assert.deepEqual(result.map((s) => s.place_id), [1], 'the commitment in the non-selected zone should be surfaced as dropped');
   });
 
-  test('a commitment IN the selected zone is not included here — fillDayFromZone\'s own droppedCommitments covers that case', () => {
+  test('a commitment IN the selected zone is not included here - fillDayFromZone\'s own droppedCommitments covers that case', () => {
     const commitmentInB = candidate(place(1, { region: 'Zone B' }), { rankKey: [TIERS.COMMITMENT, 5] });
     assert.deepEqual(outOfZoneCommitments([commitmentInB], 'Zone B'), []);
   });
 
-  test('a non-commitment candidate in a different zone is not surfaced — only commitments count as a dropped promise', () => {
+  test('a non-commitment candidate in a different zone is not surfaced - only commitments count as a dropped promise', () => {
     const maintenanceInA = candidate(place(1, { region: 'Zone A' }), { rankKey: [TIERS.MAINTENANCE, 0.5] });
     assert.deepEqual(outOfZoneCommitments([maintenanceInA], 'Zone B'), []);
   });
@@ -485,7 +485,7 @@ describe('generateDraft', () => {
     // is left at place()'s default ('estimated', i.e. not yet pre-qualified)
     // so all three stay in the EXPLORATION tier and rank purely by
     // capacity_level (this test's whole point) rather than jumping to a
-    // different tier — every candidate resolves to the SAME pre_qualification
+    // different tier - every candidate resolves to the SAME pre_qualification
     // duration as a result, and real haversine drive time from DOWNTOWN alone
     // (14min to East, 16min to Southwest) already makes the 1-hour budget too
     // tight for a second stop chained behind the first (drive+15+3+5 >= 23min
@@ -541,7 +541,7 @@ describe('generateDraft', () => {
   test('a candidate excluded by budget on day 1 remains available and gets packed on day 2', async () => {
     // capacity_status: 'verified' so visitType is capacity-level driven
     // (working_visit / check_in) rather than the much shorter
-    // pre_qualification default — real drive time from DOWNTOWN already
+    // pre_qualification default - real drive time from DOWNTOWN already
     // leaves the 1-hour budget too tight for a second stop regardless.
     const candidates = [
       candidate(place(1, { capacity_status: 'verified', capacity_level: 'high' })),
@@ -610,7 +610,7 @@ describe('generateDraft', () => {
     // day 2. lockedByDate must be re-applied fresh each iteration of the day
     // loop (not baked into the candidate once up front) so day 1 correctly
     // skips it in favor of the next-best candidate, while day 2 still offers
-    // it — matching what addStop/getSuggestions already did per-date, which
+    // it - matching what addStop/getSuggestions already did per-date, which
     // generation's old single generation-day-scoped check did not.
     const locked = candidate(place(1, { capacity_level: 'high' }));
     const filler = candidate(place(2, { capacity_level: 'low' }));

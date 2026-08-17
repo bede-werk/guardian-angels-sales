@@ -1,20 +1,20 @@
-// Manual Visit Planning — creating a `visits` row directly, by hand, rather
+// Manual Visit Planning - creating a `visits` row directly, by hand, rather
 // than committing a route-planner draft. See
 // docs/manual-visit-planning-spec.md (v2, 2026-08-12) for the full design.
 // Short version (§1): today the only path to a status:'planned' visit is a
-// draft commit; this is the "I'm going to Tabitha on Thursday" path — the
+// draft commit; this is the "I'm going to Tabitha on Thursday" path - the
 // human decides, the planner arranges itself around the decision (see
 // scheduleGenerator.js's hard exclusion and zone/anchor logic for that
 // side of it, §7).
 //
 // This is a POLICY LAYER over services/conflictDetection.js, not a second
-// detector (§4) — that module already computes every finding this needs
+// detector (§4) - that module already computes every finding this needs
 // (SAME_DATE_VISIT, FLOOR_COMPLETED, FLOOR_PLANNED, DRAFT_ELSEWHERE) at the
 // right threshold (HARD_FLOOR_DAYS is already 5, matching this feature's own
-// warning window). The only new thing is which findings BLOCK versus WARN —
+// warning window). The only new thing is which findings BLOCK versus WARN -
 // and that split is deliberately DIFFERENT from routes/visits.js's existing
 // ad-hoc "Log a visit" policy: DRAFT_ELSEWHERE is a soft warning there, but a
-// hard block here. Same finding, different policy by surface — see
+// hard block here. Same finding, different policy by surface - see
 // classifyConflicts below. That divergence is intentional (spec §4.1), not
 // duplicated logic that drifted.
 //
@@ -26,7 +26,7 @@ const { detectConflicts } = require('./conflictDetection');
 
 // -- Pure policy ------------------------------------------------------------
 
-// Past dates are never plannable — retroactive logging (PlaceDetail/
+// Past dates are never plannable - retroactive logging (PlaceDetail/
 // PersonDetail's "Log a visit") is the unrestricted path for a visit that
 // already happened; this feature is exclusively for the future. `today` is
 // injected (not read internally) so this stays a plain function, same as
@@ -40,12 +40,12 @@ function pastDateError(scheduledDate, today) {
 
 // Splits a detectConflicts() Conflict[] into what BLOCKS manual planning
 // outright versus what only WARNS. SAME_DATE_VISIT and DRAFT_ELSEWHERE block
-// (§4.1) — a second planned/completed visit that day is literally
+// (§4.1) - a second planned/completed visit that day is literally
 // impossible to resolve after the fact (a rep can't be in two places), and
 // two same-day drafts create the exact conflict SAME_DATE_VISIT already
 // treats as unresolvable, so DRAFT_ELSEWHERE gets the same hard treatment
 // here even though the OTHER "Log a visit" route (routes/visits.js) only
-// warns on it. FLOOR_COMPLETED/FLOOR_PLANNED stay warnings (§4.2) — a
+// warns on it. FLOOR_COMPLETED/FLOOR_PLANNED stay warnings (§4.2) - a
 // deliberate override, not a mistake, is exactly what this feature exists
 // to allow past the floor.
 function classifyConflicts(conflicts) {
@@ -55,7 +55,7 @@ function classifyConflicts(conflicts) {
 }
 
 // One hard-block conflict -> the 409 message. Only ever called with the
-// FIRST blocking conflict (see createManualVisit/editManualVisit below) —
+// FIRST blocking conflict (see createManualVisit/editManualVisit below) -
 // same "one named conflict" convention detectConflictsPure itself uses per
 // type, and there is realistically never more than one of each type for a
 // single place+date pair anyway.
@@ -70,7 +70,7 @@ function blockingMessage(conflict) {
 }
 
 // A FLOOR_COMPLETED/FLOOR_PLANNED conflict -> its warning line. Same wording
-// for both per spec §4.2 — the point of the message is "recently active
+// for both per spec §4.2 - the point of the message is "recently active
 // here," not a completed/planned distinction the rep would need to parse
 // mid-confirm.
 function floorWarningMessage(conflict) {
@@ -79,7 +79,7 @@ function floorWarningMessage(conflict) {
 }
 
 // do_not_visit is not a conflictDetection.js finding (that module only
-// covers the floor/collision rules) — same precedence check
+// covers the floor/collision rules) - same precedence check
 // schedulingEngine.js's eligibility() uses: do_not_visit_until null means
 // indefinite, a date means it lapses once today passes it.
 function doNotVisitWarning(place, today) {
@@ -89,7 +89,7 @@ function doNotVisitWarning(place, today) {
   return null;
 }
 
-// Assembles the full warning list for a proposed create/edit — floor
+// Assembles the full warning list for a proposed create/edit - floor
 // warnings first (in whatever order detectConflicts returned them), then
 // do_not_visit. Order only matters for display; nothing downstream depends
 // on it.
@@ -111,7 +111,7 @@ function blockedError(blocking) {
 // -- Permissions (§5) ---------------------------------------------------
 // The assignee (visit.user_id) may always edit or delete a manually-planned
 // visit. The creator (visit.created_by_user_id) may ALSO delete one they
-// planned for someone else, but may not edit it — editing is scoped to
+// planned for someone else, but may not edit it - editing is scoped to
 // whoever's day it actually is. A third rep can do neither. Pure, so the
 // permission matrix itself is directly testable without a DB.
 function canEditManualVisit(visit, actingUserId) {
@@ -124,14 +124,14 @@ function canDeleteManualVisit(visit, actingUserId) {
 
 // -- DB-touching layer --------------------------------------------------
 
-// Creates a manually-planned visit, or — if it's blocked/warned — reports
+// Creates a manually-planned visit, or - if it's blocked/warned - reports
 // why instead of writing anything. Three outcomes:
-//   throws (409, err.conflicts set)  — a hard block (§4.1); nothing written.
-//   { visit: null, warnings: [...] } — warning(s) only (§4.2) and `force`
+//   throws (409, err.conflicts set)  - a hard block (§4.1); nothing written.
+//   { visit: null, warnings: [...] } - warning(s) only (§4.2) and `force`
 //                                      wasn't set; nothing written yet, the
 //                                      caller re-sends with force:true to
 //                                      proceed.
-//   { visit, warnings: [] }          — created.
+//   { visit, warnings: [] }          - created.
 async function createManualVisit(db, { placeId, scheduledDate, userId, createdByUserId, notes = null, force = false }) {
   const today = orgToday();
 
@@ -151,7 +151,7 @@ async function createManualVisit(db, { placeId, scheduledDate, userId, createdBy
 
   // userId (the ASSIGNEE, not the planner) is what detectConflicts needs to
   // correctly exclude the assignee's OWN open draft from the DRAFT_ELSEWHERE
-  // search — same `ctx.userId` contract addStop already relies on.
+  // search - same `ctx.userId` contract addStop already relies on.
   const conflicts = await detectConflicts(db, placeId, scheduledDate, { userId });
   const { blocking, warnings: floorConflicts } = classifyConflicts(conflicts);
   if (blocking.length > 0) throw blockedError(blocking);
@@ -176,70 +176,110 @@ async function createManualVisit(db, { placeId, scheduledDate, userId, createdBy
   return { visit: await db('visits').where({ id }).first(), warnings: [] };
 }
 
-// Fetches a visit and confirms it's one this module is allowed to touch:
-// must exist and must have been planned through THIS feature
-// (planned_manually) — editing/deleting a draft-committed or ad-hoc-logged
-// visit goes through the normal routes/visits.js paths instead, which have
-// their own (different) rules.
-async function getManualVisit(db, id) {
+// Fetches a visit and confirms it's still an open plan: must exist and
+// still be status: 'planned' - once it's completed (VisitLogModal) or
+// lapsed (skip sweep), "editing" it no longer means anything; those are
+// history now, not an open plan. Unlike the original cut of this module,
+// NOT gated on planned_manually already being set - editVisit below is
+// exactly how a planner-committed visit BECOMES a manually-planned one, so
+// requiring that up front would make it uncallable for the one case it
+// exists to handle.
+async function getEditableVisit(db, id) {
   const visit = await db('visits').where({ id }).first();
-  if (!visit || !visit.planned_manually) {
-    const err = new Error('Manual visit not found');
+  if (!visit) {
+    const err = new Error('Visit not found');
     err.status = 404;
+    throw err;
+  }
+  if (visit.status !== 'planned') {
+    const err = new Error('Only a still-planned visit can be edited');
+    err.status = 400;
     throw err;
   }
   return visit;
 }
 
-// Reschedules a manually-planned visit — re-runs every §4 check against the
-// NEW date (excluding this visit's own row, so it doesn't collide with
-// itself) rather than trusting the original checks still hold. Moving off
-// the old date releases whatever block it was causing there for free: this
-// is an UPDATE to the one row, not a delete-and-recreate, so once it
-// succeeds the old date simply has no visit at that place anymore.
+// Edits a still-planned visit's date and/or notes - UpcomingVisitDetailModal's
+// "Edit" button, for a manually-planned visit and a planner-committed one
+// alike. Only the visit's ASSIGNEE may call this (canEditManualVisit's rule
+// was never actually specific to already-manual visits, it just had no
+// other caller before this).
 //
-// Only a still-planned visit can be rescheduled — once it's completed
-// (VisitLogModal) or lapsed (skip sweep), "moving" it no longer means
-// anything; those are history now, not an open plan.
-async function rescheduleManualVisit(db, id, { scheduledDate, force = false }, actingUserId) {
-  const visit = await getManualVisit(db, id);
+// A changed date re-runs every §4 conflict check against the NEW one
+// (excluding this visit's own row, so it doesn't collide with itself)
+// rather than trusting the original checks still hold - moving Tuesday to
+// Thursday is a fresh collision check against Thursday, and can come back
+// with warnings pending confirmation (force:true resends to proceed), same
+// shape as createManualVisit. Moving off the old date releases whatever
+// block it was causing there for free: this is an UPDATE to the one row,
+// not a delete-and-recreate. An unchanged (or omitted) date skips the
+// recheck entirely - nothing about the visit's date/place changed, so
+// there's nothing new to verify; a notes-only edit is exactly this case.
+//
+// PROMOTION: any successful save through here sets planned_manually: 1 and
+// source: 'manual' - even on a visit that started life planner-committed
+// (source: 'planner', planned_manually: 0). That's the point of exposing
+// this on a planner-committed visit at all: from the moment a rep
+// hand-edits it, it IS a manually-planned visit in every sense that
+// matters downstream - the same edit/delete permission rules (§5) and the
+// same conflict-recheck on any later edit through this same function.
+// Note this does NOT protect it from scheduleDraft.js's deleteCommittedDay
+// ("Discard plan" on PlannedDayModal) - that action deliberately clears
+// the WHOLE day regardless of source/planned_manually (Bede's call, see
+// that function's own comment); promotion only changes the PER-VISIT edit/
+// delete rules, not the whole-day discard behavior. created_by_user_id
+// backfills to the acting rep only if it was never set (a planner commit
+// never sets it); an already-manual visit's real creator is never
+// overwritten by a later edit.
+async function editVisit(db, id, { scheduledDate, notes, force = false } = {}, actingUserId) {
+  const visit = await getEditableVisit(db, id);
   if (!canEditManualVisit(visit, actingUserId)) {
-    const err = new Error('Only the assigned rep can reschedule this visit');
+    const err = new Error('Only the assigned rep can edit this visit');
     err.status = 403;
     throw err;
   }
-  if (visit.status !== 'planned') {
-    const err = new Error('Only a still-planned visit can be rescheduled');
-    err.status = 400;
-    throw err;
-  }
 
-  const today = orgToday();
-  const dateError = pastDateError(scheduledDate, today);
-  if (dateError) {
-    const err = new Error(dateError);
-    err.status = 400;
-    throw err;
-  }
-
-  if (scheduledDate === visit.scheduled_date) {
-    return { visit, warnings: [] }; // no real move — nothing to recheck or reset
-  }
-
-  const place = await db('places').where({ id: visit.place_id }).first();
-  const conflicts = await detectConflicts(db, visit.place_id, scheduledDate, { userId: visit.user_id, excludeVisitId: id });
-  const { blocking, warnings: floorConflicts } = classifyConflicts(conflicts);
-  if (blocking.length > 0) throw blockedError(blocking);
-
-  const warnings = buildWarnings({ floorConflicts, place, today });
-  if (warnings.length > 0 && !force) {
-    return { visit: null, warnings };
-  }
-
-  await db('visits').where({ id }).update({
-    scheduled_date: scheduledDate,
+  const update = {
+    planned_manually: 1,
+    source: 'manual',
+    created_by_user_id: visit.created_by_user_id ?? actingUserId,
     updated_at: db.fn.now(),
-  });
+  };
+  if (notes !== undefined) update.notes = notes || null;
+
+  const dateChanged = scheduledDate !== undefined && scheduledDate !== visit.scheduled_date;
+  if (dateChanged) {
+    const today = orgToday();
+    const dateError = pastDateError(scheduledDate, today);
+    if (dateError) {
+      const err = new Error(dateError);
+      err.status = 400;
+      throw err;
+    }
+
+    const place = await db('places').where({ id: visit.place_id }).first();
+    // A planned visit's place_id goes NULL the moment its place is deleted
+    // (detach-not-delete - see the detach_instead_of_cascade migration), but
+    // the visit itself stays visible/editable on the Calendar until its date
+    // passes. Without this, buildWarnings/doNotVisitWarning below dereferences
+    // an undefined place and 500s.
+    if (!place) {
+      const err = new Error('This visit\'s place has been deleted');
+      err.status = 404;
+      throw err;
+    }
+    const conflicts = await detectConflicts(db, visit.place_id, scheduledDate, { userId: visit.user_id, excludeVisitId: id });
+    const { blocking, warnings: floorConflicts } = classifyConflicts(conflicts);
+    if (blocking.length > 0) throw blockedError(blocking);
+
+    const warnings = buildWarnings({ floorConflicts, place, today });
+    if (warnings.length > 0 && !force) {
+      return { visit: null, warnings };
+    }
+    update.scheduled_date = scheduledDate;
+  }
+
+  await db('visits').where({ id }).update(update);
   return { visit: await db('visits').where({ id }).first(), warnings: [] };
 }
 
@@ -253,6 +293,6 @@ module.exports = {
   canEditManualVisit,
   canDeleteManualVisit,
   createManualVisit,
-  getManualVisit,
-  rescheduleManualVisit,
+  getEditableVisit,
+  editVisit,
 };

@@ -6,13 +6,12 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // Modal opened from the header's "Change password" link (see App.jsx). Asks
 // for the current password (to prove it's really you) plus a new one twice.
 export default function ChangePassword({ onClose }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState(null);
-  const [done, setDone] = useState(false); // true after a successful save — swaps the form for a confirmation message
+  const [done, setDone] = useState(false); // true after a successful save - swaps the form for a confirmation message
   const [saving, setSaving] = useState(false);
 
   async function submit(e) {
@@ -26,7 +25,7 @@ export default function ChangePassword({ onClose }) {
     setSaving(true);
     try {
       // The server rotates the session token on a password change (so other
-      // devices get signed out) — save the new one here or this browser tab
+      // devices get signed out) - save the new one here or this browser tab
       // would immediately be logged out too.
       const { token } = await api.auth.changePassword(currentPassword, newPassword);
       setToken(token);

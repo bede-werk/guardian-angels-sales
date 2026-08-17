@@ -1,5 +1,5 @@
 // Place-by-place diff of the legacy `places.capacity_level` column against
-// the computed capacity service's `level` — required by
+// the computed capacity service's `level` - required by
 // capacity-computation-spec.md §15 step 6 ("compare computed-vs-legacy
 // capacity_level across all real places and eyeball the diff before
 // switching") before schedulingEngine.js's cadence lookup is actually
@@ -9,7 +9,7 @@
 // Scope matches what step 6 actually touches: schedulingEngine.js's
 // targetCadenceDays()/capacityRank() both read place.capacity_level only.
 // place.capacity_status (the isEstimated tier-gate) is a separate consumer
-// not in scope for step 6 — see the script's own footer note.
+// not in scope for step 6 - see the script's own footer note.
 //
 //   npm run capacity:legacy-diff
 
@@ -21,7 +21,7 @@ async function main() {
   const asOf = orgToday();
   const places = await knex('places').select('id', 'name', 'category', 'capacity_level', 'capacity_status', 'capacity_monthly_referrals');
   if (!places.length) {
-    console.log('No places in the database — nothing to report.');
+    console.log('No places in the database - nothing to report.');
     return;
   }
 
@@ -32,11 +32,11 @@ async function main() {
   const same = rows.filter((r) => (r.capacity_level || null) === r.cap.level);
   const moved = rows.filter((r) => (r.capacity_level || null) !== r.cap.level);
 
-  console.log(`\nLegacy capacity_level vs. computed level — ${total} places, as of ${asOf}`);
+  console.log(`\nLegacy capacity_level vs. computed level - ${total} places, as of ${asOf}`);
   console.log(`  unchanged: ${same.length} (${((same.length / total) * 100).toFixed(1)}%)`);
   console.log(`  moved:     ${moved.length} (${((moved.length / total) * 100).toFixed(1)}%)`);
 
-  // Every move, broken down by WHY it moved — this is the part actually
+  // Every move, broken down by WHY it moved - this is the part actually
   // worth eyeballing. A move explained by 'category_seed' (legacy column's
   // one-time backfill vs. the live category-seed table, which may have
   // changed since) is a different risk profile than a move explained by
@@ -55,14 +55,14 @@ async function main() {
       const legacy = r.capacity_level || '(null)';
       console.log(
         `  ${legacy.padEnd(8)} -> ${r.cap.level.padEnd(8)} conf=${r.cap.confidence.padEnd(8)} ` +
-        `eff=${String(r.cap.effectiveMonthly ?? '—').padStart(4)}/mo  legacy_status=${(r.capacity_status || '—').padEnd(9)} ` +
-        `legacy_referrals=${r.capacity_monthly_referrals ?? '—'}  ${(r.category || '—').padEnd(28)} ${r.name}`
+        `eff=${String(r.cap.effectiveMonthly ?? '-').padStart(4)}/mo  legacy_status=${(r.capacity_status || '-').padEnd(9)} ` +
+        `legacy_referrals=${r.capacity_monthly_referrals ?? '-'}  ${(r.category || '-').padEnd(28)} ${r.name}`
       );
     }
   }
 
   console.log(`\n(place.capacity_status / the EXPLORATION tier's isEstimated gate is NOT in this diff`);
-  console.log(` — that consumer is step 7's scope, not step 6's; it is untouched here.)\n`);
+  console.log(` - that consumer is step 7's scope, not step 6's; it is untouched here.)\n`);
 }
 
 main()

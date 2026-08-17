@@ -1,20 +1,20 @@
-// Place Commitments — a dated promise to return to a place, replacing
+// Place Commitments - a dated promise to return to a place, replacing
 // visits.next_visit_date as the source of the COMMITMENT tier. See
 // migrations/20260811010000_add_place_commitments.js and the pasted spec
 // (2026-08-11) for the full design.
 //
 // A place can have more than one outstanding promise (tell the DON you'll be
 // back the 20th and a social worker the 25th), and the one that constrains
-// the planner is whichever comes DUE FIRST — the "binding" commitment is the
+// the planner is whichever comes DUE FIRST - the "binding" commitment is the
 // earliest promised_date among outstanding rows, not the earliest created
 // one. Promise the 25th today and the 20th tomorrow, and FIFO would bind you
 // to the 25th while the 20th quietly passes; sorting by promised_date is
 // what keeps that from happening.
 //
 // Outstanding = discharged_at IS NULL. Every commitment ends in exactly one
-// of three discharge_reasons — fulfilled (a visit happened), superseded (a
+// of three discharge_reasons - fulfilled (a visit happened), superseded (a
 // reschedule replaced it), or waived (a human called it off). Nothing else
-// discharges one: a promised_date passing does NOT discharge it, by design —
+// discharges one: a promised_date passing does NOT discharge it, by design -
 // an unkept promise stays outstanding and climbs in overdue-ness until a
 // human resolves it.
 //
@@ -26,7 +26,7 @@
 // (via source_visit_id) instead of the retired visits.next_visit_date column.
 
 // Carries person_id/note forward from the original unless the caller
-// overrides them — "editable," per the spec, not "always fresh." undefined
+// overrides them - "editable," per the spec, not "always fresh." undefined
 // means "use what the original had"; null is a deliberate clear.
 function withFallback(value, fallback) {
   return value === undefined ? fallback : value;
@@ -50,7 +50,7 @@ async function createCommitment(
   return db('place_commitments').where({ id }).first();
 }
 
-// Every outstanding commitment for a place, earliest promised_date first —
+// Every outstanding commitment for a place, earliest promised_date first -
 // feeds the VisitLogModal pre-check panel and the PlaceDetail card's list,
 // both of which need to show more than just the binding one.
 async function getOutstandingCommitments(db, placeId) {
@@ -63,7 +63,7 @@ async function getOutstandingCommitments(db, placeId) {
 
 // The single commitment that actually constrains the planner for this place:
 // the earliest outstanding promised_date, or null if none. This is also all
-// the snooze commitment guard needs — if the binding date is already past
+// the snooze commitment guard needs - if the binding date is already past
 // the proposed snooze_until, no OTHER outstanding row can be earlier either,
 // so checking the binding one alone is sufficient, not just convenient.
 async function getBindingCommitment(db, placeId) {
@@ -78,7 +78,7 @@ async function getBindingCommitment(db, placeId) {
 
 // Bulk sibling of getBindingCommitment, for the whole-pool consumers
 // (scheduleDraft.js's buildCandidatePool, conflictDetection.js's
-// detectConflictsForStops) that need one query instead of one-per-place —
+// detectConflictsForStops) that need one query instead of one-per-place -
 // same "fetch everything, reduce to first-wins in JS" shape as
 // buildCandidatePool's existing lastVisitByPlace/nextVisitByPlace maps.
 // placeIds is optional; omit it to cover every place with an outstanding
@@ -104,7 +104,7 @@ async function getBindingCommitmentsForPlaces(db, placeIds = null) {
 // (spec §6.1): every outstanding commitment for a whole pool of places, one
 // query, earliest-first per place, joined to the person's name (the badge's
 // "who"). getBindingCommitmentsForPlaces above only keeps the winner, which
-// isn't enough once the badge also needs "+N more" and a name — that stays
+// isn't enough once the badge also needs "+N more" and a name - that stays
 // as its own smaller/cheaper function since buildCandidatePool (its only
 // caller) doesn't need either.
 async function getOutstandingCommitmentsForPlaces(db, placeIds = null) {
@@ -127,7 +127,7 @@ async function getOutstandingCommitmentsForPlaces(db, placeIds = null) {
   return byPlace;
 }
 
-// Discharges as fulfilled — the ordinary "we went" case, driven by
+// Discharges as fulfilled - the ordinary "we went" case, driven by
 // VisitLogModal's pre-checked panel rows. Guards on whereNull('discharged_at')
 // so a double-submit or a stale client can't re-discharge an already-closed
 // row; returns null rather than throwing when that happens or the id doesn't
@@ -146,22 +146,22 @@ async function fulfillCommitment(db, id, { dischargedByVisitId = null } = {}) {
   return db('place_commitments').where({ id }).first();
 }
 
-// Discharges as waived — "not happening; back to normal cadence." There is
+// Discharges as waived - "not happening; back to normal cadence." There is
 // no separate discharge-note column (see the schema comment in the
 // migration), so an optional reason is appended to the existing promise note
-// rather than overwriting it — waiving shouldn't erase who the promise was
+// rather than overwriting it - waiving shouldn't erase who the promise was
 // to or why it was made, only why it's being dropped.
 async function waiveCommitment(db, id, { note } = {}) {
   return db.transaction(async (trx) => {
     const original = await trx('place_commitments').where({ id }).whereNull('discharged_at').first();
     if (!original) return null;
 
-    // ' — ' (not a newline) — this note is rendered inline in a single-line
+    // ' - ' (not a newline) - this note is rendered inline in a single-line
     // history row (PlaceCommitments.jsx), where a newline just collapses to
     // a run-on sentence instead of a visible break.
     const mergedNote = note
       ? original.note
-        ? `${original.note} — Waived: ${note}`
+        ? `${original.note} - Waived: ${note}`
         : `Waived: ${note}`
       : original.note;
 
@@ -174,7 +174,7 @@ async function waiveCommitment(db, id, { note } = {}) {
   });
 }
 
-// Reschedules — discharges the original as superseded and creates a new
+// Reschedules - discharges the original as superseded and creates a new
 // outstanding commitment for the new date, carrying person_id/note forward
 // unless the caller overrides them. Transactional: a reader must never see
 // the old commitment discharged without the new one existing yet (or vice
@@ -207,7 +207,7 @@ async function rescheduleCommitment(db, id, { promisedDate, personId, note, crea
   });
 }
 
-// Hard-deletes a discharged commitment — history cleanup only (a typo'd
+// Hard-deletes a discharged commitment - history cleanup only (a typo'd
 // waive reason, a duplicate entry), not a way to back out of a live promise.
 // Guards on whereNotNull('discharged_at') so an outstanding commitment can't
 // be removed this way; it has to be waived/rescheduled/fulfilled first, same
@@ -221,7 +221,7 @@ async function deleteCommitment(db, id) {
   return deleted > 0;
 }
 
-// Every commitment whose source_visit_id is one of these visit ids — "the
+// Every commitment whose source_visit_id is one of these visit ids - "the
 // promise made during this trip" (spec §6.3), replacing the old per-visit
 // next_visit_date column as what a visit-history row shows. Same
 // batch-then-group-in-JS shape as services/visitEncounters.js's
@@ -229,7 +229,7 @@ async function deleteCommitment(db, id) {
 // to a list of visits in one extra query, not one per row").
 //
 // Unlike the outstanding-only queries above, this includes DISCHARGED
-// commitments too — a visit's history should still show "you promised the
+// commitments too - a visit's history should still show "you promised the
 // 20th here," whether that promise is still open, was kept, got
 // rescheduled, or was waived; source_visit_id survives all of those.
 async function commitmentsBySourceVisitId(db, visitIds) {
@@ -260,7 +260,7 @@ async function commitmentsBySourceVisitId(db, visitIds) {
   return byVisit;
 }
 
-// Returns `visits` with a `commitments_made` array attached to each — []
+// Returns `visits` with a `commitments_made` array attached to each - []
 // when the trip made no promise, same "empty array, not missing/null"
 // convention attachEncounters uses (a trip with nothing to show is a normal
 // state, not an error).

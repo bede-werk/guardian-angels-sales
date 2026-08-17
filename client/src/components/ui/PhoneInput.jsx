@@ -12,7 +12,7 @@ export function formatPhone(raw) {
 }
 
 // A phone field is valid if it's empty (optional everywhere) or a complete
-// "(402) 555-1234" — used to block saving on a half-typed number.
+// "(402) 555-1234" - used to block saving on a half-typed number.
 export const PHONE_REGEX = /^\(\d{3}\) \d{3}-\d{4}$/;
 export function isCompletePhone(value) {
   return !value || PHONE_REGEX.test(value);

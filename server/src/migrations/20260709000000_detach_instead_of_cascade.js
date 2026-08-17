@@ -13,7 +13,7 @@
 //     after that place is deleted and its live name is gone.
 //
 // SQLite note: a plain `.alter()` on a column that already has a foreign key
-// doesn't replace that key — SQLite's rebuild-the-table strategy for altering
+// doesn't replace that key - SQLite's rebuild-the-table strategy for altering
 // a column ends up keeping the old FK *and* adding the new one. So on SQLite
 // this migration rebuilds the three affected tables explicitly (create the
 // corrected table under a temp name, copy the data across, drop the old one,
@@ -208,7 +208,7 @@ exports.down = async function down(knex) {
 
   // SQLite: rebuild back to NOT NULL + CASCADE. (Any rows that picked up a
   // null place_id/person_id while this migration was active can't round-trip
-  // back to NOT NULL — same documented limitation as the priority_score
+  // back to NOT NULL - same documented limitation as the priority_score
   // backfill in an earlier migration: down() is a schema rollback, not a
   // data time machine.)
   for (const idx of ['referrals_place_id_index', 'referrals_person_id_index']) {

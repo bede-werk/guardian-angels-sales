@@ -1,11 +1,11 @@
-// Removes the "Needs Mapping" feature entirely, per Bede's request — no more
+// Removes the "Needs Mapping" feature entirely, per Bede's request - no more
 // use for manually resolving unmatched historical referrer notes, and he's
 // planning a from-scratch replacement for that workflow later. Drops
 // notes_review outright (a plain table drop, not a FK-bearing column change
-// on another table, so no rebuildSqliteTable dance needed — see
+// on another table, so no rebuildSqliteTable dance needed - see
 // 20260709000000_detach_instead_of_cascade.js for when that pattern is
 // actually required). visits.source (added by the same original migration
-// that created this table, 20260706010000_notes_import.js) is untouched —
+// that created this table, 20260706010000_notes_import.js) is untouched -
 // it's still load-bearing for the route planner's commit-collision unique
 // index (source: 'planner' vs 'manual'), not specific to this feature.
 exports.up = async function up(knex) {

@@ -1,8 +1,8 @@
-// Route planner draft/commit lifecycle — thin HTTP wrappers around
+// Route planner draft/commit lifecycle - thin HTTP wrappers around
 // services/scheduleDraft.js, which has all the actual logic.
 //
 // Every route acts on req.user (set by middleware/requireAuth.js from the
-// caller's own bearer token), not a client-supplied userId — a draft is
+// caller's own bearer token), not a client-supplied userId - a draft is
 // owned by whoever generated it, and scheduleDraft.js's assertOwnsDraft
 // enforces that on every mutation, since getting this wrong is exactly the
 // double-booking risk phase 6 exists to prevent.
@@ -16,17 +16,17 @@ router.use(skipSweepMiddleware(knex));
 // Wipes any draft still in the proposal stage from before today, so a rep
 // who never committed/discarded yesterday's plan doesn't find it still
 // sitting there (and doesn't get silently blocked from generating a new one
-// by the "one active draft per user" rule) — see scheduleDraft.js's
+// by the "one active draft per user" rule) - see scheduleDraft.js's
 // discardStaleDrafts for why created_at (not a last-touched timestamp) is
 // the right cutoff.
 router.use(scheduleDraft.draftDiscardMiddleware(knex));
 
 // Routes below throw errors carrying a `status` (404/403/409) for expected
-// failure cases (not found, not yours, collision) — this wrapper respects
+// failure cases (not found, not yours, collision) - this wrapper respects
 // that instead of always falling through to the generic 500 handler.
 // addStop's collision rejections also carry `.conflicts` (see
 // scheduleDraft.js's addStop and services/conflictDetection.js's Conflict
-// shape) — forwarded when present so the client can name the other
+// shape) - forwarded when present so the client can name the other
 // user/date instead of showing the generic error string alone.
 function handle(fn) {
   return async (req, res, next) => {
@@ -46,11 +46,11 @@ function handle(fn) {
 // POST /api/schedule-drafts/generate
 // Body: { days: [{ date, hoursPerDay }], homeBase, zoneOverrides?, regenerate? }
 // `days` is the exact set of calendar dates the user picked (up to
-// scheduleDraft.MAX_PLAN_DATES), each with its own hours budget — validated
-// (future dates only, no dupes, no date that's already committed — see
+// scheduleDraft.MAX_PLAN_DATES), each with its own hours budget - validated
+// (future dates only, no dupes, no date that's already committed - see
 // scheduleDraft.validateDays) before anything is generated. If an active
 // draft already exists and regenerate isn't set, just returns it
-// (recalculated) instead of duplicating — same convention as the old
+// (recalculated) instead of duplicating - same convention as the old
 // scheduler's POST /generate.
 router.post('/generate', handle(async (req, res) => {
   const { homeBase, regenerate } = req.body;
@@ -65,7 +65,7 @@ router.post('/generate', handle(async (req, res) => {
   res.json(draft);
 }));
 
-// GET /api/schedule-drafts/active — the caller's current draft, fully
+// GET /api/schedule-drafts/active - the caller's current draft, fully
 // recalculated (every day), or null if they don't have one.
 router.get('/active', handle(async (req, res) => {
   const existing = await scheduleDraft.getActiveDraft(knex, req.user.id);
@@ -73,7 +73,7 @@ router.get('/active', handle(async (req, res) => {
   res.json(await scheduleDraft.loadDraftView(knex, existing.id));
 }));
 
-// GET /api/schedule-drafts/committed-dates — every today-or-later date this
+// GET /api/schedule-drafts/committed-dates - every today-or-later date this
 // user already has real visits scheduled on, with a count each:
 // [{ date, count }]. The "Route Planner" calendar disables these dates (a
 // day that's already been committed can never be selected for another round
@@ -84,7 +84,7 @@ router.get('/committed-dates', handle(async (req, res) => {
   res.json(summaries);
 }));
 
-// GET /api/schedule-drafts/committed-dates/:date/visits — the actual visits
+// GET /api/schedule-drafts/committed-dates/:date/visits - the actual visits
 // behind one "Already Planned" day, for the click-to-view modal (place name/
 // category/tier/visit type, plus place_id so the modal can open full
 // PlaceDetail). Same user+date scope as committed-dates' count above.
@@ -93,22 +93,22 @@ router.get('/committed-dates/:date/visits', handle(async (req, res) => {
   res.json(visits);
 }));
 
-// POST /api/schedule-drafts/days/:date/reopen — reopen an already-committed
+// POST /api/schedule-drafts/days/:date/reopen - reopen an already-committed
 // day back into an editable draft: pulls that date's committed (planner-
 // sourced) visits back into schedule_draft_stops and deletes the visits rows
 // (see scheduleDraft.reopenCommittedDay). From here on, every existing
 // draft-editing endpoint below (reorder/add/remove/visit-type/reoptimize/
 // commit) works on this day exactly as if it had never been committed.
-// Body: { homeBase? } — required only if the caller has no active draft yet;
+// Body: { homeBase? } - required only if the caller has no active draft yet;
 // ignored (the existing draft's own homeBase wins) if they do.
 router.post('/days/:date/reopen', handle(async (req, res) => {
   const draft = await scheduleDraft.reopenCommittedDay({ userId: req.user.id, date: req.params.date, homeBase: req.body.homeBase });
   res.json(draft);
 }));
 
-// DELETE /api/schedule-drafts/committed-dates/:date — undo a whole day's
+// DELETE /api/schedule-drafts/committed-dates/:date - undo a whole day's
 // commit: removes every still-planned (not completed/skipped) visit this
-// user has on that date — see scheduleDraft.deleteCommittedDay for why
+// user has on that date - see scheduleDraft.deleteCommittedDay for why
 // completed/skipped history is deliberately left alone. Frees the date back
 // up on the calendar once nothing real is left on it.
 router.delete('/committed-dates/:date', handle(async (req, res) => {
@@ -116,9 +116,9 @@ router.delete('/committed-dates/:date', handle(async (req, res) => {
   res.json({ date: req.params.date, deleted });
 }));
 
-// DELETE /api/schedule-drafts/:id/days/:date — discard just this day's
+// DELETE /api/schedule-drafts/:id/days/:date - discard just this day's
 // still-open proposal, as if that date had never been picked at all (every
-// other day, and anything already accepted for THIS day, is untouched — see
+// other day, and anything already accepted for THIS day, is untouched - see
 // scheduleDraft.js's discardDay). Returns the full recalculated draft view
 // (its days list just shrank by one), or null if that was the last date and
 // the whole draft is gone now.
@@ -128,7 +128,7 @@ router.delete('/:id/days/:date', handle(async (req, res) => {
 }));
 
 // PATCH /api/schedule-drafts/:id/days/:date/reorder
-// Body: { placeIds: [...] } — new order is the array order itself.
+// Body: { placeIds: [...] } - new order is the array order itself.
 router.patch('/:id/days/:date/reorder', handle(async (req, res) => {
   const { placeIds } = req.body;
   if (!Array.isArray(placeIds)) return res.status(400).json({ error: 'placeIds must be an array of place ids' });
@@ -137,7 +137,7 @@ router.patch('/:id/days/:date/reorder', handle(async (req, res) => {
 }));
 
 // POST /api/schedule-drafts/:id/days/:date/stops
-// Body: { placeId, visitType? } — add a stop (from a suggestion, or ad hoc).
+// Body: { placeId, visitType? } - add a stop (from a suggestion, or ad hoc).
 router.post('/:id/days/:date/stops', handle(async (req, res) => {
   const { placeId, visitType } = req.body;
   if (!placeId) return res.status(400).json({ error: 'placeId is required' });
@@ -159,14 +159,14 @@ router.patch('/:id/days/:date/stops/:placeId', handle(async (req, res) => {
   res.json(day);
 }));
 
-// POST /api/schedule-drafts/:id/days/:date/reoptimize — re-sequence a day's
+// POST /api/schedule-drafts/:id/days/:date/reoptimize - re-sequence a day's
 // current stops via a real OSRM call (does not add/remove any stop).
 router.post('/:id/days/:date/reoptimize', handle(async (req, res) => {
   const day = await scheduleDraft.reoptimizeDay({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date });
   res.json(day);
 }));
 
-// GET /api/schedule-drafts/:id/days/:date/zones — the areas (regions) the
+// GET /api/schedule-drafts/:id/days/:date/zones - the areas (regions) the
 // "Somewhere else" dropdown can offer for this day (see
 // scheduleDraft.getDayZones). Read-only, no side effects.
 router.get('/:id/days/:date/zones', handle(async (req, res) => {
@@ -174,10 +174,10 @@ router.get('/:id/days/:date/zones', handle(async (req, res) => {
   res.json(zones);
 }));
 
-// POST /api/schedule-drafts/:id/days/:date/zone — "Somewhere else": the user
+// POST /api/schedule-drafts/:id/days/:date/zone - "Somewhere else": the user
 // picks a specific zone (region) for this day from the dropdown (see
 // GET .../zones above), and this re-fills the day from scratch in that zone.
-// Body: { zone } — must be one of the current GET .../zones list.
+// Body: { zone } - must be one of the current GET .../zones list.
 router.post('/:id/days/:date/zone', handle(async (req, res) => {
   const { zone } = req.body;
   if (typeof zone !== 'string' || !zone) {
@@ -187,27 +187,27 @@ router.post('/:id/days/:date/zone', handle(async (req, res) => {
   res.json(day);
 }));
 
-// GET /api/schedule-drafts/:id/days/:date/suggestions — top nearby eligible
+// GET /api/schedule-drafts/:id/days/:date/suggestions - top nearby eligible
 // candidates not already in the draft, for the "day is under budget" prompt.
 router.get('/:id/days/:date/suggestions', handle(async (req, res) => {
   const suggestions = await scheduleDraft.getSuggestions({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date });
   res.json(suggestions);
 }));
 
-// POST /api/schedule-drafts/:id/days/:date/commit — commit one day to real visits rows.
+// POST /api/schedule-drafts/:id/days/:date/commit - commit one day to real visits rows.
 router.post('/:id/days/:date/commit', handle(async (req, res) => {
   const result = await scheduleDraft.commitDay({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date });
   res.json(result);
 }));
 
-// POST /api/schedule-drafts/:id/commit — commit every remaining day, in date order.
+// POST /api/schedule-drafts/:id/commit - commit every remaining day, in date order.
 router.post('/:id/commit', handle(async (req, res) => {
   const results = await scheduleDraft.commitAll({ draftId: Number(req.params.id), userId: req.user.id });
   res.json(results);
 }));
 
-// DELETE /api/schedule-drafts/:id — discard the whole proposal (every day),
-// not just one day's stops. No replacement is generated — the caller goes
+// DELETE /api/schedule-drafts/:id - discard the whole proposal (every day),
+// not just one day's stops. No replacement is generated - the caller goes
 // back to having no active draft.
 router.delete('/:id', handle(async (req, res) => {
   await scheduleDraft.deleteActiveDraft({ draftId: Number(req.params.id), userId: req.user.id });

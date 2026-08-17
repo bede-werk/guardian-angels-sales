@@ -6,10 +6,10 @@
 //   - referrals.contact_id -> referrals.person_id (follows the table rename)
 //   - visits.contact_name/title/email/phone -> person_name/title/email/phone
 //     (still a per-visit snapshot, just renamed to match)
-//   - visits.person_id: NEW nullable FK to people — set when the "who did you
+//   - visits.person_id: NEW nullable FK to people - set when the "who did you
 //     meet?" picker is used, so a person's visit history can be queried directly
 //     instead of matching on the free-text snapshot.
-//   - places.notes: NEW text field — durable, org-level notes (distinct from a
+//   - places.notes: NEW text field - durable, org-level notes (distinct from a
 //     single visit's notes and a person's notes).
 
 exports.up = async function up(knex) {

@@ -53,7 +53,7 @@ describe('geocodeAddress', () => {
   test('passes an abort signal through to fetch (regression test for the missing-timeout gap)', async () => {
     // geocodeAddress() is awaited directly inside request handlers
     // (routes/places.js), so a hung upstream request must not hang the
-    // caller indefinitely — the actual abort-after-TIMEOUT_MS mechanism is
+    // caller indefinitely - the actual abort-after-TIMEOUT_MS mechanism is
     // exercised fast in fetchWithTimeout.test.js; this just confirms
     // geocodeAddress wires a signal through fetchWithTimeout at all.
     let receivedSignal;

@@ -7,7 +7,7 @@ const MONTH_LABELS = [
 ];
 
 // Local Y-M-D, never .toISOString() (which shifts near midnight in timezones
-// behind UTC) — same rule this app's other date-string code already follows
+// behind UTC) - same rule this app's other date-string code already follows
 // (see Calendar.jsx/RoutePlanner.jsx's own toISODate/isoDate).
 function toISODate(d) {
   const y = d.getFullYear();
@@ -16,23 +16,23 @@ function toISODate(d) {
   return `${y}-${m}-${day}`;
 }
 
-// Generic, unbounded month-grid renderer — knows nothing about visits (or
+// Generic, unbounded month-grid renderer - knows nothing about visits (or
 // any other domain). It owns cell layout and month navigation; the caller
 // owns everything about what's inside a cell, including whether/how any of
 // it is clickable. This is a deliberately different component from
 // ui/Calendar.jsx (a bounded multi-select date *picker* for Route Planner)
-// rather than an extension of it — that component's selected/committed/
+// rather than an extension of it - that component's selected/committed/
 // proposed/minDate/maxDate/maxSelected props are all specific to picking
 // upcoming plan dates and don't fit "browse any month, view indicators,
 // drill into specific parts of a day" at all.
-//   monthCursor: a Date anywhere in the month to display — CONTROLLED by the
+//   monthCursor: a Date anywhere in the month to display - CONTROLLED by the
 //     caller (this component holds no month state of its own), so the
 //     caller can implement things like a "Today" button without this
 //     component needing to know about "today" as a concept beyond the ring.
 //   onMonthChange(newCursor): fired by the ‹ › nav buttons.
-//   renderDay(dateObj, iso): full cell CONTENT — day number plus whatever
+//   renderDay(dateObj, iso): full cell CONTENT - day number plus whatever
 //     the caller wants underneath it. The cell itself is a plain non-
-//     interactive <div> (not a <button>, and no onClick of its own) — a day
+//     interactive <div> (not a <button>, and no onClick of its own) - a day
 //     as a whole is never one big click target; renderDay supplies its own
 //     nested clickable elements instead (e.g. a "Planned Route" badge, or
 //     the day number itself, which stays clickable even on an empty day).
@@ -46,7 +46,7 @@ export default function MonthCalendar({ monthCursor, onMonthChange, renderDay })
   const cells = [];
   for (let i = 0; i < firstDow; i++) cells.push(null);
   for (let d = 1; d <= numDays; d++) cells.push(new Date(year, month, d));
-  // Pad the final week out to a full 7 too — otherwise the grid container's
+  // Pad the final week out to a full 7 too - otherwise the grid container's
   // own background (the thin grey grid-line color, via the gap trick below)
   // shows through as one big uncovered block where the trailing empty cells
   // would be, instead of matching the leading blanks' look.

@@ -1,11 +1,11 @@
 // Informational, non-blocking warning: flags a visit when a DIFFERENT rep
 // has a visit (planned or completed) to the same place within
 // config.HARD_FLOOR_DAYS of it. Nothing in the app enforces this across
-// reps/dates today — schedulingEngine.js's hard floor only sees the current
+// reps/dates today - schedulingEngine.js's hard floor only sees the current
 // rep's own candidate pool, and scheduleDraft.js's commit-time collision
 // check (committedElsewherePlaceIds) is deliberately scoped to the exact
 // same calendar date only (see its own comment). This module doesn't change
-// any of that eligibility/collision logic — it only surfaces the gap as a
+// any of that eligibility/collision logic - it only surfaces the gap as a
 // tag a rep can see, same "warn, don't block" spirit as
 // alreadyVisitedTodayPlaceIds.
 //
@@ -15,7 +15,7 @@
 // plain-object-out function that's directly unit-testable.
 const { daysSince } = require('./schedulingEngine');
 
-// Batched across every place in `placeIds` — never one query per place.
+// Batched across every place in `placeIds` - never one query per place.
 // Excludes 'skipped' visits: a visit that didn't happen isn't a real
 // collision. Returns Map<place_id, [{id, place_id, user_id, user_name,
 // scheduled_date, status}]>.
@@ -44,7 +44,7 @@ async function crossRepVisitsByPlace(db, placeIds) {
 //
 // `status` rides along on the result (not just used to find the match) so
 // callers can phrase "visited" (completed, past) differently from "planned"
-// (still upcoming) — without it, the client can't tell those apart and the
+// (still upcoming) - without it, the client can't tell those apart and the
 // same "Also visited by X on Y" sentence gets used for a visit that hasn't
 // happened yet, which reads as a false claim.
 function findCrossRepFloorWarning(visit, placeVisits, config) {
@@ -62,7 +62,7 @@ function findCrossRepFloorWarning(visit, placeVisits, config) {
   return best ? { userName: best.userName, scheduledDate: best.scheduledDate, visitId: best.visitId, status: best.status } : null;
 }
 
-// Thin pure wrapper — maps findCrossRepFloorWarning over a list of visits
+// Thin pure wrapper - maps findCrossRepFloorWarning over a list of visits
 // (all belonging to places present in `byPlace`), attaching the result as
 // `crossRepFloorWarning`. Doesn't mutate the input array/objects.
 function attachCrossRepFloorWarnings(visits, byPlace, config) {

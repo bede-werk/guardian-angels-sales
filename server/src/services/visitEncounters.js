@@ -1,9 +1,9 @@
-// Visit encounters — the who-was-met rows hanging off a trip (see migration
+// Visit encounters - the who-was-met rows hanging off a trip (see migration
 // 20260806000000_split_visit_encounters.js, which split one flat `visits` row
 // per encounter into a trip + its encounters).
 //
-// This module exists because four separate list views — the Calendar tab, a
-// place's visit history, a person's visit history and the dashboard — all
+// This module exists because four separate list views - the Calendar tab, a
+// place's visit history, a person's visit history and the dashboard - all
 // need the exact same thing: trips with a short "who was met" summary
 // attached, fetched in ONE extra query rather than one per row. Same
 // batch-then-group-in-JS shape (and same reason) as referralMetrics.js's
@@ -19,7 +19,7 @@
 // snapshot (title/email/phone) is excluded because no list renders it and
 // shipping it would put every contact detail on file into a month-wide
 // calendar payload. GET /api/visits/:id is the one call that returns
-// everything — see routes/visits.js.
+// everything - see routes/visits.js.
 const SUMMARY_COLUMNS = ['person_name', 'met_with_type'];
 
 // visit_id -> [encounter, ...], in insertion order (which is the order the rep
@@ -45,7 +45,7 @@ async function encountersByVisitId(knex, visitIds, columns = SUMMARY_COLUMNS) {
 }
 
 // Returns `visits` with an `encounters` array attached to each. A trip with no
-// encounters gets [] rather than null — a still-`planned` visit legitimately
+// encounters gets [] rather than null - a still-`planned` visit legitimately
 // has none yet, and that's a normal state, not missing data.
 //
 // idKey exists because dashboard.js aliases the visit id to `visit_id` in its

@@ -1,24 +1,30 @@
-// Capacity display for PlaceDetail — capacity-computation-spec.md.
+// Capacity display for PlaceDetail - capacity-computation-spec.md.
 //
 // Deliberately more than RelationshipDetail's short version: capacity's
 // resolution (declared vs. measured vs. category-seed, override, staleness)
 // has more a rep actually needs explained, and an append-only observation
-// history to show — nothing here is ever overwritten (see
+// history to show - nothing here is ever overwritten (see
 // capacity_observations' own migration header for why), so "how has this
 // grown over time" is a real, answerable question once there's more than
 // one row.
 //
 // All state/handlers live in the parent (PlaceDetail.jsx), same convention
-// RelationshipDetail.jsx's PlaceRelationship already uses — this file is
+// RelationshipDetail.jsx's PlaceRelationship already uses - this file is
 // presentational, driven by callback props.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { formatDate, CAPACITY_LABELS, isDoNotVisitActive } from '../api';
 import Button from './ui/Button';
 import { CapacityChip } from './ui/Chip';
 
 const LEVELS = ['high', 'medium', 'low'];
 
-// 'YYYY-MM-DD' -> "3 days ago" / "6 months ago" / "1 year ago" — coarse on
+// obs.source is a raw capacity_observations.source enum value ('prequal' /
+// 'manual', see that table's migration) - plain-language stand-ins so the
+// history reads like the rest of this app's copy rather than a database
+// value. Falls back to the raw value itself for anything not yet mapped.
+const OBSERVATION_SOURCE_LABELS = { prequal: 'asked on a visit', manual: 'entered by hand' };
+
+// 'YYYY-MM-DD' -> "3 days ago" / "6 months ago" / "1 year ago" - coarse on
 // purpose, this is a "does this feel current" read, not a precise clock.
 function relativeAge(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -35,7 +41,7 @@ function relativeAge(dateStr) {
   return `${years} year${years === 1 ? '' : 's'} ago`;
 }
 
-// The one-line explanation of WHERE the effective number came from — the
+// The one-line explanation of WHERE the effective number came from - the
 // spec's own worked example ("They reported 4/month; we've received
 // 9/month. Using 9.") is the 'measured' case; the other three sources each
 // get their own equally plain-language line.
@@ -44,25 +50,53 @@ function sourceExplanation(capacity) {
   if (levelSource === 'measured') {
     return declared
       ? `They reported ${declared.value}/month; we've received ${measuredFloor}/month. Using ${effectiveMonthly}.`
-      : `We've received ${measuredFloor}/month — never directly asked. Using ${effectiveMonthly}.`;
+      : `We've received ${measuredFloor}/month - never directly asked. Using ${effectiveMonthly}.`;
   }
   if (levelSource === 'declared') {
-    return `Reported ${declared.value}/month at pre-qual.`;
+    return 'Reported at pre-qual.'; // the count itself already shows on the chip line (~N/month)
   }
   if (levelSource === 'category_seed') {
-    return 'Never pre-qualified — estimated from category.';
+    return 'Never pre-qualified - estimated from category.';
   }
-  return null; // 'override' — the override subtext below covers this instead
+  return null; // 'override' - the override subtext below covers this instead
 }
 
-function ObservationRow({ obs }) {
+// The single muted line under the chip - same "one plain-language line, no
+// more" shape as RelationshipDetail.jsx's placeSummary, so the two cards
+// read the same way at a glance. Folds staleness and the override reason
+// into that one line rather than stacking extra lines underneath it (the
+// old layout could show "Never pre-qualified - estimated from category."
+// AND a separate "Never pre-qualified." line for the same place - this
+// replaces both with one sentence per case).
+function capacitySummary(capacity) {
+  const { confidence, declared, isOverridden, override } = capacity;
+  if (isOverridden) return `Manually set${override.reason ? ` - ${override.reason}` : ''}`;
+  const base = sourceExplanation(capacity) || 'Never pre-qualified - estimated from category.';
+  if (confidence === 'stale' && declared) {
+    return `${base} Last confirmed ${relativeAge(declared.observedAt)} - worth asking again.`;
+  }
+  return base;
+}
+
+function ObservationRow({ obs, onDelete, deleting }) {
   return (
-    <div className="tiny" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+    <div className="observation-row tiny" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
       <span>
         <strong>{obs.monthly_referrals}/month</strong> · {formatDate(obs.observed_at)}
         {obs.person_name ? ` · ${obs.person_name}` : ''}
       </span>
-      <span className="muted">{obs.source}</span>
+      <span className="tag-list" style={{ flex: 'unset', alignItems: 'center' }}>
+        <span className="muted">{OBSERVATION_SOURCE_LABELS[obs.source] || obs.source}</span>
+        <button
+          type="button"
+          className="icon-remove-danger"
+          title="Delete this observation from history"
+          onClick={() => onDelete(obs.id)}
+          disabled={deleting}
+        >
+          ✕
+        </button>
+      </span>
     </div>
   );
 }
@@ -75,17 +109,37 @@ export function PlaceCapacity({
   savingOverride,
   onAddObservation,
   savingObservation,
+  addingObservation,
+  setAddingObservation,
+  onEditingOverrideChange,
   onMarkDoNotVisit,
+  onDeleteObservation,
+  deletingObservationId,
 }) {
   const [editingOverride, setEditingOverride] = useState(false);
   const [overrideDraft, setOverrideDraft] = useState('');
   const [overrideReasonDraft, setOverrideReasonDraft] = useState('');
-  const [addingObservation, setAddingObservation] = useState(false);
   const [observationDraft, setObservationDraft] = useState('');
   const [dnvDismissed, setDnvDismissed] = useState(false);
 
+  // The trigger button now lives in PlaceDetail.jsx's card-head, so this
+  // component only ever sees addingObservation flip to true - reset the
+  // draft on that transition the same way the old inline trigger's onClick
+  // used to.
+  useEffect(() => {
+    if (addingObservation) setObservationDraft('');
+  }, [addingObservation]);
+
+  // editingOverride itself stays local (still triggered by clicking the chip,
+  // not a header button) - this just lets the header know to hide the
+  // pre-qualification trigger while it's open, so that button never sits
+  // there looking clickable with nowhere to show its form.
+  useEffect(() => {
+    onEditingOverrideChange?.(editingOverride);
+  }, [editingOverride]);
+
   if (!capacity) return null;
-  const { level, computedLevel, levelSource, confidence, declared, isOverridden, override, effectiveMonthly } = capacity;
+  const { level, computedLevel, isOverridden, override, effectiveMonthly } = capacity;
 
   function startOverrideEdit() {
     setOverrideDraft(override?.level || computedLevel || '');
@@ -106,13 +160,29 @@ export function PlaceCapacity({
     }
   }
 
+  // Server sends newest-first (see routes/places.js) for a stable API
+  // contract; this card is the one place that wants the opposite - a
+  // chat-log reading order, oldest at the top, so a fresh entry lands at
+  // the bottom next to the rest of the card's content instead of shoving
+  // everything else down.
+  const observationsOldestFirst = observations ? [...observations].reverse() : observations;
+
   return (
-    <div className="stack">
+    <div className="stack" style={{ flex: 1, minHeight: 0 }}>
       <div className="tag-list" style={{ alignItems: 'center' }}>
         <span className="tiny muted">Capacity:</span>
         {editingOverride ? null : (
-          <div className="hover-row" title="Click to override the computed capacity level" onClick={startOverrideEdit} style={{ width: 'fit-content' }}>
+          <div
+            className="hover-row editable-chip"
+            title="Click to override the computed capacity level"
+            onClick={startOverrideEdit}
+            tabIndex={0}
+            role="button"
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startOverrideEdit(); } }}
+            style={{ width: 'fit-content' }}
+          >
             <CapacityChip level={level} overridden={isOverridden} />
+            <span className="edit-affordance" aria-hidden="true">✎</span>
           </div>
         )}
         {effectiveMonthly != null && !editingOverride && <span className="tiny muted">~{effectiveMonthly}/month</span>}
@@ -150,62 +220,33 @@ export function PlaceCapacity({
           <div className="tiny muted">Computed: {CAPACITY_LABELS[computedLevel]}</div>
         </div>
       ) : (
-        <>
-          {isOverridden && (
-            <div className="tiny muted">
-              Manually set{override.reason ? ` — ${override.reason}` : ''} — computed: {CAPACITY_LABELS[computedLevel]}
-            </div>
-          )}
-          {!isOverridden && sourceExplanation(capacity) && <div className="tiny muted">{sourceExplanation(capacity)}</div>}
-
-          {confidence === 'stale' && declared && (
-            <div className="tiny" style={{ color: 'var(--warn)' }}>
-              Capacity last confirmed {relativeAge(declared.observedAt)}{declared.source === 'prequal' ? '' : ''} — worth asking again.
-            </div>
-          )}
-          {confidence === 'unknown' && !isOverridden && (
-            <div className="tiny muted">Never pre-qualified.</div>
-          )}
-        </>
+        <div className="tiny muted">{capacitySummary(capacity)}</div>
       )}
 
-      {!editingOverride && (
-        addingObservation ? (
-          <div className="tag-list" style={{ alignItems: 'center' }}>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              placeholder="Referrals/month"
-              style={{ width: 120 }}
-              value={observationDraft}
-              onChange={(e) => setObservationDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitObservation(); } }}
-              autoFocus
-            />
-            <Button size="small" title="Record this pre-qualification answer" onClick={commitObservation} disabled={savingObservation || observationDraft === ''}>
-              {savingObservation ? 'Saving…' : 'Save'}
-            </Button>
-            <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setAddingObservation(false)} disabled={savingObservation}>
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <div className="tag-list" style={{ flex: 'unset' }}>
-            <Button
-              variant="secondary"
-              size="small"
-              title={declared ? 'Record a fresh pre-qualification answer' : "Record this place's pre-qualification answer"}
-              onClick={() => { setObservationDraft(''); setAddingObservation(true); }}
-            >
-              {declared ? 'Update pre-qualification' : 'Add pre-qualification'}
-            </Button>
-          </div>
-        )
+      {!editingOverride && addingObservation && (
+        <div className="tag-list" style={{ alignItems: 'center' }}>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            placeholder="Referrals/month"
+            style={{ width: 120 }}
+            value={observationDraft}
+            onChange={(e) => setObservationDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitObservation(); } }}
+            autoFocus
+          />
+          <Button size="small" title="Record this pre-qualification answer" onClick={commitObservation} disabled={savingObservation || observationDraft === ''}>
+            {savingObservation ? 'Saving…' : 'Save'}
+          </Button>
+          <Button variant="secondary" size="small" title="Discard without saving" onClick={() => setAddingObservation(false)} disabled={savingObservation}>
+            Cancel
+          </Button>
+        </div>
       )}
 
       {/* Dismissible, session-only (see the spec's own "a 0 today is a 0
-          under this DON" — the suggestion re-appears on next load rather
+          under this DON" - the suggestion re-appears on next load rather
           than remembering a permanent dismissal, since nothing about the
           underlying number changed). */}
       {effectiveMonthly === 0 && !isDoNotVisitActive(place) && !dnvDismissed && (
@@ -222,10 +263,12 @@ export function PlaceCapacity({
         </div>
       )}
 
-      {observations && observations.length > 0 && (
-        <div className="stack" style={{ gap: 4, marginTop: 4 }}>
+      {observationsOldestFirst && observationsOldestFirst.length > 0 && (
+        <div className="stack" style={{ gap: 4, marginTop: 'auto', paddingTop: 8 }}>
           <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>History</div>
-          {observations.map((obs) => <ObservationRow key={obs.id} obs={obs} />)}
+          {observationsOldestFirst.map((obs) => (
+            <ObservationRow key={obs.id} obs={obs} onDelete={onDeleteObservation} deleting={deletingObservationId === obs.id} />
+          ))}
         </div>
       )}
     </div>

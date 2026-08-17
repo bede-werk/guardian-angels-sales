@@ -2,16 +2,18 @@ import React from 'react';
 import Button from './Button';
 import useClosingTransition from '../../hooks/useClosingTransition';
 
-// A styled pop-up confirmation prompt — replaces window.confirm()'s native
+// A styled pop-up confirmation prompt - replaces window.confirm()'s native
 // browser dialog with something that looks like the rest of the app. Stacks
 // on top of whatever modal is currently open (same .modal-backdrop/.modal
 // classes, painted later so it's on top); stopPropagation keeps a click here
 // from also closing the modal underneath it. `issues` are the specific
-// problems found — each a { title, detail } pair, in the app's existing
-// mauve "error" styling (see .error-banner in styles.css) — rendered one per
+// problems found - each a { title, detail } pair, in the app's existing
+// mauve "error" styling (see .error-banner in styles.css) - rendered one per
 // line with a bolded title so the rep can scan what's wrong at a glance.
 export default function ConfirmDialog({ issues, confirmLabel = 'Add anyway', onConfirm, onCancel }) {
-  const { closing, startClosing } = useClosingTransition();
+  // Escape reads as "back out", same as clicking Cancel - not as confirming
+  // whatever's being double-checked here.
+  const { closing, startClosing } = useClosingTransition(onCancel);
   return (
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => e.stopPropagation()}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>

@@ -1,4 +1,4 @@
-// Categories used to be a fixed enum in config/categories.js — this promotes
+// Categories used to be a fixed enum in config/categories.js - this promotes
 // it to a real table so it can be managed from the app (add/rename/retire)
 // instead of requiring a code change + redeploy every time the business
 // needs a new one. Seeded with the exact 18 values config/categories.js had

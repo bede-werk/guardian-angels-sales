@@ -4,14 +4,13 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// Add / rename / retire a place category — reachable from both People.jsx
+// Add / rename / retire a place category - reachable from both People.jsx
 // and Places.jsx's Category filter (category is owned by places, but People
 // filters by it too). Each action saves immediately; there's no separate
 // Save button, matching the rest of the app's inline-edit conventions
 // (PlaceDetail/PersonDetail's notes fields).
 export default function CategoriesModal({ onClose, onChanged }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -73,7 +72,7 @@ export default function CategoriesModal({ onClose, onChanged }) {
 
   async function removeCategory(row) {
     const warning = row.place_count > 0
-      ? ` ${row.place_count} place${row.place_count === 1 ? '' : 's'} currently ${row.place_count === 1 ? 'uses' : 'use'} it — ${row.place_count === 1 ? 'it' : 'they'} will become uncategorized.`
+      ? ` ${row.place_count} place${row.place_count === 1 ? '' : 's'} currently ${row.place_count === 1 ? 'uses' : 'use'} it - ${row.place_count === 1 ? 'it' : 'they'} will become uncategorized.`
       : '';
     if (!window.confirm(`Delete "${row.name}"?${warning} This can't be undone.`)) return;
     setSavingId(row.id);
@@ -131,7 +130,11 @@ export default function CategoriesModal({ onClose, onChanged }) {
                       <input
                         value={editingName}
                         onChange={(e) => setEditingName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(row); if (e.key === 'Escape') setEditingId(null); }}
+                        // stopPropagation on Escape specifically - useClosingTransition
+                        // now also listens for Escape at the document level to close
+                        // the whole modal; without this, canceling an in-progress
+                        // rename would also close the modal out from under it.
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(row); if (e.key === 'Escape') { e.stopPropagation(); setEditingId(null); } }}
                         autoFocus
                         style={{ flex: 1 }}
                       />

@@ -1,20 +1,20 @@
 // Visit types the route planner understands, each with a default expected
 // duration in minutes. Used by services/driveTime.js's time-block packing
-// instead of a flat visit-duration assumption — a drop-in and an in-service
+// instead of a flat visit-duration assumption - a drop-in and an in-service
 // presentation don't cost the same time, and packing needs to know which one
 // it's budgeting for. A place's default visit type is now fully computed
-// (DEFAULT_VISIT_TYPE_BY_CAPACITY below, gated by pre-qualification — see
+// (DEFAULT_VISIT_TYPE_BY_CAPACITY below, gated by pre-qualification - see
 // scheduleGenerator.js's defaultVisitTypeForCapacity) rather than a stored
 // per-place field; every visit can still choose a different type.
 //
 // pre_qualification already existed as a concept (places' capacity/
-// relationship fields are captured "at pre-qual" — see
+// relationship fields are captured "at pre-qual" - see
 // config/scheduling.js's comments) without its own duration or a place to
 // live. It's folded in here as one of these types rather than becoming a
 // second, separate mechanism.
 //
 // Plain module, same convention as config/scheduling.js and
-// config/driveTime.js — kept as named constants so a future settings-table
+// config/driveTime.js - kept as named constants so a future settings-table
 // phase can lift them out without touching the packing logic.
 module.exports = {
   VISIT_TYPES: {
@@ -29,10 +29,10 @@ module.exports = {
   DEFAULT_VISIT_TYPE: 'drop_in',
 
   // A place's default visit type once it's been pre-qualified (capacity
-  // declared — see services/capacity.js's `declared`/`confidence`), keyed by
+  // declared - see services/capacity.js's `declared`/`confidence`), keyed by
   // its capacity level. Before that point every place defaults to
   // 'pre_qualification' instead (see scheduleGenerator.js's
-  // defaultVisitTypeForCapacity) — this table only applies once `confidence`
+  // defaultVisitTypeForCapacity) - this table only applies once `confidence`
   // is no longer 'unknown'. presentation is deliberately NOT in this table:
   // it's always a manual choice, never an auto-selected default.
   DEFAULT_VISIT_TYPE_BY_CAPACITY: {
@@ -43,7 +43,7 @@ module.exports = {
 
   // Flat per-stop overhead that isn't drive time and isn't the visit itself:
   // reviewing notes/history on the way in, logging the outcome on the way
-  // out. Same for every visit type — unlike VISIT_TYPES, these don't vary by
+  // out. Same for every visit type - unlike VISIT_TYPES, these don't vary by
   // what kind of visit it is.
   PREP_MINUTES: 3,
   DATA_ENTRY_MINUTES: 5,

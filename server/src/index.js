@@ -1,4 +1,4 @@
-// Guardian Angels Homecare — Sales Visit Scheduling API.
+// Guardian Angels Homecare - Sales Visit Scheduling API.
 // This is the entry point: it wires together the Express app, mounts every
 // route module under /api/*, and starts the HTTP server.
 require('dotenv').config(); // loads server/.env into process.env
@@ -24,19 +24,19 @@ const app = express();
 app.use(cors()); // allow the frontend (different port in dev) to call this API
 app.use(express.json()); // parse JSON request bodies into req.body
 
-// Simple health check — used by Railway/Heroku to confirm the server is alive.
+// Simple health check - used by Railway/Heroku to confirm the server is alive.
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'ga-sales-api' }));
 
-// Auth routes are intentionally NOT behind requireAuth — you need to be able to
+// Auth routes are intentionally NOT behind requireAuth - you need to be able to
 // hit /api/auth/login before you have a token to prove who you are.
 app.use('/api/auth', auth);
 
 // Every other route below requires a valid login token (see
-// middleware/requireAuth.js) — applied once here, globally, rather than
+// middleware/requireAuth.js) - applied once here, globally, rather than
 // repeated on each individual mount below. Repeating it per-mount used to run
 // it TWICE for any request that falls through one router into another (e.g.
 // people.js's bare '/api' mount catching what places.js's '/api/places'
-// mount didn't match) — a harmless extra DB lookup, but still wasteful.
+// mount didn't match) - a harmless extra DB lookup, but still wasteful.
 app.use('/api', requireAuth);
 
 app.use('/api/places', places);
@@ -81,7 +81,7 @@ async function seedIfEmpty() {
   try {
     const { c } = await knex('places').count({ c: '*' }).first();
     if (Number(c) === 0) {
-      console.log('Empty database detected — seeding from bundled spreadsheet…');
+      console.log('Empty database detected - seeding from bundled spreadsheet…');
       await importPlaces();
       console.log('Seeding complete.');
     }

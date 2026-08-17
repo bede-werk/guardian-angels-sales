@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 // One-way hash a plaintext password for storage (users.password_hash).
-// The "10" is bcrypt's cost factor — higher is slower but harder to brute-force.
+// The "10" is bcrypt's cost factor - higher is slower but harder to brute-force.
 const hashPassword = (plain) => bcrypt.hash(plain, 10);
 
 // Check a plaintext password attempt against a stored hash. Returns true/false.

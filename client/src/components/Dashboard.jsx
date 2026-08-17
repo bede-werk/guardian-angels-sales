@@ -6,7 +6,7 @@ import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
 
 // Short, inline forms of met_with_type. MET_WITH_LABELS in api.js reads as a
-// form option ("A staff member (name unknown)") — far too long for a one-line
+// form option ("A staff member (name unknown)") - far too long for a one-line
 // list row, so it's shortened here the same way PlaceDetail.jsx shortens it
 // for its own visit history.
 const ENCOUNTER_SHORT_LABELS = { staff: 'a staff member', receptionist: 'the receptionist' };
@@ -18,7 +18,7 @@ const ENCOUNTER_SHORT_LABELS = { staff: 'a staff member', receptionist: 'the rec
 function encounterSummary(encounters) {
   if (!encounters || encounters.length === 0) return null;
   // 'nobody' is mutually exclusive with every other type at log time (see
-  // VisitLogModal), so it can only ever appear alone — and "with nobody"
+  // VisitLogModal), so it can only ever appear alone - and "with nobody"
   // doesn't read as English.
   if (encounters[0].met_with_type === 'nobody') return 'nobody in';
   const [first, ...rest] = encounters;
@@ -81,7 +81,7 @@ export default function Dashboard({ date, userId }) {
             <EmptyState message="Nothing completed yet this week." />
           ) : (
             <ul className="list">
-              {/* One row per TRIP, not per encounter — a single outcome chip
+              {/* One row per TRIP, not per encounter - a single outcome chip
                   used to sit on the right, but a trip that met three people
                   has three outcomes, so there's no one value to chip. Who was
                   met folds into the meta line instead. */}
@@ -106,7 +106,7 @@ export default function Dashboard({ date, userId }) {
           <h2>High-priority places never visited</h2>
           <span className="muted tiny">top {Math.min(12, data.never_visited.places.length)} by priority</span>
         </div>
-        <div className="card-body" style={{ padding: 0 }}>
+        <div className="card-body table-scroll" style={{ padding: 0 }}>
           <table>
             <thead>
               <tr><th>Organization</th><th>Category</th><th>Priority</th><th>Location</th></tr>
@@ -120,6 +120,9 @@ export default function Dashboard({ date, userId }) {
                   <td className="muted tiny">{p.city} {p.zip} · {p.region}</td>
                 </tr>
               ))}
+              {data.never_visited.places.length === 0 && (
+                <tr><td colSpan={4}><EmptyState message="Every high-priority place has been visited." /></td></tr>
+              )}
             </tbody>
           </table>
         </div>

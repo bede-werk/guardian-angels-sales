@@ -1,4 +1,4 @@
-// Gives do_not_visit a real "until" date, same shape as places.snooze_until —
+// Gives do_not_visit a real "until" date, same shape as places.snooze_until -
 // NULL means indefinite once do_not_visit is true, a date means it lapses
 // naturally (nothing clears it automatically; every read that cares does a
 // live >= today() compare, same convention as snooze_until). See

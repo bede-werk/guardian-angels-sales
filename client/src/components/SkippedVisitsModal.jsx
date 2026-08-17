@@ -5,18 +5,17 @@ import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// A day's skipped visits — the Calendar tab's small status-dot indicator
+// A day's skipped visits - the Calendar tab's small status-dot indicator
 // (VisitsCalendar.jsx). Every row here is always `status: 'skipped'` (the
 // caller already filtered before handing them over), so unlike the old
 // shared CalendarDayModal this split off from, there's no per-row status
-// branching to do: every row just opens SkippedVisitDetailModal on click —
+// branching to do: every row just opens SkippedVisitDetailModal on click -
 // its own detail popup, not the completed-trip VisitDetailModal, since a
 // skipped visit has no encounters to show. Row layout mirrors
-// PlannedDayModal/CompletedVisitsModal's main/actions split — a "View place"
+// PlannedDayModal/CompletedVisitsModal's main/actions split - a "View place"
 // button is the way into PlaceDetail, separate from the row click (visit).
 export default function SkippedVisitsModal({ date, visits, showRepName, onClose, onViewVisit, onViewPlace }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   return (
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>

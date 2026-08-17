@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { api, today } from '../api';
 import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
@@ -7,15 +7,17 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // roster, so the form includes a picker) or from a person's own page (pass
 // `person` directly, so who it's for is already fixed and no picker is
 // needed). Pass `referral` to edit an existing one instead of creating a new
-// one — who it's attributed to isn't editable there (delete and re-log
+// one - who it's attributed to isn't editable there (delete and re-log
 // instead), so `person`/`people` still just drive the read-only display.
-// Every referral is attributed to a specific person — there's no "unknown
+// Every referral is attributed to a specific person - there's no "unknown
 // contact" option, since a place's referral total is just the sum of its
 // people's own counts (see PlaceDetail.jsx / routes/places.js), so a
 // referral with no person would have nowhere to be counted.
 export default function ReferralModal({ people = [], person, referral, onClose, onSaved }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
+  // See PlaceModal's identical comment - pairs every label.field below with
+  // its input via htmlFor/id.
+  const uid = useId();
   const [form, setForm] = useState({
     person_id: referral?.person_id || person?.id || '',
     referral_date: referral?.referral_date || today(),
@@ -55,27 +57,27 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
           {error && <div className="error-banner">{error}</div>}
 
           <div>
-            <label className="field">Who referred it?</label>
+            <label className="field" htmlFor={`${uid}-person`}>Who referred it?</label>
             {person ? (
               <div className="tiny"><strong>{person.name}</strong></div>
             ) : (
-              <select value={form.person_id} onChange={set('person_id')} disabled={people.length === 0} autoFocus>
+              <select id={`${uid}-person`} value={form.person_id} onChange={set('person_id')} disabled={people.length === 0} autoFocus>
                 <option value="">{people.length === 0 ? 'No one on file here yet' : 'Select a person…'}</option>
                 {people.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}{p.title ? ` — ${p.title}` : ''}</option>
+                  <option key={p.id} value={p.id}>{p.name}{p.title ? ` - ${p.title}` : ''}</option>
                 ))}
               </select>
             )}
           </div>
 
           <div style={{ maxWidth: 220 }}>
-            <label className="field">Date</label>
-            <input type="date" value={form.referral_date} onChange={set('referral_date')} />
+            <label className="field" htmlFor={`${uid}-date`}>Date</label>
+            <input id={`${uid}-date`} type="date" value={form.referral_date} onChange={set('referral_date')} />
           </div>
 
           <div>
-            <label className="field">Notes</label>
-            <textarea rows={2} value={form.notes} onChange={set('notes')} />
+            <label className="field" htmlFor={`${uid}-notes`}>Notes</label>
+            <textarea id={`${uid}-notes`} rows={2} value={form.notes} onChange={set('notes')} />
           </div>
         </div>
         <div className="modal-foot">

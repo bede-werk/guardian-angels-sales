@@ -12,9 +12,9 @@ import useClosingTransition from '../hooks/useClosingTransition';
 
 // Everyone ELSE on a trip this person was part of. A visit is a trip, not a
 // one-to-one meeting, so their history here can list a visit that also took in
-// the receptionist and two colleagues — saying so is the difference between
+// the receptionist and two colleagues - saying so is the difference between
 // "we sat down with them" and "we were in the building". Matched by id, not
-// name — routes/people.js's GET /:id asks for person_id alongside the usual
+// name - routes/people.js's GET /:id asks for person_id alongside the usual
 // name-only summary specifically so two people sharing a name at one place
 // don't fold together here.
 function otherAttendees(encounters, personId) {
@@ -22,13 +22,12 @@ function otherAttendees(encounters, personId) {
   return encounters.filter((e) => !(e.met_with_type === 'named_person' && e.person_id === personId));
 }
 
-// Slide-in modal: a person's own detail — their place, contact info,
+// Slide-in modal: a person's own detail - their place, contact info,
 // durable notes/preferences, and every visit where they were the recorded
 // contact (their personal "last time we spoke" history). Opened from
 // People.jsx (clicking a row).
 export default function PersonDetail({ personId, userId, onClose, onChanged, onDeleted, onOpenPlace }) {
-  const { closing, startClosing } = useClosingTransition();
-  const requestClose = () => startClosing(onClose);
+  const { closing, requestClose } = useClosingTransition(onClose);
   const [data, setData] = useState(null); // GET /api/people/:id response (person + place + visits)
   const [loadError, setLoadError] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -45,8 +44,8 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
   const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
   const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
-  const [logging, setLogging] = useState(false); // whether the Log Visit (create) modal is open — only possible when this person has a place
-  // Durable notes about this person — editable inline via a small textarea +
+  const [logging, setLogging] = useState(false); // whether the Log Visit (create) modal is open - only possible when this person has a place
+  // Durable notes about this person - editable inline via a small textarea +
   // Save, same pattern as PlaceDetail's org-level notes.
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState('');
@@ -81,7 +80,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   async function deletePerson() {
     const referralCount = data.referral_metrics.lifetime_referrals;
     const referralWarning = referralCount
-      ? ` They're credited with ${referralCount} referral${referralCount === 1 ? '' : 's'} — those will be permanently deleted too, since a referral needs someone to attribute it to.`
+      ? ` They're credited with ${referralCount} referral${referralCount === 1 ? '' : 's'} - those will be permanently deleted too, since a referral needs someone to attribute it to.`
       : '';
     if (!window.confirm(`Delete ${data.name}? This can't be undone. Their visit history stays on file.${referralWarning}`)) return;
     setDeleting(true);
@@ -96,9 +95,9 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   }
 
   // Detaches this person from their place (place_id -> null) without
-  // deleting them — their visit history stays exactly as it was.
+  // deleting them - their visit history stays exactly as it was.
   async function removeFromPlace() {
-    if (!window.confirm(`Remove ${data.name} from ${data.place.name}? Their visit history will stay on file — you'll still see it here.`)) return;
+    if (!window.confirm(`Remove ${data.name} from ${data.place.name}? Their visit history will stay on file - you'll still see it here.`)) return;
     setRemovingFromPlace(true);
     try {
       await api.people.update(data.id, { place_id: null });
@@ -111,7 +110,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     }
   }
 
-  // Shared by the notes/preferences/birthday click-to-edit fields below — same
+  // Shared by the notes/preferences/birthday click-to-edit fields below - same
   // save-one-field / remove-one-field shape for each, differing only in which
   // field and which state setters/confirm text apply.
   async function saveField(field, value, { setEditing, setSaving }) {
@@ -210,8 +209,8 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     setAssigning(false);
   }
 
-  // Any other action taken on this card — assigning a place, logging or
-  // viewing a referral/visit, editing the person — should back out of
+  // Any other action taken on this card - assigning a place, logging or
+  // viewing a referral/visit, editing the person - should back out of
   // whichever notes/preferences/birthday field is mid-edit, same as a
   // backdrop click does (see handleBackdropClick below).
   function exitFieldEdits() {
@@ -254,11 +253,11 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     }
   }
 
-  // Deletes the whole TRIP, not just this person's part in it — anyone else
+  // Deletes the whole TRIP, not just this person's part in it - anyone else
   // met on the same visit is deleted along with it. Dropping only this person
   // from a trip is VisitDetailModal's per-encounter ✕.
   async function removeVisit(visit) {
-    if (!window.confirm("Delete this visit? Everyone recorded on it — not just this person — goes with it. This can't be undone.")) return;
+    if (!window.confirm("Delete this visit? Everyone recorded on it - not just this person - goes with it. This can't be undone.")) return;
     setRemovingVisitId(visit.id);
     try {
       await api.deleteVisit(visit.id);
@@ -273,7 +272,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
 
   // Clicking the backdrop backs out of whatever's actively being edited
   // (the place picker, or an inline notes/preferences/birthday edit) instead
-  // of closing the whole card out from under an in-progress edit — a second
+  // of closing the whole card out from under an in-progress edit - a second
   // backdrop click (with nothing left open) closes the card as normal.
   // stopPropagation matters here too: this card can itself be nested inside
   // PlaceDetail's own backdrop (opened by clicking a person row there), so
@@ -311,7 +310,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const { referral_metrics: metrics } = data;
 
   // Which of the Details card's three fields are actually occupying a row
-  // right now (has data, or is mid-edit) — used to divide them with a
+  // right now (has data, or is mid-edit) - used to divide them with a
   // border, same as Referrals/Visit history's list items, but only BETWEEN
   // rows that are actually showing rather than a blanket border on every
   // row (there's no leading summary line above the first one here to butt up
@@ -339,15 +338,15 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         <div className="modal-body">
           {loadError && <div className="error-banner">{loadError}</div>}
           {/* Contact Info, Place, and Relationship in one row, all the
-              same height (stretch) — three short, parallel "about this
+              same height (stretch) - three short, parallel "about this
               person" facts read cleaner kept level than each hugging its
               own height. Relationship gets a fixed width wide enough that
               its status chip + trend arrow never wrap to a second line;
               Contact Info is pinned to that same width so the row reads as
-              symmetric, and Place — flex:1 — fills and centers in whatever
+              symmetric, and Place - flex:1 - fills and centers in whatever
               room is left between them. */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-            <div className="card" style={{ flex: '0 0 250px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
+            <div className="card" style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column' }}>
               <div className="card-head"><h2>Contact Info</h2></div>
               <div className="card-body stack" style={{ flex: 1, justifyContent: 'center' }}>
                 {data.phone || data.email ? (
@@ -361,9 +360,9 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               </div>
             </div>
 
-            {/* Which place they belong to — or, since a person doesn't have to
+            {/* Which place they belong to - or, since a person doesn't have to
                 be tied to one, a way to assign them to one. */}
-            <div className="card" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <div className="card" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Place</h2>
                 {!data.place && !assigning && (
@@ -385,7 +384,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     <Button
                       variant="ghost"
                       size="small"
-                      title="Unassign from this place — they stay on file, just no longer linked here"
+                      title="Unassign from this place - they stay on file, just no longer linked here"
                       disabled={removingFromPlace}
                       onClick={(e) => { e.stopPropagation(); removeFromPlace(); }}
                     >
@@ -411,7 +410,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               </div>
             </div>
 
-            <div className="card" style={{ flex: '0 0 250px' }}>
+            <div className="card" style={{ flex: '1 1 250px' }}>
               <div className="card-head"><h2>Relationship</h2></div>
               <div className="card-body stack">
                 <PersonRelationship relationship={data.relationship} />
@@ -421,10 +420,10 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
 
           {/* Details + Referrals on the next line, both pinned to the same
               fixed height (display:flex column so the head stays put and
-              card-body — flex:1, minHeight:0, overflow-y:auto — is what
+              card-body - flex:1, minHeight:0, overflow-y:auto - is what
               actually scrolls once its content outgrows that height). */}
-          <div style={{ display: 'flex', gap: 14, alignItems: 'stretch' }}>
-            <div className="card" style={{ flex: 1, minWidth: 0, height: 230, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch' }}>
+            <div className="card detail-card-230" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Details</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -473,7 +472,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     />
                     <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                       {data.preferences ? (
-                        <Button variant="danger" size="small" title="Delete preferences — can't be undone" onClick={removePreferences} disabled={removingPreferences || savingPreferences}>
+                        <Button variant="danger" size="small" title="Delete preferences - can't be undone" onClick={removePreferences} disabled={removingPreferences || savingPreferences}>
                           {removingPreferences ? 'Deleting…' : 'Delete'}
                         </Button>
                       ) : <span />}
@@ -519,7 +518,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     </div>
                     <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                       {data.birthday_month ? (
-                        <Button variant="danger" size="small" title="Delete birthday — can't be undone" onClick={removeBirthday} disabled={removingBirthday || savingBirthday}>
+                        <Button variant="danger" size="small" title="Delete birthday - can't be undone" onClick={removeBirthday} disabled={removingBirthday || savingBirthday}>
                           {removingBirthday ? 'Deleting…' : 'Delete'}
                         </Button>
                       ) : <span />}
@@ -559,7 +558,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     />
                     <div className="tag-list" style={{ justifyContent: 'space-between' }}>
                       {data.notes ? (
-                        <Button variant="danger" size="small" title="Delete this note — can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
+                        <Button variant="danger" size="small" title="Delete this note - can't be undone" onClick={removeNotes} disabled={removingNotes || savingNotes}>
                           {removingNotes ? 'Deleting…' : 'Delete'}
                         </Button>
                       ) : <span />}
@@ -587,7 +586,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               </div>
             </div>
 
-            <div className="card" style={{ flex: 1, minWidth: 0, height: 230, display: 'flex', flexDirection: 'column' }}>
+            <div className="card detail-card-230" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Referrals ({metrics.lifetime_referrals})</h2>
                 <Button size="small" title="Record a new referral from this person" onClick={() => { exitFieldEdits(); setLoggingReferral(true); }}>Log a referral</Button>
@@ -631,7 +630,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
             </div>
           </div>
 
-          {/* Visit history, full width, on its own — the longest list,
+          {/* Visit history, full width, on its own - the longest list,
               so it gets the most room. */}
           <div className="card">
             <div className="card-head">
@@ -657,24 +656,24 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                         <div className="stack" style={{ minWidth: 0 }}>
                           <div className="tag-list" style={{ minWidth: 0 }}>
                             <strong className="tiny">{v.scheduled_date ? formatDate(v.scheduled_date) : 'unscheduled'}</strong>
-                            {/* "Bede Fulton at Guardian Angels (Test)" — who visited, then where. */}
+                            {/* "Bede Fulton at Guardian Angels (Test)" - who visited, then where. */}
                             {(v.user_name || v.place_name) && (
                               <span className="tiny muted">
                                 · {[v.user_name, v.place_name && `at ${v.place_name}`].filter(Boolean).join(' ')}
                               </span>
                             )}
                           </div>
-                          {/* Only when the trip took in someone else — on a
+                          {/* Only when the trip took in someone else - on a
                               one-person visit there's nothing to disclose. */}
                           {others.length > 0 && (
                             <div className="tiny muted">Also met {joinNames(others.map(encounterLabel))}</div>
                           )}
                           {v.notes && <div className="tiny">{v.notes}</div>}
-                          {/* commitments_made — see PlaceDetail's identical
+                          {/* commitments_made - see PlaceDetail's identical
                               block/comment (Place Commitments spec §6.3);
                               replaces the old bare next_visit_date field.
                               The place's own snooze/do-not-visit, not this
-                              visit's — same suppression rule VisitDetailModal
+                              visit's - same suppression rule VisitDetailModal
                               applies, and only while the promise is still
                               outstanding. */}
                           {v.commitments_made?.map((c) => (
@@ -706,7 +705,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
           <Button
             variant="danger"
             style={{ marginRight: 'auto' }}
-            title="Permanently delete this person — can't be undone. Their visit history stays on file (no longer linked to them), but their referrals are deleted along with them."
+            title="Permanently delete this person - can't be undone. Their visit history stays on file (no longer linked to them), but their referrals are deleted along with them."
             onClick={deletePerson}
             disabled={deleting}
           >
@@ -767,7 +766,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         />
       )}
 
-      {/* VisitLogModal expects `visit_id`, not `id` — map our row's `id` to
+      {/* VisitLogModal expects `visit_id`, not `id` - map our row's `id` to
           it here so editing an existing visit PATCHes instead of creating a
           new one. */}
       {editingVisit && (
@@ -779,7 +778,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         />
       )}
 
-      {/* Ad-hoc visit logging, only available when this person has a place —
+      {/* Ad-hoc visit logging, only available when this person has a place -
           a visit is always anchored to one. Pre-selects this person in the
           "who did you meet?" picker as a convenience default (still
           changeable), since PersonDetail already knows who it's with. */}

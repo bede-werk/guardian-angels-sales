@@ -1,4 +1,4 @@
-// Pure scoring/eligibility engine for the route planner. No knex, no I/O —
+// Pure scoring/eligibility engine for the route planner. No knex, no I/O -
 // every function takes plain-object inputs so it's directly unit-testable;
 // a later phase's job is just "query the DB, shape rows into these input
 // shapes, call this module." See server/src/config/scheduling.js for the
@@ -8,34 +8,34 @@
 // lexicographic 4-tier sort, not an additive score. Lower tier always wins;
 // within a tier, candidates are ordered by that tier's own value(s).
 //
-//   0. Hard commitments   — nextVisitDate <= today. Most overdue promise first.
-//   1. Endangered verified — capacity confidence 'fresh' AND urgency >=
+//   0. Hard commitments   - nextVisitDate <= today. Most overdue promise first.
+//   1. Endangered verified - capacity confidence 'fresh' AND urgency >=
 //      NEGLECT_MULTIPLIER (real measured neglect rescues a verified place
-//      that exploration would otherwise bury — rescue is urgency-based only,
+//      that exploration would otherwise bury - rescue is urgency-based only,
 //      never capacity-based, so a low-capacity verified place can jump this
 //      tier just as easily as a high-capacity one).
-//   2. Exploration        — capacity confidence 'unknown' or 'stale' (spec
+//   2. Exploration        - capacity confidence 'unknown' or 'stale' (spec
 //      capacity-computation-spec.md §8, step 7). Ordered by explorationRank
 //      (capacity-level guess, stale ranked below unknown, aged down toward 0
-//      the longer a place has waited — see explorationRank below), then
+//      the longer a place has waited - see explorationRank below), then
 //      priority_score descending, then place.id ascending as a final
-//      deterministic tiebreak (spec §8.1) — NOT by urgency; learning beats
+//      deterministic tiebreak (spec §8.1) - NOT by urgency; learning beats
 //      maintaining during the pre-qualification era.
-//   3. Everything else     — fresh places below the neglect threshold.
+//   3. Everything else     - fresh places below the neglect threshold.
 //      Ordered by urgency, descending. Never-visited is Infinity urgency,
 //      but a never-visited place is essentially always still
 //      unknown/stale, so in practice it lands in tier 2, not here.
 //
 // This is what makes "one formula, two eras, no mode switch" true: every
-// place's tier is computed the same way, always — it just moves from tier 2
+// place's tier is computed the same way, always - it just moves from tier 2
 // to tier 3 the moment its declared observation goes (or stays) fresh, and
 // can visit tier 1 from tier 3 if it's neglected long enough. Unlike the old
 // one-way capacity_status latch this replaced, a FRESH place can re-enter
-// tier 2 later if its declared observation ages past CAPACITY_STALE_DAYS —
+// tier 2 later if its declared observation ages past CAPACITY_STALE_DAYS -
 // deliberate, see capacity.js's confidence model.
 
 // daysSince/isCommitmentDue/isFloorConflict now live in conflictDetection.js
-// (the shared floor/collision rule module — see its header) and are
+// (the shared floor/collision rule module - see its header) and are
 // re-exported below unchanged, so existing consumers of this module's
 // daysSince (crossRepFloorWarning.js, relationship.js) don't need to change
 // their require() at all.
@@ -48,10 +48,10 @@ const TIERS = { COMMITMENT: 0, ENDANGERED: 1, EXPLORATION: 2, MAINTENANCE: 3 };
 // shortest cadence (biggest gap between potential and reality = biggest
 // opportunity); low-capacity + strong-relationship gets the longest (already
 // maxed out).
-// Falls back to 'medium'/'weak' — the same defaults the
+// Falls back to 'medium'/'weak' - the same defaults the
 // 20260712000000_add_scheduling_fields.js migration itself uses (capacity
 // backfill's own documented fallback, and relationship_level's column
-// default) — for a place with a null/unrecognized capacity level or
+// default) - for a place with a null/unrecognized capacity level or
 // relationship_level, e.g. one created after that migration ran without
 // either field ever being set by a route.
 function targetCadenceDays(capacityLevel, relationshipLevel, config) {
@@ -63,7 +63,7 @@ function targetCadenceDays(capacityLevel, relationshipLevel, config) {
 // Infinity (maximally overdue). A fatigued place (>= FATIGUE_THRESHOLD
 // completed visits in the trailing FATIGUE_WINDOW_DAYS) has its cadence
 // stretched by FATIGUE_MULTIPLIER first, so its urgency number reflects the
-// *effective* cadence, not the base one — this is the single source of
+// *effective* cadence, not the base one - this is the single source of
 // truth used both to test the tier-1 neglect threshold and to order within
 // tiers 1 and 3.
 function urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today, config }) {
@@ -74,7 +74,7 @@ function urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel
 }
 
 // Relationship level is now COMPUTED (services/relationship.js) and supplied
-// per-candidate by buildCandidatePool, rather than read off the place row —
+// per-candidate by buildCandidatePool, rather than read off the place row -
 // places.relationship_level was a manual field that defaulted to 'weak' and
 // was never once edited, which quietly flattened this whole axis of the
 // cadence table.
@@ -93,7 +93,7 @@ function effectiveRelationshipLevel({ place, relationshipLevel }) {
 // Same transition pattern as effectiveRelationshipLevel above, one release
 // later: capacity level is now COMPUTED (services/capacity.js,
 // capacity-computation-spec.md step 6) and supplied per-candidate by
-// buildCandidatePool, rather than read off place.capacity_level — the raw
+// buildCandidatePool, rather than read off place.capacity_level - the raw
 // column is a frozen one-time guess/pre-qual snapshot, never revised against
 // reality (see the spec's §1). The fallback to place.capacity_level exists
 // only so this module's own pure tests (bare place objects, no pool) stay
@@ -105,7 +105,7 @@ function effectiveCapacityLevel({ place, capacityLevel }) {
 }
 
 // Ordinal for "ordered among themselves by capacity level (guess)" within
-// the exploration tier — higher sorts first. Superseded by explorationRank
+// the exploration tier - higher sorts first. Superseded by explorationRank
 // below (step 7) for actual ranking; kept/exported only because
 // scheduleDraft.test.js and older fixtures may still reference it directly.
 function capacityRank(capacityLevel) {
@@ -116,7 +116,7 @@ function capacityRank(capacityLevel) {
 // now governed by the computed capacity service's `confidence`, not the old
 // one-way `capacity_status` latch (estimated -> verified, never revisited).
 // A place whose declared observation ages past CAPACITY_STALE_DAYS now
-// correctly RE-ENTERS exploration — impossible under the old latch, and
+// correctly RE-ENTERS exploration - impossible under the old latch, and
 // exactly what capacity.js's confidence model exists to enable (spec §6.6,
 // §8).
 //
@@ -124,7 +124,7 @@ function capacityRank(capacityLevel) {
 // equivalent so this module's own bare-place-object tests keep meaning
 // something: 'estimated' (never verified) -> 'unknown' (still in
 // exploration); anything else ('verified'/'adjusted') -> 'fresh' (out of
-// exploration) — exactly the old gate's own boolean, just re-expressed.
+// exploration) - exactly the old gate's own boolean, just re-expressed.
 // Production always supplies capacityConfidence from buildCandidatePool, so
 // this fallback never fires there. Delete it once the legacy column is
 // dropped (spec step 9).
@@ -133,36 +133,36 @@ function effectiveCapacityConfidence({ place, capacityConfidence }) {
   return place.capacity_status === 'estimated' ? 'unknown' : 'fresh';
 }
 
-// Spec §8.2 — how candidates are ordered AMONG THEMSELVES within the
+// Spec §8.2 - how candidates are ordered AMONG THEMSELVES within the
 // EXPLORATION tier. Lower explorationRank sorts FIRST (opposite convention
-// from every other tier's within-tier value — see rankKey/compareRankKeys
+// from every other tier's within-tier value - see rankKey/compareRankKeys
 // below for how the sign flip reconciles this within one comparator).
 //
 // baseRank: capacity-level guess, high/medium/low, with a stale observation
-// penalized below unknown — "never-asked outranks re-asked" (spec's own
+// penalized below unknown - "never-asked outranks re-asked" (spec's own
 // phrase): a place we've never even tried to ask deserves the benefit of
 // the doubt over one whose number we know is old.
 //
 // Aging then pulls the rank down toward 0 the longer a place has waited
-// (daysWaiting / EXPLORATION_AGING_DAYS, floored) — the starvation guard:
+// (daysWaiting / EXPLORATION_AGING_DAYS, floored) - the starvation guard:
 // without it, a low-capacity or stale place would sit at the bottom of
 // EXPLORATION forever and never get re-asked. At daysWaiting = 0 for every
 // candidate (e.g. right after import, when every place shares one
-// created_at), this term is inert and ordering is pure capacity guess — see
+// created_at), this term is inert and ordering is pure capacity guess - see
 // the spec's own worked example.
 //
 // daysWaiting is clamped to >= 0 HERE, on the input, not just on the final
 // return value below. A negative daysWaiting is possible: places.
 // exploration_eligible_since is stamped once, at observation-insert time,
-// using CAPACITY_STALE_DAYS as it stood THAT day (deliberately — see the
+// using CAPACITY_STALE_DAYS as it stood THAT day (deliberately - see the
 // migration's own header, this is what keeps a later threshold retune from
 // retroactively reshuffling everyone already waiting). If that threshold is
 // ever tightened, a place's live-computed confidence can flip to 'stale'
 // before its already-stamped eligible_since date arrives, so
 // daysSince(eligible_since, today) comes out negative for a little while.
 // Without this clamp, floor(negative / AGING_DAYS) is a negative integer,
-// which makes `baseRank - floor(...)` LARGER — i.e. worse, sorting the place
-// further back — the opposite of "no aging credit yet." The final
+// which makes `baseRank - floor(...)` LARGER - i.e. worse, sorting the place
+// further back - the opposite of "no aging credit yet." The final
 // `Math.max(0, ...)` below only floors the RESULT at the front of the tier;
 // it does nothing to stop a negative daysWaiting from pushing a place
 // backward first.
@@ -177,7 +177,7 @@ function explorationRank({ level, confidence, daysWaiting, config }) {
 //
 // Precedence: do_not_visit excludes always, even over a due commitment (the
 // ultimate manual veto) -> a visit already planned for TODAY excludes always
-// too, for the same reason (Manual Visit Planning spec §7.1/§9 — see below)
+// too, for the same reason (Manual Visit Planning spec §7.1/§9 - see below)
 // -> a due commitment (nextVisitDate <= today) bypasses the hard floor only,
 // since a human explicitly asking us back is exactly the justification the
 // floor exists to protect against overriding -> every other guard (snooze,
@@ -186,28 +186,28 @@ function explorationRank({ level, confidence, daysWaiting, config }) {
 //
 // plannedVisitDates (Step 3 of the 2026-08 remediation ticket): every OTHER
 // planned visit this place already has on the books, checked against the
-// SAME hard floor a completed visit is — a planned visit is a real
+// SAME hard floor a completed visit is - a planned visit is a real
 // commitment already made, and proposing this place again nearby in time is
 // exactly the double-booking risk the floor exists to prevent. Deliberately
 // NOT folded into lastVisitDate: that field also drives urgency()/rankKey's
 // cadence math below, and a planned-but-not-yet-happened visit must not
-// affect how overdue a place LOOKS — only whether it's eligible at all.
+// affect how overdue a place LOOKS - only whether it's eligible at all.
 function eligibility({ place, today, lastVisitDate, nextVisitDate, plannedVisitDates = [], lockedElsewhere, config }) {
   // do_not_visit_until mirrors snooze_until's own "never cleared, just live-
-  // compared" convention — null/unset means indefinite once do_not_visit is
+  // compared" convention - null/unset means indefinite once do_not_visit is
   // true, a date means the mark lapses on its own once today passes it.
   if (place.do_not_visit && (!place.do_not_visit_until || place.do_not_visit_until >= today)) {
     return { eligible: false, reason: 'do_not_visit' };
   }
 
   // A planned visit dated EXACTLY today (Manual Visit Planning spec §7.1) is
-  // a same-day duplicate risk, not a recency judgment call — unlike the
+  // a same-day duplicate risk, not a recency judgment call - unlike the
   // nearby-but-not-exact floor case below, a due commitment must NOT be able
   // to bypass this one, or a place with both a due commitment and an
   // already-planned visit today would stay eligible and could be proposed a
   // second time on the very day it's already booked. Checked unconditionally,
   // same precedence tier as do_not_visit above, and before commitmentDue is
-  // even computed — §9 depends on this holding regardless of commitment
+  // even computed - §9 depends on this holding regardless of commitment
   // status ("the generator... does not schedule a second stop").
   if (plannedVisitDates.includes(today)) {
     return { eligible: false, reason: 'already_planned_today' };
@@ -228,19 +228,19 @@ function eligibility({ place, today, lastVisitDate, nextVisitDate, plannedVisitD
   return { eligible: true, reason: null };
 }
 
-// [tier, ...withinTierValues] — lower tier sorts first; within a tier, each
-// subsequent value sorts higher-first (see compareRankKeys) — EXPLORATION's
+// [tier, ...withinTierValues] - lower tier sorts first; within a tier, each
+// subsequent value sorts higher-first (see compareRankKeys) - EXPLORATION's
 // explorationRank/place.id are negated at construction so their intended
 // ascending order comes out of the same higher-first comparator every other
 // tier already uses, rather than teaching compareRankKeys per-index
 // direction.
 //
 // EXPLORATION membership now reads the computed capacity service's
-// `confidence` (step 7), not place.capacity_status directly — step 6 only
+// `confidence` (step 7), not place.capacity_status directly - step 6 only
 // swapped the cadence-lookup/capacityRank consumers of capacity LEVEL, this
 // is what finally retires place.capacity_status as a ranking input.
 // routes/visits.js's dual-write bridge (kept it current in the meantime)
-// should be deleted now that this has landed and been verified — see that
+// should be deleted now that this has landed and been verified - see that
 // function's own comment.
 function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, relationshipLevel, capacityLevel, capacityConfidence, today, config }) {
   if (nextVisitDate && nextVisitDate <= today) {
@@ -259,7 +259,7 @@ function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, re
     const daysWaiting = daysSince(place.exploration_eligible_since, today);
     const rank = explorationRank({ level, confidence, daysWaiting, config });
     // Spec §8.1: explorationRank ascending, priority_score descending,
-    // place.id ascending — the first and third are negated so a single
+    // place.id ascending - the first and third are negated so a single
     // higher-first comparator (compareDesc, applied elementwise by
     // compareRankKeys) produces the right order for all three at once.
     return [TIERS.EXPLORATION, -rank, place.priority_score ?? 0, -place.id];
@@ -278,7 +278,7 @@ function compareDesc(a, b) {
 }
 
 // Generalized beyond a fixed [tier, value] pair (step 7's EXPLORATION tier
-// needs 3 within-tier values, every other tier still needs just 1) — same
+// needs 3 within-tier values, every other tier still needs just 1) - same
 // tier-then-descending-elementwise comparison either way. Two rankKeys are
 // only ever compared when both came from candidates, so within a tier both
 // arrays are always the same length; the `?? 0` is just defensive, not a

@@ -1,6 +1,6 @@
 // Adds support for importing historical referrer notes:
-//   - visits.source  — distinguishes imported notes from routes generated in-app
-//   - notes_review   — holding area for notes whose referrer didn't match a partner,
+//   - visits.source  - distinguishes imported notes from routes generated in-app
+//   - notes_review   - holding area for notes whose referrer didn't match a partner,
 //                      to be assigned to a partner (or turned into one) by hand.
 
 exports.up = async function up(knex) {
