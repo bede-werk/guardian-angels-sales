@@ -15,6 +15,7 @@
 // rest of this stack uses.
 const knex = require('../db/knex');
 const defaultSchedulingConfig = require('../config/scheduling');
+const planningConfig = require('../config/planning');
 const defaultDriveConfig = require('../config/driveTime');
 const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
@@ -39,25 +40,12 @@ function isUniqueViolation(err) {
     || /unique constraint/i.test(err.message || '');
 }
 
-// Calendar-driven planning: the user hand-picks which dates to plan (and how
-// many hours on each) rather than the old "N days ahead" auto-window, so
-// these are UI-facing bounds on that selection rather than generator config.
-const MAX_PLAN_DATES = 10;
-// Default hours budget for a date reopenCommittedDay adds to a draft's
-// params.days on the fly (there's no UI step to pick hours when reopening an
-// already-committed day - the rep is editing stops, not re-picking a
-// schedule). Mirrors RoutePlanner.jsx's own DEFAULT_HOURS_PER_DAY constant -
-// keep the two equal.
-const DEFAULT_HOURS_PER_DAY = 4;
-// A day's ranking/candidate pool is only as fresh as the moment it was
-// generated - a commitment that becomes due, or a new higher-priority place,
-// between generation and the actual visit date won't retroactively reshuffle
-// an already-proposed day. Capping how far out a date can be planned bounds
-// how stale a proposal can get before the rep would naturally regenerate it
-// anyway. Chosen with Bede 2026-07-15: a week out - counted in weekdays (see
-// maxPlanDateUTC below), not raw calendar days, at Bede's request the same
-// day: a weekend sitting in the middle of the window shouldn't eat into it.
-const MAX_DAYS_AHEAD = 7;
+// Calendar-driven planning bounds (MAX_PLAN_DATES, DEFAULT_HOURS_PER_DAY,
+// MAX_DAYS_AHEAD) live in config/planning.js - they're limits on what the rep
+// may ASK the planner for rather than inputs to the ranking algorithm, and
+// RoutePlanner.jsx now reads the same three values from GET /api/settings
+// instead of keeping its own hardcoded copies. Read `planningConfig.X` at
+// call time so a settings override applies without a restart.
 
 // Validates + normalizes the `days` the client sent for /generate: every
 // entry must be a real future date with a positive hoursPerDay, no date can
@@ -71,8 +59,8 @@ function validateDays(rawDays, { today, committedDates }) {
     err.status = 400;
     throw err;
   }
-  if (rawDays.length > MAX_PLAN_DATES) {
-    const err = new Error(`Cannot plan more than ${MAX_PLAN_DATES} dates at once`);
+  if (rawDays.length > planningConfig.MAX_PLAN_DATES) {
+    const err = new Error(`Cannot plan more than ${planningConfig.MAX_PLAN_DATES} dates at once`);
     err.status = 400;
     throw err;
   }
@@ -95,7 +83,7 @@ function validateDays(rawDays, { today, committedDates }) {
       throw err;
     }
     if (date > maxDate) {
-      const err = new Error(`${date} is more than ${MAX_DAYS_AHEAD} days out - pick a closer date`);
+      const err = new Error(`${date} is more than ${planningConfig.MAX_DAYS_AHEAD} days out - pick a closer date`);
       err.status = 400;
       throw err;
     }
@@ -312,7 +300,7 @@ function daysBeforeUTC(dateStr, n) {
 function maxPlanDateUTC(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
-  let remaining = MAX_DAYS_AHEAD;
+  let remaining = planningConfig.MAX_DAYS_AHEAD;
   while (remaining > 0) {
     dt.setUTCDate(dt.getUTCDate() + 1);
     const dow = dt.getUTCDay(); // 0 = Sunday, 6 = Saturday
@@ -1610,7 +1598,7 @@ async function reopenCommittedDay({ userId, date, homeBase }) {
     }
 
     if (!params.days.some((d) => d.date === date)) {
-      params.days.push({ date, hoursPerDay: DEFAULT_HOURS_PER_DAY });
+      params.days.push({ date, hoursPerDay: planningConfig.DEFAULT_HOURS_PER_DAY });
       params.days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       await trx('schedule_drafts').where({ id }).update({ params_json: JSON.stringify(params) });
     }
@@ -1650,8 +1638,11 @@ async function reopenCommittedDay({ userId, date, homeBase }) {
 }
 
 module.exports = {
-  MAX_PLAN_DATES,
-  MAX_DAYS_AHEAD,
+  // Live getters, not copies: the settings page mutates config/planning.js in
+  // place, and a plain `MAX_PLAN_DATES: planningConfig.MAX_PLAN_DATES` would
+  // hand every caller the value as it stood at require time.
+  get MAX_PLAN_DATES() { return planningConfig.MAX_PLAN_DATES; },
+  get MAX_DAYS_AHEAD() { return planningConfig.MAX_DAYS_AHEAD; },
   validateDays,
   mergeLockedElsewhereIds,
   partitionCommittableStops,

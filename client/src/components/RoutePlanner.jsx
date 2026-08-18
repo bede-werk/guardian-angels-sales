@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import { useTunables } from '../hooks/useTunables';
 import { getCurrentPosition } from '../geolocation';
 import { TierChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
@@ -18,7 +19,13 @@ import InlineDropdown from './ui/InlineDropdown';
 // the server's `hoursPerDay > 0` validation.
 const HOUR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const MINUTE_OPTIONS = [0, 15, 30, 45];
-const DEFAULT_HOURS_PER_DAY = 4;
+// The three planning bounds this screen respects (how many dates you may
+// pick, the starting hours budget, and how far ahead you may plan) are
+// tunable on the Settings page, so they're read from the server via
+// useTunables rather than kept as a second copy here. They used to be
+// hardcoded with a "keep this equal to scheduleDraft.js" comment, which is
+// exactly the kind of pairing that drifts the moment one side becomes
+// editable.
 
 // Decimal hoursPerDay -> whole { hours, minutes } for the two selects above.
 // 15-minute increments are exactly representable in binary floating point
@@ -27,7 +34,6 @@ function splitHoursPerDay(hoursPerDay) {
   const totalMinutes = Math.round(hoursPerDay * 60);
   return { hours: Math.floor(totalMinutes / 60), minutes: totalMinutes % 60 };
 }
-const MAX_PLAN_DATES = 10; // mirrors scheduleDraft.js's MAX_PLAN_DATES
 
 // addStop's 409 rejections (SAME_DATE_VISIT/DRAFT_ELSEWHERE) now carry
 // structured conflicts (see services/conflictDetection.js's Conflict shape)
@@ -89,8 +95,6 @@ function commitmentBadgeText(c) {
   return `${base}${overdue}${more}`;
 }
 
-const MAX_DAYS_AHEAD = 7; // mirrors scheduleDraft.js's MAX_DAYS_AHEAD
-
 // 'YYYY-MM-DD' in the browser's local timezone.
 function isoDate(d) {
   const y = d.getFullYear();
@@ -111,12 +115,12 @@ function todayISO() {
 // goes stale before the rep actually gets there (a commitment that becomes
 // due, or a higher-priority place, won't retroactively reshuffle an
 // already-proposed day). Counts only weekdays (Mon-Fri) toward
-// MAX_DAYS_AHEAD, so a weekend inside the window doesn't shrink the actual
+// the limit, so a weekend inside the window doesn't shrink the actual
 // planning horizon - mirrors scheduleDraft.js's validateDays/maxPlanDateUTC,
 // which enforces the exact same bound server-side.
-function maxPlanDateISO() {
+function maxPlanDateISO(maxDaysAhead) {
   const d = new Date();
-  let remaining = MAX_DAYS_AHEAD;
+  let remaining = maxDaysAhead;
   while (remaining > 0) {
     d.setDate(d.getDate() + 1);
     const dow = d.getDay(); // 0 = Sunday, 6 = Saturday
@@ -890,6 +894,13 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
 // component's "Accept all proposals" button). Built on top of sub-slice 2's
 // live editing.
 export default function RoutePlanner({ userId }) {
+  // Editable on the Settings page; falls back to the shipped defaults for the
+  // moment before the first fetch lands (see hooks/useTunables.js).
+  const tunables = useTunables();
+  const maxPlanDates = tunables['planning.MAX_PLAN_DATES'];
+  const defaultHoursPerDay = tunables['planning.DEFAULT_HOURS_PER_DAY'];
+  const maxDaysAhead = tunables['planning.MAX_DAYS_AHEAD'];
+
   const [draft, setDraft] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -1289,10 +1300,10 @@ export default function RoutePlanner({ userId }) {
         if (proposedDates.has(iso)) return prev; // Calendar already disables this case; guard anyway
         return prev.filter((d) => d.date !== iso);
       }
-      if (prev.length >= MAX_PLAN_DATES) return prev; // Calendar already disables this case; guard anyway
-      if (iso < todayISO() || iso > maxPlanDateISO()) return prev; // Calendar already disables this case; guard anyway
+      if (prev.length >= maxPlanDates) return prev; // Calendar already disables this case; guard anyway
+      if (iso < todayISO() || iso > maxPlanDateISO(maxDaysAhead)) return prev; // Calendar already disables this case; guard anyway
       if (isWeekendISO(iso)) return prev; // Calendar already disables this case; guard anyway
-      return [...prev, { date: iso, hoursPerDay: DEFAULT_HOURS_PER_DAY }].sort((a, b) => (a.date < b.date ? -1 : 1));
+      return [...prev, { date: iso, hoursPerDay: defaultHoursPerDay }].sort((a, b) => (a.date < b.date ? -1 : 1));
     });
   }
 
@@ -1502,7 +1513,7 @@ export default function RoutePlanner({ userId }) {
                   </Button>
                 )}
               </div>
-              <div className="plan-col-hint">Pick weekdays up to {MAX_DAYS_AHEAD} days ahead.</div>
+              <div className="plan-col-hint">Pick weekdays up to {maxDaysAhead} days ahead.</div>
               <div className="row" style={{ alignItems: 'flex-start', gap: 24 }}>
                 <div style={{ flex: 'none', minWidth: 0 }}>
                   <Calendar
@@ -1510,8 +1521,8 @@ export default function RoutePlanner({ userId }) {
                     committed={committedDates}
                     proposed={proposedDates}
                     minDate={todayISO()}
-                    maxDate={maxPlanDateISO()}
-                    maxSelected={MAX_PLAN_DATES}
+                    maxDate={maxPlanDateISO(maxDaysAhead)}
+                    maxSelected={maxPlanDates}
                     onToggle={toggleDate}
                   />
                 </div>

@@ -10,9 +10,17 @@ import ChangePassword from './components/ChangePassword';
 import Header from './components/ui/Header';
 import Splash from './components/ui/Splash';
 import ProfileMenu from './components/ui/ProfileMenu';
+import Settings from './components/Settings';
 
 // The tabs shown in the nav bar under the header. `id` picks which
 // component renders below; `label` is the button text.
+//
+// Settings is deliberately NOT in here. It's reached from the gear button in
+// the header rather than the tab bar: it's a place you visit occasionally to
+// tune how the app behaves, not one of the five screens the daily job runs
+// through, and putting it in the row would give it the same standing as
+// Dashboard or Places. It still renders in the same slot below, so the tab
+// bar stays visible and clicking any tab is the way back out.
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'planner', label: 'Route Planner' },
@@ -71,6 +79,16 @@ export default function App() {
   return (
     <div className="app">
       <Header tagline="Sales Visit CRM · Lincoln, NE">
+        <button
+          type="button"
+          className={`settings-trigger ${tab === 'settings' ? 'active' : ''}`}
+          onClick={() => setTab('settings')}
+          title="Algorithm settings - tune how visits are scheduled and scored"
+          aria-label="Algorithm settings"
+          aria-current={tab === 'settings' ? 'page' : undefined}
+        >
+          <span aria-hidden="true">⚙</span>
+        </button>
         <ProfileMenu name={authUser.name} date={formatDate(date)} onLogout={logout} />
       </Header>
 
@@ -99,6 +117,7 @@ export default function App() {
       )}
       {tab === 'places' && <Places userId={authUser.id} />}
       {tab === 'people' && <People userId={authUser.id} />}
+      {tab === 'settings' && <Settings />}
     </div>
   );
 }

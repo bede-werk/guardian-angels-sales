@@ -34,53 +34,37 @@ const { daysSince, urgency } = require('./schedulingEngine');
 const { orgToday } = require('./orgDate');
 const { computeCapacityForPlaces } = require('./capacity');
 const schedulingConfig = require('../config/scheduling');
+// Every tunable in this file lives in config/relationship.js and is read at
+// CALL time, never destructured here at require time - that's what lets the
+// settings page (services/settings.js) mutate a value in place and have the
+// next computation pick it up without a restart. Read `cfg.X`, never
+// `const { X } = cfg`.
+const cfg = require('../config/relationship');
 
 // --- Weights -------------------------------------------------------------
-
-// WHO the rep actually spoke to. Only 'named_person' builds a person's score;
-// the rest accrue to the place as a direct "floor" contribution (see
-// rollUpPlace), so a place serviced diligently without ever meeting anyone
-// reads as "present but shallow" - which is accurate.
-const MET_WITH_WEIGHT = {
-  named_person: 1.0,
-  staff: 0.35,
-  receptionist: 0.15,
-  nobody: 0.05,
-};
+//
+// MET_WITH_WEIGHT (who the rep spoke to) and OUTCOME_WEIGHT (what happened)
+// now live in config/relationship.js so they can be tuned from the settings
+// page - see that file for what each level means and why the two multiply.
 
 // A visit whose met_with_type is null/unrecognized (pre-migration history, or
 // a visit completed through a path that never captured it) is scored as the
 // weakest known case rather than thrown away or trusted - and, like the other
 // non-named-person cases, it can never credit a person.
-const UNKNOWN_MET_WITH_WEIGHT = MET_WITH_WEIGHT.nobody;
-
-// WHAT actually happened. Deliberately observable rather than evaluative, so
-// these describe events rather than the rep's feelings about them and don't
-// inflate over time.
-const OUTCOME_WEIGHT = {
-  substantive: 1.0, // real conversation with a decision-maker or influencer
-  introduced_new: 1.0, // introduced to someone new at the org
-  brief: 0.6, // short exchange, pleasant but not substantive
-  materials_only: 0.25, // left materials, no meaningful contact
-  unavailable: 0.15, // target unavailable / gatekept
-  declined: 0.1, // explicitly not interested right now
-};
+function unknownMetWithWeight() {
+  return cfg.MET_WITH_WEIGHT.nobody;
+}
 
 // Floor for an outcome this model doesn't recognize - which today means every
 // pre-existing visit, since the historical outcome enum
 // (interested/not_ready/follow_up/no_answer/left_materials) shares no values
-// with the one above. Set to the lowest real weight rather than 0 so old
+// with the current one. Set to the lowest real weight rather than 0 so old
 // visits contribute *something* without being able to inflate a score.
 // Writing the real old->new mapping is deferred to whenever actual historical
 // data gets imported (all current visit data is test data) - see HANDOFF.md.
-const UNKNOWN_OUTCOME_WEIGHT = OUTCOME_WEIGHT.declined;
-
-// A visit at or above this RAW (pre-decay) weight counts as "meaningful" for
-// last_meaningful_visit. Deliberately raw, not decayed: a genuinely
-// substantive visit eight months ago was still substantive at the time, and
-// this field exists to explain a score ("last meaningful visit 94 days ago"),
-// not to re-litigate it.
-const MEANINGFUL_WEIGHT = 0.6;
+function unknownOutcomeWeight() {
+  return cfg.OUTCOME_WEIGHT.declined;
+}
 
 // --- Decay ---------------------------------------------------------------
 
@@ -88,25 +72,14 @@ const MEANINGFUL_WEIGHT = 0.6;
 // goes cold faster than a funeral home's. Exact strings reconciled against the
 // seeded `categories` table (20260727000000_add_categories_table.js) - a
 // near-miss here would silently fall through to the default with no error.
-const FAST_DECAY_CATEGORIES = new Set([
-  'Assisted Living & Senior Living',
-  'Community Partners',
-  'Hospice',
-  'Hospitals',
-  'Physical Therapy',
-  'Physicians',
-  'Rehabilitation Centers',
-  'Legal & Trust',
-]);
-
-const HALF_LIFE_FAST = 30; // days
-const HALF_LIFE_DEFAULT = 60; // days - everything else, including any category added later
-
-// Hardcoded on purpose: no UI, no schema, no `categories` column. Any category
-// not on the fast list - including ones added after this ships - is 60 days.
-// A person with no assigned place gets the default too.
+// Any category not on the fast list - including ones added after this ships -
+// gets HALF_LIFE_DEFAULT. A person with no assigned place gets the default too.
+// The list itself is exact category NAMES (see config/relationship.js); a
+// near-miss silently falls through to the default with no error, which is why
+// the settings page edits it as a picker over the real `categories` table
+// rather than a free-text box.
 function halfLifeForCategory(category) {
-  return FAST_DECAY_CATEGORIES.has(category) ? HALF_LIFE_FAST : HALF_LIFE_DEFAULT;
+  return cfg.FAST_DECAY_CATEGORIES.includes(category) ? cfg.HALF_LIFE_FAST : cfg.HALF_LIFE_DEFAULT;
 }
 
 // 0.5 ^ (age / halfLife). Clamped at age 0 so a same-day visit (or a
@@ -132,8 +105,8 @@ function creditsPerson(visit) {
 // 0.05 x 0.25 = 0.0125. Both are real visits; their relationship value differs
 // by ~80x, which is the entire point of multiplying the two axes.
 function visitWeight(visit) {
-  const metWith = MET_WITH_WEIGHT[visit.met_with_type] ?? UNKNOWN_MET_WITH_WEIGHT;
-  const outcome = OUTCOME_WEIGHT[visit.outcome] ?? UNKNOWN_OUTCOME_WEIGHT;
+  const metWith = cfg.MET_WITH_WEIGHT[visit.met_with_type] ?? unknownMetWithWeight();
+  const outcome = cfg.OUTCOME_WEIGHT[visit.outcome] ?? unknownOutcomeWeight();
   return metWith * outcome;
 }
 
@@ -146,25 +119,23 @@ function decayedVisitWeight(visit, { asOf, halfLifeDays }) {
 // Signals that THEY invested in the relationship, not just that the rep showed
 // up. Without this the score is a mirror of the rep's own behavior and "strong
 // relationship" reduces to "we visit here a lot," which is circular.
-const DETAIL_BONUS = 0.0625; // x4 known personal details -> max 1.25
-const REFERRED_MULTIPLIER = 1.15; // has ever referred (BINARY - never a count, see the header)
-const REQUESTED_MULTIPLIER = 1.1; // they asked us for something recently
-const MAX_RECIPROCITY = 1.6; // hard cap (natural max is 1.25 * 1.15 * 1.1 = 1.58125)
+// DETAIL_BONUS / REFERRED_MULTIPLIER / REQUESTED_MULTIPLIER / MAX_RECIPROCITY
+// all live in config/relationship.js so they can be tuned from the settings page.
 
 // Known personal detail is a STOCK, not a flow - it doesn't decay. You don't
 // know someone's birthday unless the relationship is real, and you don't stop
 // knowing it because a quarter went by.
 function reciprocityMultiplier(person, { hasReferral, requestedRecently }) {
   let detail = 1.0;
-  if (person.birthday_month != null && person.birthday_day != null) detail += DETAIL_BONUS;
-  if (person.preferences && String(person.preferences).trim()) detail += DETAIL_BONUS;
-  if (person.email && String(person.email).trim()) detail += DETAIL_BONUS;
-  if (person.phone && String(person.phone).trim()) detail += DETAIL_BONUS;
+  if (person.birthday_month != null && person.birthday_day != null) detail += cfg.DETAIL_BONUS;
+  if (person.preferences && String(person.preferences).trim()) detail += cfg.DETAIL_BONUS;
+  if (person.email && String(person.email).trim()) detail += cfg.DETAIL_BONUS;
+  if (person.phone && String(person.phone).trim()) detail += cfg.DETAIL_BONUS;
 
-  const referred = hasReferral ? REFERRED_MULTIPLIER : 1.0;
-  const requested = requestedRecently ? REQUESTED_MULTIPLIER : 1.0;
+  const referred = hasReferral ? cfg.REFERRED_MULTIPLIER : 1.0;
+  const requested = requestedRecently ? cfg.REQUESTED_MULTIPLIER : 1.0;
 
-  return Math.min(MAX_RECIPROCITY, detail * referred * requested);
+  return Math.min(cfg.MAX_RECIPROCITY, detail * referred * requested);
 }
 
 // --- Buckets -------------------------------------------------------------
@@ -187,12 +158,11 @@ function reciprocityMultiplier(person, { hasReferral, requestedRecently }) {
 // (2026-08-10) that "visited half as often as the half-life" should read
 // weak, matching the prose table above, so the threshold sits just above
 // that boundary rather than just below it.
-const RELATIONSHIP_THRESHOLDS = { strong: 3.4, medium: 1.4 };
 const LEVELS = ['strong', 'medium', 'weak'];
 
 function levelForScore(score) {
-  if (score >= RELATIONSHIP_THRESHOLDS.strong) return 'strong';
-  if (score >= RELATIONSHIP_THRESHOLDS.medium) return 'medium';
+  if (score >= cfg.RELATIONSHIP_THRESHOLDS.strong) return 'strong';
+  if (score >= cfg.RELATIONSHIP_THRESHOLDS.medium) return 'medium';
   return 'weak';
 }
 
@@ -220,8 +190,9 @@ function levelForScore(score) {
 // a long time." Elapsed time since the last (meaningful) contact, compared
 // against how often this relationship is EXPECTED to be nurtured, has no
 // such ceiling: the longer it's ignored, the further past the line it gets.
-const TREND_RELATIVE_THRESHOLD = 0.1; // must move >=10% to read as a real HEATING UP move, not noise
-const TREND_EPSILON = 0.01; // both sides at/below this = "no history at either point," not a trend
+// TREND_RELATIVE_THRESHOLD ("must move this much to read as a real move, not
+// noise") and TREND_EPSILON ("both sides this low = no history at either
+// point, not a trend") live in config/relationship.js.
 
 // The heating-up lookback scales with the category's own half-life - same
 // "one scale, two clocks" idea the LEVEL thresholds above already use - so a
@@ -233,7 +204,7 @@ const TREND_EPSILON = 0.01; // both sides at/below this = "no history at either 
 // the default clock (the ratio only depends on the FRACTION, not the
 // half-life itself) - comfortably inside the +/-10% band with margin to
 // spare against integer-day rounding.
-const TREND_WINDOW_FRACTION = 0.12; // ~4d fast-decay categories, ~7d default
+// TREND_WINDOW_FRACTION lives in config/relationship.js (0.12 by default).
 
 // Cooling down (PLACE): flagged once a place is this many times past its own
 // target cadence (see schedulingEngine.js's targetCadenceDays/urgency - the
@@ -241,17 +212,17 @@ const TREND_WINDOW_FRACTION = 0.12; // ~4d fast-decay categories, ~7d default
 // overdue for a rescue visit). Deliberately EARLIER than NEGLECT_MULTIPLIER
 // (2.0, config/scheduling.js) - an early warning that shows before the
 // scheduler's own "endangered" tier kicks in, not a duplicate of it.
-const COOLING_THRESHOLD = 1.25;
+// COOLING_THRESHOLD lives in config/relationship.js (1.25 by default).
 
 // Cooling down (PERSON): flagged once it's been this fraction of the
 // category's half-life since their last MEANINGFUL visit (not just any
 // visit - a front-desk drop-off shouldn't reset this clock). Half of the
 // half-life, per Bede: the score has decayed by ~29% at that point, not yet
 // halved - an earlier nudge than waiting for the full half-life.
-const PERSON_COOLING_HALF_LIFE_FRACTION = 0.5;
+// PERSON_COOLING_HALF_LIFE_FRACTION lives in config/relationship.js (0.5 by default).
 
 function trendWindowDays(halfLifeDays) {
-  return Math.round(halfLifeDays * TREND_WINDOW_FRACTION);
+  return Math.round(halfLifeDays * cfg.TREND_WINDOW_FRACTION);
 }
 
 // 'YYYY-MM-DD' n days before `dateStr` - UTC-safe, same convention as
@@ -262,8 +233,8 @@ function daysBefore(dateStr, n) {
 }
 
 function isHeatingUp(current, historical) {
-  if (current <= TREND_EPSILON && historical <= TREND_EPSILON) return false;
-  return current > historical * (1 + TREND_RELATIVE_THRESHOLD);
+  if (current <= cfg.TREND_EPSILON && historical <= cfg.TREND_EPSILON) return false;
+  return current > historical * (1 + cfg.TREND_RELATIVE_THRESHOLD);
 }
 
 // today - lastVisitDate, as a multiple of this place's own target cadence
@@ -274,7 +245,7 @@ function isHeatingUp(current, historical) {
 function isPlaceCoolingDown({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today }) {
   if (!lastVisitDate) return false;
   const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today, config: schedulingConfig });
-  return u > COOLING_THRESHOLD;
+  return u > cfg.COOLING_THRESHOLD;
 }
 
 // Same idea, person-scoped: no cadence table at the person level, so this
@@ -282,7 +253,7 @@ function isPlaceCoolingDown({ place, lastVisitDate, recentCompletedCount, relati
 // relationship lookup.
 function isPersonCoolingDown({ lastMeaningfulVisit, halfLifeDays, today }) {
   if (!lastMeaningfulVisit) return false;
-  return daysSince(lastMeaningfulVisit, today) > halfLifeDays * PERSON_COOLING_HALF_LIFE_FRACTION;
+  return daysSince(lastMeaningfulVisit, today) > halfLifeDays * cfg.PERSON_COOLING_HALF_LIFE_FRACTION;
 }
 
 // Re-runs computePersonRelationship as of a past date, seeing only the
@@ -325,7 +296,7 @@ function computePersonRelationship({ person, visits, hasReferral, halfLifeDays, 
   for (const v of crediting) {
     rawScore += decayedVisitWeight(v, { asOf, halfLifeDays });
 
-    if (visitWeight(v) >= MEANINGFUL_WEIGHT && (!lastMeaningful || v.scheduled_date > lastMeaningful)) {
+    if (visitWeight(v) >= cfg.MEANINGFUL_WEIGHT && (!lastMeaningful || v.scheduled_date > lastMeaningful)) {
       lastMeaningful = v.scheduled_date;
     }
     // "Asked us for something" only counts inside the trailing half-life -
@@ -362,7 +333,7 @@ function computePersonRelationship({ person, visits, hasReferral, halfLifeDays, 
 // with six lukewarm contacts, while still pricing in the redundancy risk when
 // a champion leaves. A zero-scoring contact contributes exactly zero at any
 // position, so extra weak contacts can never dilute a strong one.
-const CONTRIBUTOR_DECAY = 0.5;
+// CONTRIBUTOR_DECAY (0.5 by default) lives in config/relationship.js.
 
 // Only contributors that actually move the number are listed - a place with
 // six assigned people and one real contact should read as one real contact,
@@ -375,7 +346,7 @@ function rollUpPlace({ place, personEntries, floorVisits, asOf, overrideUserName
   let peopleComponent = 0;
   const contributors = [];
   ranked.forEach((entry, i) => {
-    const weight = CONTRIBUTOR_DECAY ** i;
+    const weight = cfg.CONTRIBUTOR_DECAY ** i;
     const contribution = entry.relationship.score * weight;
     peopleComponent += contribution;
     if (entry.relationship.score > 0) {
@@ -670,22 +641,27 @@ function relationshipFor(byId, id) {
   return byId.get(id) || EMPTY_PLACE_RELATIONSHIP;
 }
 
+// The tunables re-exported below are GETTERS, not copied values: the settings
+// page mutates config/relationship.js in place, and a plain `X: cfg.X` would
+// snapshot the number at require time and hand callers a stale one forever.
+// A getter re-reads on every access, so tests and scripts see the same live
+// value the scoring functions above do.
 module.exports = {
   // constants (exported for tests and for the distribution readout)
-  MET_WITH_WEIGHT,
-  OUTCOME_WEIGHT,
-  FAST_DECAY_CATEGORIES,
-  HALF_LIFE_FAST,
-  HALF_LIFE_DEFAULT,
-  RELATIONSHIP_THRESHOLDS,
-  MAX_RECIPROCITY,
+  get MET_WITH_WEIGHT() { return cfg.MET_WITH_WEIGHT; },
+  get OUTCOME_WEIGHT() { return cfg.OUTCOME_WEIGHT; },
+  get FAST_DECAY_CATEGORIES() { return cfg.FAST_DECAY_CATEGORIES; },
+  get HALF_LIFE_FAST() { return cfg.HALF_LIFE_FAST; },
+  get HALF_LIFE_DEFAULT() { return cfg.HALF_LIFE_DEFAULT; },
+  get RELATIONSHIP_THRESHOLDS() { return cfg.RELATIONSHIP_THRESHOLDS; },
+  get MAX_RECIPROCITY() { return cfg.MAX_RECIPROCITY; },
+  get TREND_WINDOW_FRACTION() { return cfg.TREND_WINDOW_FRACTION; },
+  get TREND_RELATIVE_THRESHOLD() { return cfg.TREND_RELATIVE_THRESHOLD; },
+  get TREND_EPSILON() { return cfg.TREND_EPSILON; },
+  get COOLING_THRESHOLD() { return cfg.COOLING_THRESHOLD; },
+  get PERSON_COOLING_HALF_LIFE_FRACTION() { return cfg.PERSON_COOLING_HALF_LIFE_FRACTION; },
   LEVELS,
   EMPTY_PLACE_RELATIONSHIP,
-  TREND_WINDOW_FRACTION,
-  TREND_RELATIVE_THRESHOLD,
-  TREND_EPSILON,
-  COOLING_THRESHOLD,
-  PERSON_COOLING_HALF_LIFE_FRACTION,
   // pure
   halfLifeForCategory,
   decayFactor,

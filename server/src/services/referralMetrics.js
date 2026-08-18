@@ -5,9 +5,13 @@
 // Three numbers per person (and, rolled up, per place):
 //   lifetime_referrals      - total referral rows attributed to them, ever
 //   last_referral_date      - the most recent referral_date on file, or null
-//   referrals_last_90_days  - how many landed within the trailing 90-day window
+//   referrals_last_90_days  - how many landed within the trailing recent
+//                             window (90 days by default, see config/referrals.js)
 
-const RECENT_WINDOW_DAYS = 90;
+// RECENT_WINDOW_DAYS lives in config/referrals.js (90 by default) so the
+// settings page can tune it. Read `cfg.RECENT_WINDOW_DAYS` at call time -
+// destructuring it here would snapshot the value and ignore any override.
+const cfg = require('../config/referrals');
 
 const EMPTY_METRICS = {
   lifetime_referrals: 0,
@@ -23,7 +27,7 @@ const EMPTY_METRICS = {
 // server's timezone - same convention schedulingEngine.js's daysSince() uses.
 function recentWindowCutoff(now = new Date()) {
   const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return new Date(todayUTC - RECENT_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+  return new Date(todayUTC - cfg.RECENT_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
 }
 
 // Turns aggregate query rows (see the two batch functions below) into a

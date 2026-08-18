@@ -793,3 +793,187 @@ td .tag-list { flex-wrap: nowrap; }
   .detail-card-240 { height: 240px; }
   .detail-card-268 { height: 268px; }
 }
+
+/* ---------------------------------------------------------------------------
+   Settings (components/Settings.jsx) - the tunable-constants page.
+
+   Two structural ideas carry this screen. First, a sidebar of sections with
+   one section shown at a time: there are ~75 tunables, and stacking them all
+   would bury the ones that matter. Second, every tunable renders as a BLOCK
+   rather than a table row, because the explanation under each one is the
+   point of the page and a table would squeeze it into a column. The block
+   layout means a long help paragraph costs vertical space, which is the
+   right thing to spend it on here.
+   --------------------------------------------------------------------------- */
+
+.settings-page { display: flex; flex-direction: column; gap: 16px; }
+
+.settings-intro h2 { margin: 0 0 6px; font-size: 20px; }
+/* Wider measure than the per-field help below: this is the page's opening
+   paragraph, read once at full attention, not a caption scanned in passing. */
+.settings-intro p { margin: 0 0 8px; max-width: 104ch; line-height: 1.55; color: var(--text); }
+.settings-intro p.tiny { color: var(--muted); }
+
+/* Sticky status/save bar. Only rendered when there's something to say
+   (unsaved edits, a confirmation, or an error), so it never sits there as
+   permanent chrome eating a strip of the viewport. */
+.settings-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: var(--radius-md);
+  background: var(--teal-tint-1); border: 1px solid var(--teal-tint-4); color: var(--teal-dark);
+  box-shadow: var(--shadow);
+}
+.settings-bar.dirty { background: var(--blue-tint-1); border-color: var(--blue-tint-5); color: var(--blue-dark); }
+.settings-bar.error { background: var(--mauve-tint-1); border-color: var(--mauve-tint-3); color: var(--warn); }
+.settings-bar-msg { font-size: 13px; min-width: 0; }
+.settings-bar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.settings-layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 20px; align-items: start; }
+
+/* The section list sticks while the (long) content column scrolls past it. */
+.settings-nav {
+  position: sticky; top: 16px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow); padding: 8px;
+}
+.settings-nav-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: none; border: none; border-radius: var(--radius-sm); cursor: pointer;
+  padding: 9px 10px; font-family: var(--font-sans); font-size: 13px; color: var(--text); text-align: left;
+}
+.settings-nav-item:hover { background: var(--grey-tint-1); }
+.settings-nav-item.active { background: var(--blue-tint-1); color: var(--blue-dark); font-weight: 700; }
+.settings-nav-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+.settings-nav-title { flex: 1; min-width: 0; }
+/* Count of tunables in that section that differ from the shipped default. */
+.settings-nav-count {
+  flex-shrink: 0; min-width: 20px; text-align: center;
+  background: var(--blue); color: #fff; border-radius: 999px;
+  font-size: 10px; font-weight: 700; padding: 2px 6px;
+}
+.settings-nav-foot { border-top: 1px solid var(--border); margin-top: 6px; padding: 10px 10px 4px; }
+.settings-nav-foot .link-button:disabled { color: var(--muted); text-decoration: none; cursor: default; }
+
+.settings-content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.settings-section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.settings-section-head h3 { margin: 0 0 6px; font-size: 17px; }
+.settings-section-blurb { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; max-width: 80ch; }
+.settings-group-blurb { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); line-height: 1.55; max-width: 80ch; }
+.settings-group .card-body { display: flex; flex-direction: column; }
+
+/* One tunable. The label/control row sits on one line, with the explanation
+   and the raise/lower consequences stacked underneath at decreasing weight,
+   so the eye can run down the labels alone or stop and read any one. */
+.tunable { padding: 14px 0; border-top: 1px solid var(--border); }
+.tunable:first-of-type { border-top: none; }
+.tunable-main { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tunable-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tunable-label label { font-size: 13.5px; font-weight: 600; cursor: pointer; }
+/* Marks a value that differs from what the app ships with, so "what have I
+   touched" is answerable by scanning rather than by memory. */
+.tunable-flag {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  background: var(--blue-tint-1); color: var(--blue); padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+}
+.tunable-input { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.tunable-input input, .tunable-input select { width: 118px; text-align: right; }
+.tunable-input select { text-align: left; width: 200px; }
+.tunable-input.wide { flex: 1; }
+.tunable-input.wide input { width: 100%; text-align: left; }
+.tunable-unit { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 62px; }
+.tunable-help { margin: 7px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.55; max-width: 80ch; }
+
+/* What moving the number actually does. Deliberately quieter than the help
+   text above it: help says what the knob IS, this says what happens if you
+   turn it, and you only need the second once you've decided to touch it. */
+.tunable-effects { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); line-height: 1.5; max-width: 80ch; }
+.tunable-effects strong { color: var(--grey-dark); font-weight: 700; }
+.eff-arrow { font-size: 8px; }
+.eff-arrow.up { color: var(--teal); }
+.eff-arrow.down { color: var(--mauve); }
+
+.tunable-foot { margin-top: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tunable-foot code { font-size: 11px; background: var(--grey-tint-1); padding: 1px 5px; border-radius: 4px; }
+/* Controls that own their own layout (the rule table, the category picker)
+   get the full width instead of a right-aligned box. */
+.tunable.wide .tunable-main { display: block; }
+.tunable.wide .tunable-help { margin-bottom: 10px; }
+
+/* The 3x3 cadence lookup, rendered as the grid it actually is. Reading it as
+   nine separate rows loses the one property that matters most about it -
+   that it's deliberately inverted, with the busiest cadence at high capacity
+   and a weak relationship. */
+.cadence-matrix-wrap { overflow-x: auto; }
+/* width: auto overrides the global `table { width: 100% }` - a 3x3 grid of
+   number boxes stretched across a 1400px page puts the columns so far apart
+   the rows stop reading as rows. */
+.cadence-matrix { width: auto; border-collapse: separate; border-spacing: 6px; margin: 4px 0 0; }
+.cadence-matrix th { font-family: var(--font-sans); font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; padding: 2px 6px; white-space: nowrap; }
+.cadence-matrix tbody th { text-align: right; }
+.cadence-matrix td { padding: 0; border-radius: var(--radius-sm); }
+.cadence-matrix td.changed { box-shadow: 0 0 0 2px var(--blue-tint-5); }
+.cadence-matrix .tunable-input { justify-content: center; }
+.cadence-matrix .tunable-input input { width: 84px; text-align: center; }
+/* The corner cell names both axes at once: the column header labels the
+   relationship axis, the row header labels the capacity axis. */
+.cadence-matrix .corner { position: relative; min-width: 74px; }
+.cadence-matrix .corner .axis-col,
+.cadence-matrix .corner .axis-row { display: block; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--grey-tint-3); }
+.matrix-note { margin: 10px 0 0; max-width: 80ch; line-height: 1.5; }
+
+/* Category multi-select. Toggle chips over the REAL category list rather
+   than a text box, because these have to match category names exactly and a
+   near-miss fails silently. */
+.category-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.category-toggle {
+  font-family: var(--font-sans); font-size: 12px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  background: var(--grey-tint-1); border: 1px solid transparent; color: var(--grey-dark);
+}
+.category-toggle:hover { background: var(--grey-tint-2); }
+.category-toggle.on { background: var(--blue-tint-2); border-color: var(--blue-tint-6); color: var(--blue-dark); font-weight: 700; }
+/* A selected name that no longer exists in the categories table - it matches
+   nothing, so it's shown struck through rather than quietly dropped. */
+.category-toggle.orphan { background: var(--mauve-tint-1); color: var(--warn); text-decoration: line-through; }
+
+/* The ordered category -> capacity rule table. First match wins, so the
+   reorder controls aren't decoration: the order IS part of the setting. */
+.seed-table { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.seed-head, .seed-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 132px 32px; gap: 8px; align-items: center; width: 100%; }
+.seed-head { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 0 0 2px; }
+.seed-order { display: flex; align-items: center; gap: 4px; }
+.seed-index { font-size: 12px; color: var(--muted); width: 16px; text-align: right; }
+
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  /* Below this width the sidebar becomes a horizontal strip above the
+     content, so sticking it to the top would cover the very rows it
+     scrolls to. */
+  .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+  .settings-nav-item { width: auto; }
+  .settings-nav-foot { border-top: none; width: 100%; padding: 6px 4px 0; }
+  .tunable-main { flex-direction: column; align-items: stretch; }
+  .tunable-input input, .tunable-input select { width: 100%; text-align: left; }
+  .seed-head { display: none; }
+  .seed-row { grid-template-columns: 56px minmax(0, 1fr) 32px; }
+  .seed-row select { grid-column: 2 / 4; }
+}
+
+/* The header's gear button, sitting to the left of the profile avatar. Same
+   circular footprint as .profile-avatar so the two read as one pair of
+   controls rather than a button and an avatar that happen to be adjacent -
+   but outlined rather than filled, since the avatar is the identity anchor
+   in that corner and two solid blue circles would compete. */
+.settings-trigger {
+  width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0;
+  display: grid; place-items: center; cursor: pointer; padding: 0;
+  background: none; border: 1px solid var(--border); color: var(--muted); font-size: 15px; line-height: 1;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.settings-trigger:hover { color: var(--blue); border-color: var(--blue-tint-6); background: var(--blue-tint-1); }
+.settings-trigger.active { color: var(--blue-dark); border-color: var(--blue); background: var(--blue-tint-2); }
+.settings-trigger:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* The header gap is 20px, which is right between the tagline block and the
+   controls but too wide between two controls of the same pair. */
+.header .controls { gap: 12px; }

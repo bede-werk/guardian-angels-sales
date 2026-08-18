@@ -372,6 +372,9 @@ guardian-angels-sales/
 ├── railway.json                      # pins builder=NIXPACKS, build/start commands
 ├── README.md
 ├── HANDOFF.md                        # (this file)
+├── SETTINGS_PAGE.md                  # the tunable-constants Settings page, in full (see §21)
+├── capacity-computation-spec.md      # the computed-capacity model (see §18)
+├── ROUTEPLANNER_PROGRESS.md          # route-planner build log
 ├── server/
 │   ├── knexfile.js                   # SQLite (dev) vs Postgres (prod) selection
 │   ├── .env / .env.example
@@ -386,11 +389,14 @@ guardian-angels-sales/
 │       │                             # add_default_visit_type_to_places,
 │       │                             # add_schedule_drafts (+ _stops), add_categories_table,
 │       │                             # drop_notes_review
-│       ├── config/                   # route-planner tuning constants (plain modules, no
-│       │                             # settings table - see ROUTEPLANNER_PROGRESS.md):
+│       ├── config/                   # the DEFAULT value of every tunable constant. Overrides
+│       │                             # now live in the `settings` table and are written into
+│       │                             # these objects at boot - see SETTINGS_PAGE.md:
 │       │                             # scheduling.js, driveTime.js, visitTypes.js,
-│       │                             # routeOptimizer.js (places.category is now a DB table,
-│       │                             # see routes/categories.js, not a config file)
+│       │                             # routeOptimizer.js, relationship.js, planning.js,
+│       │                             # referrals.js, plus tunables.js (the registry: what each
+│       │                             # one MEANS - label, help, bounds, legal values).
+│       │                             # (places.category is a DB table, see routes/categories.js)
 │       ├── services/
 │       │   ├── priority.js           # priority score + region ("side of town") helpers
 │       │   ├── schedulingEngine.js   # route planner: four-tier scoring/eligibility
@@ -400,19 +406,24 @@ guardian-angels-sales/
 │       │   ├── scheduleDraft.js      # draft CRUD, live recalc, commit - the DB orchestration layer
 │       │   ├── auth.js               # password hashing / token helpers
 │       │   ├── phone.js              # phone validation + (402) 555-1234 normalization
-│       │   ├── referralMetrics.js    # lifetime/last/90-day referral metrics + needs_attention
+│       │   ├── referralMetrics.js    # lifetime/last/recent-window referral metrics
+│       │   ├── relationship.js      # computed relationship strength (person -> place rollup)
+│       │   ├── capacity.js          # computed capacity (declared / measured floor / category seed)
+│       │   ├── settings.js          # loads tunable overrides onto config/*.js; save/reset/validate
 │       │   ├── geocoding.js          # geocodeAddress() - address -> {lat, lng} via US Census
 │       │   └── fetchWithTimeout.js   # shared AbortController+setTimeout wrapper (OSRM, geocoding)
 │       ├── routes/                   # auth, places, people, referrals, visits,
 │       │                             # scheduleDrafts (route planner), dashboard,
-│       │                             # users, categories
+│       │                             # users, categories, settings
 │       └── scripts/
 │           ├── import-excel.js       # importPlaces() - place list
 │           └── geocode-places.js     # geocodePlaces() - backfills lat/lng for ungeocoded places
 └── client/
     ├── vite.config.js                # dev proxy /api -> :4000
     └── src/
-        ├── App.jsx                   # tabs: Dashboard, Route Planner, Places, People
+        ├── App.jsx                   # tabs: Dashboard, Route Planner, Calendar, Places,
+        │                              # People (+ the header gear -> Settings, not a tab)
+        ├── hooks/useTunables.js      # cached read of the tunables other screens must respect
         ├── api.js                    # incl. formatDate() - YYYY-MM-DD -> M/D/YYYY for display
         ├── styles.css
         └── components/
@@ -423,6 +434,7 @@ guardian-angels-sales/
             ├── People.jsx, PersonDetail.jsx, PersonModal.jsx, AssignPersonModal.jsx
             ├── ReferralModal.jsx, ReferralDetailModal.jsx
             ├── VisitLogModal.jsx, VisitDetailModal.jsx, CategoriesModal.jsx
+            ├── Settings.jsx                          # every tunable constant, explained
             └── ui/                    # Button, Chip, EmptyState, PhoneInput, PlacePicker, ...
 ```
 
@@ -2126,3 +2138,48 @@ a manual-only date is present in the summary, not absent). Client build clean. V
 end-to-end in the browser (Lisa Marks smoke-test token, reverted after) for every piece above:
 the calendar's Plan-a-visit modal staying open through a place search, notes round-tripping onto
 `UpcomingVisitDetailModal`, and the two relocated/spaced buttons in `PlaceDetail`/`DayOverflowModal`.
+
+## 21. Settings page - every tunable constant, editable and explained (2026-08-17)
+
+**Full write-up lives in `SETTINGS_PAGE.md`** - the inventory of all 76 tunables, the file map,
+how to add a new one, and the testing record. This is the short version; when the two disagree,
+that file is the one to trust.
+
+Four config modules each carried a header promising "a future settings-table phase can lift these
+out without touching the engine itself." This is that phase. Bede asked to see and edit every
+tunable constant so the algorithm can be tuned over time, and - explicitly - to never be in the
+dark about what a number he's editing does.
+
+**Three layers.** `config/*.js` holds the shipped defaults and is never edited at runtime; the
+`settings` table holds *only* what the user actually changed; `config/tunables.js` holds the
+meaning (label, help, raise/lower effects, bounds, legal values). So "reset" is a DELETE, a
+removed tunable leaves a harmless orphan row that `loadSettings` warns about and skips, and the
+client renders itself entirely from the server payload with no field list of its own.
+
+**How an override lands.** `loadSettings()` runs before `app.listen` and writes each override
+*into* the live config module object, mutating in place. Nothing downstream needed rewiring.
+
+> **THE ONE RULE:** a tunable must be read at CALL time. `const { X } = require('../config/foo')`
+> captures the default at require time and ignores every override forever, silently. Read
+> `cfg.X` inside the function.
+
+**What moved.** Three new config modules extracted so their contents could be registered:
+`config/relationship.js` (~17 consts out of `services/relationship.js`), `config/planning.js`
+and `config/referrals.js`. `RoutePlanner.jsx` dropped its three hardcoded copies of the
+planning bounds - they had a "mirrors scheduleDraft.js" comment, exactly the pairing that drifts
+once one side becomes editable - and now reads them via `hooks/useTunables.js`.
+
+**Two non-scalar tunables got real editors:** the category→capacity rules are an ordered keyword
+table (order is part of the setting, first match wins) rather than raw regex input, and
+fast-decay categories are a multi-select over the real `categories` table because those match
+names exactly and a near-miss fails silently.
+
+**UI.** Gear button in the header, left of the profile avatar. Deliberately not a tab. Sidebar of
+7 sections with per-section "changed from default" badges, one section shown at a time, each
+tunable a block with help plus Higher:/Lower: consequence lines. `CADENCE_DAYS` renders as the
+3x3 grid it actually is, so a mis-tuned inversion is visible at a glance.
+
+**Testing.** 443 backend tests passing (up from 418), including four registry-integrity guards
+(every field resolves, every field has help, every numeric field is bounded and its own default
+fits inside those bounds, every default validates). Verified live in the browser end to end, and
+boot resilience exercised against orphan/invalid rows. See `SETTINGS_PAGE.md` §10.

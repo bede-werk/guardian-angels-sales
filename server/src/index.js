@@ -17,8 +17,10 @@ const users = require('./routes/users');
 const people = require('./routes/people');
 const referrals = require('./routes/referrals');
 const categories = require('./routes/categories');
+const settings = require('./routes/settings');
 const auth = require('./routes/auth');
 const requireAuth = require('./middleware/requireAuth'); // blocks a request unless it has a valid login token
+const { loadSettings } = require('./services/settings'); // overlays the user's tunable overrides onto config/*.js
 
 const app = express();
 app.use(cors()); // allow the frontend (different port in dev) to call this API
@@ -49,6 +51,7 @@ app.use('/api/users', users);
 app.use('/api', people);
 app.use('/api/referrals', referrals);
 app.use('/api/categories', categories);
+app.use('/api/settings', settings);
 
 // In production, serve the built React app so a single service can host both.
 if (process.env.NODE_ENV === 'production') {
@@ -99,6 +102,14 @@ async function start() {
     console.log('Running database migrations…');
     await knex.migrate.latest();
   }
+  // Overlay the user's saved tunables onto the config modules BEFORE the
+  // first request can be served, so no request is ever answered with the
+  // shipped defaults when the user has overridden them. Failures here are
+  // logged and swallowed inside loadSettings - a bad settings row must never
+  // be the reason the app won't start.
+  const { applied, skipped } = await loadSettings();
+  if (applied || skipped) console.log(`Settings: ${applied} override(s) applied${skipped ? `, ${skipped} skipped` : ''}.`);
+
   app.listen(PORT, () => {
     console.log(`GA Sales API listening on http://localhost:${PORT}`);
     if (isProd) seedIfEmpty();

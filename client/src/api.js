@@ -223,6 +223,23 @@ export const api = {
     remove: (id) => request(`/categories/${id}`, { method: 'DELETE' }), // { deleted, affectedPlaces }
   },
 
+  // Tunable algorithm constants (the Settings page) - server/src/routes/settings.js.
+  // `view` is the whole catalogue - sections, help text, bounds, the value in
+  // effect for each tunable, its shipped default, and who last changed it -
+  // and is only needed by Settings.jsx itself. `values` is the same numbers
+  // without the catalogue, for screens that merely need to respect a setting
+  // rather than explain it (see hooks/useTunables.js).
+  settings: {
+    view: () => request('/settings'),
+    values: () => request('/settings/values'),
+    // Body is only the keys that actually changed. Validated as a batch
+    // server-side, so cross-field rules are checked against the resulting
+    // state; a single bad value rejects the whole save and writes nothing.
+    save: (values) => request('/settings', { method: 'PUT', body: { values } }),
+    // No keys (or an empty array) resets every tunable.
+    reset: (keys = []) => request('/settings/reset', { method: 'POST', body: { keys } }),
+  },
+
   // Team members - server/src/routes/users.js
   users: {
     list: () => request('/users'),
