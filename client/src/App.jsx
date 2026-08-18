@@ -9,7 +9,7 @@ import Login from './components/Login';
 import ChangePassword from './components/ChangePassword';
 import Header from './components/ui/Header';
 import Splash from './components/ui/Splash';
-import Button from './components/ui/Button';
+import ProfileMenu from './components/ui/ProfileMenu';
 
 // The tabs shown in the nav bar under the header. `id` picks which
 // component renders below; `label` is the button text.
@@ -71,11 +71,7 @@ export default function App() {
   return (
     <div className="app">
       <Header tagline="Sales Visit CRM · Lincoln, NE">
-        <div className="static-date"><span className="muted">Date</span> {formatDate(date)}</div>
-        <div className="user-menu">
-          <span className="muted">Signed in as</span> {authUser.name}
-          <Button variant="ghost" onClick={logout}>Log out</Button>
-        </div>
+        <ProfileMenu name={authUser.name} date={formatDate(date)} onLogout={logout} />
       </Header>
 
       {showChangePassword && <ChangePassword onClose={() => setShowChangePassword(false)} />}

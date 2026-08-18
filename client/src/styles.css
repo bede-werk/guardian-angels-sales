@@ -154,11 +154,12 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .stat .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
 /* Buttons - the one button system, see ui/Button.jsx for the variant/size props
-   that map onto these classes (.secondary/.ghost/.danger/.small/.big). Plain
+   that map onto these classes (.secondary/.ghost/.danger/.small). Plain
    ".btn" with no extra class is the primary (solid blue) look. */
 .btn {
   background: var(--blue); color: #fff; border: none; border-radius: var(--radius-sm);
   padding: 8px 14px; font-family: var(--font-sans); font-size: 13px; cursor: pointer; font-weight: 600;
+  text-decoration: none; /* .btn is also used on a real <a> (PlaceDetail's Navigate link) - reset the browser's default anchor underline */
 }
 .btn:hover { background: var(--blue-dark); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -166,21 +167,9 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .btn.secondary:hover { background: var(--blue-tint-2); }
 .btn.ghost { background: none; color: var(--blue); padding: 6px 8px; }
 .btn.ghost:hover { background: var(--blue-tint-2); }
-/* Same weight as .ghost (no fill) but mauve, plus a thin outline - a firm
-   suggestion ("do not visit") rather than a request to confirm destroying
-   something (.danger's filled pill, reserved for actually-irreversible
-   actions like Delete). The outline is what keeps a no-fill button reading
-   as a button rather than plain text; .ghost gets away without one because
-   it always sits among other filled buttons that establish the row as
-   clickable - this one doesn't. */
-.btn.caution { background: none; color: var(--mauve); border: 1px solid var(--mauve-tint-3); padding: 5px 8px; }
-.btn.caution:hover { background: var(--mauve-tint-1); }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .btn.danger { background: var(--mauve-tint-1); color: var(--mauve); }
 .btn.danger:hover { background: var(--mauve-tint-2); }
-.btn.big { padding: 12px 18px; font-size: 14px; border-radius: var(--radius-md); }
-.btn.chevron-toggle { background: #fff; color: var(--blue); }
-.btn.chevron-toggle:hover { background: var(--blue-tint-2); color: var(--blue); }
 
 
 /* Inputs - every text field/dropdown/textarea in the app shares this look;
@@ -513,12 +502,39 @@ td .tag-list { flex-wrap: nowrap; }
 .splash .logo-img { height: 56px; width: auto; }
 .splash .tagline { font-family: var(--font-serif); font-size: 16px; color: #fff; opacity: 0.92; max-width: 320px; }
 
-/* Signed-in-as chip in the header (App.jsx's right-side header controls) */
-.user-menu { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+/* Profile dropdown in the header (ui/ProfileMenu.jsx) - an avatar button
+   top-right that opens a panel with the signed-in user, today's date (still
+   read-only, there's no date picker), and log out. */
+.profile-menu { position: relative; }
+.profile-menu-trigger { background: none; border: none; padding: 0; cursor: pointer; border-radius: 999px; line-height: 0; }
+.profile-menu-trigger:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.profile-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--blue); color: #fff; font-family: var(--font-sans);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.02em; flex: none;
+}
+.profile-avatar-lg { width: 40px; height: 40px; font-size: 15px; }
+.profile-menu-trigger:hover .profile-avatar { background: var(--blue-dark); }
 
-/* Static (read-only) date display in the header - there's no date picker,
-   today's date is just shown as text (App.jsx) */
-.static-date { padding: 8px 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.profile-menu-panel {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 20;
+  width: 240px; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: 0 12px 30px rgba(16, 24, 40, 0.16);
+  padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  animation: modal-pop-in 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.profile-menu-header { display: flex; align-items: center; gap: 10px; }
+.profile-menu-name { font-size: 14px; font-weight: 700; }
+.profile-menu-date { font-size: 12px; color: var(--muted); }
+.profile-menu-extra { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.profile-menu-logout {
+  margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border);
+  background: none; border-left: none; border-right: none; border-bottom: none;
+  text-align: left; font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+  color: var(--danger); cursor: pointer;
+}
+.profile-menu-logout:hover { color: var(--mauve-dark); }
 
 /* Progress bar - a day's running total in Route Planner. .progress-total is
    the prominent "Xh Ym of Zh" readout above the bar; .progress-label is the

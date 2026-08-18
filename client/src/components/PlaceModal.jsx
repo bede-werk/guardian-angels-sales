@@ -171,7 +171,6 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>Cancel</Button>
           <Button
             title={place ? "Save changes to this place's details" : 'Create this new place'}
             onClick={save}

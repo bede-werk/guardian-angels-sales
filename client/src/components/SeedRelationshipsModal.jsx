@@ -174,9 +174,6 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
           )}
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>
-            Cancel
-          </Button>
           <Button
             title={changeCount ? `Save ${changeCount} rating${changeCount === 1 ? '' : 's'}` : 'Rate at least one person first'}
             onClick={save}

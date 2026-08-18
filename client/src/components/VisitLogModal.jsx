@@ -827,9 +827,6 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
               </div>
             )}
           </div>
-          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>
-            Cancel
-          </Button>
           <Button
             variant={conflicts.length > 0 ? 'danger' : 'primary'}
             title={

@@ -207,7 +207,6 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
               </div>
             )}
           </div>
-          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={saving || !date || !resolvedPlaceId}>
             {saving ? 'Saving…' : warnings ? 'Plan anyway' : 'Save'}
           </Button>

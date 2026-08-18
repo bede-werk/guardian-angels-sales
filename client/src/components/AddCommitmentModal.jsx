@@ -45,7 +45,6 @@ export default function AddCommitmentModal({ people, onAdd, saving, onClose }) {
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={saving || !date}>{saving ? 'Saving…' : 'Save'}</Button>
         </div>
       </div>

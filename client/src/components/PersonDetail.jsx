@@ -461,9 +461,10 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
               </div>
               <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto', gap: 8 }}>
                 {editingPreferences ? (
-                  <div className="stack">
+                  <div className="stack" style={{ flex: 1, minHeight: 0 }}>
                     <textarea
                       rows={2}
+                      style={{ flex: 1, minHeight: 0 }}
                       value={preferencesDraft}
                       onChange={(e) => setPreferencesDraft(e.target.value)}
                       placeholder="Coffee order, how they like to be reached…"
@@ -487,7 +488,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     </div>
                   </div>
                 ) : data.preferences ? (
-                  <div className="tiny hover-row" style={{ padding: '8px', margin: '-8px', borderRadius: 6 }} title="Click to edit" onClick={() => beginEditPreferences(data.preferences || '')}>
+                  <div className="tiny hover-row" style={{ padding: '5px 8px', margin: '-5px -8px', borderRadius: 6, overflowWrap: 'break-word', hyphens: 'auto' }} title="Click to edit" onClick={() => beginEditPreferences(data.preferences || '')}>
                     <strong>Preferences:</strong> {data.preferences}
                   </div>
                 ) : null}
@@ -538,7 +539,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     </div>
                   </div>
                 ) : data.birthday_month ? (
-                  <div className="tiny hover-row" style={{ padding: '8px', margin: '-8px', borderRadius: 6 }} title="Click to edit" onClick={() => beginEditBirthday(data.birthday_month, data.birthday_day)}>
+                  <div className="tiny hover-row" style={{ padding: '5px 8px', margin: '-5px -8px', borderRadius: 6 }} title="Click to edit" onClick={() => beginEditBirthday(data.birthday_month, data.birthday_day)}>
                     <strong>Birthday:</strong> {MONTH_NAMES[data.birthday_month - 1]} {data.birthday_day}
                   </div>
                 ) : null}
@@ -546,11 +547,15 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                 )}
 
                 {showingNotes && (
-                <div style={(showingPreferences || showingBirthday) ? dividerStyle : undefined}>
+                <div style={{
+                  ...((showingPreferences || showingBirthday) ? dividerStyle : null),
+                  ...(editingNotes ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : null),
+                }}>
                 {editingNotes ? (
-                  <div className="stack">
+                  <div className="stack" style={{ flex: 1, minHeight: 0 }}>
                     <textarea
                       rows={2}
+                      style={{ flex: 1, minHeight: 0 }}
                       value={notesDraft}
                       onChange={(e) => setNotesDraft(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
@@ -573,7 +578,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     </div>
                   </div>
                 ) : (
-                  <div className="tiny hover-row" style={{ padding: '8px', margin: '-8px', borderRadius: 6 }} title="Click to edit" onClick={() => beginEditNotes(data.notes || '')}>
+                  <div className="tiny hover-row" style={{ padding: '5px 8px', margin: '-5px -8px', borderRadius: 6, overflowWrap: 'break-word', hyphens: 'auto' }} title="Click to edit" onClick={() => beginEditNotes(data.notes || '')}>
                     <strong>Notes:</strong> {data.notes}
                   </div>
                 )}

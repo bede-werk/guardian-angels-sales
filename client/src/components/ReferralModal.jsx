@@ -81,7 +81,6 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>Cancel</Button>
           <Button
             title={canSave ? 'Save this referral' : 'Add a note first'}
             onClick={save}

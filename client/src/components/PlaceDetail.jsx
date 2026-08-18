@@ -173,9 +173,13 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     setSavingNotes(true);
     try {
       await api.updatePlace(data.id, { notes: notesDraft });
-      setEditingNotes(false);
-      load();
+      // Refresh `data.notes` before closing the editor - closing first would
+      // let editingNotes flip to false while data.notes was still the stale
+      // pre-save value, which briefly renders the "no notes yet" empty state
+      // (and its "Add notes" button) for one frame.
+      await load();
       onChanged?.();
+      setEditingNotes(false);
     } catch (e) {
       window.alert(e.message);
     } finally {
@@ -188,9 +192,11 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     setRemovingNotes(true);
     try {
       await api.updatePlace(data.id, { notes: null });
-      setEditingNotes(false);
-      load();
+      // Same reason as saveNotes above: refresh before closing, so the old
+      // note text doesn't flash back for a frame as if it hadn't been deleted.
+      await load();
       onChanged?.();
+      setEditingNotes(false);
     } catch (e) {
       window.alert(e.message);
     } finally {
@@ -532,7 +538,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                     rel="noopener noreferrer"
                     title="Open directions to this address in Google Maps"
                   >
-                    Navigate
+                    Navigate ↗
                   </a>
                 </div>
               </div>
@@ -546,7 +552,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 considers it "too big to fit" and it just gets squeezed into
                 whatever sliver of space is left on the line instead of
                 wrapping, however little room remains. */}
-            <div className="card" style={{ flex: '1 1 250px', minWidth: 0 }}>
+            <div className="card" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Details</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -562,7 +568,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   )}
                 </div>
               </div>
-              <div className="card-body stack">
+              <div className="card-body stack" style={{ flex: 1, minHeight: 0 }}>
                 {/* Snooze/do-not-visit status + controls moved to the Upcoming
                     Visits card below (2026-08-10) - that's where a rep is
                     already looking to answer "why hasn't this place come up in
@@ -571,9 +577,15 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                     they now show as their own rows in Visit History below,
                     tagged "Skipped", instead of a bare count. */}
                 {editingNotes ? (
-                  <div className="stack">
+                  <div className="stack" style={{ flex: 1, minHeight: 0 }}>
+                    {/* flex: 1 - fills whatever height the Details card
+                        already has (set by its taller Contact Info/
+                        Relationship siblings) instead of sizing to `rows`,
+                        so the field is as big as it can be without the card
+                        itself growing any taller than it already is. */}
                     <textarea
-                      rows={2}
+                      rows={1}
+                      style={{ flex: 1, minHeight: 0 }}
                       value={notesDraft}
                       onChange={(e) => setNotesDraft(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNotes(); } }}
@@ -596,7 +608,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                     </div>
                   </div>
                 ) : data.notes ? (
-                  <div className="tiny hover-row" style={{ padding: '8px', margin: '-8px', borderRadius: 6 }} title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
+                  <div className="tiny hover-row" style={{ padding: '5px 8px', margin: '-5px -8px', borderRadius: 6, overflowWrap: 'break-word', hyphens: 'auto', maxHeight: 80, overflowY: 'auto' }} title="Click to edit" onClick={() => { setNotesDraft(data.notes || ''); setEditingNotes(true); }}>
                     <strong>Notes:</strong> {data.notes}
                   </div>
                 ) : (
@@ -825,7 +837,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       rather than the card-head now, same "Add…" placement
                       Commitments' own label row above uses. */}
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="small"
                     title="Schedule a future visit directly, without the route planner"
                     onClick={() => setPlanningVisit(true)}

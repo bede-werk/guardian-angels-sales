@@ -751,8 +751,8 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                           )
                         ) : (
                           <div className="tag-list" style={{ marginTop: 2 }}>
-                            <Button variant="ghost" size="small" onClick={() => openCommitmentReschedule(stop.place_id)}>Reschedule</Button>
-                            <Button variant="ghost" size="small" onClick={() => openCommitmentWaive(stop.place_id)}>Waive</Button>
+                            <Button variant="secondary" size="small" onClick={() => openCommitmentReschedule(stop.place_id)}>Reschedule</Button>
+                            <Button variant="secondary" size="small" onClick={() => openCommitmentWaive(stop.place_id)}>Waive</Button>
                           </div>
                         )}
                       </div>
@@ -1410,7 +1410,7 @@ export default function RoutePlanner({ userId }) {
                 {selectedDays.length} day{selectedDays.length === 1 ? '' : 's'} selected ({selectedDays.map((d) => formatDate(d.date)).join(', ')})
               </div>
               <Button
-                className="chevron-toggle"
+                variant="ghost"
                 size="small"
                 onClick={() => setEditingSetup(true)}
                 title="Edit setup"
@@ -1489,7 +1489,7 @@ export default function RoutePlanner({ userId }) {
                     summary text it toggles. */}
                 {draft && (
                   <Button
-                    className="chevron-toggle chevron-toggle-open"
+                    variant="ghost"
                     size="small"
                     onClick={() => setEditingSetup(false)}
                     title="Done editing"

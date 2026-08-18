@@ -180,7 +180,6 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
           </div>
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>Cancel</Button>
           <Button
             title={person ? "Save changes to this person's details" : 'Create this new person'}
             onClick={save}
