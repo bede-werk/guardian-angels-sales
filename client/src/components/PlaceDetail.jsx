@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { api, navigateUrl, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS, isSnoozeActive, isDoNotVisitActive, suppressionNote } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
@@ -145,9 +145,12 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   useEffect(() => {
     load();
   }, [placeId]);
-  useEffect(() => {
+  const loadCategories = useCallback(() => {
     api.filters().then((f) => setCategories(f.allCategories)).catch(() => {});
   }, []);
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
   useEffect(() => {
     api.users.list().then(setUsers).catch(() => {});
   }, []);
@@ -999,6 +1002,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           categories={categories}
           onClose={() => setEditing(false)}
           onSaved={() => { load(); onChanged?.(); }}
+          onCategoriesChanged={loadCategories}
         />
       )}
 

@@ -429,8 +429,46 @@ export function passwordError(newPassword, confirmPassword, label = 'Password') 
   return null;
 }
 
+function addressOf(place) {
+  return [place.address, place.city, place.state, place.zip].filter(Boolean).join(', ');
+}
+
 // A Google Maps directions link, so "Navigate" hands off to Apple/Google Maps.
 export function navigateUrl(place) {
-  const dest = [place.address, place.city, place.state, place.zip].filter(Boolean).join(', ');
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`;
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addressOf(place))}`;
+}
+
+// Google Maps's own consumer web product caps intermediate waypoints on a
+// single directions link - stops beyond this many (between the first and
+// last) can't be included. This is that product's limit, not something the
+// app can raise; Dashboard.jsx tells the rep when a day's route ran into it.
+export const MAX_ROUTE_WAYPOINTS = 9;
+
+// A single Google Maps directions link for a whole day's route, stops in
+// the exact order they're given (the order the Route Planner already
+// packed them in) - not left for Maps to re-optimize, since that ordering
+// already accounts for real drive time, not just this link's guess. No
+// origin on purpose, same as navigateUrl above: leaving it blank lets Maps
+// fill in wherever the phone actually opening the link is, which is truer
+// than anything guessable server-side (this app never persists a rep's
+// starting point - see RoutePlanner.jsx's own homeBase for why).
+//
+// A stop with no usable address (a detached visit, or a place missing one)
+// is dropped rather than breaking the whole link. Returns null if nothing
+// usable remains. `dropped` on the result counts every stop left out - for
+// a missing address as well as for running past MAX_ROUTE_WAYPOINTS - so
+// the caller can show one honest count either way.
+export function navigateRouteUrl(stops) {
+  const usable = (stops || []).filter((s) => addressOf(s));
+  if (usable.length === 0) return null;
+  if (usable.length === 1) return { url: navigateUrl(usable[0]), dropped: (stops || []).length - 1 };
+
+  const included = usable.slice(0, MAX_ROUTE_WAYPOINTS + 1); // + 1: the last of these is the destination, not a waypoint
+  const destination = included[included.length - 1];
+  const waypoints = included.slice(0, -1);
+
+  const params = new URLSearchParams({ api: '1', destination: addressOf(destination), travelmode: 'driving' });
+  if (waypoints.length) params.set('waypoints', waypoints.map(addressOf).join('|'));
+
+  return { url: `https://www.google.com/maps/dir/?${params.toString()}`, dropped: (stops || []).length - included.length };
 }

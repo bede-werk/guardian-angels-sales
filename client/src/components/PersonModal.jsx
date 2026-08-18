@@ -18,7 +18,7 @@ const ADD_PLACE_OPTION = '__add_place__';
 // "Edit" button (both pass a fixed `placeId`), or from People.jsx's
 // "+ Add person" button (passes `places`/`categories` instead, so the form
 // includes a place picker that can also create a brand-new place on the fly).
-export default function PersonModal({ placeId, placeName, places, categories, person, onClose, onSaved }) {
+export default function PersonModal({ placeId, placeName, places, categories, person, onClose, onSaved, onCategoriesChanged }) {
   const { closing, requestClose } = useClosingTransition(onClose);
   // See PlaceModal's identical comment - pairs every label.field below with
   // its input via htmlFor/id.
@@ -204,6 +204,7 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
             setExtraPlaces((eps) => [...eps, newPlace]);
             setForm((f) => ({ ...f, place_id: newPlace.id }));
           }}
+          onCategoriesChanged={onCategoriesChanged}
         />
       )}
     </div>

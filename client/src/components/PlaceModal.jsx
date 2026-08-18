@@ -3,14 +3,27 @@ import { api } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
+import CategoriesModal from './CategoriesModal';
 import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
 import useClosingTransition from '../hooks/useClosingTransition';
 
+// The category select's last option is a sentinel that opens the manage-
+// categories modal instead of actually picking a category - same pattern as
+// the category filter dropdowns' "Manage categories…" entry (People.jsx/
+// Places.jsx). Picking it never touches form.category, so the select just
+// reverts to showing whatever was already selected once the modal closes.
+const MANAGE_CATEGORIES_OPTION = '__manage_categories__';
+
 // Create or edit a place (organization). `place` present = editing (form is
 // pre-filled from it); absent = creating a brand-new one from a blank form.
-// Opened from Places.jsx's "Add place" button, or PlaceDetail.jsx's "Edit" button.
-export default function PlaceModal({ place, categories = [], onClose, onSaved }) {
+// Opened from Places.jsx's "Add place" button, PlaceDetail.jsx's "Edit"
+// button, or PersonModal.jsx's inline "add a new place" picker.
+// `onCategoriesChanged` lets the caller refresh its own category list after
+// a category is added/renamed/retired from here - PlaceModal doesn't own
+// that list itself, it just receives `categories` as a prop.
+export default function PlaceModal({ place, categories = [], onClose, onSaved, onCategoriesChanged }) {
   const { closing, requestClose } = useClosingTransition(onClose);
+  const [managingCategories, setManagingCategories] = useState(false);
   // Stable per-instance id prefix so every label.field below can pair with
   // its input via htmlFor/id - tapping a label now actually focuses the
   // field it names, on top of just visually captioning it.
@@ -40,6 +53,11 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const toggle = (k) => () => setForm((f) => ({ ...f, [k]: !f[k] }));
+
+  const handleCategoryChange = (e) => {
+    if (e.target.value === MANAGE_CATEGORIES_OPTION) { setManagingCategories(true); return; }
+    set('category')(e);
+  };
 
   // One save attempt against the API. Returns 'ok' or 'failed' ('error' is
   // already set in the latter case). `confirm_address` is always sent true
@@ -125,8 +143,10 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
           <div className="row">
             <div>
               <label className="field" htmlFor={`${uid}-category`}>Category</label>
-              <select id={`${uid}-category`} value={form.category} onChange={set('category')}>
+              <select id={`${uid}-category`} value={form.category} onChange={handleCategoryChange}>
                 <option value="">None</option>
+                <option value={MANAGE_CATEGORIES_OPTION}>Manage categories…</option>
+                <option disabled>──────────</option>
                 {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -187,6 +207,9 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved })
           />
         )}
       </div>
+      {managingCategories && (
+        <CategoriesModal onClose={() => setManagingCategories(false)} onChanged={onCategoriesChanged} />
+      )}
     </div>
   );
 }

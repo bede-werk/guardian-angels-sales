@@ -217,7 +217,7 @@ export default function People({ userId }) {
       )}
 
       {adding && (
-        <PersonModal places={places} categories={filters.allCategories} onClose={() => setAdding(false)} onSaved={refresh} />
+        <PersonModal places={places} categories={filters.allCategories} onClose={() => setAdding(false)} onSaved={refresh} onCategoriesChanged={loadReferenceData} />
       )}
 
       {managingCategories && (

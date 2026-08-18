@@ -653,30 +653,32 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
 
             {metTypes.includes('named_person') && (
               <div>
-                <label className="field">
-                  Which people?
-                  {selectedPersonIds.length > 1 && (
-                    <span className="muted" style={{ fontWeight: 400 }}> · {selectedPersonIds.length} selected</span>
-                  )}
-                </label>
                 {pickerPeople.length === 0 ? (
                   <div className="tiny muted">Nobody on file at this place yet - add someone below.</div>
                 ) : (
-                  <div className="person-checklist">
-                    {pickerPeople.map((p) => (
-                      <div
-                        key={p.id}
-                        className={`select-row${selectedPersonIds.includes(p.id) ? ' selected' : ''}`}
-                        role="checkbox"
-                        aria-checked={selectedPersonIds.includes(p.id)}
-                        tabIndex={0}
-                        onClick={() => togglePerson(p.id)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePerson(p.id); } }}
-                      >
-                        {p.name}{p.title ? <span className={selectedPersonIds.includes(p.id) ? '' : 'muted'}> - {p.title}</span> : null}
-                      </div>
-                    ))}
-                  </div>
+                  <>
+                    <label className="field">
+                      Which people?
+                      {selectedPersonIds.length > 1 && (
+                        <span className="muted" style={{ fontWeight: 400 }}> · {selectedPersonIds.length} selected</span>
+                      )}
+                    </label>
+                    <div className="person-checklist">
+                      {pickerPeople.map((p) => (
+                        <div
+                          key={p.id}
+                          className={`select-row${selectedPersonIds.includes(p.id) ? ' selected' : ''}`}
+                          role="checkbox"
+                          aria-checked={selectedPersonIds.includes(p.id)}
+                          tabIndex={0}
+                          onClick={() => togglePerson(p.id)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePerson(p.id); } }}
+                        >
+                          {p.name}{p.title ? <span className={selectedPersonIds.includes(p.id) ? '' : 'muted'}> - {p.title}</span> : null}
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
                 <div className="tag-list" style={{ marginTop: 8 }}>
                   <Button variant="secondary" size="small" title="Create someone who isn't on file yet" onClick={() => setCreatingPerson(true)}>

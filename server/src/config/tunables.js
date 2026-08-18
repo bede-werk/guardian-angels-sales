@@ -477,6 +477,43 @@ const SECTIONS = [
       },
     ],
   },
+
+  // --------------------------------------------------------------- dashboard
+  {
+    id: 'dashboard',
+    title: 'Dashboard',
+    icon: '📊',
+    blurb:
+      'How much of each list the five dashboard cards show. Nothing here changes what the planner does or how anything is scored - these only decide how much fits on the screen at once.',
+    groups: [
+      {
+        id: 'dash-commitments',
+        title: 'Commitments due',
+        blurb:
+          'The card that lists promises you have made to go back somewhere. Anything already overdue is always shown no matter what these are set to: a promise does not stop counting because it aged out of a window.',
+        fields: [
+          { key: 'dashboard.COMMITMENT_HORIZON_DAYS', label: 'Look ahead', unit: 'days', type: 'integer', min: 1, max: 365,
+            help: 'How far into the future the card counts a promise as "coming due". Overdue ones are always included on top of this.',
+            raise: 'You see further ahead, at the cost of a longer list that is less about this week.',
+            lower: 'The card tightens onto what is imminent, and a promise two weeks out stays out of sight until it is closer.' },
+          { key: 'dashboard.COMMITMENT_LIST_LIMIT', label: 'Most rows to list', unit: 'rows', type: 'integer', min: 1, max: 100,
+            help: 'A cap on the rows drawn, so a big backlog does not turn the dashboard into a scrolling list. The count shown above the list is never capped, so if there are more than this the card says so.' },
+        ],
+      },
+      {
+        id: 'dash-referrals',
+        title: 'Referral cards',
+        blurb:
+          'The two referral cards. The "how many lately" figure on the first one follows the Referrals section\'s own recent-activity window, not these.',
+        fields: [
+          { key: 'dashboard.RECENT_REFERRALS_LIMIT', label: 'Recent referrals to list', unit: 'rows', type: 'integer', min: 1, max: 50,
+            help: 'How many of the most recently dated referrals the "Recent referrals" card lists.' },
+          { key: 'dashboard.TOP_PARTNERS_LIMIT', label: 'Top partners to list', unit: 'people', type: 'integer', min: 1, max: 50,
+            help: 'How many people the "Top referral partners" leaderboard shows, ranked by lifetime referrals sent.' },
+        ],
+      },
+    ],
+  },
 ];
 
 // Flat key -> field index, built once. Used by services/settings.js to
@@ -500,6 +537,7 @@ const NAMESPACES = {
   relationship: require('./relationship'),
   planning: require('./planning'),
   referrals: require('./referrals'),
+  dashboard: require('./dashboard'),
 };
 
 // Fail loudly at boot rather than silently at save time: a key that names a

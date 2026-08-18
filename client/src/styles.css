@@ -977,3 +977,143 @@ td .tag-list { flex-wrap: nowrap; }
 /* The header gap is 20px, which is right between the tagline block and the
    controls but too wide between two controls of the same pair. */
 .header .controls { gap: 12px; }
+
+/* ---------------------------------------------------------------- Dashboard
+   The five cards on the Dashboard tab (see components/Dashboard.jsx for what
+   each one answers). Everything here is layout and the two small custom
+   marks the screen needs - the due chip and the week strip. Rows, cards,
+   chips and buttons all come from the shared systems above; nothing below
+   redefines one. */
+
+/* Two cards abreast on a wide screen, stacked on a narrow one. 340px is the
+   width the Commitments card's date + place + due chip stops wrapping at. */
+/* align-items: start, not the grid default of stretch - a short card (This
+   week is four numbers and a strip) sitting beside a long one (Commitments,
+   however many are due) would otherwise be inflated to match it, leaving a
+   card that is mostly empty box. Each card is as tall as what it has to
+   say. */
+.dash-row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+
+/* The Today card is the one thing on this screen that gets read at a glance
+   on the way out the door, so it spans the full width and lays out as three
+   columns: the count, the facts, and the Navigate button. `auto` on the
+   first and last means the facts column absorbs all the slack. min-height
+   reserves enough room for the Navigate button PLUS the occasional caveat
+   line under it (see .dash-nav-caveat below) even on days that don't have
+   one - so the card is the same height every day, not just on the rare
+   long one, and the button centers in the same place either way. */
+.dash-today-body { display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center; min-height: 120px; }
+.dash-today-count { text-align: center; padding-right: 24px; border-right: 1px solid var(--border); min-width: 120px; }
+/* Same type scale as ui/StatTile.jsx's tile - this IS that tile, inlined
+   into a card that has more to say alongside it. */
+.dash-today-count .num { font-family: var(--font-serif); font-size: 30px; font-weight: 700; color: var(--blue-dark); line-height: 1; }
+.dash-today-count .label { color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.35; }
+
+/* The Navigate button. position: relative anchors the caveat below it (see
+   .dash-nav-caveat) without the caveat being part of this box's own height -
+   if it were, the button would shift up a little every time the caveat
+   appeared, since align-items: center above centers the taller box, not
+   the button within it. Taking the caveat out of flow like this means the
+   button sits in the exact same spot whether or not one is showing. */
+.dash-today-action { position: relative; display: flex; flex-direction: column; align-items: flex-end; }
+/* Positioned off the button's own bottom-right corner rather than stacked
+   in flow underneath it (see .dash-today-action above for why). Often
+   wider than the button itself - right: 0 lines up their right edges
+   regardless, and the button's own width never stretches to match it. */
+.dash-nav-caveat { position: absolute; top: 100%; right: 0; margin-top: 8px; white-space: nowrap; }
+
+/* justify-items: start - a CSS Grid item stretches to fill its cell's
+   width by default. The labelled "Next visit" row doesn't need this (it's
+   a flex row internally, and a flex child never stretches to its
+   container's full width on its own) but the label-less "Nothing left for
+   today" card is a bare grid child, and without this it would balloon out
+   to the column's full width instead of sizing to its own text. */
+.dash-today-facts { display: grid; gap: 10px; min-width: 0; justify-items: start; }
+/* A small grey caption above a value - shared by "Next visit"'s label and
+   (kept generic in case a second one shows up here later) anything else
+   that needs the same treatment. */
+.dash-fact-label { color: var(--muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+
+/* "Next visit": the label above, then the card itself - a bordered, tinted
+   box rather than a plain link, since this is the single most-referenced
+   fact on the dashboard. */
+/* Row, not stacked: label to the left, card to the right, both centered on
+   the same line. A stacked layout (label above, card below) meant the
+   CARD's own center sat below the Today card's true vertical center, since
+   the label+gap above it pulled the whole block's center up with it - row
+   layout's height is just the card's own height (the label is shorter and
+   centers within it), so centering this block also centers the card. */
+.dash-next-visit { display: flex; flex-direction: row; align-items: center; gap: 10px; min-width: 0; }
+.dash-stop-card {
+  display: block; min-width: 0; max-width: 100%; text-align: left; font: inherit; cursor: pointer;
+  padding: 10px 14px; border: 1px solid var(--blue-tint-4); border-radius: var(--radius-md); background: var(--blue-tint-1);
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+.dash-stop-card:hover { background: var(--blue-tint-2); border-color: var(--blue-tint-6); }
+/* "All done for today" isn't a real visit to open - same neutral,
+   non-interactive treatment as a disabled card, just always on. */
+.dash-stop-card.static { cursor: default; background: var(--grey-tint-1); border-color: var(--border); }
+.dash-stop-card.static:hover { background: var(--grey-tint-1); }
+/* While openVisit's fetch is in flight - stops a second click firing a
+   second request rather than actually blocking anything server-side. */
+.dash-stop-card:disabled { cursor: default; opacity: 0.6; }
+.dash-stop-card:disabled:hover { background: var(--blue-tint-1); border-color: var(--blue-tint-4); }
+.dash-stop-name { font-family: var(--font-serif); font-weight: 600; font-size: 15px; }
+.dash-visit-error { color: var(--mauve); margin-top: 4px; }
+
+@media (max-width: 760px) {
+  .dash-today-body { grid-template-columns: 1fr; gap: 16px; min-height: 0; }
+  .dash-today-count { border-right: none; border-bottom: 1px solid var(--border); padding: 0 0 12px; }
+  /* The single-column stack has no centered row to reserve space in (the
+     desktop min-height above is for that), and the action block is the
+     last thing in the card here - reserve the caveat's landing spot with
+     a MARGIN, not padding: padding would sit inside this box's own edge,
+     which is what the caveat's top: 100% measures itself from - reserving
+     space that way would push the caveat's already-absolute position down
+     by the same amount again, past the space just reserved for it. Margin
+     sits outside that edge, so it grows the card without moving the
+     caveat's anchor point. */
+  .dash-today-action { margin-bottom: 36px; }
+}
+
+/* This week's headline numbers, above the strip. */
+.dash-week-numbers { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; }
+.dash-week-numbers strong { font-family: var(--font-serif); font-size: 20px; color: var(--blue-dark); }
+
+/* Seven equal columns, Monday to Sunday. Equal-width (not content-sized) on
+   purpose: the week reads as a shape, and a busy Tuesday must not make
+   Tuesday physically wider than a quiet Wednesday. */
+.week-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.week-day { text-align: center; padding: 8px 2px; border-radius: var(--radius-sm); background: var(--grey-tint-1); }
+.week-day.is-today { background: var(--blue-tint-2); outline: 1px solid var(--blue-tint-5); }
+.week-day-dow { font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.week-day-counts { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; min-height: 20px; }
+/* One pip per status per day, carrying its own count. Filled blue for work
+   done, outlined for work still ahead, mauve for a lapse - the same
+   done/pending/attention language the rest of the app uses. */
+.week-pip { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 1; }
+.week-pip.done { background: var(--blue); color: #fff; }
+.week-pip.planned { background: #fff; color: var(--blue-dark); border: 1px solid var(--blue-tint-5); }
+.week-pip.skipped { background: var(--mauve-tint-1); color: var(--mauve); }
+.week-pip.empty { color: var(--grey-tint-3); font-weight: 400; }
+
+/* A commitment's due-ness. Four tones rather than a single "due" pill: the
+   whole job of this card is separating "already late" from "coming up", and
+   one colour for both would bury exactly the rows that matter most. */
+.due-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; white-space: nowrap; }
+.due-chip.overdue { background: var(--mauve-tint-1); color: var(--mauve); }
+.due-chip.today { background: var(--blue); color: #fff; }
+.due-chip.soon { background: var(--blue-tint-2); color: var(--blue-dark); }
+.due-chip.later { background: var(--grey-tint-1); color: var(--grey-dark); }
+.dash-overdue-count { color: var(--mauve); font-weight: 700; }
+
+/* The lifetime referral count on the Top partners leaderboard - the number
+   the list is actually ranked by, so it gets the serif treatment rather
+   than sitting in the same grey as everything else in the row. */
+/* The lifetime count stacked over the recent one, right-aligned. Side by
+   side (the .actions default) the two numbers read as one run-on figure -
+   "23 7 in 90d" - rather than a total and a trend. */
+.partner-score { flex-direction: column; align-items: flex-end; gap: 1px; flex-shrink: 0; }
+.partner-count { font-family: var(--font-serif); font-size: 18px; font-weight: 700; color: var(--blue-dark); line-height: 1.1; }
