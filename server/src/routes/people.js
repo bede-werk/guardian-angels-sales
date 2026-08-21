@@ -168,7 +168,22 @@ router.get('/people', async (req, res, next) => {
 
     const people = await query;
     const metricsById = await referralMetricsByPersonId(knex, people.map((p) => p.id));
-    let decorated = people.map((p) => ({ ...p, referral_metrics: metricsFor(metricsById, p.id) }));
+
+    // Relationship: level + raw score only, same "no trend, no contributors"
+    // restraint the places list uses (see computeRelationshipForPlaces there) -
+    // this is a directory row and the Seed Relationships screen, neither of
+    // which renders the full breakdown.
+    const relationshipById = await computeRelationshipForPeople(knex, people.map((p) => p.id));
+
+    let decorated = people.map((p) => {
+      const rel = relationshipById.get(p.id);
+      return {
+        ...p,
+        referral_metrics: metricsFor(metricsById, p.id),
+        relationship_level: rel?.level ?? 'weak',
+        relationship_score: rel?.score ?? 0,
+      };
+    });
     decorated = sortPeople(decorated, sort);
     res.json(decorated);
   } catch (err) {

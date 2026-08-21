@@ -39,7 +39,7 @@ Two things it's worth knowing immediately, because both will otherwise look like
    (`place_id` null) from smoke-test cleanup. Run `npm run relationship:distribution` (new) to
    see the live picture - it warns loudly when one bucket holds >90% of places, which is the
    signal that the axis isn't separating and half-lives/thresholds need tuning before the
-   ranker leans on it. Seeding (People tab → "Seed relationships") is what makes day one honest.
+   ranker leans on it. Seeding (People tab → "Rate relationships") is what makes day one honest.
 
 ### 2026-08-07 - Capacity is now COMPUTED too (new §18 at the bottom of this doc), steps 1–7 of 9
 
@@ -1289,8 +1289,11 @@ the same clock as real visit weight** - ~3% of original after five months on a 3
 No expiry logic, no cleanup task: a real relationship gets visited and earns genuine score as
 the seed fades; an optimistic seed never followed up decays to nothing, which is the honest
 answer. *A seed is a claim with an expiration date attached; an override is a claim that is
-silently wrong forever.* UI: People tab → "Seed relationships". Re-runnable - re-seeding
-overwrites the value and resets the decay clock.
+silently wrong forever.* UI: People tab → "Rate relationships". Re-runnable - re-seeding
+overwrites the value and resets the decay clock. That screen only lists people with no completed
+visit yet (once a real visit lands, the algorithm has genuine signal and the row drops off); a
+person who still has a seed but never got visited can also be reset back to "never rated" from
+the same picker.
 
 ### Override
 

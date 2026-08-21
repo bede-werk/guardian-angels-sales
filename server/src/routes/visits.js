@@ -623,7 +623,7 @@ router.post('/', async (req, res, next) => {
 // own, stricter conflict policy (services/manualVisits.js's classifyConflicts
 // hard-blocks DRAFT_ELSEWHERE, where the route above only warns on it).
 //
-// Body: { place_id, scheduled_date, user_id?, notes?, force? }. user_id is
+// Body: { place_id, scheduled_date, user_id?, notes?, visit_type?, force? }. user_id is
 // the ASSIGNEE - defaults to the caller (planning for yourself is the common
 // case), but any rep may plan for any other rep (§5). created_by_user_id is
 // always the authenticated caller, never client-supplied - cross-rep
@@ -638,11 +638,13 @@ router.post('/', async (req, res, next) => {
 //                                    override possible.
 router.post('/manual', async (req, res, next) => {
   try {
-    const { place_id, scheduled_date, force } = req.body;
+    const { place_id, scheduled_date, visit_type, force } = req.body;
     if (!place_id) return res.status(400).json({ error: 'place_id is required' });
     if (!scheduled_date || !/^\d{4}-\d{2}-\d{2}$/.test(scheduled_date)) {
       return res.status(400).json({ error: 'scheduled_date is required, in YYYY-MM-DD format' });
     }
+    const fieldError = tripFieldError(req.body);
+    if (fieldError) return res.status(400).json({ error: fieldError });
     const numericPlaceId = Number(place_id);
     if (Number.isNaN(numericPlaceId)) return res.status(404).json({ error: 'Place not found' });
 
@@ -660,6 +662,7 @@ router.post('/manual', async (req, res, next) => {
       userId: assigneeId,
       createdByUserId: req.user.id,
       notes: req.body.notes || null,
+      visitType: visit_type || null,
       force: !!force,
     });
 
@@ -809,8 +812,8 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-// PATCH /api/visits/:id/edit - change a still-planned visit's date and/or
-// notes: UpcomingVisitDetailModal's "Edit" button, on a manually-planned
+// PATCH /api/visits/:id/edit - change a still-planned visit's date, visit
+// type, and/or notes: UpcomingVisitDetailModal's "Edit" button, on a manually-planned
 // visit AND a planner-committed one alike. Deliberately its own endpoint
 // rather than folded into the generic PATCH /:id above: a plain date edit
 // there just saves whatever's sent with no conflict check at all, but this
@@ -827,17 +830,19 @@ router.patch('/:id', async (req, res, next) => {
 // canEditManualVisit) - narrower than the creator-may-also-delete rule on
 // DELETE /:id below (§5: the creator's own permission stops at delete).
 //
-// Body: { scheduled_date?, notes?, force? }. Same response shapes as POST /manual.
+// Body: { scheduled_date?, notes?, visit_type?, force? }. Same response shapes as POST /manual.
 router.patch('/:id/edit', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(404).json({ error: 'Visit not found' });
-    const { scheduled_date, notes, force } = req.body;
+    const { scheduled_date, notes, visit_type, force } = req.body;
     if (scheduled_date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(scheduled_date)) {
       return res.status(400).json({ error: 'scheduled_date must be in YYYY-MM-DD format' });
     }
+    const fieldError = tripFieldError(req.body);
+    if (fieldError) return res.status(400).json({ error: fieldError });
 
-    const result = await editVisit(knex, id, { scheduledDate: scheduled_date, notes, force: !!force }, req.user.id);
+    const result = await editVisit(knex, id, { scheduledDate: scheduled_date, notes, visitType: visit_type, force: !!force }, req.user.id);
     if (!result.visit) return res.status(200).json({ warnings: result.warnings });
     res.json(await fetchVisit(result.visit.id));
   } catch (err) {

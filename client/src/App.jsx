@@ -105,7 +105,7 @@ export default function App() {
 
       {/* Only the active tab's component is mounted - the others unmount entirely,
           resetting their state each time you come back to them. */}
-      {tab === 'dashboard' && <Dashboard date={date} userId={authUser.id} />}
+      {tab === 'dashboard' && <Dashboard date={date} userId={authUser.id} onNavigateToPlanner={() => setTab('planner')} />}
       {tab === 'planner' && <RoutePlanner userId={authUser.id} />}
       {tab === 'calendar' && (
         <VisitsCalendar

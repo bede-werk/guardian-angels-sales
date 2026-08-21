@@ -1002,8 +1002,8 @@ td .tag-list { flex-wrap: nowrap; }
    line under it (see .dash-nav-caveat below) even on days that don't have
    one - so the card is the same height every day, not just on the rare
    long one, and the button centers in the same place either way. */
-.dash-today-body { display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center; min-height: 120px; }
-.dash-today-count { text-align: center; padding-right: 24px; border-right: 1px solid var(--border); min-width: 120px; }
+.dash-today-body { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; min-height: 120px; }
+.dash-today-count { text-align: center; }
 /* Same type scale as ui/StatTile.jsx's tile - this IS that tile, inlined
    into a card that has more to say alongside it. */
 .dash-today-count .num { font-family: var(--font-serif); font-size: 30px; font-weight: 700; color: var(--blue-dark); line-height: 1; }
@@ -1015,20 +1015,35 @@ td .tag-list { flex-wrap: nowrap; }
    appeared, since align-items: center above centers the taller box, not
    the button within it. Taking the caveat out of flow like this means the
    button sits in the exact same spot whether or not one is showing. */
-.dash-today-action { position: relative; display: flex; flex-direction: column; align-items: flex-end; }
+.dash-today-action { position: relative; display: flex; flex-direction: column; align-items: flex-end; margin-right: 16px; }
 /* Positioned off the button's own bottom-right corner rather than stacked
    in flow underneath it (see .dash-today-action above for why). Often
    wider than the button itself - right: 0 lines up their right edges
    regardless, and the button's own width never stretches to match it. */
 .dash-nav-caveat { position: absolute; top: 100%; right: 0; margin-top: 8px; white-space: nowrap; }
 
-/* justify-items: start - a CSS Grid item stretches to fill its cell's
-   width by default. The labelled "Next visit" row doesn't need this (it's
-   a flex row internally, and a flex child never stretches to its
-   container's full width on its own) but the label-less "Nothing left for
-   today" card is a bare grid child, and without this it would balloon out
-   to the column's full width instead of sizing to its own text. */
-.dash-today-facts { display: grid; gap: 10px; min-width: 0; justify-items: start; }
+/* Row, not stacked - the summary sits to the LEFT of Next visit rather than
+   above it, both centered against each other via align-items: center. A
+   stacked layout would make Next visit's card the second (taller) block in
+   the column, pulling the whole thing's center up with the summary's own
+   height above it and taking the card off the Today card's true vertical
+   center - see dash-next-visit's own row-not-stacked comment below for the
+   same problem solved the same way one level in. */
+.dash-today-facts { display: flex; align-items: center; gap: 20px; min-width: 0; }
+/* The count and the View button, pieced together as one section: a tight
+   gap and no divider between them, since they're one stat plus the action
+   that belongs to it (not two separate facts the way count/Next-visit are).
+   flex-shrink: 0 keeps this whole group from getting squeezed as
+   dash-today-next (below) gives way first. */
+.dash-today-summary { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+/* min-width: 0 - a flex child's default min-width is its content's own
+   width, which would let a long place name push the summary group out of
+   the row instead of shrinking (same reasoning as dash-next-visit's own
+   min-width: 0 one level in). The left border is the ONE divider in this
+   row - between the summary group and Next visit, the row's only real
+   separation (a stat+action and the dashboard's single most-referenced
+   fact) - tall because it's sized to Next visit's own two-line card. */
+.dash-today-next { min-width: 0; padding-left: 20px; border-left: 1px solid var(--border); }
 /* A small grey caption above a value - shared by "Next visit"'s label and
    (kept generic in case a second one shows up here later) anything else
    that needs the same treatment. */
@@ -1050,20 +1065,28 @@ td .tag-list { flex-wrap: nowrap; }
   transition: background 0.1s ease, border-color 0.1s ease;
 }
 .dash-stop-card:hover { background: var(--blue-tint-2); border-color: var(--blue-tint-6); }
-/* "All done for today" isn't a real visit to open - same neutral,
-   non-interactive treatment as a disabled card, just always on. */
-.dash-stop-card.static { cursor: default; background: var(--grey-tint-1); border-color: var(--border); }
-.dash-stop-card.static:hover { background: var(--grey-tint-1); }
 /* While openVisit's fetch is in flight - stops a second click firing a
    second request rather than actually blocking anything server-side. */
 .dash-stop-card:disabled { cursor: default; opacity: 0.6; }
 .dash-stop-card:disabled:hover { background: var(--blue-tint-1); border-color: var(--blue-tint-4); }
 .dash-stop-name { font-family: var(--font-serif); font-weight: 600; font-size: 15px; }
 .dash-visit-error { color: var(--mauve); margin-top: 4px; }
+.dash-today-action-error { margin: 0 16px 16px; }
 
 @media (max-width: 760px) {
   .dash-today-body { grid-template-columns: 1fr; gap: 16px; min-height: 0; }
-  .dash-today-count { border-right: none; border-bottom: 1px solid var(--border); padding: 0 0 12px; }
+  /* Back to a plain top-to-bottom stack here - the side-by-side layout
+     above exists to protect Next visit's vertical centering against the
+     desktop row's height, but a single mobile column has no shared row
+     height to center against in the first place. */
+  .dash-today-facts { flex-direction: column; align-items: flex-start; gap: 10px; }
+  /* The row's one divider follows the stack: a left border made sense
+     beside the summary group on the desktop row, a bottom one makes sense
+     above it here - same swap as every other divider in this card.
+     Resetting the desktop padding-left/border-left this way rather than
+     adding new mobile-only rules keeps it owned by one element at a time. */
+  .dash-today-summary { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .dash-today-next { padding-left: 0; border-left: none; }
   /* The single-column stack has no centered row to reserve space in (the
      desktop min-height above is for that), and the action block is the
      last thing in the card here - reserve the caveat's landing spot with

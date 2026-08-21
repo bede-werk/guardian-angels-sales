@@ -253,7 +253,7 @@ function pickZoneForDay({ explicitZone, algorithmZone }) {
 // .map()'s callback would fire for every date before any single await
 // resolved, running every day against the SAME stale `remaining` pool
 // instead of each day seeing the previous day's dedupe.
-async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, config = {}, optimizeRoute, lockedByDate = {} }) {
+async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, config = {}, optimizeRoute, lockedByDate = {}, committedMinutesByDate = {} }) {
   const schedulingConfig = { ...defaultSchedulingConfig, ...(config.scheduling ?? {}) };
   const driveConfig = { ...defaultDriveConfig, ...(config.drive ?? {}) };
   const visitTypesConfig = { ...defaultVisitTypesConfig, ...(config.visitTypes ?? {}) };
@@ -263,7 +263,22 @@ async function generateDraft({ candidates, days, homeBase, zoneOverrides = {}, c
 
   const result = [];
   for (const { date, hoursPerDay } of days) {
-    const budgetMinutes = hoursPerDay * 60;
+    // Time already spoken for by a real committed visit on this date (a
+    // manual visit planned before generation ran, most commonly - see
+    // scheduleDraft.js's generateAndPersistDraft, which is the only caller
+    // that ever populates this) comes straight off the day's own budget,
+    // same subtraction evaluateDay already does at view/reoptimize time -
+    // this just lets the FIRST fill see it too, instead of packing against
+    // the full, un-reduced hoursPerDay and only discovering the day was
+    // over-committed once the draft is loaded. Deliberately budget-only:
+    // this does NOT touch zone selection below or homeBase - which zone
+    // gets picked and where a proposed stop's drive time starts from both
+    // stay exactly as if the committed visit didn't exist. Coupling either
+    // of those to an already-planned visit's location is the anchor-style
+    // merge this file's callers are required to stay away from (see
+    // feedback_route_planner_proposals_only); a plain minutes deduction
+    // isn't that; it's just not overbooking the day.
+    const budgetMinutes = Math.max(0, hoursPerDay * 60 - (committedMinutesByDate[date] || 0));
     const dayLocked = lockedByDate[date];
     const dayCandidates = dayLocked
       ? remaining.map((c) => ({ ...c, lockedElsewhere: dayLocked.has(c.place.id) }))

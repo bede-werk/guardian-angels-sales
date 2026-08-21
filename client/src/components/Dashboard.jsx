@@ -1,9 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api, formatDate, suppressionNote, navigateRouteUrl, VISIT_TYPE_LABELS } from '../api';
 import EmptyState from './ui/EmptyState';
+import Button from './ui/Button';
 import PlaceDetail from './PlaceDetail';
 import PersonDetail from './PersonDetail';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
+import VisitLogModal from './VisitLogModal';
+import PlannedDayModal from './PlannedDayModal';
+import { getCurrentPosition } from '../geolocation';
 
 // The five things the dashboard answers, in the order it answers them
 // (2026-08-18, replacing the old two-card "completed this week + never
@@ -19,10 +23,15 @@ import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 // dashboard.js), which is also where the scoping rules live - 1 and 2 are
 // this rep's own day and week, 3, 4 and 5 are org-wide.
 //
-// Nothing on this screen is an editing surface. Every row is a way INTO the
-// screen that owns the thing it names (PlaceDetail, PersonDetail, the
-// Calendar tab), which is why this file has no mutating API calls in it at
-// all - only `load`.
+// Like every other tab, this is a normal, fully-interactive page - nothing
+// about being "the dashboard" makes it read-only. The Today card's "View
+// all stops" link already opens the same full-featured PlannedDayModal
+// VisitsCalendar's own day drill-down uses (log/snooze/edit/delete a visit,
+// whole-day Edit/Discard), and there's no reason a future card here
+// couldn't do the same. Most rows today just link out to the screen that
+// owns the thing they name (PlaceDetail, PersonDetail, the Calendar tab)
+// because building each one inline hasn't been worth it yet, not because
+// of some rule against it.
 
 // Mon..Sun initials for the week strip. Single letters, because the strip is
 // seven columns inside one card and even "Mon" wraps at narrow widths.
@@ -68,14 +77,19 @@ function StopLine({ label, stop, onOpenVisit, loading }) {
   );
 }
 
-export default function Dashboard({ date, userId }) {
+export default function Dashboard({ date, userId, onNavigateToPlanner }) {
   const [data, setData] = useState(null); // the dashboard API response, or null while loading
   const [error, setError] = useState(null);
   const [selectedPlaceId, setSelectedPlaceId] = useState(null); // which place's detail modal is open, if any
   const [selectedPersonId, setSelectedPersonId] = useState(null); // which person's detail modal is open, if any
   const [viewingVisit, setViewingVisit] = useState(null); // the fetched visit open in UpcomingVisitDetailModal, or null
+  const [loggingVisit, setLoggingVisit] = useState(null); // viewingVisit handed off to VisitLogModal for completing, or null
+  const [viewingTodayRoute, setViewingTodayRoute] = useState(false); // true while today's full stop list is open in PlannedDayModal
   const [visitLoading, setVisitLoading] = useState(false); // true while openVisit's fetch is in flight - blocks a second click firing a second fetch
   const [visitLoadError, setVisitLoadError] = useState(null);
+  const [reopeningToday, setReopeningToday] = useState(false); // true while today's visits are being pulled back into an editable Route Planner draft
+  const [deletingToday, setDeletingToday] = useState(false); // true while today's planned visits are being discarded
+  const [todayActionError, setTodayActionError] = useState(null); // inline banner for the Edit/Discard actions below - same shape as VisitsCalendar's actionError
 
   // The Today card's "Next visit" only has a narrow stop shape (see
   // routes/dashboard.js's select) - not the full visit UpcomingVisitDetailModal
@@ -95,6 +109,20 @@ export default function Dashboard({ date, userId }) {
       setVisitLoadError(e.message);
     } finally {
       setVisitLoading(false);
+    }
+  }
+
+  // Same confirm+delete+reload shape as PlannedDayModal's own removeVisit -
+  // deletes ONE planned visit, called from the Delete button UpcomingVisitDetailModal
+  // renders when onDelete is passed.
+  async function removeViewingVisit(visit) {
+    if (!window.confirm("Delete this planned visit? This can't be undone.")) return;
+    try {
+      await api.deleteVisit(visit.visit_id ?? visit.id);
+      setViewingVisit(null);
+      load();
+    } catch (e) {
+      window.alert(e.message);
     }
   }
 
@@ -134,6 +162,47 @@ export default function Dashboard({ date, userId }) {
   // just doesn't render rather than linking to a broken or empty Maps URL.
   const routeNav = navigateRouteUrl(remainingStops);
 
+  // Pulls today's visits back out into an editable Route Planner draft -
+  // same endpoint/confirm copy/geolocation dance as VisitsCalendar's own
+  // reopenPlannedDay. This screen has no draft workspace of its own to show
+  // the result in either, so a successful reopen hands off to the Route
+  // Planner tab (onNavigateToPlanner) instead of rendering anything here.
+  async function reopenTodayRoute() {
+    if (!window.confirm("Edit today's planned visits? They'll temporarily show as not-yet-scheduled while you make changes - accept the updated proposal again when you're done.")) return false;
+    setTodayActionError(null);
+    setReopeningToday(true);
+    try {
+      const loc = await getCurrentPosition();
+      await api.scheduleDrafts.reopenDay(today.date, { lat: loc.lat, lng: loc.lng });
+      return true;
+    } catch (e) {
+      setTodayActionError(e.message);
+      return false;
+    } finally {
+      setReopeningToday(false);
+    }
+  }
+
+  // Same endpoint/confirm copy as VisitsCalendar's deletePlannedDay. Reloads
+  // the dashboard on success (unlike the reopen path above, which navigates
+  // away instead) so the count tile and Next visit card drop the discarded
+  // stops immediately.
+  async function deleteTodayRoute() {
+    if (!window.confirm("Remove today's planned visits? This can't be undone.")) return false;
+    setTodayActionError(null);
+    setDeletingToday(true);
+    try {
+      await api.scheduleDrafts.deleteCommittedDay(today.date);
+      await load();
+      return true;
+    } catch (e) {
+      setTodayActionError(e.message);
+      return false;
+    } finally {
+      setDeletingToday(false);
+    }
+  }
+
   return (
     <div className="grid">
 
@@ -146,25 +215,48 @@ export default function Dashboard({ date, userId }) {
           <span className="muted tiny">{formatDate(today.date)}</span>
         </div>
         <div className="card-body dash-today-body">
-          {/* A running tally of what's LEFT, not the day's total (Bede,
-              2026-08-18) - it counts down as each stop gets logged, rather
-              than sitting fixed at the morning's count all day. */}
-          <div className="dash-today-count">
-            <div className="num">{remainingStops.length}</div>
-            <div className="label">{remainingStops.length === 1 ? 'stop' : 'stops'} left today</div>
-          </div>
-
           <div className="dash-today-facts">
-            {/* One message for both "nothing was ever scheduled" and "it's
-                all done" - from here, they're the same fact (nothing left
-                to do today), and neither has an actual next visit to
-                caption, so the "Next visit" label doesn't show for either. */}
-            {upNext ? (
-              <StopLine label="Next visit" stop={upNext} onOpenVisit={openVisit} loading={visitLoading} />
-            ) : (
-              <div className="dash-stop-card static muted">Nothing left for today</div>
-            )}
-            {visitLoadError && <div className="muted tiny dash-visit-error">Couldn&rsquo;t open that visit: {visitLoadError}</div>}
+            {/* Count + View button pieced together as one section - a stat
+                and the action that belongs to it - with no divider between
+                them, only the one before Next visit (a separate fact). */}
+            <div className="dash-today-summary">
+              {/* A running tally of what's LEFT, not the day's total (Bede,
+                  2026-08-18) - it counts down as each stop gets logged,
+                  rather than sitting fixed at the morning's count all day. */}
+              <div className="dash-today-count">
+                <div className="num">{remainingStops.length}</div>
+                <div className="label">{remainingStops.length === 1 ? 'stop' : 'stops'} left today</div>
+              </div>
+              {remainingStops.length > 0 && (
+                <Button variant="secondary" size="small" className="dash-view-all-link" onClick={() => setViewingTodayRoute(true)}>
+                  {/* "View all 1 stop" reads wrong - "all" implies more than
+                      one - so the singular case drops both "all" and the
+                      redundant count instead of just fixing the noun's
+                      plural. */}
+                  {remainingStops.length === 1 ? 'View the stop planned today' : `View all ${remainingStops.length} stops planned today`}
+                </Button>
+              )}
+            </div>
+            {/* Side by side, not stacked above Next visit - same reasoning
+                as dash-next-visit's own row-not-stacked layout below: a
+                stack would pull the block's center up with the summary's own
+                height, taking Next visit's card off the Today card's true
+                vertical center with it. As a separate flex item instead,
+                Next visit centers on its own height and the summary centers
+                against it, landing lower than a plain top-aligned stack
+                would put it. */}
+            <div className="dash-today-next">
+              {/* One message for both "nothing was ever scheduled" and "it's
+                  all done" - from here, they're the same fact (nothing left
+                  to do today), and neither has an actual next visit to
+                  caption, so the "Next visit" label doesn't show for either. */}
+              {upNext ? (
+                <StopLine label="Next visit" stop={upNext} onOpenVisit={openVisit} loading={visitLoading} />
+              ) : (
+                <div className="muted">Nothing left for today</div>
+              )}
+              {visitLoadError && <div className="muted tiny dash-visit-error">Couldn&rsquo;t open that visit: {visitLoadError}</div>}
+            </div>
           </div>
 
           <div className="dash-today-action">
@@ -189,6 +281,9 @@ export default function Dashboard({ date, userId }) {
             )}
           </div>
         </div>
+        {/* Edit/Discard failures from the full-day modal below - same inline
+            placement/wording pattern as VisitsCalendar's own actionError. */}
+        {todayActionError && <div className="error-banner dash-today-action-error">{todayActionError}</div>}
       </div>
 
       <div className="dash-row">
@@ -368,13 +463,54 @@ export default function Dashboard({ date, userId }) {
           onOpenPlace={(placeId) => setSelectedPlaceId(placeId)}
         />
       )}
-      {/* Read-only - no onComplete/onSnoozed/onDelete/onEdited, same
-          convention PlannedDayModal uses for someone else's route (see that
-          file's own read-only mode). This screen has no mutating API calls
-          anywhere else either; logging or rescheduling this visit still
-          happens from the Calendar/Route Planner, not from here. */}
+      {/* Same log/snooze/edit/delete wiring as PlannedDayModal's own
+          viewingVisit below - load() stands in for its reloadOwnVisits+
+          onChanged pair, since this card's count/Next-visit both come from
+          the one dashboard fetch rather than a separate visits list. */}
       {viewingVisit && (
-        <UpcomingVisitDetailModal visit={viewingVisit} onClose={() => setViewingVisit(null)} />
+        <UpcomingVisitDetailModal
+          visit={viewingVisit}
+          onClose={() => setViewingVisit(null)}
+          onComplete={(v) => { setViewingVisit(null); setLoggingVisit(v); }}
+          onSnoozed={() => { setViewingVisit(null); load(); }}
+          onDelete={removeViewingVisit}
+          onEdited={() => { setViewingVisit(null); load(); }}
+        />
+      )}
+      {loggingVisit && (
+        <VisitLogModal
+          visit={loggingVisit}
+          userId={userId}
+          onClose={() => setLoggingVisit(null)}
+          onSaved={load}
+        />
+      )}
+      {/* Logging/snoozing/editing/deleting a visit, or editing/discarding
+          the whole day, all work exactly as they do from VisitsCalendar's
+          own drill-down - this is this rep's own day, so there's no reason
+          any of it should be locked down here. onChanged reloads the
+          dashboard so the count tile and Next visit card reflect whatever
+          changed; onEditDay pulls the day into a Route Planner draft and
+          hands off there instead (see reopenTodayRoute above), same as
+          VisitsCalendar's own Edit. */}
+      {viewingTodayRoute && (
+        <PlannedDayModal
+          date={today.date}
+          userId={userId}
+          onChanged={load}
+          onClose={() => setViewingTodayRoute(false)}
+          onViewPlace={(placeId) => setSelectedPlaceId(placeId)}
+          onEditDay={async () => {
+            const reopened = await reopenTodayRoute();
+            if (reopened) {
+              setViewingTodayRoute(false);
+              onNavigateToPlanner?.();
+            }
+          }}
+          editingDay={reopeningToday}
+          onDeleteDay={async () => { if (await deleteTodayRoute()) setViewingTodayRoute(false); }}
+          deletingDay={deletingToday}
+        />
       )}
     </div>
   );
