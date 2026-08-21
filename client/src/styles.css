@@ -343,6 +343,15 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    only the button appears selected, instead of both lighting up at once. */
 .hover-row:has(.btn:hover) { background: none; }
 .hover-row:has(.icon-remove:hover) { background: none; }
+/* .btn.secondary's own background is the SAME blue-tint-1 as a hovered
+   row's highlight (e.g. the Champion/Solid/Acquaintance/Cancel row in the
+   Rate Relationships picker) - without this, an unselected secondary button
+   visually disappears into the row the moment it's hovered, only resolving
+   back into a "button" once the cursor lands exactly on it. Swap to the
+   surrounding card's own white while the row is hovered but the button
+   itself isn't, so it reads as a button sitting ON the highlight instead of
+   merging into it. */
+.hover-row:hover .btn.secondary:not(:hover) { background: var(--card); }
 
 /* Route Planner's stop rows: the click-to-open-detail area is only .main
    (the drag handle + reorder buttons sit to its left, the time estimate +

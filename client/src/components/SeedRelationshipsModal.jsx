@@ -82,12 +82,21 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
     setPending((p) => {
       const next = { ...p };
       // Clicking the already-selected choice clears it back to "no read."
-      next[person.id] = currentSeed(person) === value ? null : value;
+      const picked = currentSeed(person) === value ? null : value;
+      // changeCount (below) is a running total of REAL changes, so landing
+      // back on whatever's already saved - by picking it directly, or by
+      // toggling through choices back to it - has to drop the pending entry
+      // entirely rather than just setting it to the same value. Leaving a
+      // no-op entry in `pending` is exactly what made the footer keep saying
+      // "Save 1 rating" after a rep deselected a fresh pick back to nothing.
+      if (picked === person.relationship_seed) delete next[person.id];
+      else next[person.id] = picked;
       return next;
     });
     // Deliberately does NOT close the picker - a rep can try a choice, see it
-    // highlighted, and change their mind without reopening. Only clicking the
-    // row itself (or Cancel/Reset) closes it - see their handlers below.
+    // highlighted, and change their mind without reopening. Clicking the row
+    // itself just hides the picker again (stopEditing), keeping whatever's
+    // pending; only Cancel/Reset below actually touch the pending value.
   }
 
   // A saved seed that's never had a real visit to fade into is stale by
@@ -118,10 +127,10 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
   }
 
   // Cancel = back out of THIS editing session entirely, discarding whatever
-  // was picked before backing out - not just closing the picker (that alone
-  // would leave a "click again to clear"-style pending change in place, which
-  // isn't what a rep clicking Cancel is asking for). Reset is the opposite:
-  // a deliberate, kept choice - see reset() above.
+  // was picked before backing out - unlike stopEditing (used when the row
+  // itself is clicked to hide the picker), which just hides it and leaves
+  // any pending pick in place. Reset is the opposite of Cancel: a deliberate,
+  // kept choice - see reset() above.
   function cancelEdit(id) {
     setPending((p) => {
       if (!Object.prototype.hasOwnProperty.call(p, id)) return p;
@@ -245,8 +254,8 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
                           padding: '8px 0',
                           borderTop: i === 0 ? 'none' : '1px solid var(--border)',
                         }}
-                        title={saving ? undefined : editing ? 'Click to close without changing this rating' : 'Click to rate this relationship'}
-                        onClick={saving ? undefined : () => (editing ? cancelEdit(person.id) : startEditing(person.id))}
+                        title={saving ? undefined : editing ? 'Click to hide the picker - your pick, if any, is kept' : 'Click to rate this relationship'}
+                        onClick={saving ? undefined : () => (editing ? stopEditing(person.id) : startEditing(person.id))}
                       >
                         <span className="tiny" style={{ flex: 1, minWidth: 140 }}>
                           {person.name}
