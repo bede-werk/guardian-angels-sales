@@ -2303,3 +2303,89 @@ tunable a block with help plus Higher:/Lower: consequence lines. `CADENCE_DAYS` 
 (every field resolves, every field has help, every numeric field is bounded and its own default
 fits inside those bounds, every default validates). Verified live in the browser end to end, and
 boot resilience exercised against orphan/invalid rows. See `SETTINGS_PAGE.md` §10.
+
+## 22. Visits tab - search/filter/paginate over every visit ever recorded (2026-08-22)
+
+Sixth tab (`Dashboard | Route Planner | Calendar | Visits | Places | People`), added because
+every other visit surface in the app is a keyhole onto one slice: Calendar is one month bucketed
+by day, PlaceDetail/PersonDetail are one place/person, Dashboard is today+this week. Nothing
+before this could answer "every skipped pre-qualification in July" or list a visit across a date
+range spanning months. It's a LENS, not a new way to mutate a visit - every plan/log/edit/snooze/
+delete action here is the exact same modal (`PlanVisitModal`, `VisitDetailModal`,
+`UpcomingVisitDetailModal`, `VisitLogModal`) every other tab already uses; row-click just opens
+whichever one matches that row's status.
+
+**Two statuses were invisible anywhere in the UI before this**, and this tab is now the only
+place either can be seen:
+- `snoozed` - `VisitsCalendar.jsx` deliberately drops these from the month grid (a snooze never
+  moves `scheduled_date`, so there's no day on the calendar that's honestly "about" it).
+- `skipped`, across more than one day at a time - the Calendar only ever shows one day's worth
+  in its drill-down.
+
+**Server: `GET /api/visits`** (`server/src/routes/visits.js`, registered just before the existing
+`GET /calendar`) - new `server/src/services/visitQuery.js` does the work, following the same
+pure/impure split as `manualVisits.js`/`conflictDetection.js`:
+- `parseVisitListParams(query)` - pure validation/normalization/clamping (limit 1-200, default
+  50; malformed dates/unknown status/unknown sort all throw a 400).
+- `applyVisitFilters(qb, params)` - the ONE WHERE-clause builder, shared by the page query, the
+  total count, and the status summary, so those three can never disagree. Every encounter-based
+  filter (`personId`, `outcome`, `metWith`, `theyRequested`) and `madeCommitment` uses
+  `whereExists`, never a join - a join would fan a trip with N matching encounters into N
+  duplicate rows and inflate the count.
+- Every sort tiebreaks down to `v.id`, or LIMIT/OFFSET pagination would skip/duplicate rows
+  across pages whenever the primary sort key ties (routine - same-day visits are the normal
+  case).
+- LEFT JOINs throughout (detach-not-delete: a visit outlives its place/rep). A place-attribute
+  filter (`category`/`tier`/`region`) therefore naturally excludes a detached visit - intended,
+  not a bug, and called out in the client's own row rendering (`(place deleted)`).
+
+**Deliberate summary semantics**: `summarizeVisits` applies every filter EXCEPT `status`, so the
+four status counts (`planned`/`completed`/`skipped`/`snoozed`) act as a stable segmented control
+- clicking "Skipped" narrows the table below without the other three numbers jumping. The
+summary strip is captioned "Across all statuses matching these filters" so this doesn't read as
+a contradiction against the table's own (status-respecting) total.
+
+**Client** (`client/src/components/Visits.jsx`): filter bar modeled on `Places.jsx` (debounced
+200ms, `requestIdRef` stale-response guard, `rows` never nulled on refetch). Five quick-filter
+chips (Today / This week / Upcoming / Skipped / Snoozed) each set `{status, from, to}` as one
+patch, clearing the other two fields so they can't silently combine; "Mine" is a sixth, independent
+toggle on `userId`. "More filters" discloses type/outcome/met-with/category/tier/region/origin/
+planned-by plus three checkboxes.
+
+Pagination is a growing LIMIT at `offset: 0` (`PAGE_SIZE * pagesLoaded`), not real OFFSET paging -
+"Load more" and "refresh after a mutation" are the same request shape, and a refresh after
+editing/logging/deleting a row re-fetches exactly what's already on screen instead of resetting
+scroll to page 1. If a mutation moves the open modal's row out of the current filter, the modal
+closes itself once the refetch confirms the row is gone (same pattern as `VisitsCalendar.jsx`'s
+`completedDate` effect).
+
+Filter state (`DEFAULT_VISIT_FILTERS`, exported from `Visits.jsx`) is lifted into `App.jsx` for
+the same reason `calendarScope` already is: the tab unmounts entirely on every tab switch, so a
+local `useState` would silently reset a hard-won filter set. Reset on logout alongside
+`calendarScope`.
+
+**No new client-side permission gating** - buttons are offered unconditionally and a denial
+surfaces as the modal's own inline error or a `window.alert`, exactly like `VisitsCalendar.jsx`/
+`Dashboard.jsx` already do for the same modals. Reproducing the edit/delete permission matrix
+(`manualVisits.js`'s `canEditManualVisit`/`canDeleteManualVisit`, the route handlers' own
+ownership checks) as a second, client-side copy here would be exactly the kind of drift this
+codebase's services already avoid.
+
+**Refactors along the way**: `encounterSummary` (the "with Flibber Gibblits and a staff member"
+one-liner) moved from a private `PlaceDetail.jsx` helper into `VisitDetailModal.jsx` and exported
+- that file's header comment already claims to be the one home for this vocabulary, and a third
+consumer (this tab) needing its own copy was the drift that comment warns against.
+`SkippedVisitDetailModal.jsx` was renamed to `ResolvedVisitDetailModal.jsx` and generalized to
+render either terminal status (`skipped` or `snoozed`) off `visit.status`, since a fourth status
+existed with no viewer before this tab needed one; both existing call sites
+(`VisitsCalendar.jsx`, `PlaceDetail.jsx`) updated, behavior unchanged for `skipped`.
+
+**Testing**: `server/src/services/visitQuery.test.js`, 29 new tests (in-memory sqlite, no
+require-cache trick needed since `visitQuery.js` takes `db` as a parameter rather than requiring
+the module-level singleton) - covers `parseVisitListParams`'s validation, every filter alone and
+combined, the anti-fan-out regression (an encounter filter on a trip with 3 encounters returns
+the trip exactly once), pagination disjointness, a detached visit's visibility rules, and the
+summary's status-independence. 517 backend tests passing total. Verified live in the browser
+(Playwright + system Chrome, per the existing local-testing convention) against real data -
+confirmed both actual snoozed visits in the dev DB are now visible for the first time anywhere in
+the app.

@@ -288,6 +288,16 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.cap-medium { background: var(--blue-tint-1); color: var(--blue); }
 .badge.cap-low { background: var(--grey-tint-1); color: var(--muted); }
 
+/* Visit status (StatusChip, the Visits tab's own column) - completed reuses
+   the "good" teal cap-high/rel-strong already carries, planned reuses the
+   neutral-informational blue, skipped is grey (a passive lapse, not a
+   verdict), snoozed uses the mauve warning tint since it's a deliberate
+   deferral worth noticing rather than routine history. */
+.badge.st-planned { background: var(--blue-tint-1); color: var(--blue-dark); }
+.badge.st-completed { background: var(--teal-tint-2); color: var(--teal-dark); }
+.badge.st-skipped { background: var(--grey-tint-1); color: var(--muted); }
+.badge.st-snoozed { background: var(--mauve-tint-1); color: var(--mauve); }
+
 /* Relationship trend badge (see RelationshipDetail.jsx) - mauve for heating
    up, blue for cooling down. A temperature metaphor, not this app's usual
    good/bad color convention (mauve is --warn elsewhere): text only, no

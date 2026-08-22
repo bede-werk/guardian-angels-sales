@@ -6,10 +6,11 @@ import useClosingTransition from '../hooks/useClosingTransition';
 
 // Short, joinable labels for a non-named encounter - MET_WITH_LABELS in api.js
 // reads as a form option ("A staff member (name unknown)"), too long to sit
-// inline in "with X, Y and Z". Exported (with the two helpers below) because
-// PlaceDetail and PersonDetail describe the same `encounters` arrays in their
-// visit-history rows; keeping one spelling of "a staff member" in the place
-// that owns encounter rendering beats three drifting copies.
+// inline in "with X, Y and Z". Exported (with the helpers below) because
+// PlaceDetail, PersonDetail and the Visits tab all describe the same
+// `encounters` arrays in their visit-history rows; keeping one spelling of
+// "a staff member" in the place that owns encounter rendering beats several
+// drifting copies.
 export const ENCOUNTER_SHORT_LABELS = {
   staff: 'a staff member',
   receptionist: 'the receptionist',
@@ -30,6 +31,20 @@ export function encounterLabel(encounter) {
 export function joinNames(names) {
   if (names.length <= 1) return names.join('');
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+// Who was met on one trip, as a single inline phrase: "with Flibber Gibblits,
+// New Guy and a staff member". Moved here from PlaceDetail.jsx (its original,
+// sole caller) once the Visits tab needed the exact same phrase for its own
+// "Who was met" column - a second copy of this one-liner was exactly the
+// kind of drift this file's header comment above already argues against.
+// List endpoints return only a name-only summary of each trip's encounters
+// (full per-encounter detail needs GET /api/visits/:id - see this modal's
+// own fetch below), which is exactly enough for this. A planned trip has no
+// encounters yet and gets no phrase at all rather than an empty "with".
+export function encounterSummary(encounters) {
+  if (!encounters || encounters.length === 0) return null;
+  return `with ${joinNames(encounters.map(encounterLabel))}`;
 }
 
 // discharge_reason -> a short, past-tense label for a visit-history row.

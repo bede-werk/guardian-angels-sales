@@ -9,7 +9,7 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // (VisitsCalendar.jsx). Every row here is always `status: 'skipped'` (the
 // caller already filtered before handing them over), so unlike the old
 // shared CalendarDayModal this split off from, there's no per-row status
-// branching to do: every row just opens SkippedVisitDetailModal on click -
+// branching to do: every row just opens ResolvedVisitDetailModal on click -
 // its own detail popup, not the completed-trip VisitDetailModal, since a
 // skipped visit has no encounters to show. Row layout mirrors
 // PlannedDayModal/CompletedVisitsModal's main/actions split - a "View place"

@@ -96,3 +96,41 @@ tiebreaker is ceremony: history-list cleanup reads as routine (kind 2),
 destroying a whole visit/referral/category reads as consequential (kind 3).
 When in doubt, ask rather than guess - that line moved once already in this
 audit and is worth getting right per-case rather than by rote.
+
+---
+
+## Status/level chips (colored pill labels)
+
+Audited 2026-08-22 when the Visits tab needed a fourth family. All four live in
+`client/src/components/ui/Chip.jsx` and share one visual language: a `.badge`
+base class plus a `-{value}` suffix picking the color, always three tints per
+family (best/neutral/worst, or a direct semantic mapping for statuses).
+
+### The four families
+
+- **`OutcomeChip`** (`.badge.o-*`) - a visit's outcome (substantive /
+  introduced_new / brief / materials_only / unavailable / declined).
+- **`RelationshipChip`** (`.badge.rel-*`) - computed relationship level
+  (strong/medium/weak -> teal/blue/grey).
+- **`CapacityChip`** (`.badge.cap-*`) - computed capacity level (high/medium/low
+  -> the same teal/blue/grey scale as relationship, a different axis but the
+  same "which tier is this" visual language).
+- **`StatusChip`** (`.badge.st-*`), new - a visit's status (planned/completed/
+  skipped/snoozed). Completed reuses the "good" teal; planned reuses the
+  neutral blue; skipped is grey (a passive lapse, not a verdict - see
+  `services/visitLifecycle.js`'s sweep); snoozed uses the mauve warning tint
+  since it's a deliberate deferral worth noticing, not routine history. Used
+  today only in the Visits tab's table - every other visit surface already
+  groups by status into separate lists/cards instead of needing an inline
+  label for it.
+
+### Decision rule
+
+A new computed level/state gets its own `-prefix` family (not folded into an
+existing one) when its value set means something different from every
+existing family's - reusing `rel-`'s three colors for a fourth thing would
+make two unrelated pills look identical by accident. Keep the "how many
+distinct values" question separate from "which colors": three-tint families
+reuse the teal/blue/grey scale by convention; a family with a different
+number of values (StatusChip has four) just extends the same underlying
+`--*-tint-*` custom properties rather than inventing new ones.

@@ -9,26 +9,15 @@ import PlaceModal from './PlaceModal';
 import AssignPersonModal from './AssignPersonModal';
 import PersonDetail from './PersonDetail';
 import ReferralModal from './ReferralModal';
-import VisitDetailModal, { encounterLabel, joinNames, commitmentMadeText } from './VisitDetailModal';
+import VisitDetailModal, { encounterSummary, commitmentMadeText } from './VisitDetailModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
-import SkippedVisitDetailModal from './SkippedVisitDetailModal';
+import ResolvedVisitDetailModal from './ResolvedVisitDetailModal';
 import { PlaceRelationship } from './RelationshipDetail';
 import { PlaceCapacity } from './CapacityDetail';
 import { PlaceCommitments } from './PlaceCommitments';
 import AddCommitmentModal from './AddCommitmentModal';
 import CommitmentDetailModal from './CommitmentDetailModal';
 import useClosingTransition from '../hooks/useClosingTransition';
-
-// Who was met on one trip, as a single inline phrase: "with Flibber Gibblits,
-// New Guy and a staff member". The visit list endpoint returns a name-only
-// summary of each trip's encounters (full per-encounter detail needs
-// GET /api/visits/:id - see VisitDetailModal), which is exactly enough for
-// this. A planned trip has no encounters yet and gets no phrase at all rather
-// than an empty "with".
-function encounterSummary(encounters) {
-  if (!encounters || encounters.length === 0) return null;
-  return `with ${joinNames(encounters.map(encounterLabel))}`;
-}
 
 // Presets for the "Do not visit until…" panel - longer-scale than
 // UpcomingVisitDetailModal's own SNOOZE_PRESETS (1/2 weeks, 1 month) on
@@ -72,7 +61,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [deleting, setDeleting] = useState(false);
   const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
   const [viewingVisit, setViewingVisit] = useState(null); // visit whose full detail popup is open, if any
-  const [viewingSkippedVisit, setViewingSkippedVisit] = useState(null); // skipped visit whose read-only popup is open, if any
+  const [viewingResolvedVisit, setViewingResolvedVisit] = useState(null); // skipped/snoozed visit whose read-only popup is open, if any
   const [viewingUpcomingVisit, setViewingUpcomingVisit] = useState(null); // upcoming (planned) visit whose read-only popup is open, if any
   const [editingVisit, setEditingVisit] = useState(null); // visit currently open in VisitLogModal for editing, if any
   // Durable, org-level notes (separate from any single visit's notes or a
@@ -897,7 +886,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               all three, not three entries. Clicking a completed row opens the
               trip, where each person can be opened on their own; a skipped
               row (tagged "Skipped" - no encounters, it never happened) opens
-              SkippedVisitDetailModal instead, same as the Calendar tab's
+              ResolvedVisitDetailModal instead, same as the Calendar tab's
               skipped-visit popup, with the same "Log this visit" path to turn
               it into a completed one.
 
@@ -922,7 +911,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       key={v.id}
                       className="hover-row"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderTop: '1px solid var(--border)' }}
-                      onClick={() => { setEditingNotes(false); if (v.status === 'skipped') setViewingSkippedVisit(v); else setViewingVisit(v); }}
+                      onClick={() => { setEditingNotes(false); if (v.status === 'skipped') setViewingResolvedVisit(v); else setViewingVisit(v); }}
                     >
                       {/* minWidth:0 so a long "with A, B and C" line wraps
                           within its own column instead of pushing the delete
@@ -1077,11 +1066,11 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
         />
       )}
 
-      {viewingSkippedVisit && (
-        <SkippedVisitDetailModal
-          visit={viewingSkippedVisit}
-          onClose={() => setViewingSkippedVisit(null)}
-          onComplete={(v) => { setViewingSkippedVisit(null); setEditingVisit(v); }}
+      {viewingResolvedVisit && (
+        <ResolvedVisitDetailModal
+          visit={viewingResolvedVisit}
+          onClose={() => setViewingResolvedVisit(null)}
+          onComplete={(v) => { setViewingResolvedVisit(null); setEditingVisit(v); }}
         />
       )}
 

@@ -148,6 +148,21 @@ export const api = {
   deleteVisitEncounter: (visitId, encounterId) =>
     request(`/visits/${visitId}/encounters/${encounterId}`, { method: 'DELETE' }),
   visitsCalendar: (month, userId) => request(`/visits/calendar?month=${month}${userId ? `&userId=${userId}` : ''}`),
+  // The Visits tab's search/filter/paginate call (server/src/routes/
+  // visits.js's GET /). Unlike every other list call in this file (places(),
+  // people.list(), ...), the response is NOT a bare array - it's an envelope
+  // `{ visits, total, limit, offset, summary }` - because visits are the one
+  // table that grows without bound, so this endpoint paginates rather than
+  // returning everything at once. Same "drop empty/undefined params" query-
+  // string building as api.places()/api.people.list().
+  visits: {
+    list: (params = {}) => {
+      const q = new URLSearchParams(
+        Object.entries(params).filter(([, v]) => v !== '' && v != null)
+      ).toString();
+      return request(`/visits${q ? `?${q}` : ''}`);
+    },
+  },
 
   // Dashboard rollup - server/src/routes/dashboard.js
   dashboard: (userId, date) =>
@@ -292,6 +307,21 @@ export const MET_WITH_LABELS = {
   staff: 'A staff member (name unknown)',
   receptionist: 'Receptionist or front desk',
   nobody: 'Nobody - drop-off',
+};
+
+// Display labels for a visit's status (server/src/routes/visits.js's
+// STATUSES). Two of these are easy to confuse: 'skipped' is a PASSIVE lapse,
+// stamped automatically by services/visitLifecycle.js's sweep once a planned
+// date passes without being logged; 'snoozed' is a DELIBERATE rep deferral
+// (POST /visits/:id/snooze) that also sets the place's own snooze_until,
+// suppressing it from route-planner generation for the whole snooze window.
+// Both are terminal - neither writes lastVisitedAt/urgency the way
+// 'completed' does.
+export const VISIT_STATUS_LABELS = {
+  planned: 'Planned',
+  completed: 'Completed',
+  skipped: 'Skipped',
+  snoozed: 'Snoozed',
 };
 
 // Display labels for a computed relationship level (services/relationship.js).
