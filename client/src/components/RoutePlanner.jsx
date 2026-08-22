@@ -626,6 +626,19 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
           <ul className="list">
             {day.stops.map((stop, i) => {
               const rowBusy = busy || pendingPlaceId === stop.place_id;
+              // Computed once and reused below: alreadyVisitedToday's badge
+              // is suppressed when this is FLOOR_COMPLETED, since whenever
+              // a visit was completed literally today it's necessarily the
+              // MOST RECENT completed visit (today can't be beaten by an
+              // earlier date) - so FLOOR_COMPLETED, when present alongside
+              // alreadyVisitedToday, is always describing that exact same
+              // visit, just relative to this stop's own target date instead
+              // of real-world today ("Visited by Bede on 8/22 - 3 days ago"
+              // vs "Already visited today"). Not suppressed for any OTHER
+              // conflict type (SAME_DATE_VISIT/DRAFT_ELSEWHERE/FLOOR_PLANNED)
+              // - those are genuinely unrelated facts about the target date
+              // itself, not a restatement of today's visit.
+              const primaryStopConflict = stop.conflicts && stop.conflicts.length > 0 ? primaryConflict(stop.conflicts) : null;
               return (
                 <li
                   key={stop.place_id}
@@ -661,10 +674,15 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         this place (routes/scheduleDraft.js's alreadyVisitedTodayPlaceIds).
                         Narrower and older than the stop.conflicts detector
                         badge below (exact-today only, any status) - kept
-                        separate rather than folded in since it answers a
-                        different question ("did this already happen today")
-                        than the detector's ("does this collide"). */}
-                    {stop.alreadyVisitedToday && (
+                        separate rather than folded in since it usually
+                        answers a different question ("did this already
+                        happen today") than the detector's ("does this
+                        collide"). Suppressed specifically when the detector's
+                        own badge is FLOOR_COMPLETED, since that's always the
+                        exact same today's-visit fact restated relative to
+                        this stop's target date instead - see
+                        primaryStopConflict's own comment above. */}
+                    {stop.alreadyVisitedToday && primaryStopConflict?.type !== 'FLOOR_COMPLETED' && (
                       <div
                         className="tiny"
                         style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
@@ -706,17 +724,14 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         primaryConflict picks the single most-certain one to
                         show, same "one line, not a pile-on" rule as
                         VisitLogModal.jsx/PlanVisitModal.jsx's own notices. */}
-                    {stop.conflicts && stop.conflicts.length > 0 && (() => {
-                      const c = primaryConflict(stop.conflicts);
-                      return c ? (
-                        <div
-                          className="tiny"
-                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
-                        >
-                          {stopConflictMessage(c, userId)}
-                        </div>
-                      ) : null;
-                    })()}
+                    {primaryStopConflict && (
+                      <div
+                        className="tiny"
+                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                      >
+                        {stopConflictMessage(primaryStopConflict, userId)}
+                      </div>
+                    )}
                     {/* Place Commitments badge (spec §6.1) - a due commitment
                         is exactly why this place jumped to the top of the
                         proposal, so the badge is what explains the ranking,
