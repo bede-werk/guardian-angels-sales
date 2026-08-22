@@ -87,8 +87,14 @@ function stopConflictMessage(c, viewerId) {
       return `${who} already ${verb} a ${c.status || 'planned'} visit here on ${formatDate(c.otherDate)}.`;
     }
     case 'FLOOR_COMPLETED': {
+      // daysApart is measured against THIS STOP's own target date, not
+      // real-world today (see conflictDetection.js's detectConflicts:
+      // `today` is always the date under evaluation) - "ago" implies
+      // "before now," which is wrong for any stop not dated today. "prior"
+      // carries no such claim - same fix as VisitLogModal.jsx's
+      // conflictMessage/mirror of this function.
       const days = c.daysApart;
-      return `Visited by ${c.otherUserName || 'someone'} on ${formatDate(c.otherDate)} - ${days} day${days === 1 ? '' : 's'} ago.`;
+      return `Visited by ${c.otherUserName || 'someone'} on ${formatDate(c.otherDate)} - ${days} day${days === 1 ? '' : 's'} prior.`;
     }
     case 'FLOOR_PLANNED':
       return `Visit already planned by ${c.otherUserName || 'someone'} for ${formatDate(c.otherDate)}.`;
@@ -633,7 +639,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
               // earlier date) - so FLOOR_COMPLETED, when present alongside
               // alreadyVisitedToday, is always describing that exact same
               // visit, just relative to this stop's own target date instead
-              // of real-world today ("Visited by Bede on 8/22 - 3 days ago"
+              // of real-world today ("Visited by Bede on 8/22 - 3 days prior"
               // vs "Already visited today"). Not suppressed for any OTHER
               // conflict type (SAME_DATE_VISIT/DRAFT_ELSEWHERE/FLOOR_PLANNED)
               // - those are genuinely unrelated facts about the target date

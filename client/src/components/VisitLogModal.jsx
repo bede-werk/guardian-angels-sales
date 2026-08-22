@@ -15,8 +15,13 @@ function conflictMessage(conflict, sameDateFallback) {
     case 'SAME_DATE_VISIT':
       return sameDateFallback;
     case 'FLOOR_COMPLETED': {
+      // daysApart is measured against THIS visit's own date, not real-world
+      // today (see conflictDetection.js's detectConflicts: `today` is
+      // always the target date under evaluation) - "ago" implies "before
+      // now," which is wrong the moment this date isn't today (backdating a
+      // visit, or editing an older one). "prior" carries no such claim.
       const days = conflict.daysApart;
-      return `Visited by ${conflict.otherUserName || 'someone'} on ${formatDate(conflict.otherDate)} - ${days} day${days === 1 ? '' : 's'} ago.`;
+      return `Visited by ${conflict.otherUserName || 'someone'} on ${formatDate(conflict.otherDate)} - ${days} day${days === 1 ? '' : 's'} prior.`;
     }
     case 'FLOOR_PLANNED':
       return `Visit already planned by ${conflict.otherUserName || 'someone'} for ${formatDate(conflict.otherDate)}.`;

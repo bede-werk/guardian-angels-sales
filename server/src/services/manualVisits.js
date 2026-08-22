@@ -75,10 +75,14 @@ function blockingMessage(conflict) {
 // A FLOOR_COMPLETED/FLOOR_PLANNED conflict -> its warning line. Same wording
 // for both per spec §4.2 - the point of the message is "recently active
 // here," not a completed/planned distinction the rep would need to parse
-// mid-confirm.
+// mid-confirm. daysApart is measured against the date being PLANNED, not
+// real-world today (see conflictDetection.js's detectConflicts: `today` is
+// always the target date under evaluation) - "ago" implies "before now,"
+// which reads wrong for a warning about a FUTURE date. "prior" carries no
+// such claim.
 function floorWarningMessage(conflict) {
   const n = conflict.daysApart;
-  return `This place was visited ${n} day${n === 1 ? '' : 's'} ago. Plan anyway?`;
+  return `This place was visited ${n} day${n === 1 ? '' : 's'} prior. Plan anyway?`;
 }
 
 // do_not_visit is not a conflictDetection.js finding (that module only
