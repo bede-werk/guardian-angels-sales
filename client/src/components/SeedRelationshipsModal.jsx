@@ -20,7 +20,7 @@
 // resets the decay clock (server-side - see routes/people.js), which is the
 // intended way to correct a seed you got wrong.
 import React, { useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
+import { api, formatDate, today, RELATIONSHIP_LABELS } from '../api';
 import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
 
@@ -35,6 +35,18 @@ const SEED_CHOICES = [
   { value: 0.8, label: 'Acquaintance', hint: "We've met, they'd recognize me" },
 ];
 
+// The row's "Relationship status" reflects the server-computed level, which
+// only changes after a save round-trip. While a choice is only pending (not
+// saved yet), this stands in as a preview using the same solidly-lands-in-
+// that-bucket mapping the choices themselves were built on above - not a
+// live recompute (that needs the person's real visit history, which this
+// screen never fetches), just an honest best guess at where it's headed.
+const SEED_LEVEL_PREVIEW = { 4.0: 'strong', 2.0: 'medium', 0.8: 'weak' };
+
+// Same colors as the RelationshipChip badge (see styles.css's .badge.rel-*),
+// just the text half - this line is plain text, not a pill.
+const RELATIONSHIP_TEXT_COLOR = { strong: 'var(--teal-dark)', medium: 'var(--blue)', weak: 'var(--muted)' };
+
 export default function SeedRelationshipsModal({ onClose, onSaved }) {
   const { closing, requestClose } = useClosingTransition(onClose);
   const [people, setPeople] = useState([]);
@@ -46,6 +58,11 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
   // touched land here, so an untouched person is never written at all -
   // "skippable" in the real sense, not "silently defaulted to something."
   const [pending, setPending] = useState({});
+  // person_id's currently showing the three-choice picker instead of their
+  // status line. A Set (not a single id) so nothing stops more than one row
+  // being open at once - there's no reason to force reps through one at a
+  // time when working down a place's whole roster.
+  const [editingIds, setEditingIds] = useState(() => new Set());
 
   useEffect(() => {
     api.people
@@ -65,20 +82,103 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
     setPending((p) => {
       const next = { ...p };
       // Clicking the already-selected choice clears it back to "no read."
-      next[person.id] = currentSeed(person) === value ? null : value;
+      const picked = currentSeed(person) === value ? null : value;
+      // changeCount (below) is a running total of REAL changes, so landing
+      // back on whatever's already saved - by picking it directly, or by
+      // toggling through choices back to it - has to drop the pending entry
+      // entirely rather than just setting it to the same value. Leaving a
+      // no-op entry in `pending` is exactly what made the footer keep saying
+      // "Save 1 rating" after a rep deselected a fresh pick back to nothing.
+      if (picked === person.relationship_seed) delete next[person.id];
+      else next[person.id] = picked;
+      return next;
+    });
+    // Deliberately does NOT close the picker - a rep can try a choice, see it
+    // highlighted, and change their mind without reopening. Clicking the row
+    // itself just hides the picker again (stopEditing), keeping whatever's
+    // pending; only Cancel/Reset below actually touch the pending value.
+  }
+
+  // A saved seed that's never had a real visit to fade into is stale by
+  // construction - it's the whole "guess" side of the score with nothing
+  // real behind it yet (see this file's header on seed vs. visit weight).
+  // Offering Reset here, in place of Cancel, is how a rep undoes a seed they
+  // no longer stand behind rather than leaving it to decay on its own.
+  function canReset(person) {
+    return person.relationship_seed != null && !person.last_visit_date;
+  }
+
+  function reset(person) {
+    setPending((p) => ({ ...p, [person.id]: null }));
+    stopEditing(person.id);
+  }
+
+  function startEditing(id) {
+    setEditingIds((prev) => new Set(prev).add(id));
+  }
+
+  function stopEditing(id) {
+    setEditingIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
       return next;
     });
   }
 
+  // Cancel = back out of THIS editing session entirely, discarding whatever
+  // was picked before backing out - unlike stopEditing (used when the row
+  // itself is clicked to hide the picker), which just hides it and leaves
+  // any pending pick in place. Reset is the opposite of Cancel: a deliberate,
+  // kept choice - see reset() above.
+  function cancelEdit(id) {
+    setPending((p) => {
+      if (!Object.prototype.hasOwnProperty.call(p, id)) return p;
+      const next = { ...p };
+      delete next[id];
+      return next;
+    });
+    stopEditing(id);
+  }
+
+  // What the status line + "last rated" label show for a row. Pending (this
+  // session, unsaved) takes priority over whatever's already on the person -
+  // see SEED_LEVEL_PREVIEW above for why the status half is only a preview.
+  // `level` is the raw bucket key (for color), `status` its display label.
+  function rowDisplay(person) {
+    if (!Object.prototype.hasOwnProperty.call(pending, person.id)) {
+      const level = person.relationship_level;
+      return {
+        level,
+        status: RELATIONSHIP_LABELS[level] || level,
+        ratedAt: person.relationship_seeded_at ? formatDate(person.relationship_seeded_at) : 'Never rated',
+      };
+    }
+    const value = pending[person.id];
+    if (value == null) {
+      return { level: 'weak', status: RELATIONSHIP_LABELS.weak, ratedAt: 'Never rated' };
+    }
+    const level = SEED_LEVEL_PREVIEW[value];
+    return { level, status: RELATIONSHIP_LABELS[level], ratedAt: formatDate(today()) };
+  }
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return people;
-    return people.filter(
-      (p) =>
+    // Once a person has a real completed visit, the algorithm has genuine
+    // signal to score them on - the whole reason this screen exists (see the
+    // file header) no longer applies, so they drop off the list entirely
+    // rather than sitting here alongside people who still need a first read.
+    // A still-decaying seed from an earlier pass does NOT exclude them - see
+    // canReset() above, which depends on exactly these people still showing.
+    return people.filter((p) => {
+      if (p.last_visit_date) return false;
+      if (!term) return true;
+      return (
         p.name.toLowerCase().includes(term) ||
         (p.place_name || '').toLowerCase().includes(term) ||
         (p.title || '').toLowerCase().includes(term)
-    );
+      );
+    });
   }, [people, search]);
 
   // Grouped by place so a rep can work down one organization at a time, which
@@ -113,15 +213,14 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Seed Relationships</h2>
+          <h2>Rate Relationships</h2>
           <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
           {error && <div className="error-banner">{error}</div>}
 
           <div className="tiny muted">
-            Rate the relationships you already have, so the app doesn't start from zero. These are starting
-            estimates that fade over time - logging real visits is what makes a relationship score real.
+            Initially rate the relationships you already have. These are estimates that fade over time. Logging real visits is what makes a relationship score real.
             Skip anyone you don't have a read on.
           </div>
 
@@ -139,44 +238,83 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
               {grouped.map(([placeName, rows]) => (
                 <div key={placeName} className="stack" style={{ gap: 6 }}>
                   <div className="tiny" style={{ fontWeight: 700 }}>{placeName}</div>
-                  {rows.map((person) => {
+                  <div>
+                  {rows.map((person, i) => {
                     const seed = currentSeed(person);
+                    const editing = editingIds.has(person.id);
+                    const { level, status, ratedAt } = rowDisplay(person);
                     return (
                       <div
                         key={person.id}
-                        className="tag-list"
-                        style={{ alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
+                        className={`tag-list${saving ? '' : ' hover-row'}`}
+                        style={{
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          padding: '8px 0',
+                          borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+                        }}
+                        title={saving ? undefined : editing ? 'Click to hide the picker - your pick, if any, is kept' : 'Click to rate this relationship'}
+                        onClick={saving ? undefined : () => (editing ? stopEditing(person.id) : startEditing(person.id))}
                       >
                         <span className="tiny" style={{ flex: 1, minWidth: 140 }}>
                           {person.name}
-                          {person.title ? <span className="muted"> - {person.title}</span> : null}
+                          {!editing && (
+                            <span className="muted">
+                              {' '}
+                              · Relationship status: <span style={{ color: RELATIONSHIP_TEXT_COLOR[level], fontWeight: 600 }}>{status}</span>
+                            </span>
+                          )}
                         </span>
-                        <span className="tag-list" style={{ flex: 'unset' }}>
-                          {SEED_CHOICES.map((choice) => (
-                            <Button
-                              key={choice.value}
-                              size="small"
-                              variant={seed === choice.value ? 'primary' : 'secondary'}
-                              title={`${choice.hint}${seed === choice.value ? ' (click again to clear)' : ''}`}
-                              onClick={() => choose(person, choice.value)}
-                              disabled={saving}
-                            >
-                              {choice.label}
-                            </Button>
-                          ))}
-                        </span>
+                        {editing ? (
+                          <span className="tag-list" style={{ flex: 'unset' }}>
+                            {SEED_CHOICES.map((choice) => (
+                              <Button
+                                key={choice.value}
+                                size="small"
+                                variant={seed === choice.value ? 'primary' : 'secondary'}
+                                title={`${choice.hint}${seed === choice.value ? ' (click again to clear)' : ''}`}
+                                onClick={(e) => { e.stopPropagation(); choose(person, choice.value); }}
+                                disabled={saving}
+                              >
+                                {choice.label}
+                              </Button>
+                            ))}
+                            {canReset(person) ? (
+                              <Button
+                                variant="danger"
+                                size="small"
+                                title="Clear this person's rating - they'll go back to never rated"
+                                onClick={(e) => { e.stopPropagation(); reset(person); }}
+                                disabled={saving}
+                              >
+                                Reset
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                size="small"
+                                title="Close without changing this person's rating"
+                                onClick={(e) => { e.stopPropagation(); cancelEdit(person.id); }}
+                                disabled={saving}
+                              >
+                                Cancel
+                              </Button>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="tiny muted" style={{ flex: 'unset' }}>Last rated: {ratedAt}</span>
+                        )}
                       </div>
                     );
                   })}
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" title="Close without saving" onClick={requestClose} disabled={saving}>
-            Cancel
-          </Button>
           <Button
             title={changeCount ? `Save ${changeCount} rating${changeCount === 1 ? '' : 's'}` : 'Rate at least one person first'}
             onClick={save}

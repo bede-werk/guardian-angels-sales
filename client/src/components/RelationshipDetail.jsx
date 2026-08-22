@@ -79,12 +79,12 @@ export function PlaceRelationship({ relationship, onSave, saving }) {
   if (editing) {
     return (
       <div className="stack">
-        <div className="tag-list" style={{ alignItems: 'center' }}>
-          <select value={draft} style={{ width: 90 }} onChange={(e) => setDraft(e.target.value)} autoFocus>
-            {LEVELS.map((l) => (
-              <option key={l} value={l}>{RELATIONSHIP_LABELS[l]}</option>
-            ))}
-          </select>
+        <select value={draft} style={{ width: 140 }} onChange={(e) => setDraft(e.target.value)} autoFocus>
+          {LEVELS.map((l) => (
+            <option key={l} value={l}>{RELATIONSHIP_LABELS[l]}</option>
+          ))}
+        </select>
+        <div className="tag-list" style={{ alignItems: 'center', flexWrap: 'nowrap' }}>
           <Button size="small" title="Override the computed relationship level" onClick={() => commit(draft)} disabled={saving || !draft}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
@@ -122,7 +122,6 @@ export function PlaceRelationship({ relationship, onSave, saving }) {
           style={{ width: 'fit-content' }}
         >
           <RelationshipChip level={effective} overridden={overridden} />
-          <span className="edit-affordance" aria-hidden="true">✎</span>
         </div>
         <TrendIndicator trend={relationship.trend} />
       </div>

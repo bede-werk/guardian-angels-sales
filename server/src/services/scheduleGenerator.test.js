@@ -726,6 +726,65 @@ describe('generateDraft', () => {
     assert.deepEqual(allPackedIds.sort(), [1, 2], 'both candidates should still get packed exactly once across the two days');
     assert.ok(result.days.every((d) => d.stops.every((s) => s.driveMinutes === 5)), 'each day should reflect the optimizer\'s leg minutes, not the haversine estimate');
   });
+
+  describe('committedMinutesByDate - a manual/real committed visit shrinks that day\'s packing budget', () => {
+    test('enough committed minutes squeezes out the only candidate, without changing which zone was picked', async () => {
+      const candidates = [candidate(place(1))]; // East Lincoln, ~37min all-in (drive+visit+overhead) per the budget test above
+      const days = mkDays(1, 4); // 240min budget
+
+      const baseline = await generateDraft({ candidates, days, homeBase: DOWNTOWN });
+      assert.deepEqual(baseline.days[0].stops.map((s) => s.place_id), [1], 'sanity check: it packs fine with no committed minutes');
+
+      const withCommitted = await generateDraft({
+        candidates, days, homeBase: DOWNTOWN,
+        committedMinutesByDate: { [days[0].date]: 210 }, // leaves 30min - not enough for the ~37min stop
+      });
+      assert.deepEqual(withCommitted.days[0].stops, [], 'no room left once the committed visit\'s minutes come off the top');
+      assert.equal(withCommitted.days[0].zone, 'East Lincoln', 'zone selection is untouched by the budget reduction');
+    });
+
+    test('committed minutes exceeding the whole day clamp to zero budget instead of going negative/crashing', async () => {
+      const candidates = [candidate(place(1))];
+      const days = mkDays(1, 4); // 240min budget
+
+      const result = await generateDraft({
+        candidates, days, homeBase: DOWNTOWN,
+        committedMinutesByDate: { [days[0].date]: 999 },
+      });
+      assert.deepEqual(result.days[0].stops, []);
+      assert.equal(result.days[0].remainingMinutes, 0);
+    });
+
+    test('only dates present in committedMinutesByDate are affected - other dates keep their full budget', async () => {
+      // Different regions so each day's zone (and pool, via fillDayFromZone's
+      // in-zone filter) is naturally distinct - day 1 packs place 1 (East,
+      // ranks first by insertion order at equal capacity), day 2 then packs
+      // whatever's left, place 2 (Southwest). Deliberately a PARTIAL squeeze
+      // on day 1 (190 of 240min, not all of it) rather than enough to empty
+      // it out entirely - emptying day 1 would leave place 1 unpacked and
+      // therefore still in the pool for day 2, which would then roll over
+      // and pack place 1 instead of place 2, muddying exactly the isolation
+      // this test wants to prove.
+      const candidates = [
+        candidate(place(1, { region: 'East Lincoln' })),
+        candidate(place(2, { region: 'Southwest Lincoln', lat: SOUTHWEST_LINCOLN.lat, lng: SOUTHWEST_LINCOLN.lng })),
+      ];
+      const days = mkDays(2, 4);
+
+      const baseline = await generateDraft({ candidates, days, homeBase: DOWNTOWN });
+      assert.deepEqual(baseline.days[0].stops.map((s) => s.place_id), [1]);
+      assert.deepEqual(baseline.days[1].stops.map((s) => s.place_id), [2], 'sanity check: day 2 packs place 2 with no committed minutes anywhere');
+
+      const withCommitted = await generateDraft({
+        candidates, days, homeBase: DOWNTOWN,
+        committedMinutesByDate: { [days[0].date]: 190 }, // day 1 only - leaves 50min, still enough for place 1's ~37min block
+      });
+
+      assert.deepEqual(withCommitted.days[0].stops.map((s) => s.place_id), [1], 'day 1: place 1 still fits in the shrunk budget');
+      assert.ok(withCommitted.days[0].remainingMinutes < baseline.days[0].remainingMinutes, 'day 1: less headroom left than baseline, proving the subtraction actually applied');
+      assert.deepEqual(withCommitted.days[1], baseline.days[1], 'day 2: identical to baseline, unaffected by day 1\'s entry');
+    });
+  });
 });
 
 describe('defaultRouteOptimizerConfig sanity', () => {

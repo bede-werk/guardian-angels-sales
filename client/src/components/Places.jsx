@@ -196,6 +196,7 @@ export default function Places({ userId }) {
           categories={filters.allCategories}
           onClose={() => setAdding(false)}
           onSaved={refresh}
+          onCategoriesChanged={loadFilters}
         />
       )}
 

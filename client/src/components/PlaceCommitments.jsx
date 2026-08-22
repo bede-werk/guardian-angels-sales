@@ -33,7 +33,7 @@ export function PlaceCommitments({ commitments, onAddClick, onSelect, onDelete, 
         <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
           Commitments{outstanding.length > 0 ? ` (${outstanding.length})` : ''}
         </div>
-        <Button variant="ghost" size="small" title="Promise a specific date to return to this place" onClick={onAddClick}>
+        <Button variant="secondary" size="small" title="Promise a specific date to return to this place" onClick={onAddClick}>
           + Add a commitment
         </Button>
       </div>
@@ -80,7 +80,7 @@ export function PlaceCommitments({ commitments, onAddClick, onSelect, onDelete, 
                   </span>
                   <button
                     type="button"
-                    className="icon-delete"
+                    className="icon-remove"
                     title="Delete this from history"
                     onClick={() => onDelete(c.id)}
                     disabled={deletingId === c.id}

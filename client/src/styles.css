@@ -106,7 +106,7 @@ body {
    input rules below) uses the sans font set on <body> above. */
 h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 
-.app { max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
+.app { max-width: 1400px; margin: 0 auto; padding: 0 20px 60px; }
 
 /* Header - see ui/Header.jsx. Logo on the left, whatever App.jsx passes as
    children (date, signed-in-as) right-aligned via .controls. */
@@ -154,11 +154,12 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .stat .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
 /* Buttons - the one button system, see ui/Button.jsx for the variant/size props
-   that map onto these classes (.secondary/.ghost/.danger/.small/.big). Plain
+   that map onto these classes (.secondary/.ghost/.danger/.small). Plain
    ".btn" with no extra class is the primary (solid blue) look. */
 .btn {
   background: var(--blue); color: #fff; border: none; border-radius: var(--radius-sm);
   padding: 8px 14px; font-family: var(--font-sans); font-size: 13px; cursor: pointer; font-weight: 600;
+  text-decoration: none; /* .btn is also used on a real <a> (PlaceDetail's Navigate link) - reset the browser's default anchor underline */
 }
 .btn:hover { background: var(--blue-dark); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -166,21 +167,9 @@ h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; }
 .btn.secondary:hover { background: var(--blue-tint-2); }
 .btn.ghost { background: none; color: var(--blue); padding: 6px 8px; }
 .btn.ghost:hover { background: var(--blue-tint-2); }
-/* Same weight as .ghost (no fill) but mauve, plus a thin outline - a firm
-   suggestion ("do not visit") rather than a request to confirm destroying
-   something (.danger's filled pill, reserved for actually-irreversible
-   actions like Delete). The outline is what keeps a no-fill button reading
-   as a button rather than plain text; .ghost gets away without one because
-   it always sits among other filled buttons that establish the row as
-   clickable - this one doesn't. */
-.btn.caution { background: none; color: var(--mauve); border: 1px solid var(--mauve-tint-3); padding: 5px 8px; }
-.btn.caution:hover { background: var(--mauve-tint-1); }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 .btn.danger { background: var(--mauve-tint-1); color: var(--mauve); }
 .btn.danger:hover { background: var(--mauve-tint-2); }
-.btn.big { padding: 12px 18px; font-size: 14px; border-radius: var(--radius-md); }
-.btn.chevron-toggle { background: #fff; color: var(--blue); }
-.btn.chevron-toggle:hover { background: var(--blue-tint-2); color: var(--blue); }
 
 
 /* Inputs - every text field/dropdown/textarea in the app shares this look;
@@ -354,6 +343,15 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    only the button appears selected, instead of both lighting up at once. */
 .hover-row:has(.btn:hover) { background: none; }
 .hover-row:has(.icon-remove:hover) { background: none; }
+/* .btn.secondary's own background is the SAME blue-tint-1 as a hovered
+   row's highlight (e.g. the Champion/Solid/Acquaintance/Cancel row in the
+   Rate Relationships picker) - without this, an unselected secondary button
+   visually disappears into the row the moment it's hovered, only resolving
+   back into a "button" once the cursor lands exactly on it. Swap to the
+   surrounding card's own white while the row is hovered but the button
+   itself isn't, so it reads as a button sitting ON the highlight instead of
+   merging into it. */
+.hover-row:hover .btn.secondary:not(:hover) { background: var(--card); }
 
 /* Route Planner's stop rows: the click-to-open-detail area is only .main
    (the drag handle + reorder buttons sit to its left, the time estimate +
@@ -383,17 +381,19 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .hover-row.selected { background: var(--blue-tint-2); }
 
 /* Click-to-override chips (RelationshipDetail/CapacityDetail's level chips)
-   - :hover/title alone is invisible on a phone (no hover state to reveal
-   it), so a small persistent pencil is the affordance that survives without
-   one. Also focusable (tabIndex + role="button" in the JSX) so keyboard/
-   assistive-tech users can reach and trigger it, not just mouse/touch. */
+   - the title tooltip is the only affordance now; still focusable (tabIndex
+   + role="button" in the JSX) so keyboard/assistive-tech users can reach
+   and trigger it, not just mouse/touch. */
 .editable-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: var(--radius-sm); }
-.editable-chip .edit-affordance { font-size: 11px; color: var(--muted); }
 .editable-chip:focus-visible { outline: 2px solid var(--blue-tint-3); outline-offset: 2px; }
 
-/* Data tables - Places directory and Dashboard's "never visited" list */
+/* Data tables - Places directory and Dashboard's "never visited" list.
+   white-space: nowrap keeps every row exactly one line tall (e.g. Places'
+   Tier + ★ Priority chips, or the Referrals cell's "N · last M/D/YYYY")
+   instead of wrapping - a too-narrow column scrolls sideways via
+   .table-scroll below rather than growing the row taller. */
 table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; white-space: nowrap; }
 th { color: var(--muted); font-weight: 600; font-size: 12px; }
 tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 
@@ -408,6 +408,11 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .tiny { font-size: 12px; }
 .stack { display: flex; flex-direction: column; gap: 4px; } /* vertical stack of small pieces of text */
 .tag-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } /* row of chips/badges */
+/* Inside a table cell, force chips onto one line (e.g. Places' Tier + ★
+   Priority) so a row stays exactly one line tall - the table's own
+   white-space: nowrap above doesn't reach into a flex child's own wrap
+   behavior, so it has to be overridden here too. */
+td .tag-list { flex-wrap: nowrap; }
 
 /* Empty state - see ui/EmptyState.jsx: the wing icon + brand-voice message
    shown whenever a list/section has nothing to display. */
@@ -450,30 +455,17 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .modal .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .modal .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: #fff; z-index: 1; }
 .close { background: none; border: none; font-size: 22px; cursor: pointer; color: var(--muted); line-height: 1; }
-/* A quieter remove - plain × like .close rather than a full boxed .btn.danger,
-   for a delete action that sits inline next to other content instead of
-   anchoring a modal header. */
-.icon-remove { background: none; border: none; font-size: 18px; line-height: 1; cursor: pointer; color: var(--muted); padding: 2px 6px; border-radius: var(--radius-sm); }
-.icon-remove:hover { background: var(--mauve-tint-1); color: var(--mauve); }
+/* The one inline "remove this row" x - used anywhere a delete/remove sits
+   next to other content instead of anchoring a modal header (.close above)
+   or standing as a full pill button (.btn.danger/.btn.ghost). Used for
+   CapacityDetail's observation delete, PlaceCommitments' history delete, and
+   VisitDetailModal's per-encounter remove - previously three separate
+   classes (.icon-remove/.icon-delete/.icon-remove-danger) with different
+   sizes/borders, merged 2026-08-17 for visual consistency. Clickable area
+   (padding, not font-size) is fitted snugly to the glyph itself. */
+.icon-remove { background: none; border: none; font-size: 9px; line-height: 1; cursor: pointer; color: var(--mauve); padding: 6px 8px; border-radius: var(--radius-sm); }
+.icon-remove:hover { background: var(--mauve-tint-1); }
 .icon-remove:disabled { opacity: 0.5; cursor: not-allowed; }
-/* Same slot as .icon-remove but already-red at rest (not muted-until-hover) -
-   for a delete that's clearing history, not detaching a live relationship,
-   so it doesn't need the softer "are you sure this is what you want" framing. */
-/* padding (not font-size) does the work of getting this closer to a ~40px
-   tap target - this permanently deletes history, and the glyph itself
-   should stay small even though the hit area around it grows. */
-.icon-delete { background: #fff; border: 1px solid var(--mauve-tint-3); color: var(--mauve); font-size: 12px; line-height: 1; cursor: pointer; padding: 10px 12px; border-radius: var(--radius-sm); }
-.icon-delete:hover { background: var(--mauve); border-color: var(--mauve); color: #fff; }
-.icon-delete:disabled { opacity: 0.5; cursor: not-allowed; }
-/* Same no-border/no-fill-at-rest shape as .btn.ghost's own × (the People
-   card's unassign button) - just mauve instead of blue. CapacityDetail.jsx's
-   observation delete: still destructive, but sits inline in a dense history
-   list where .icon-delete's outline reads as too heavy. */
-/* Same tap-target reasoning as .icon-delete above (padding, not font-size) -
-   this also permanently deletes history (a capacity observation). */
-.icon-remove-danger { background: none; border: none; font-size: 9px; line-height: 1; cursor: pointer; color: var(--mauve); padding: 10px 12px; border-radius: var(--radius-sm); }
-.icon-remove-danger:hover { background: var(--mauve-tint-1); }
-.icon-remove-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 /* The big tap-chip outcome picker in VisitLogModal (Interested / Not ready / etc). */
 .outcome-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .outcome-btn { padding: 14px 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: #fff; cursor: pointer; text-align: center; font-size: 13px; font-weight: 600; }
@@ -519,12 +511,39 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
 .splash .logo-img { height: 56px; width: auto; }
 .splash .tagline { font-family: var(--font-serif); font-size: 16px; color: #fff; opacity: 0.92; max-width: 320px; }
 
-/* Signed-in-as chip in the header (App.jsx's right-side header controls) */
-.user-menu { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+/* Profile dropdown in the header (ui/ProfileMenu.jsx) - an avatar button
+   top-right that opens a panel with the signed-in user, today's date (still
+   read-only, there's no date picker), and log out. */
+.profile-menu { position: relative; }
+.profile-menu-trigger { background: none; border: none; padding: 0; cursor: pointer; border-radius: 999px; line-height: 0; }
+.profile-menu-trigger:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.profile-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--blue); color: #fff; font-family: var(--font-sans);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.02em; flex: none;
+}
+.profile-avatar-lg { width: 40px; height: 40px; font-size: 15px; }
+.profile-menu-trigger:hover .profile-avatar { background: var(--blue-dark); }
 
-/* Static (read-only) date display in the header - there's no date picker,
-   today's date is just shown as text (App.jsx) */
-.static-date { padding: 8px 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.profile-menu-panel {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 20;
+  width: 240px; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: 0 12px 30px rgba(16, 24, 40, 0.16);
+  padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  animation: modal-pop-in 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.profile-menu-header { display: flex; align-items: center; gap: 10px; }
+.profile-menu-name { font-size: 14px; font-weight: 700; }
+.profile-menu-date { font-size: 12px; color: var(--muted); }
+.profile-menu-extra { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.profile-menu-logout {
+  margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border);
+  background: none; border-left: none; border-right: none; border-bottom: none;
+  text-align: left; font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+  color: var(--danger); cursor: pointer;
+}
+.profile-menu-logout:hover { color: var(--mauve-dark); }
 
 /* Progress bar - a day's running total in Route Planner. .progress-total is
    the prominent "Xh Ym of Zh" readout above the bar; .progress-label is the
@@ -783,3 +802,350 @@ tbody tr:hover { background: var(--blue-tint-1); cursor: pointer; }
   .detail-card-240 { height: 240px; }
   .detail-card-268 { height: 268px; }
 }
+
+/* ---------------------------------------------------------------------------
+   Settings (components/Settings.jsx) - the tunable-constants page.
+
+   Two structural ideas carry this screen. First, a sidebar of sections with
+   one section shown at a time: there are ~75 tunables, and stacking them all
+   would bury the ones that matter. Second, every tunable renders as a BLOCK
+   rather than a table row, because the explanation under each one is the
+   point of the page and a table would squeeze it into a column. The block
+   layout means a long help paragraph costs vertical space, which is the
+   right thing to spend it on here.
+   --------------------------------------------------------------------------- */
+
+.settings-page { display: flex; flex-direction: column; gap: 16px; }
+
+.settings-intro h2 { margin: 0 0 6px; font-size: 20px; }
+/* Wider measure than the per-field help below: this is the page's opening
+   paragraph, read once at full attention, not a caption scanned in passing. */
+.settings-intro p { margin: 0 0 8px; max-width: 104ch; line-height: 1.55; color: var(--text); }
+.settings-intro p.tiny { color: var(--muted); }
+
+/* Sticky status/save bar. Only rendered when there's something to say
+   (unsaved edits, a confirmation, or an error), so it never sits there as
+   permanent chrome eating a strip of the viewport. */
+.settings-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: var(--radius-md);
+  background: var(--teal-tint-1); border: 1px solid var(--teal-tint-4); color: var(--teal-dark);
+  box-shadow: var(--shadow);
+}
+.settings-bar.dirty { background: var(--blue-tint-1); border-color: var(--blue-tint-5); color: var(--blue-dark); }
+.settings-bar.error { background: var(--mauve-tint-1); border-color: var(--mauve-tint-3); color: var(--warn); }
+.settings-bar-msg { font-size: 13px; min-width: 0; }
+.settings-bar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.settings-layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 20px; align-items: start; }
+
+/* The section list sticks while the (long) content column scrolls past it. */
+.settings-nav {
+  position: sticky; top: 16px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow); padding: 8px;
+}
+.settings-nav-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: none; border: none; border-radius: var(--radius-sm); cursor: pointer;
+  padding: 9px 10px; font-family: var(--font-sans); font-size: 13px; color: var(--text); text-align: left;
+}
+.settings-nav-item:hover { background: var(--grey-tint-1); }
+.settings-nav-item.active { background: var(--blue-tint-1); color: var(--blue-dark); font-weight: 700; }
+.settings-nav-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+.settings-nav-title { flex: 1; min-width: 0; }
+/* Count of tunables in that section that differ from the shipped default. */
+.settings-nav-count {
+  flex-shrink: 0; min-width: 20px; text-align: center;
+  background: var(--blue); color: #fff; border-radius: 999px;
+  font-size: 10px; font-weight: 700; padding: 2px 6px;
+}
+.settings-nav-foot { border-top: 1px solid var(--border); margin-top: 6px; padding: 10px 10px 4px; }
+.settings-nav-foot .link-button:disabled { color: var(--muted); text-decoration: none; cursor: default; }
+
+.settings-content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.settings-section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.settings-section-head h3 { margin: 0 0 6px; font-size: 17px; }
+.settings-section-blurb { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; max-width: 80ch; }
+.settings-group-blurb { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); line-height: 1.55; max-width: 80ch; }
+.settings-group .card-body { display: flex; flex-direction: column; }
+
+/* One tunable. The label/control row sits on one line, with the explanation
+   and the raise/lower consequences stacked underneath at decreasing weight,
+   so the eye can run down the labels alone or stop and read any one. */
+.tunable { padding: 14px 0; border-top: 1px solid var(--border); }
+.tunable:first-of-type { border-top: none; }
+.tunable-main { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.tunable-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tunable-label label { font-size: 13.5px; font-weight: 600; cursor: pointer; }
+/* Marks a value that differs from what the app ships with, so "what have I
+   touched" is answerable by scanning rather than by memory. */
+.tunable-flag {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  background: var(--blue-tint-1); color: var(--blue); padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+}
+.tunable-input { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.tunable-input input, .tunable-input select { width: 118px; text-align: right; }
+.tunable-input select { text-align: left; width: 200px; }
+.tunable-input.wide { flex: 1; }
+.tunable-input.wide input { width: 100%; text-align: left; }
+.tunable-unit { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 62px; }
+.tunable-help { margin: 7px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.55; max-width: 80ch; }
+
+/* What moving the number actually does. Deliberately quieter than the help
+   text above it: help says what the knob IS, this says what happens if you
+   turn it, and you only need the second once you've decided to touch it. */
+.tunable-effects { margin-top: 7px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); line-height: 1.5; max-width: 80ch; }
+.tunable-effects strong { color: var(--grey-dark); font-weight: 700; }
+.eff-arrow { font-size: 8px; }
+.eff-arrow.up { color: var(--teal); }
+.eff-arrow.down { color: var(--mauve); }
+
+.tunable-foot { margin-top: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tunable-foot code { font-size: 11px; background: var(--grey-tint-1); padding: 1px 5px; border-radius: 4px; }
+/* Controls that own their own layout (the rule table, the category picker)
+   get the full width instead of a right-aligned box. */
+.tunable.wide .tunable-main { display: block; }
+.tunable.wide .tunable-help { margin-bottom: 10px; }
+
+/* The 3x3 cadence lookup, rendered as the grid it actually is. Reading it as
+   nine separate rows loses the one property that matters most about it -
+   that it's deliberately inverted, with the busiest cadence at high capacity
+   and a weak relationship. */
+.cadence-matrix-wrap { overflow-x: auto; }
+/* width: auto overrides the global `table { width: 100% }` - a 3x3 grid of
+   number boxes stretched across a 1400px page puts the columns so far apart
+   the rows stop reading as rows. */
+.cadence-matrix { width: auto; border-collapse: separate; border-spacing: 6px; margin: 4px 0 0; }
+.cadence-matrix th { font-family: var(--font-sans); font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; padding: 2px 6px; white-space: nowrap; }
+.cadence-matrix tbody th { text-align: right; }
+.cadence-matrix td { padding: 0; border-radius: var(--radius-sm); }
+.cadence-matrix td.changed { box-shadow: 0 0 0 2px var(--blue-tint-5); }
+.cadence-matrix .tunable-input { justify-content: center; }
+.cadence-matrix .tunable-input input { width: 84px; text-align: center; }
+/* The corner cell names both axes at once: the column header labels the
+   relationship axis, the row header labels the capacity axis. */
+.cadence-matrix .corner { position: relative; min-width: 74px; }
+.cadence-matrix .corner .axis-col,
+.cadence-matrix .corner .axis-row { display: block; font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--grey-tint-3); }
+.matrix-note { margin: 10px 0 0; max-width: 80ch; line-height: 1.5; }
+
+/* Category multi-select. Toggle chips over the REAL category list rather
+   than a text box, because these have to match category names exactly and a
+   near-miss fails silently. */
+.category-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+.category-toggle {
+  font-family: var(--font-sans); font-size: 12px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  background: var(--grey-tint-1); border: 1px solid transparent; color: var(--grey-dark);
+}
+.category-toggle:hover { background: var(--grey-tint-2); }
+.category-toggle.on { background: var(--blue-tint-2); border-color: var(--blue-tint-6); color: var(--blue-dark); font-weight: 700; }
+/* A selected name that no longer exists in the categories table - it matches
+   nothing, so it's shown struck through rather than quietly dropped. */
+.category-toggle.orphan { background: var(--mauve-tint-1); color: var(--warn); text-decoration: line-through; }
+
+/* The ordered category -> capacity rule table. First match wins, so the
+   reorder controls aren't decoration: the order IS part of the setting. */
+.seed-table { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.seed-head, .seed-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 132px 32px; gap: 8px; align-items: center; width: 100%; }
+.seed-head { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; padding: 0 0 2px; }
+.seed-order { display: flex; align-items: center; gap: 4px; }
+.seed-index { font-size: 12px; color: var(--muted); width: 16px; text-align: right; }
+
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  /* Below this width the sidebar becomes a horizontal strip above the
+     content, so sticking it to the top would cover the very rows it
+     scrolls to. */
+  .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+  .settings-nav-item { width: auto; }
+  .settings-nav-foot { border-top: none; width: 100%; padding: 6px 4px 0; }
+  .tunable-main { flex-direction: column; align-items: stretch; }
+  .tunable-input input, .tunable-input select { width: 100%; text-align: left; }
+  .seed-head { display: none; }
+  .seed-row { grid-template-columns: 56px minmax(0, 1fr) 32px; }
+  .seed-row select { grid-column: 2 / 4; }
+}
+
+/* The header's gear button, sitting to the left of the profile avatar. Same
+   circular footprint as .profile-avatar so the two read as one pair of
+   controls rather than a button and an avatar that happen to be adjacent -
+   but outlined rather than filled, since the avatar is the identity anchor
+   in that corner and two solid blue circles would compete. */
+.settings-trigger {
+  width: 32px; height: 32px; border-radius: 999px; flex-shrink: 0;
+  display: grid; place-items: center; cursor: pointer; padding: 0;
+  background: none; border: 1px solid var(--border); color: var(--muted); font-size: 15px; line-height: 1;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.settings-trigger:hover { color: var(--blue); border-color: var(--blue-tint-6); background: var(--blue-tint-1); }
+.settings-trigger.active { color: var(--blue-dark); border-color: var(--blue); background: var(--blue-tint-2); }
+.settings-trigger:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* The header gap is 20px, which is right between the tagline block and the
+   controls but too wide between two controls of the same pair. */
+.header .controls { gap: 12px; }
+
+/* ---------------------------------------------------------------- Dashboard
+   The five cards on the Dashboard tab (see components/Dashboard.jsx for what
+   each one answers). Everything here is layout and the two small custom
+   marks the screen needs - the due chip and the week strip. Rows, cards,
+   chips and buttons all come from the shared systems above; nothing below
+   redefines one. */
+
+/* Two cards abreast on a wide screen, stacked on a narrow one. 340px is the
+   width the Commitments card's date + place + due chip stops wrapping at. */
+/* align-items: start, not the grid default of stretch - a short card (This
+   week is four numbers and a strip) sitting beside a long one (Commitments,
+   however many are due) would otherwise be inflated to match it, leaving a
+   card that is mostly empty box. Each card is as tall as what it has to
+   say. */
+.dash-row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+
+/* The Today card is the one thing on this screen that gets read at a glance
+   on the way out the door, so it spans the full width and lays out as three
+   columns: the count, the facts, and the Navigate button. `auto` on the
+   first and last means the facts column absorbs all the slack. min-height
+   reserves enough room for the Navigate button PLUS the occasional caveat
+   line under it (see .dash-nav-caveat below) even on days that don't have
+   one - so the card is the same height every day, not just on the rare
+   long one, and the button centers in the same place either way. */
+.dash-today-body { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; min-height: 120px; }
+.dash-today-count { text-align: center; }
+/* Same type scale as ui/StatTile.jsx's tile - this IS that tile, inlined
+   into a card that has more to say alongside it. */
+.dash-today-count .num { font-family: var(--font-serif); font-size: 30px; font-weight: 700; color: var(--blue-dark); line-height: 1; }
+.dash-today-count .label { color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.35; }
+
+/* The Navigate button. position: relative anchors the caveat below it (see
+   .dash-nav-caveat) without the caveat being part of this box's own height -
+   if it were, the button would shift up a little every time the caveat
+   appeared, since align-items: center above centers the taller box, not
+   the button within it. Taking the caveat out of flow like this means the
+   button sits in the exact same spot whether or not one is showing. */
+.dash-today-action { position: relative; display: flex; flex-direction: column; align-items: flex-end; margin-right: 16px; }
+/* Positioned off the button's own bottom-right corner rather than stacked
+   in flow underneath it (see .dash-today-action above for why). Often
+   wider than the button itself - right: 0 lines up their right edges
+   regardless, and the button's own width never stretches to match it. */
+.dash-nav-caveat { position: absolute; top: 100%; right: 0; margin-top: 8px; white-space: nowrap; }
+
+/* Row, not stacked - the summary sits to the LEFT of Next visit rather than
+   above it, both centered against each other via align-items: center. A
+   stacked layout would make Next visit's card the second (taller) block in
+   the column, pulling the whole thing's center up with the summary's own
+   height above it and taking the card off the Today card's true vertical
+   center - see dash-next-visit's own row-not-stacked comment below for the
+   same problem solved the same way one level in. */
+.dash-today-facts { display: flex; align-items: center; gap: 20px; min-width: 0; }
+/* The count and the View button, pieced together as one section: a tight
+   gap and no divider between them, since they're one stat plus the action
+   that belongs to it (not two separate facts the way count/Next-visit are).
+   flex-shrink: 0 keeps this whole group from getting squeezed as
+   dash-today-next (below) gives way first. */
+.dash-today-summary { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+/* min-width: 0 - a flex child's default min-width is its content's own
+   width, which would let a long place name push the summary group out of
+   the row instead of shrinking (same reasoning as dash-next-visit's own
+   min-width: 0 one level in). The left border is the ONE divider in this
+   row - between the summary group and Next visit, the row's only real
+   separation (a stat+action and the dashboard's single most-referenced
+   fact) - tall because it's sized to Next visit's own two-line card. */
+.dash-today-next { min-width: 0; padding-left: 20px; border-left: 1px solid var(--border); }
+/* A small grey caption above a value - shared by "Next visit"'s label and
+   (kept generic in case a second one shows up here later) anything else
+   that needs the same treatment. */
+.dash-fact-label { color: var(--muted); font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+
+/* "Next visit": the label above, then the card itself - a bordered, tinted
+   box rather than a plain link, since this is the single most-referenced
+   fact on the dashboard. */
+/* Row, not stacked: label to the left, card to the right, both centered on
+   the same line. A stacked layout (label above, card below) meant the
+   CARD's own center sat below the Today card's true vertical center, since
+   the label+gap above it pulled the whole block's center up with it - row
+   layout's height is just the card's own height (the label is shorter and
+   centers within it), so centering this block also centers the card. */
+.dash-next-visit { display: flex; flex-direction: row; align-items: center; gap: 10px; min-width: 0; }
+.dash-stop-card {
+  display: block; min-width: 0; max-width: 100%; text-align: left; font: inherit; cursor: pointer;
+  padding: 10px 14px; border: 1px solid var(--blue-tint-4); border-radius: var(--radius-md); background: var(--blue-tint-1);
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+.dash-stop-card:hover { background: var(--blue-tint-2); border-color: var(--blue-tint-6); }
+/* While openVisit's fetch is in flight - stops a second click firing a
+   second request rather than actually blocking anything server-side. */
+.dash-stop-card:disabled { cursor: default; opacity: 0.6; }
+.dash-stop-card:disabled:hover { background: var(--blue-tint-1); border-color: var(--blue-tint-4); }
+.dash-stop-name { font-family: var(--font-serif); font-weight: 600; font-size: 15px; }
+.dash-visit-error { color: var(--mauve); margin-top: 4px; }
+.dash-today-action-error { margin: 0 16px 16px; }
+
+@media (max-width: 760px) {
+  .dash-today-body { grid-template-columns: 1fr; gap: 16px; min-height: 0; }
+  /* Back to a plain top-to-bottom stack here - the side-by-side layout
+     above exists to protect Next visit's vertical centering against the
+     desktop row's height, but a single mobile column has no shared row
+     height to center against in the first place. */
+  .dash-today-facts { flex-direction: column; align-items: flex-start; gap: 10px; }
+  /* The row's one divider follows the stack: a left border made sense
+     beside the summary group on the desktop row, a bottom one makes sense
+     above it here - same swap as every other divider in this card.
+     Resetting the desktop padding-left/border-left this way rather than
+     adding new mobile-only rules keeps it owned by one element at a time. */
+  .dash-today-summary { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .dash-today-next { padding-left: 0; border-left: none; }
+  /* The single-column stack has no centered row to reserve space in (the
+     desktop min-height above is for that), and the action block is the
+     last thing in the card here - reserve the caveat's landing spot with
+     a MARGIN, not padding: padding would sit inside this box's own edge,
+     which is what the caveat's top: 100% measures itself from - reserving
+     space that way would push the caveat's already-absolute position down
+     by the same amount again, past the space just reserved for it. Margin
+     sits outside that edge, so it grows the card without moving the
+     caveat's anchor point. */
+  .dash-today-action { margin-bottom: 36px; }
+}
+
+/* This week's headline numbers, above the strip. */
+.dash-week-numbers { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; }
+.dash-week-numbers strong { font-family: var(--font-serif); font-size: 20px; color: var(--blue-dark); }
+
+/* Seven equal columns, Monday to Sunday. Equal-width (not content-sized) on
+   purpose: the week reads as a shape, and a busy Tuesday must not make
+   Tuesday physically wider than a quiet Wednesday. */
+.week-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.week-day { text-align: center; padding: 8px 2px; border-radius: var(--radius-sm); background: var(--grey-tint-1); }
+.week-day.is-today { background: var(--blue-tint-2); outline: 1px solid var(--blue-tint-5); }
+.week-day-dow { font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.week-day-counts { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; min-height: 20px; }
+/* One pip per status per day, carrying its own count. Filled blue for work
+   done, outlined for work still ahead, mauve for a lapse - the same
+   done/pending/attention language the rest of the app uses. */
+.week-pip { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 1; }
+.week-pip.done { background: var(--blue); color: #fff; }
+.week-pip.planned { background: #fff; color: var(--blue-dark); border: 1px solid var(--blue-tint-5); }
+.week-pip.skipped { background: var(--mauve-tint-1); color: var(--mauve); }
+.week-pip.empty { color: var(--grey-tint-3); font-weight: 400; }
+
+/* A commitment's due-ness. Four tones rather than a single "due" pill: the
+   whole job of this card is separating "already late" from "coming up", and
+   one colour for both would bury exactly the rows that matter most. */
+.due-chip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; white-space: nowrap; }
+.due-chip.overdue { background: var(--mauve-tint-1); color: var(--mauve); }
+.due-chip.today { background: var(--blue); color: #fff; }
+.due-chip.soon { background: var(--blue-tint-2); color: var(--blue-dark); }
+.due-chip.later { background: var(--grey-tint-1); color: var(--grey-dark); }
+.dash-overdue-count { color: var(--mauve); font-weight: 700; }
+
+/* The lifetime referral count on the Top partners leaderboard - the number
+   the list is actually ranked by, so it gets the serif treatment rather
+   than sitting in the same grey as everything else in the row. */
+/* The lifetime count stacked over the recent one, right-aligned. Side by
+   side (the .actions default) the two numbers read as one run-on figure -
+   "23 7 in 90d" - rather than a total and a trend. */
+.partner-score { flex-direction: column; align-items: flex-end; gap: 1px; flex-shrink: 0; }
+.partner-count { font-family: var(--font-serif); font-size: 18px; font-weight: 700; color: var(--blue-dark); line-height: 1.1; }

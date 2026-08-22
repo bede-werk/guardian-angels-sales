@@ -89,7 +89,7 @@ function ObservationRow({ obs, onDelete, deleting }) {
         <span className="muted">{OBSERVATION_SOURCE_LABELS[obs.source] || obs.source}</span>
         <button
           type="button"
-          className="icon-remove-danger"
+          className="icon-remove"
           title="Delete this observation from history"
           onClick={() => onDelete(obs.id)}
           disabled={deleting}
@@ -182,7 +182,6 @@ export function PlaceCapacity({
             style={{ width: 'fit-content' }}
           >
             <CapacityChip level={level} overridden={isOverridden} />
-            <span className="edit-affordance" aria-hidden="true">✎</span>
           </div>
         )}
         {effectiveMonthly != null && !editingOverride && <span className="tiny muted">~{effectiveMonthly}/month</span>}

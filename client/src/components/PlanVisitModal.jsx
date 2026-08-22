@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { api, today, formatDate } from '../api';
+import { api, today, formatDate, VISIT_TYPE_LABELS } from '../api';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
 
@@ -46,6 +46,11 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
   const uid = useId();
   const [pickedPlace, setPickedPlace] = useState(null);
   const [date, setDate] = useState(fixedDate || '');
+  // Defaults to the same fallback config/visitTypes.js's DEFAULT_VISIT_TYPE
+  // uses when nothing else specifies a type, rather than starting blank -
+  // matches RoutePlanner.jsx's draft-stop select, which likewise always
+  // shows a real type rather than an empty option.
+  const [visitType, setVisitType] = useState('drop_in');
   const [assignedUserId, setAssignedUserId] = useState(String(userId));
   const [notes, setNotes] = useState('');
   const [warnings, setWarnings] = useState(null);
@@ -82,6 +87,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
         place_id: resolvedPlaceId,
         scheduled_date: date,
         user_id: assignedUserId || userId,
+        visit_type: visitType,
         notes: notes.trim() || null,
         force: warnings ? true : undefined,
       });
@@ -160,6 +166,20 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
           </div>
 
           <div>
+            <label className="field" htmlFor={`${uid}-type`}>Visit type</label>
+            <select
+              id={`${uid}-type`}
+              value={visitType}
+              onChange={(e) => setVisitType(e.target.value)}
+              disabled={saving}
+            >
+              {Object.entries(VISIT_TYPE_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label className="field" htmlFor={`${uid}-rep`}>Rep</label>
             <select
               id={`${uid}-rep`}
@@ -182,7 +202,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               disabled={saving}
-              placeholder="Optional - shows up on the visit once it's planned"
+              placeholder="Optional - who it's with, what you're hoping to accomplish..."
             />
           </div>
 
@@ -207,7 +227,6 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
               </div>
             )}
           </div>
-          <Button variant="secondary" title="Close without saving" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={saving || !date || !resolvedPlaceId}>
             {saving ? 'Saving…' : warnings ? 'Plan anyway' : 'Save'}
           </Button>

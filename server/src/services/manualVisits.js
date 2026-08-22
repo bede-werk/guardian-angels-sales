@@ -132,7 +132,7 @@ function canDeleteManualVisit(visit, actingUserId) {
 //                                      caller re-sends with force:true to
 //                                      proceed.
 //   { visit, warnings: [] }          - created.
-async function createManualVisit(db, { placeId, scheduledDate, userId, createdByUserId, notes = null, force = false }) {
+async function createManualVisit(db, { placeId, scheduledDate, userId, createdByUserId, notes = null, visitType = null, force = false }) {
   const today = orgToday();
 
   const dateError = pastDateError(scheduledDate, today);
@@ -170,6 +170,7 @@ async function createManualVisit(db, { placeId, scheduledDate, userId, createdBy
     status: 'planned',
     planned_manually: 1,
     notes: notes || null,
+    visit_type: visitType || null,
   };
   const [inserted] = await db('visits').insert(payload).returning('id');
   const id = inserted && inserted.id !== undefined ? inserted.id : inserted;
@@ -199,7 +200,7 @@ async function getEditableVisit(db, id) {
   return visit;
 }
 
-// Edits a still-planned visit's date and/or notes - UpcomingVisitDetailModal's
+// Edits a still-planned visit's date, visit type, and/or notes - UpcomingVisitDetailModal's
 // "Edit" button, for a manually-planned visit and a planner-committed one
 // alike. Only the visit's ASSIGNEE may call this (canEditManualVisit's rule
 // was never actually specific to already-manual visits, it just had no
@@ -231,7 +232,7 @@ async function getEditableVisit(db, id) {
 // backfills to the acting rep only if it was never set (a planner commit
 // never sets it); an already-manual visit's real creator is never
 // overwritten by a later edit.
-async function editVisit(db, id, { scheduledDate, notes, force = false } = {}, actingUserId) {
+async function editVisit(db, id, { scheduledDate, notes, visitType, force = false } = {}, actingUserId) {
   const visit = await getEditableVisit(db, id);
   if (!canEditManualVisit(visit, actingUserId)) {
     const err = new Error('Only the assigned rep can edit this visit');
@@ -246,6 +247,7 @@ async function editVisit(db, id, { scheduledDate, notes, force = false } = {}, a
     updated_at: db.fn.now(),
   };
   if (notes !== undefined) update.notes = notes || null;
+  if (visitType !== undefined) update.visit_type = visitType || null;
 
   const dateChanged = scheduledDate !== undefined && scheduledDate !== visit.scheduled_date;
   if (dateChanged) {

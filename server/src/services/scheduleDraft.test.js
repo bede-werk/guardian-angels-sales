@@ -431,12 +431,23 @@ describe('buildCandidatePool plannedVisitDates', () => {
   });
 });
 
-// A manually-planned visit is a real, still-open commitment on the
-// calendar - it counts toward "already committed" exactly the same as a
-// planner-committed one, so the date it's on is off-limits to /generate
-// (validateDays) and shows as already planned, same as any other planned
-// day. No carve-out for manual-only dates.
-describe('committedDateSummaries - a manual visit counts as committed, same as any other planned visit', () => {
+// Only a real planner-committed visit GATES a date into "already committed"
+// - blocks it from /generate (validateDays) and shows it on the calendar. A
+// manual-only date is deliberately excluded from that gate (reversed
+// 2026-08-19, see feedback_route_planner_proposals_only) - the generator
+// already treats any status:'planned' visit, manual or planner, as a fixed,
+// budget-consuming stop to route around (committedVisitsQuery/evaluateDay,
+// and the same-place exclusion in lockedElsewherePlaceIds), so blocking the
+// whole day added nothing beyond what those plain rules already cover. Same
+// source:'planner' scoping precedent as reopenCommittedDay.
+//
+// Once a date clears that gate, though, its COUNT is every planned visit on
+// it, any source (caught 2026-08-20) - a rep who commits a route AND
+// separately hand-plans a visit for the same day should see both reflected
+// in "3 visits planned," not just the 2 the route planner itself proposed;
+// the drill-down committedDayVisits opens from clicking the row already
+// shows all of them, so the count has to match.
+describe('committedDateSummaries - gated by a planner-committed visit, counted by all visits on the date', () => {
   let db;
   const TODAY = '2026-08-12';
 
@@ -456,14 +467,14 @@ describe('committedDateSummaries - a manual visit counts as committed, same as a
       { id: 4, name: 'Both Place Two', category: 'Hospice', tier: 1, priority_score: 75 },
     ]);
 
-    // A date with ONLY a manual visit - must appear in the summary, same as
-    // any other planned date.
+    // A date with ONLY a manual visit - must NOT appear in the summary, so
+    // it stays selectable in /generate.
     await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-20', place_name: 'Manual Only Place' });
 
-    // A date with ONLY a real planner commit - unaffected by this change.
+    // A date with ONLY a real planner commit - still counted, unaffected by this change.
     await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-21', place_name: 'Planner Committed Place' });
 
-    // A date with BOTH - both rows count.
+    // A date with BOTH - the planner row is what gates it in, but both rows count.
     await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-22', place_name: 'Both Place' });
     await db('visits').insert({ place_id: 4, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-22', place_name: 'Both Place Two' });
   });
@@ -472,11 +483,10 @@ describe('committedDateSummaries - a manual visit counts as committed, same as a
     await db.destroy();
   });
 
-  test('a manual-only date appears in the summary, off-limits to /generate like any other planned date', async () => {
+  test('a manual-only date is absent from the summary - still selectable in /generate', async () => {
     const summaries = await committedDateSummaries(db, 1, { today: TODAY });
     const row = summaries.find((s) => s.date === '2026-08-20');
-    assert.ok(row);
-    assert.equal(row.count, 1);
+    assert.equal(row, undefined);
   });
 
   test('a planner-committed-only date still appears, count unchanged', async () => {
@@ -486,11 +496,11 @@ describe('committedDateSummaries - a manual visit counts as committed, same as a
     assert.equal(row.count, 1);
   });
 
-  test('a date with both counts both rows', async () => {
+  test('a date with both counts every visit on it, not just the planner-sourced one', async () => {
     const summaries = await committedDateSummaries(db, 1, { today: TODAY });
     const row = summaries.find((s) => s.date === '2026-08-22');
     assert.ok(row);
-    assert.equal(row.count, 2, 'the manual visit is not special-cased out of the count anymore');
+    assert.equal(row.count, 2, 'the manual visit still counts once the date is gated in by the planner-committed one');
   });
 });
 

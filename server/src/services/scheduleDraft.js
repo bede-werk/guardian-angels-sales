@@ -15,6 +15,7 @@
 // rest of this stack uses.
 const knex = require('../db/knex');
 const defaultSchedulingConfig = require('../config/scheduling');
+const planningConfig = require('../config/planning');
 const defaultDriveConfig = require('../config/driveTime');
 const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
@@ -39,25 +40,12 @@ function isUniqueViolation(err) {
     || /unique constraint/i.test(err.message || '');
 }
 
-// Calendar-driven planning: the user hand-picks which dates to plan (and how
-// many hours on each) rather than the old "N days ahead" auto-window, so
-// these are UI-facing bounds on that selection rather than generator config.
-const MAX_PLAN_DATES = 10;
-// Default hours budget for a date reopenCommittedDay adds to a draft's
-// params.days on the fly (there's no UI step to pick hours when reopening an
-// already-committed day - the rep is editing stops, not re-picking a
-// schedule). Mirrors RoutePlanner.jsx's own DEFAULT_HOURS_PER_DAY constant -
-// keep the two equal.
-const DEFAULT_HOURS_PER_DAY = 4;
-// A day's ranking/candidate pool is only as fresh as the moment it was
-// generated - a commitment that becomes due, or a new higher-priority place,
-// between generation and the actual visit date won't retroactively reshuffle
-// an already-proposed day. Capping how far out a date can be planned bounds
-// how stale a proposal can get before the rep would naturally regenerate it
-// anyway. Chosen with Bede 2026-07-15: a week out - counted in weekdays (see
-// maxPlanDateUTC below), not raw calendar days, at Bede's request the same
-// day: a weekend sitting in the middle of the window shouldn't eat into it.
-const MAX_DAYS_AHEAD = 7;
+// Calendar-driven planning bounds (MAX_PLAN_DATES, DEFAULT_HOURS_PER_DAY,
+// MAX_DAYS_AHEAD) live in config/planning.js - they're limits on what the rep
+// may ASK the planner for rather than inputs to the ranking algorithm, and
+// RoutePlanner.jsx now reads the same three values from GET /api/settings
+// instead of keeping its own hardcoded copies. Read `planningConfig.X` at
+// call time so a settings override applies without a restart.
 
 // Validates + normalizes the `days` the client sent for /generate: every
 // entry must be a real future date with a positive hoursPerDay, no date can
@@ -71,8 +59,8 @@ function validateDays(rawDays, { today, committedDates }) {
     err.status = 400;
     throw err;
   }
-  if (rawDays.length > MAX_PLAN_DATES) {
-    const err = new Error(`Cannot plan more than ${MAX_PLAN_DATES} dates at once`);
+  if (rawDays.length > planningConfig.MAX_PLAN_DATES) {
+    const err = new Error(`Cannot plan more than ${planningConfig.MAX_PLAN_DATES} dates at once`);
     err.status = 400;
     throw err;
   }
@@ -95,7 +83,7 @@ function validateDays(rawDays, { today, committedDates }) {
       throw err;
     }
     if (date > maxDate) {
-      const err = new Error(`${date} is more than ${MAX_DAYS_AHEAD} days out - pick a closer date`);
+      const err = new Error(`${date} is more than ${planningConfig.MAX_DAYS_AHEAD} days out - pick a closer date`);
       err.status = 400;
       throw err;
     }
@@ -312,7 +300,7 @@ function daysBeforeUTC(dateStr, n) {
 function maxPlanDateUTC(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
-  let remaining = MAX_DAYS_AHEAD;
+  let remaining = planningConfig.MAX_DAYS_AHEAD;
   while (remaining > 0) {
     dt.setUTCDate(dt.getUTCDate() + 1);
     const dow = dt.getUTCDay(); // 0 = Sunday, 6 = Saturday
@@ -411,25 +399,55 @@ async function ownDraftPlaceIds(db, draftId) {
   return new Set(rows.map((r) => r.place_id));
 }
 
-// Every date this user has a still-open (status: 'planned') visits row on -
-// from committing a previous draft, or a planned visit logged directly
-// outside the planner. Once a date is in here, the calendar disables it and
-// /generate rejects it (see validateDays) - a planned day is done, not
-// something a future plan should ever touch again. Deliberately excludes
-// completed/skipped visits: those are finished history, not an open plan -
-// a date where the only visit on the books is already completed should
-// still be freely plannable. Scoped to status: 'planned' for the same
-// reason deleteCommittedDay is (see its own comment) - keeping the two in
-// sync means a date's count here always matches what Delete would actually
-// remove. Scoped to today-or-later: a past committed date can never be
-// selected anyway (validateDays rejects any date <= today on its own), so
-// there's no reason to drag the user's full visit history through this
-// query as it grows over time.
+// Every date this user has a still-open (status: 'planned') visits row on,
+// GATED to dates that include at least one source: 'planner' row - i.e. a
+// date already committed from a previous draft. Once a date is in here, the
+// calendar disables it and /generate rejects it (see validateDays) - a
+// committed day is done, not something a future plan should ever touch
+// again. Deliberately excludes completed/skipped visits: those are finished
+// history, not an open plan - a date where the only visit on the books is
+// already completed should still be freely plannable.
+//
+// Gate scoped to source: 'planner' (reversed 2026-08-19, see
+// feedback_route_planner_proposals_only) - a manual-only date used to gate
+// here too, blocking the whole day from ever reaching /generate. That was
+// collateral from ripping out the zone-anchor mechanism, not a rule worth
+// keeping on its own merits: a manually-planned visit is already a fixed,
+// budget-consuming stop the generator routes around via the plain
+// same-place-same-day exclusion (lockedElsewherePlaceIds/
+// committedElsewherePlaceIds, both unscoped by source) and
+// committedVisitsQuery/evaluateDay's budget accounting - blocking day
+// SELECTION on top of that added nothing, it just made a manually-planned
+// day unreachable from the planner entirely. Same source:'planner' scoping
+// precedent as reopenCommittedDay just below.
+//
+// The returned COUNT, once a date clears that gate, is every status:
+// 'planned' visit on it regardless of source - NOT re-scoped to
+// source:'planner' (caught 2026-08-20: doing that made a day's "Already
+// Planned" count silently undercount whenever a manual visit shared the
+// date with a planner-committed one). This has to stay in sync with
+// committedDayVisits below, which is genuinely unscoped by source - the
+// drill-down a rep opens from clicking one of these rows shows every visit
+// on the date, so the count above it needs to match that list exactly, not
+// just the subset that happened to gate the date.
+//
+// Scoped to today-or-later: a past committed date can never be selected
+// anyway (validateDays rejects any date <= today on its own), so there's no
+// reason to drag the user's full visit history through this query as it
+// grows over time.
 async function committedDateSummaries(db, userId, { today } = {}) {
   const cutoff = today || orgToday();
+  const gatingRows = await db('visits')
+    .where({ user_id: userId, status: 'planned', source: 'planner' })
+    .andWhere('scheduled_date', '>=', cutoff)
+    .groupBy('scheduled_date')
+    .select('scheduled_date as date');
+  const committedDates = gatingRows.map((r) => r.date);
+  if (committedDates.length === 0) return [];
+
   const rows = await db('visits')
     .where({ user_id: userId, status: 'planned' })
-    .andWhere('scheduled_date', '>=', cutoff)
+    .whereIn('scheduled_date', committedDates)
     .groupBy('scheduled_date')
     .orderBy('scheduled_date')
     .select('scheduled_date as date')
@@ -569,12 +587,33 @@ async function generateAndPersistDraft({ userId, params, regenerate = false }) {
   const basePool = await buildCandidatePool(knex, { today });
   const lockedByDate = await lockedElsewherePlaceIdsByDate(knex, { dates: fullParams.days.map((d) => d.date), userId });
 
+  // A date can already carry a real committed visit the moment generation
+  // runs on it now (most commonly a manual visit planned first - see
+  // committedDateSummaries' own comment on why that no longer blocks the
+  // date outright). Reuses evaluateDay's exact committed-segment math (real
+  // OSRM drive time between committed stops when available, same as the
+  // view-time budget accounting already does) purely to learn how many
+  // minutes are already spoken for - the `[]` proposed-stops argument means
+  // this only ever reads back `totalMinutes`, never a start point or zone,
+  // so generateDraft's per-day budget shrinks but which zone gets picked and
+  // where a proposed stop's drive time starts from are untouched. See
+  // generateDraft's own comment on why that split matters.
+  const committedRows = await committedVisitsQuery(knex, { userId }).whereIn('v.scheduled_date', fullParams.days.map((d) => d.date));
+  const committedByDate = {};
+  for (const row of committedRows) (committedByDate[row.scheduled_date] ||= []).push(row);
+  const committedMinutesByDate = {};
+  for (const date of Object.keys(committedByDate)) {
+    const evaluated = await evaluateDay([], { homeBase: fullParams.homeBase, budgetMinutes: Infinity, committed: committedByDate[date] });
+    committedMinutesByDate[date] = evaluated.totalMinutes;
+  }
+
   const { days: generatedDays } = await generateDraft({
     candidates: basePool,
     days: fullParams.days,
     homeBase: fullParams.homeBase,
     zoneOverrides: fullParams.zoneOverrides,
     lockedByDate,
+    committedMinutesByDate,
     optimizeRoute, // real OSRM-backed optimizer, finally wired in (phase 5 left it opt-in)
   });
 
@@ -630,10 +669,14 @@ function toDraftStopShape(row) {
 // and the `place_name` snapshot column both exist specifically to survive
 // that.
 //
-// status: 'planned' only - same scope committedDayVisits/committedDateSummaries
-// above already use for this exact "Already Planned" concept, and the same
-// reason: RoutePlanner.jsx renders every row here under a hardcoded "✓
-// Planned" badge, so a completed (or skipped) visit that happens to share
+// status: 'planned' only, any source - same scope committedDayVisits above
+// already uses for this exact "Already Planned"/budget-accounting concept
+// (deliberately NOT source-scoped like committedDateSummaries is: a manual
+// visit still has to count here as a real, budget-consuming commitment for
+// the day, even though it no longer blocks the day from being selected in
+// the first place). Same reason as committedDayVisits too: RoutePlanner.jsx
+// renders every row here under a hardcoded "✓ Planned" badge, so a
+// completed (or skipped) visit that happens to share
 // the date would show up mislabeled as still-planned, duplicated once per
 // real visit row logged that day at that place. A completed visit isn't
 // "still open on the books" - it already happened; it has no business in a
@@ -1610,7 +1653,7 @@ async function reopenCommittedDay({ userId, date, homeBase }) {
     }
 
     if (!params.days.some((d) => d.date === date)) {
-      params.days.push({ date, hoursPerDay: DEFAULT_HOURS_PER_DAY });
+      params.days.push({ date, hoursPerDay: planningConfig.DEFAULT_HOURS_PER_DAY });
       params.days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       await trx('schedule_drafts').where({ id }).update({ params_json: JSON.stringify(params) });
     }
@@ -1650,8 +1693,11 @@ async function reopenCommittedDay({ userId, date, homeBase }) {
 }
 
 module.exports = {
-  MAX_PLAN_DATES,
-  MAX_DAYS_AHEAD,
+  // Live getters, not copies: the settings page mutates config/planning.js in
+  // place, and a plain `MAX_PLAN_DATES: planningConfig.MAX_PLAN_DATES` would
+  // hand every caller the value as it stood at require time.
+  get MAX_PLAN_DATES() { return planningConfig.MAX_PLAN_DATES; },
+  get MAX_DAYS_AHEAD() { return planningConfig.MAX_DAYS_AHEAD; },
   validateDays,
   mergeLockedElsewhereIds,
   partitionCommittableStops,

@@ -146,7 +146,7 @@ export default function People({ userId }) {
               title="Rate the relationships you already have, so scoring doesn't start from zero"
               onClick={() => setSeeding(true)}
             >
-              Seed relationships
+              Rate relationships
             </Button>
             <Button variant="secondary" size="small" title="Create a brand-new person" onClick={() => setAdding(true)}>+ Add person</Button>
           </div>
@@ -217,7 +217,7 @@ export default function People({ userId }) {
       )}
 
       {adding && (
-        <PersonModal places={places} categories={filters.allCategories} onClose={() => setAdding(false)} onSaved={refresh} />
+        <PersonModal places={places} categories={filters.allCategories} onClose={() => setAdding(false)} onSaved={refresh} onCategoriesChanged={loadReferenceData} />
       )}
 
       {managingCategories && (

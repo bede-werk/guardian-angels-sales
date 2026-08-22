@@ -57,7 +57,7 @@ function primaryWarning(warnings) {
 // reload lives there, not here) rather than duplicating it.
 //
 // `onEdited`, same convention again - enables the Edit button, which opens a
-// date/notes panel (mirrors the Snooze panel below) and saves through
+// date/type/notes panel (mirrors the Snooze panel below) and saves through
 // api.editVisit (PATCH /:id/edit). That endpoint works on ANY still-planned
 // visit, not just one already planned_manually - the FIRST successful edit
 // through it is what promotes a planner-committed visit into a
@@ -71,8 +71,13 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
   const [snoozing, setSnoozing] = useState(false); // showing the preset/date panel, vs the normal footer
   const [customDate, setCustomDate] = useState('');
   const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false); // showing the date/notes edit panel, vs the normal footer
+  const [editing, setEditing] = useState(false); // showing the date/type/notes edit panel, vs the normal footer
   const [editDate, setEditDate] = useState(visit.scheduled_date || '');
+  // Same "always a real type, never blank" default as PlanVisitModal's own
+  // select - an already-typed visit keeps its type, one with none (a bare
+  // planner stop, or an old manual visit from before types were captured)
+  // starts from the same DEFAULT_VISIT_TYPE fallback.
+  const [editVisitType, setEditVisitType] = useState(visit.visit_type || 'drop_in');
   const [editNotes, setEditNotes] = useState(visit.notes || '');
   const [editWarnings, setEditWarnings] = useState(null);
   const [editError, setEditError] = useState(null);
@@ -98,6 +103,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
       const visitId = visit.visit_id ?? visit.id;
       const result = await api.editVisit(visitId, {
         scheduled_date: editDate,
+        visit_type: editVisitType,
         notes: editNotes.trim() || null,
         force,
       });
@@ -161,7 +167,9 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
           {visit.place_name && (
             <div className="tiny"><strong>Place:</strong> {visit.place_name}</div>
           )}
-          <div className="tiny"><strong>Type:</strong> {VISIT_TYPE_LABELS[visit.visit_type] || 'Visit'}</div>
+          {!editing && (
+            <div className="tiny"><strong>Type:</strong> {VISIT_TYPE_LABELS[visit.visit_type] || 'Visit'}</div>
+          )}
           {/* No contact line here on purpose. Who was met lives in a visit's
               `encounters`, which only get written when the visit is logged -
               a planned stop having none is its normal state, not missing
@@ -169,7 +177,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
           {visit.user_name && (
             <div className="tiny"><strong>Rep:</strong> {visit.user_name}</div>
           )}
-          {visit.notes && (
+          {visit.notes && !editing && (
             <div className="tiny"><strong>Notes:</strong> {visit.notes}</div>
           )}
           {visit.crossRepFloorWarning && (
@@ -193,6 +201,18 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
                 disabled={savingEdit}
                 autoFocus
               />
+            </div>
+            <div style={{ width: '100%' }}>
+              <label className="field">Visit type</label>
+              <select
+                value={editVisitType}
+                onChange={(e) => setEditVisitType(e.target.value)}
+                disabled={savingEdit}
+              >
+                {Object.entries(VISIT_TYPE_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
             </div>
             <div style={{ width: '100%' }}>
               <label className="field">Notes</label>

@@ -128,7 +128,6 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
           )}
         </div>
         <div className="modal-foot">
-          <Button variant="secondary" onClick={requestClose} disabled={assigning}>Cancel</Button>
           <Button onClick={assignSelected} disabled={selected.size === 0 || assigning}>
             {assigning ? 'Assigning…' : `Assign ${selected.size} ${selected.size === 1 ? 'person' : 'people'}`}
           </Button>

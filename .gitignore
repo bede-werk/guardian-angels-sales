@@ -1,6 +1,10 @@
 node_modules/
 **/node_modules/
 server/data/
+# SQLite files anywhere - the real DB lives in server/data/ (ignored above), but
+# running a knex/node command from the wrong directory drops a stray empty
+# app.db beside it. Neither should ever be committed.
+*.db
 client/dist/
 .env
 server/.env
