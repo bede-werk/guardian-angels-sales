@@ -1,11 +1,14 @@
 // Manual Visit Planning - creating a `visits` row directly, by hand, rather
-// than committing a route-planner draft. See
-// docs/manual-visit-planning-spec.md (v2, 2026-08-12) for the full design.
-// Short version (§1): today the only path to a status:'planned' visit is a
-// draft commit; this is the "I'm going to Tabitha on Thursday" path - the
-// human decides, the planner arranges itself around the decision (see
-// scheduleGenerator.js's hard exclusion and zone/anchor logic for that
-// side of it, §7).
+// than committing a route-planner draft. See HANDOFF.md §20/§20A/§20B for
+// the full design and history (§ numbers below refer to §20 there - there
+// is no separate docs/manual-visit-planning-spec.md file; that was this
+// feature's original working-doc name and was never actually checked in,
+// so HANDOFF.md is the real, current spec). Short version (§1): today the
+// only path to a status:'planned' visit is a draft commit; this is the
+// "I'm going to Tabitha on Thursday" path - the human decides, the planner
+// arranges itself around the decision (see scheduleGenerator.js's hard
+// exclusion logic for that side of it - the zone/anchor mechanism §7
+// originally described was removed the same day it shipped, see §20A).
 //
 // This is a POLICY LAYER over services/conflictDetection.js, not a second
 // detector (§4) - that module already computes every finding this needs

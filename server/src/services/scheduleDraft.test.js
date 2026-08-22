@@ -4,6 +4,7 @@ const path = require('node:path');
 const knexLib = require('knex');
 const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, commitDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 const { estimateDriveMinutes } = require('./driveTime');
+const { editVisit } = require('./manualVisits');
 
 describe('mergeLockedElsewhereIds', () => {
   test('unions committed and other-draft rows', () => {
@@ -472,11 +473,14 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
     await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-20', place_name: 'Manual Only Place' });
 
     // A date with ONLY a real planner commit - still counted, unaffected by this change.
-    await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-21', place_name: 'Planner Committed Place' });
+    // planner_committed: 1 alongside source: 'planner' - a hand-built fixture
+    // standing in for what commitDay's real insert produces (see
+    // 20260822000000_add_visits_planner_committed.js).
+    await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-21', place_name: 'Planner Committed Place' });
 
     // A date with BOTH - the planner row is what gates it in, but both rows count.
     await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-22', place_name: 'Both Place' });
-    await db('visits').insert({ place_id: 4, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', scheduled_date: '2026-08-22', place_name: 'Both Place Two' });
+    await db('visits').insert({ place_id: 4, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-22', place_name: 'Both Place Two' });
   });
 
   after(async () => {
@@ -501,6 +505,33 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
     const row = summaries.find((s) => s.date === '2026-08-22');
     assert.ok(row);
     assert.equal(row.count, 2, 'the manual visit still counts once the date is gated in by the planner-committed one');
+  });
+
+  // Regression test for the bug fixed 2026-08-22: editVisit
+  // (services/manualVisits.js) promotes ANY successful hand-edit - even a
+  // notes-only one, no date change - to source: 'manual'. Before
+  // planner_committed existed, that silently dropped a date out of this
+  // gate the moment its only planner-committed visit got a typo fixed,
+  // reopening the date for a fresh /generate even though the visit was
+  // still sitting there. planner_committed is meant to survive exactly
+  // this. Own place/date, isolated from the shared before() fixture above
+  // since this test mutates a row.
+  test('a notes-only edit through editVisit does not drop the date out of the gate', async () => {
+    await db('places').insert({ id: 5, name: 'Edited Notes Place', category: 'Hospice', tier: 1, priority_score: 75 });
+    const [inserted] = await db('visits')
+      .insert({ place_id: 5, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-23', place_name: 'Edited Notes Place' })
+      .returning('id');
+    const visitId = inserted && inserted.id !== undefined ? inserted.id : inserted;
+
+    let summaries = await committedDateSummaries(db, 1, { today: TODAY });
+    assert.ok(summaries.find((s) => s.date === '2026-08-23'), 'the date gates in before any edit, same as any other planner commit');
+
+    const result = await editVisit(db, visitId, { notes: 'fixed a typo' }, 1);
+    assert.equal(result.visit.notes, 'fixed a typo');
+    assert.equal(result.visit.source, 'manual', 'the promotion itself is unaffected - still flips on any edit');
+
+    summaries = await committedDateSummaries(db, 1, { today: TODAY });
+    assert.ok(summaries.find((s) => s.date === '2026-08-23'), 'the date must still gate in - the visit never stopped being real');
   });
 });
 

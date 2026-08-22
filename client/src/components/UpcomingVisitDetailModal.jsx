@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { api, today, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import { api, today, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS, DEFAULT_VISIT_TYPE } from '../api';
 import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
 
@@ -77,7 +77,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
   // select - an already-typed visit keeps its type, one with none (a bare
   // planner stop, or an old manual visit from before types were captured)
   // starts from the same DEFAULT_VISIT_TYPE fallback.
-  const [editVisitType, setEditVisitType] = useState(visit.visit_type || 'drop_in');
+  const [editVisitType, setEditVisitType] = useState(visit.visit_type || DEFAULT_VISIT_TYPE);
   const [editNotes, setEditNotes] = useState(visit.notes || '');
   const [editWarnings, setEditWarnings] = useState(null);
   const [editError, setEditError] = useState(null);

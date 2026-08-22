@@ -318,6 +318,16 @@ export const VISIT_TYPE_LABELS = {
   pre_qualification: 'Pre-qualification',
 };
 
+// A MIRROR of server/src/config/visitTypes.js's DEFAULT_VISIT_TYPE - same
+// small-duplication tradeoff as VISIT_TYPE_LABELS/VISIT_TYPE_MINUTES above,
+// but pulled into one named constant rather than left as a bare 'drop_in'
+// literal repeated at each call site: PlanVisitModal.jsx's new-visit form
+// and UpcomingVisitDetailModal.jsx's edit panel both need "always show a
+// real type, never blank" fallback, and a literal copied into two places
+// is exactly the kind of thing that quietly drifts if the server's default
+// ever changes and only one call site gets updated.
+export const DEFAULT_VISIT_TYPE = 'drop_in';
+
 // Planned minutes per visit type - a MIRROR of server/src/config/visitTypes.js's
 // VISIT_TYPES[*].minutes, used only to prefill the "how long did it actually
 // take?" field so the rep is correcting a sensible number instead of typing

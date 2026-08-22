@@ -127,10 +127,10 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [reschedulingCommitmentSaving, setReschedulingCommitmentSaving] = useState(false);
   const [waivingCommitment, setWaivingCommitment] = useState(false);
   const [deletingCommitmentId, setDeletingCommitmentId] = useState(null);
-  // Manual Visit Planning (see server's manual-visit-planning-spec.md §3) -
-  // the "Plan a visit" button in the Upcoming Visits card-head, next to Do
-  // not visit. Opens PlanVisitModal rather than an inline form (that used
-  // to cram date + rep picker + warning text into one card row).
+  // Manual Visit Planning (see HANDOFF.md §20 §3) - the "Plan a visit"
+  // button in the Upcoming Visits card-head, next to Do not visit. Opens
+  // PlanVisitModal rather than an inline form (that used to cram date + rep
+  // picker + warning text into one card row).
   const [planningVisit, setPlanningVisit] = useState(false);
   const [users, setUsers] = useState([]); // team list, for the assigned-rep picker (cross-rep planning, §5)
 

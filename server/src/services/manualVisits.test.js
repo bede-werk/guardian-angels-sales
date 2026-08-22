@@ -328,15 +328,16 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
 
   describe('editVisit - promotes a planner-committed visit', () => {
     // place_id 2 ('Same Day Planned Place') was seeded above as an ordinary
-    // status:'planned' visit with source:'planner' (the DB default here is
-    // 'manual', so seed it explicitly) and planned_manually left at its
-    // column default (0) - exactly what a route-planner commit looks like,
-    // never touched by createManualVisit anywhere in this file.
+    // status:'planned' visit with source:'planner'/planner_committed:1 (the
+    // DB defaults here are 'manual'/0, so seed both explicitly) and
+    // planned_manually left at its column default (0) - exactly what a
+    // route-planner commit looks like, never touched by createManualVisit
+    // anywhere in this file.
     let plannerVisitId;
 
     before(async () => {
       const row = await db('visits').where({ place_id: 2 }).first();
-      await db('visits').where({ id: row.id }).update({ source: 'planner' });
+      await db('visits').where({ id: row.id }).update({ source: 'planner', planner_committed: 1 });
       plannerVisitId = row.id;
     });
 
@@ -344,6 +345,15 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
       const result = await editVisit(db, plannerVisitId, { notes: 'Took over this stop' }, 2);
       assert.ok(result.visit);
       assert.equal(result.visit.notes, 'Took over this stop');
+    });
+
+    test('planner_committed survives the promotion untouched - it is a birth fact, not a current-state flag', async () => {
+      // See 20260822000000_add_visits_planner_committed.js: this is exactly
+      // what committedDateSummaries' gate relies on to survive an unrelated
+      // hand-edit, unlike source/planned_manually above, which are meant to
+      // flip.
+      const row = await db('visits').where({ id: plannerVisitId }).first();
+      assert.equal(row.planner_committed, 1);
     });
 
     test('a successful save promotes it: planned_manually and source flip, created_by_user_id backfills', async () => {
