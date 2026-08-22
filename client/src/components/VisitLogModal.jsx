@@ -458,6 +458,14 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   async function save() {
     setSaving(true);
     setError(null);
+    // Cleared here too, not just on date-change (below) - a "Save anyway"
+    // resend that hits a FRESH problem (a permission error, a race) must
+    // never leave the earlier conflict notice showing alongside the new
+    // error. `conflicts.length > 0` is read into `payload.force` just below
+    // this - safe to clear first regardless, since setState doesn't mutate
+    // this closure's binding mid-call.
+    setConflicts([]);
+    setCollisionMessage('');
     try {
       const payload = {
         ...form,

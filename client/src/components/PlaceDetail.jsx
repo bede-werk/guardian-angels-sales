@@ -1077,6 +1077,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       {viewingUpcomingVisit && (
         <UpcomingVisitDetailModal
           visit={viewingUpcomingVisit}
+          userId={userId}
           onClose={() => setViewingUpcomingVisit(null)}
           onComplete={(v) => {
             if (v.user_id != null && v.user_id !== userId && !window.confirm("This visit is logged under a different rep's account. Log it anyway?")) return;

@@ -564,6 +564,7 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
       {viewingUpcoming && (
         <UpcomingVisitDetailModal
           visit={viewingUpcoming}
+          userId={userId}
           onClose={() => setViewingUpcoming(null)}
           onComplete={(v) => { setViewingUpcoming(null); setEditingVisit(v); }}
           onSnoozed={() => { setViewingUpcoming(null); refresh(); }}

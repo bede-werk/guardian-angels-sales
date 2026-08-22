@@ -82,6 +82,13 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
   async function save() {
     setSaving(true);
     setError(null);
+    // Cleared here too, not just on field-change (below) - a "Plan anyway"
+    // resend that hits a FRESH problem (someone just took the slot, a
+    // permission error) must never leave the earlier warning on screen
+    // alongside the new error. Safe to clear before reading `warnings` into
+    // `force` just below: setState doesn't mutate this closure's binding
+    // mid-call, so that read still sees the pre-clear value either way.
+    setWarnings(null);
     try {
       const result = await api.planVisit({
         place_id: resolvedPlaceId,

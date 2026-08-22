@@ -779,6 +779,11 @@ router.post('/:id/commitments/:commitmentId/reschedule', async (req, res, next) 
       note: req.body.note !== undefined ? (req.body.note || null) : undefined,
       createdByUserId: req.user.id,
     });
+    // null means someone else discharged this exact commitment in the gap
+    // between the pre-check above and rescheduleCommitment's own atomic
+    // re-check (services/placeCommitments.js) - same "already resolved"
+    // 409 as the pre-check, just reached via the race instead.
+    if (!rescheduled) return res.status(409).json({ error: 'This commitment has already been resolved' });
     res.status(201).json(await loadCommitment(rescheduled.id));
   } catch (err) {
     next(err);
@@ -799,6 +804,9 @@ router.post('/:id/commitments/:commitmentId/waive', async (req, res, next) => {
     if (existing.discharged_at) return res.status(409).json({ error: 'This commitment has already been resolved' });
 
     const waived = await waiveCommitment(knex, commitmentId, { note: req.body.note });
+    // Same race as reschedule above - null means it was already discharged
+    // by a concurrent request between the pre-check and this call.
+    if (!waived) return res.status(409).json({ error: 'This commitment has already been resolved' });
     res.json(await loadCommitment(waived.id));
   } catch (err) {
     next(err);

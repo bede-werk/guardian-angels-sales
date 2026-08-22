@@ -100,9 +100,14 @@ describe('PATCH /api/visits/:id — authorization on a still-planned visit', () 
   });
 
   // Fresh planned visit owned by Rep B (id 2) for each test, so one test's
-  // mutation (or lack of it) can't bleed into another's.
+  // mutation (or lack of it) can't bleed into another's. Clears out any
+  // still-'planned' leftover from a PREVIOUS test first — a rejected (403)
+  // PATCH leaves that row exactly as it started, so without this the next
+  // test's insert collides with it under visits_place_date_planned_unique
+  // (both are place_id:1 @ FUTURE_DATE, still 'planned').
   let visitId;
   async function freshPlannedVisitOwnedByRepB() {
+    await testKnex('visits').where({ place_id: 1, scheduled_date: FUTURE_DATE, status: 'planned' }).del();
     const [row] = await testKnex('visits')
       .insert({ place_id: 1, place_name: 'Test Place', user_id: 2, status: 'planned', scheduled_date: FUTURE_DATE })
       .returning('id');

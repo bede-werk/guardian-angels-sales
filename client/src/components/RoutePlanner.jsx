@@ -62,6 +62,22 @@ function addStopErrorMessage(err, viewerId) {
 // own other visit (detectConflictsForStops doesn't exclude the caller the
 // way DRAFT_ELSEWHERE does - a rep's own duplicate is exactly as worth
 // naming as anyone else's).
+// Reduces a stop's full Conflict[] down to the single one worth surfacing -
+// same priority order and same reasoning as VisitLogModal.jsx's
+// primaryConflict (a same-date collision is a certain fact, outranking a
+// floor proximity guess), just not shared between the two files yet. A stop
+// can genuinely carry more than one true conflict at once (e.g. both
+// FLOOR_COMPLETED and DRAFT_ELSEWHERE), but stacking every applicable one
+// reads as pile-on for what's really one "this place is spoken for" signal.
+const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+function primaryConflict(conflicts) {
+  for (const type of CONFLICT_PRIORITY) {
+    const found = conflicts.find((c) => c.type === type);
+    if (found) return found;
+  }
+  return conflicts[0] || null;
+}
+
 function stopConflictMessage(c, viewerId) {
   switch (c.type) {
     case 'SAME_DATE_VISIT': {
@@ -685,16 +701,22 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         Tuesday commit has since invalidated. Informational -
                         addStop allows a floor conflict through; only a same-
                         date/other-draft collision is rejected outright, at
-                        add time, before it can ever reach here. */}
-                    {(stop.conflicts || []).map((c) => (
-                      <div
-                        key={c.type}
-                        className="tiny"
-                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
-                      >
-                        {stopConflictMessage(c, userId)}
-                      </div>
-                    ))}
+                        add time, before it can ever reach here. A stop can
+                        genuinely carry more than one true conflict at once -
+                        primaryConflict picks the single most-certain one to
+                        show, same "one line, not a pile-on" rule as
+                        VisitLogModal.jsx/PlanVisitModal.jsx's own notices. */}
+                    {stop.conflicts && stop.conflicts.length > 0 && (() => {
+                      const c = primaryConflict(stop.conflicts);
+                      return c ? (
+                        <div
+                          className="tiny"
+                          style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                        >
+                          {stopConflictMessage(c, userId)}
+                        </div>
+                      ) : null;
+                    })()}
                     {/* Place Commitments badge (spec §6.1) - a due commitment
                         is exactly why this place jumped to the top of the
                         proposal, so the badge is what explains the ranking,
