@@ -64,25 +64,45 @@ function classifyConflicts(conflicts) {
 // single place+date pair anyway.
 function blockingMessage(conflict) {
   if (conflict.type === 'SAME_DATE_VISIT') {
+    // "on this date" (not "today") and "a {status} visit" (not "is
+    // visiting") - the manual-plan's target date is essentially always a
+    // FUTURE date (pastDateError blocks anything earlier; this feature
+    // exists specifically for dates ahead), so both the word "today" and a
+    // present-continuous "is visiting" claim were wrong the moment this
+    // ran for any date but literally today. The {status} noun phrase
+    // ("planned"/"completed" visit) sidesteps needing separate past/future
+    // verb tenses entirely - same trick routes/visits.js's own SAME_DATE_VISIT
+    // 409 message (POST /api/visits) already uses.
     const who = conflict.otherUserName || 'Someone';
-    return `${who} is already visiting this place today.`;
+    return `${who} already has a ${conflict.status} visit here on this date.`;
   }
   // DRAFT_ELSEWHERE
   const who = conflict.otherUserName || 'another rep';
   return `This place is already in ${who}'s draft for this day.`;
 }
 
-// A FLOOR_COMPLETED/FLOOR_PLANNED conflict -> its warning line. Same wording
-// for both per spec §4.2 - the point of the message is "recently active
-// here," not a completed/planned distinction the rep would need to parse
-// mid-confirm. daysApart is measured against the date being PLANNED, not
-// real-world today (see conflictDetection.js's detectConflicts: `today` is
-// always the target date under evaluation) - "ago" implies "before now,"
-// which reads wrong for a warning about a FUTURE date. "prior" carries no
-// such claim.
+// A FLOOR_COMPLETED/FLOOR_PLANNED conflict -> its warning line. daysApart is
+// measured against the date being PLANNED, not real-world today (see
+// conflictDetection.js's detectConflicts: `today` is always the target date
+// under evaluation).
+//
+// FLOOR_COMPLETED is always a real past event (a completed visit's date can
+// never be in the future - see VisitLogModal.jsx's date input, capped at
+// today()), so "was visited ... prior" is always accurate there. FLOOR_PLANNED
+// hasn't happened - it's another still-open plan, which could land on
+// either side of the date being evaluated (nearestPlanned picks whichever
+// planned visit is CLOSEST, not necessarily earlier) - "was visited" is
+// wrong tense-wise (nothing happened yet) and "prior" would sometimes be
+// wrong direction-wise too. "already has a visit planned within N days"
+// makes neither claim while keeping the same "recently active here" signal
+// spec §4.2 wants, so this no longer needs the shared wording that used to
+// paper over the difference.
 function floorWarningMessage(conflict) {
   const n = conflict.daysApart;
-  return `This place was visited ${n} day${n === 1 ? '' : 's'} prior. Plan anyway?`;
+  const nDays = `${n} day${n === 1 ? '' : 's'}`;
+  return conflict.type === 'FLOOR_COMPLETED'
+    ? `This place was visited ${nDays} prior. Plan anyway?`
+    : `This place already has a visit planned within ${nDays}. Plan anyway?`;
 }
 
 // do_not_visit is not a conflictDetection.js finding (that module only
