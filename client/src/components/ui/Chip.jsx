@@ -2,7 +2,7 @@
 // outcome, and category. This file replaced the old Badges.jsx during the
 // brand redesign - same idea, restyled with the brand tokens.
 import React from 'react';
-import { outcomeLabel, RELATIONSHIP_LABELS, CAPACITY_LABELS } from '../../api';
+import { outcomeLabel, RELATIONSHIP_LABELS, CAPACITY_LABELS, VISIT_STATUS_LABELS } from '../../api';
 
 // "Tier 1", "Tier 2", "Tier 3" + an optional "★ Priority" pill next to it.
 export function TierChip({ tier, isPriority }) {
@@ -46,6 +46,15 @@ export function CapacityChip({ level, overridden }) {
       {CAPACITY_LABELS[level] || level}
     </span>
   );
+}
+
+// A visit's status (planned/completed/skipped/snoozed) - the Visits tab's
+// own column, since none of the single-place-or-person views needed a chip
+// for it before (they already group visits by status into separate lists/
+// cards instead).
+export function StatusChip({ status }) {
+  if (!status) return null;
+  return <span className={`badge st-${status}`}>{VISIT_STATUS_LABELS[status] || status}</span>;
 }
 
 // A place's Source Category (Hospitals, Hospice, Physicians, etc.) as a

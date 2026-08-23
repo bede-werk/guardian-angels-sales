@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { api, today, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import { api, today, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS, DEFAULT_VISIT_TYPE } from '../api';
 import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
 
@@ -36,6 +36,28 @@ function primaryWarning(warnings) {
   return warnings[0];
 }
 
+// Mirrors the server's own ownership rules exactly - services/manualVisits.js's
+// canEditManualVisit/canDeleteManualVisit, and the inline check in
+// routes/visits.js's POST /:id/snooze - so a rep never sees an action here
+// the server would reject. This matters because this modal isn't always
+// opened on the viewer's OWN visit: PlaceDetail's Upcoming Visits card and
+// the Visits tab both intentionally list every rep's planned visits (so you
+// can see who else has a place covered), not just the viewer's own. Delete
+// alone is per-visit permissive to the CREATOR too, matching the server's
+// "creator may also delete on someone else's behalf" rule (§5) - Edit and
+// Snooze stay assignee-only.
+function canEditVisit(visit, userId) {
+  return userId != null && visit.user_id === userId;
+}
+function canDeleteVisit(visit, userId) {
+  if (userId == null) return false;
+  if (visit.planned_manually) return visit.user_id === userId || visit.created_by_user_id === userId;
+  return visit.user_id == null || visit.user_id === userId;
+}
+function canSnoozeVisit(visit, userId) {
+  return userId != null && (visit.user_id == null || visit.user_id === userId);
+}
+
 // Read-only popup for a still-upcoming (planned) visit - the "Upcoming
 // Visits" card's own equivalent of VisitDetailModal, which is for visit
 // history (completed) only. `onComplete`, when passed, hands this same
@@ -66,8 +88,25 @@ function primaryWarning(warnings) {
 // into something a rep now owns and can freely reschedule. Same warn-then-
 // force response shape as Snooze/PlanVisitModal: a changed date can come
 // back with §4 floor/do-not-visit warnings pending a "Save anyway" confirm.
-export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, onSnoozed, onDelete, onEdited }) {
+//
+// Passing onDelete/onEdited/onSnoozed only controls whether the ACTION
+// exists in this context at all (PlannedDayModal's read-only mode omits all
+// three) - it's not the same as the viewer being allowed to use it. A
+// caller that lists every rep's visits (PlaceDetail's Upcoming Visits card,
+// the Visits tab) can open this on a visit that isn't the viewer's own, so
+// canEditVisit/canDeleteVisit/canSnoozeVisit above additionally gate each
+// button on `userId`, matching the server's own ownership rules exactly -
+// otherwise a rep could fill out a whole Edit form (or confirm a Delete)
+// only to be rejected by the server after the fact. `onComplete` is
+// deliberately NOT gated this way: logging/covering a teammate's still-open
+// stop is an intentional, allowed case (see routes/visits.js's PATCH
+// comment), surfaced instead as a confirm() at the caller (PlaceDetail.jsx/
+// Visits.jsx), not a hard block.
+export default function UpcomingVisitDetailModal({ visit, userId, onClose, onComplete, onSnoozed, onDelete, onEdited }) {
   const { closing, requestClose } = useClosingTransition(onClose);
+  const canEdit = canEditVisit(visit, userId);
+  const canDelete = canDeleteVisit(visit, userId);
+  const canSnooze = canSnoozeVisit(visit, userId);
   const [snoozing, setSnoozing] = useState(false); // showing the preset/date panel, vs the normal footer
   const [customDate, setCustomDate] = useState('');
   const [saving, setSaving] = useState(false);
@@ -77,7 +116,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
   // select - an already-typed visit keeps its type, one with none (a bare
   // planner stop, or an old manual visit from before types were captured)
   // starts from the same DEFAULT_VISIT_TYPE fallback.
-  const [editVisitType, setEditVisitType] = useState(visit.visit_type || 'drop_in');
+  const [editVisitType, setEditVisitType] = useState(visit.visit_type || DEFAULT_VISIT_TYPE);
   const [editNotes, setEditNotes] = useState(visit.notes || '');
   const [editWarnings, setEditWarnings] = useState(null);
   const [editError, setEditError] = useState(null);
@@ -99,6 +138,11 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
   async function doEdit({ force } = {}) {
     setSavingEdit(true);
     setEditError(null);
+    // Same reasoning as PlanVisitModal.jsx's save(): a "Save anyway" resend
+    // that hits a fresh problem must never leave the earlier warning
+    // showing alongside the new error. Safe to clear before `force`
+    // (passed in by the caller, not read from state here) is used below.
+    setEditWarnings(null);
     try {
       const visitId = visit.visit_id ?? visit.id;
       const result = await api.editVisit(visitId, {
@@ -183,7 +227,15 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
           {visit.crossRepFloorWarning && (
             <div
               className="tiny"
-              style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+              // alignSelf: this modal's body is a .stack (display:flex;
+              // flex-direction:column), so every direct child stretches to
+              // the container's full width by the flex default
+              // (align-items: stretch) regardless of the pill's own
+              // display:inline-block - that only controls how ITS OWN
+              // content lays out, not how the flex parent sizes it. Without
+              // this override the pill's background/border stretched edge
+              // to edge instead of hugging its text.
+              style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', alignSelf: 'flex-start', fontWeight: 600 }}
             >
               {crossRepFloorWarningText(visit.crossRepFloorWarning)}
             </div>
@@ -261,7 +313,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
           </div>
         ) : (
           <div className="modal-foot">
-            {onDelete && (
+            {onDelete && canDelete && (
               <Button
                 variant="danger"
                 style={{ marginRight: 'auto' }}
@@ -271,7 +323,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
                 Delete
               </Button>
             )}
-            {onEdited && (
+            {onEdited && canEdit && (
               <Button
                 variant="secondary"
                 title="Change this visit's date or notes - takes it over as a manually-planned visit"
@@ -280,7 +332,7 @@ export default function UpcomingVisitDetailModal({ visit, onClose, onComplete, o
                 Edit
               </Button>
             )}
-            {onSnoozed && (
+            {onSnoozed && canSnooze && (
               <Button
                 variant="secondary"
                 title="Defer this visit - suppresses this place for every rep until the date you pick"

@@ -2142,6 +2142,123 @@ end-to-end in the browser (Lisa Marks smoke-test token, reverted after) for ever
 the calendar's Plan-a-visit modal staying open through a place search, notes round-tripping onto
 `UpcomingVisitDetailModal`, and the two relocated/spaced buttons in `PlaceDetail`/`DayOverflowModal`.
 
+> **Stale as of §20B below**: that last sentence describes the state right after this section's
+> own pivot - `committedDateSummaries` gated on *any* status:'planned' visit, manual included. §20B
+> reversed that a second time (a manual-only date going back to NOT gating in, same direction as
+> §20's original design, for an unrelated reason). Don't treat this paragraph as current behavior.
+
+## 20B. Reschedule generalized into a full edit, day-selection reopened, generation-time budget packing, Dashboard integration (2026-08-15 - 2026-08-21)
+
+This section fills a real gap: three shipped commits after §20A landed with no HANDOFF write-up
+at all (`638ee89`, 2026-08-15; `e4ca4fd`, 2026-08-21) - the only trace of most of this was inline
+code comments. Caught during an unrelated deep-dive audit of Manual Visit Planning, 2026-08-22.
+
+### Reschedule generalized into a full edit, with promotion (`638ee89`, 2026-08-15)
+
+`services/manualVisits.js`'s reschedule-only endpoint/service was replaced outright by
+`editVisit`/`PATCH /api/visits/:id/edit` - same §4 conflict-recheck-on-date-change behavior, but
+now also accepts `notes` and `visit_type`, and applies to **any** still-`planned` visit, not just
+one that started `planned_manually`. This is the one endpoint in the app that can turn a plain
+route-planner-committed stop into a manually-planned one: on ANY successful save through it -
+even a notes-only edit with no date change at all - the visit is promoted (`planned_manually: 1`,
+`source: 'manual'`, `created_by_user_id` backfilled if it was never set). Only the visit's
+ASSIGNEE may call it (`canEditManualVisit`). See `manualVisits.js`'s own `editVisit` comment for
+the full reasoning, and §20C below for a real bug this promotion caused, found and fixed later.
+
+Same commit, unrelated cleanup while in the area: `PATCH /api/visits/:id` (the plain endpoint
+`VisitLogModal` uses to log/complete a visit) no longer blocks completing a teammate's
+still-`planned` visit - it always saved `status: 'completed'` regardless of starting status
+anyway, so the block was answering a question nobody asked; reassigning WHO or WHEN a visit is
+for is what the new `/edit` endpoint governs instead, and that stays assignee-only. `PlaceDetail`'s
+visit history also started including skipped visits alongside completed ones (tagged), dropping
+the separate `skipped_visit_count` rollup.
+
+### Day-selection reopened a second time + generation-time budget packing (`e4ca4fd`, 2026-08-21)
+
+Two related fixes to `scheduleDraft.js`, landed the same commit as the Dashboard work below:
+
+1. **`committedDateSummaries`'s gate went back to excluding a manual-only date** (same direction
+   as §20's original design, opposite of §20A's pivot, for an unrelated reason this time - not a
+   third reversal of the same argument, a distinct bug): a day already carrying a manually-planned
+   visit no longer blocks that date from being selected for `/generate` - only a date with a real
+   *planner-committed* visit does. The gate query changed from "does this date have any
+   `status:'planned'` row" to "does it have one with `source: 'planner'`"; the returned COUNT stays
+   unscoped (every visit on the date, any source), so a day mixing a manual visit with a
+   planner-committed one still shows the right total in "Already Planned" - see that function's own
+   comment for the reasoning this superseded.
+2. **`generateAndPersistDraft` now pre-subtracts a day's already-committed minutes on the FIRST
+   fill**, not just at view/reoptimize time: it computes each date's committed minutes up front
+   (via `evaluateDay`'s existing committed-segment math, real OSRM when available) and passes
+   `committedMinutesByDate` into `scheduleGenerator.js`'s `generateDraft`, which now does
+   `budgetMinutes = Math.max(0, hoursPerDay*60 - (committedMinutesByDate[date] || 0))` per day
+   before packing. Deliberately budget-only - zone selection and a proposed stop's drive-time start
+   point stay exactly as if the committed visit didn't exist, keeping this on the safe/arithmetic
+   side of the "never merge/anchor" principle in §20A, not the location-coupling that principle
+   actually bans.
+
+### Dashboard interactivity + visit-type capture (`e4ca4fd`, 2026-08-21)
+
+- **Dashboard's Today card is a normal, fully-interactive surface now**, not read-only: clicking a
+  visit opens the same log/snooze/edit/delete `UpcomingVisitDetailModal` every other screen uses;
+  "View all stops" opens today's full list in `PlannedDayModal`, with a working whole-day Edit
+  (`reopenCommittedDay` - pulls today's visits back into an editable Route Planner draft, then
+  hands off to the Planner tab since the Dashboard has no draft workspace of its own to show the
+  result in) and Discard.
+- **`PlanVisitModal` and `UpcomingVisitDetailModal`'s edit panel both gained a Visit type field**,
+  threaded through `POST /visits/manual` and `PATCH /:id/edit` - previously a manually-planned
+  visit could only ever get a type via the "add a stop" capacity-based default, never chosen
+  directly.
+
+## 20C. Bug fix: a hand-edit could silently unlock an already-committed day (2026-08-22)
+
+### The bug
+
+Found during a code-review deep-dive of the whole feature, then confirmed with a live repro
+script against the real services (not just reasoning from the code) before being fixed.
+
+`editVisit`'s promotion (§20B above) flips `source` to `'manual'` on **any** successful save,
+including a pure notes or visit-type edit with the date unchanged. `committedDateSummaries`'s gate
+(§20B above) decided whether a date counted as "already committed" - locking it out of a fresh
+`/generate` - by checking for a `source: 'planner'` row. Put those two together: if a rep opened
+the day's only planner-committed visit and fixed a typo in its notes, `source` silently flipped
+away from `'planner'`, the date dropped out of the gate, and the Route Planner's own date-picker
+(`RoutePlanner.jsx`'s `committedDates`) showed that day as open again for a brand-new `/generate` -
+even though the original visit was still sitting there, unresolved. Confirmed live: blocked before
+the edit, freely selectable after, from a notes-only save.
+
+Not a data-corruption bug - the generator's other safety nets (`lockedElsewherePlaceIdsByDate`,
+`committedMinutesByDate`) are unscoped by `source`, so a fresh generate on that date still
+wouldn't re-propose the same place and would still account for its time correctly - but the
+"this day is locked, the planner won't touch it" guarantee the gate exists to provide silently
+stopped being true, from an edit that looked completely unrelated to scheduling.
+
+### The fix
+
+New column `visits.planner_committed` (migration `20260822000000_add_visits_planner_committed.js`,
+backfilled from the existing `source = 'planner'` rows) - a permanent birth fact set once by
+`commitDay`'s insert and never touched again by anything, including `editVisit`'s promotion.
+`committedDateSummaries`'s gate now checks `planner_committed: 1` instead of `source: 'planner'`,
+so it can no longer be erased by an unrelated later edit. `source` itself is untouched and still
+means exactly what it always has (including as the scoping column for the
+`visits_place_date_active_unique` partial index, and for `reopenCommittedDay`'s "can this row be
+pulled back into a re-orderable draft" question, which is correctly a different question - a
+hand-edited visit should stay excluded from reopen, and does).
+
+**Left deliberately unfixed, flagged rather than silently expanded into**: the
+`visits_place_date_active_unique` partial index (`WHERE ... source = 'planner'`) also stops
+protecting a promoted row once it's been hand-edited - a second rep could theoretically win a
+same-place-same-date race against it at the exact moment of a `commitDay` insert. This is
+pre-existing (true regardless of this fix) and much narrower than the bug above: the app-level
+pre-check (`committedElsewherePlaceIds`, unscoped by source) already blocks a normal-latency
+double-book; only the sub-millisecond TOCTOU backstop for that one already-promoted row would be
+missing. Touching a live unique index is a bigger, riskier change than this fix warranted -
+revisit only if it ever actually bites.
+
+New tests: `scheduleDraft.test.js`'s `committedDateSummaries` describe block gained a case proving
+a notes-only `editVisit` no longer drops a date out of the gate; `manualVisits.test.js`'s
+promotion describe block gained a case proving `planner_committed` survives the promotion
+untouched. 488 backend tests pass (up 2, both new), client build clean.
+
 ## 21. Settings page - every tunable constant, editable and explained (2026-08-17)
 
 **Full write-up lives in `SETTINGS_PAGE.md`** - the inventory of all 76 tunables, the file map,
@@ -2186,3 +2303,89 @@ tunable a block with help plus Higher:/Lower: consequence lines. `CADENCE_DAYS` 
 (every field resolves, every field has help, every numeric field is bounded and its own default
 fits inside those bounds, every default validates). Verified live in the browser end to end, and
 boot resilience exercised against orphan/invalid rows. See `SETTINGS_PAGE.md` §10.
+
+## 22. Visits tab - search/filter/paginate over every visit ever recorded (2026-08-22)
+
+Sixth tab (`Dashboard | Route Planner | Calendar | Visits | Places | People`), added because
+every other visit surface in the app is a keyhole onto one slice: Calendar is one month bucketed
+by day, PlaceDetail/PersonDetail are one place/person, Dashboard is today+this week. Nothing
+before this could answer "every skipped pre-qualification in July" or list a visit across a date
+range spanning months. It's a LENS, not a new way to mutate a visit - every plan/log/edit/snooze/
+delete action here is the exact same modal (`PlanVisitModal`, `VisitDetailModal`,
+`UpcomingVisitDetailModal`, `VisitLogModal`) every other tab already uses; row-click just opens
+whichever one matches that row's status.
+
+**Two statuses were invisible anywhere in the UI before this**, and this tab is now the only
+place either can be seen:
+- `snoozed` - `VisitsCalendar.jsx` deliberately drops these from the month grid (a snooze never
+  moves `scheduled_date`, so there's no day on the calendar that's honestly "about" it).
+- `skipped`, across more than one day at a time - the Calendar only ever shows one day's worth
+  in its drill-down.
+
+**Server: `GET /api/visits`** (`server/src/routes/visits.js`, registered just before the existing
+`GET /calendar`) - new `server/src/services/visitQuery.js` does the work, following the same
+pure/impure split as `manualVisits.js`/`conflictDetection.js`:
+- `parseVisitListParams(query)` - pure validation/normalization/clamping (limit 1-200, default
+  50; malformed dates/unknown status/unknown sort all throw a 400).
+- `applyVisitFilters(qb, params)` - the ONE WHERE-clause builder, shared by the page query, the
+  total count, and the status summary, so those three can never disagree. Every encounter-based
+  filter (`personId`, `outcome`, `metWith`, `theyRequested`) and `madeCommitment` uses
+  `whereExists`, never a join - a join would fan a trip with N matching encounters into N
+  duplicate rows and inflate the count.
+- Every sort tiebreaks down to `v.id`, or LIMIT/OFFSET pagination would skip/duplicate rows
+  across pages whenever the primary sort key ties (routine - same-day visits are the normal
+  case).
+- LEFT JOINs throughout (detach-not-delete: a visit outlives its place/rep). A place-attribute
+  filter (`category`/`tier`/`region`) therefore naturally excludes a detached visit - intended,
+  not a bug, and called out in the client's own row rendering (`(place deleted)`).
+
+**Deliberate summary semantics**: `summarizeVisits` applies every filter EXCEPT `status`, so the
+four status counts (`planned`/`completed`/`skipped`/`snoozed`) act as a stable segmented control
+- clicking "Skipped" narrows the table below without the other three numbers jumping. The
+summary strip is captioned "Across all statuses matching these filters" so this doesn't read as
+a contradiction against the table's own (status-respecting) total.
+
+**Client** (`client/src/components/Visits.jsx`): filter bar modeled on `Places.jsx` (debounced
+200ms, `requestIdRef` stale-response guard, `rows` never nulled on refetch). Five quick-filter
+chips (Today / This week / Upcoming / Skipped / Snoozed) each set `{status, from, to}` as one
+patch, clearing the other two fields so they can't silently combine; "Mine" is a sixth, independent
+toggle on `userId`. "More filters" discloses type/outcome/met-with/category/tier/region/origin/
+planned-by plus three checkboxes.
+
+Pagination is a growing LIMIT at `offset: 0` (`PAGE_SIZE * pagesLoaded`), not real OFFSET paging -
+"Load more" and "refresh after a mutation" are the same request shape, and a refresh after
+editing/logging/deleting a row re-fetches exactly what's already on screen instead of resetting
+scroll to page 1. If a mutation moves the open modal's row out of the current filter, the modal
+closes itself once the refetch confirms the row is gone (same pattern as `VisitsCalendar.jsx`'s
+`completedDate` effect).
+
+Filter state (`DEFAULT_VISIT_FILTERS`, exported from `Visits.jsx`) is lifted into `App.jsx` for
+the same reason `calendarScope` already is: the tab unmounts entirely on every tab switch, so a
+local `useState` would silently reset a hard-won filter set. Reset on logout alongside
+`calendarScope`.
+
+**No new client-side permission gating** - buttons are offered unconditionally and a denial
+surfaces as the modal's own inline error or a `window.alert`, exactly like `VisitsCalendar.jsx`/
+`Dashboard.jsx` already do for the same modals. Reproducing the edit/delete permission matrix
+(`manualVisits.js`'s `canEditManualVisit`/`canDeleteManualVisit`, the route handlers' own
+ownership checks) as a second, client-side copy here would be exactly the kind of drift this
+codebase's services already avoid.
+
+**Refactors along the way**: `encounterSummary` (the "with Flibber Gibblits and a staff member"
+one-liner) moved from a private `PlaceDetail.jsx` helper into `VisitDetailModal.jsx` and exported
+- that file's header comment already claims to be the one home for this vocabulary, and a third
+consumer (this tab) needing its own copy was the drift that comment warns against.
+`SkippedVisitDetailModal.jsx` was renamed to `ResolvedVisitDetailModal.jsx` and generalized to
+render either terminal status (`skipped` or `snoozed`) off `visit.status`, since a fourth status
+existed with no viewer before this tab needed one; both existing call sites
+(`VisitsCalendar.jsx`, `PlaceDetail.jsx`) updated, behavior unchanged for `skipped`.
+
+**Testing**: `server/src/services/visitQuery.test.js`, 29 new tests (in-memory sqlite, no
+require-cache trick needed since `visitQuery.js` takes `db` as a parameter rather than requiring
+the module-level singleton) - covers `parseVisitListParams`'s validation, every filter alone and
+combined, the anti-fan-out regression (an encounter filter on a trip with 3 encounters returns
+the trip exactly once), pagination disjointness, a detached visit's visibility rules, and the
+summary's status-independence. 517 backend tests passing total. Verified live in the browser
+(Playwright + system Chrome, per the existing local-testing convention) against real data -
+confirmed both actual snoozed visits in the dev DB are now visible for the first time anywhere in
+the app.

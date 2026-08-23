@@ -15,8 +15,13 @@ function conflictMessage(conflict, sameDateFallback) {
     case 'SAME_DATE_VISIT':
       return sameDateFallback;
     case 'FLOOR_COMPLETED': {
+      // daysApart is measured against THIS visit's own date, not real-world
+      // today (see conflictDetection.js's detectConflicts: `today` is
+      // always the target date under evaluation) - "ago" implies "before
+      // now," which is wrong the moment this date isn't today (backdating a
+      // visit, or editing an older one). "prior" carries no such claim.
       const days = conflict.daysApart;
-      return `Visited by ${conflict.otherUserName || 'someone'} on ${formatDate(conflict.otherDate)} - ${days} day${days === 1 ? '' : 's'} ago.`;
+      return `Visited by ${conflict.otherUserName || 'someone'} on ${formatDate(conflict.otherDate)} - ${days} day${days === 1 ? '' : 's'} prior.`;
     }
     case 'FLOOR_PLANNED':
       return `Visit already planned by ${conflict.otherUserName || 'someone'} for ${formatDate(conflict.otherDate)}.`;
@@ -458,6 +463,14 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
   async function save() {
     setSaving(true);
     setError(null);
+    // Cleared here too, not just on date-change (below) - a "Save anyway"
+    // resend that hits a FRESH problem (a permission error, a race) must
+    // never leave the earlier conflict notice showing alongside the new
+    // error. `conflicts.length > 0` is read into `payload.force` just below
+    // this - safe to clear first regardless, since setState doesn't mutate
+    // this closure's binding mid-call.
+    setConflicts([]);
+    setCollisionMessage('');
     try {
       const payload = {
         ...form,

@@ -1,6 +1,7 @@
-// Manual Visit Planning - three new columns on `visits`. See
-// docs/manual-visit-planning-spec.md (pasted spec, 2026-08-12) §2 for the
-// full design.
+// Manual Visit Planning - three new columns on `visits`. See HANDOFF.md
+// §20 for the full design (docs/manual-visit-planning-spec.md, referenced
+// here originally, was this feature's working-doc name and was never
+// actually checked into the repo - HANDOFF.md is the real spec).
 //
 //   origin             - 'draft' | 'manual'. Distinguishes a visit the human
 //                         planned directly (this feature) from every other

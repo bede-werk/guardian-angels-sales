@@ -1,5 +1,7 @@
 // Follow-up to 20260812000000_add_manual_visit_planning_fields.js - see
-// docs/manual-visit-planning-spec.md (v2, 2026-08-12) §2.1. `origin` was a
+// HANDOFF.md §20/§2.1 (not docs/manual-visit-planning-spec.md - that file
+// was never actually checked into the repo, see this migration's sibling
+// for the same correction). `origin` was a
 // near-synonym for the existing `source` column ('planner' vs 'manual') but
 // answering a DIFFERENT question, with 'manual' meaning opposite things in
 // each: logged-after-the-fact on `source`, planned-in-advance on `origin`.

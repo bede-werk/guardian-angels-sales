@@ -24,6 +24,8 @@ const FALLBACKS = {
   'planning.MAX_PLAN_DATES': 10,
   'planning.DEFAULT_HOURS_PER_DAY': 4,
   'planning.MAX_DAYS_AHEAD': 7,
+  'relationship.RELATIONSHIP_THRESHOLDS.strong': 3.4,
+  'relationship.RELATIONSHIP_THRESHOLDS.medium': 1.4,
 };
 
 let cache = null; // the last fetched values, or null if not fetched yet

@@ -400,36 +400,50 @@ async function ownDraftPlaceIds(db, draftId) {
 }
 
 // Every date this user has a still-open (status: 'planned') visits row on,
-// GATED to dates that include at least one source: 'planner' row - i.e. a
-// date already committed from a previous draft. Once a date is in here, the
-// calendar disables it and /generate rejects it (see validateDays) - a
-// committed day is done, not something a future plan should ever touch
-// again. Deliberately excludes completed/skipped visits: those are finished
-// history, not an open plan - a date where the only visit on the books is
-// already completed should still be freely plannable.
+// GATED to dates that include at least one visit commitDay ever created
+// (planner_committed: 1) - i.e. a date already committed from a previous
+// draft. Once a date is in here, the calendar disables it and /generate
+// rejects it (see validateDays) - a committed day is done, not something a
+// future plan should ever touch again. Deliberately excludes completed/
+// skipped visits: those are finished history, not an open plan - a date
+// where the only visit on the books is already completed should still be
+// freely plannable.
 //
-// Gate scoped to source: 'planner' (reversed 2026-08-19, see
-// feedback_route_planner_proposals_only) - a manual-only date used to gate
-// here too, blocking the whole day from ever reaching /generate. That was
-// collateral from ripping out the zone-anchor mechanism, not a rule worth
-// keeping on its own merits: a manually-planned visit is already a fixed,
+// Gate scoped to planner_committed (fixed 2026-08-22 - see
+// 20260822000000_add_visits_planner_committed.js): this used to gate on
+// source: 'planner' instead, which broke the moment editVisit started
+// promoting ANY successful hand-edit - even a notes-only one - to source:
+// 'manual' (services/manualVisits.js's editVisit). A rep fixing a typo on
+// the day's only committed visit would flip its `source` away from
+// 'planner' and silently drop the whole date out of this gate, reopening it
+// for a fresh /generate even though the visit was still sitting there,
+// unresolved - confirmed live before this fix. planner_committed is a
+// permanent birth fact set once by commitDay and never touched again by
+// anything, including editVisit's promotion, so it can't be erased by an
+// unrelated later edit the way `source` can.
+//
+// A manual-only date (nothing here ever went through commitDay) still
+// correctly does NOT gate - a manually-planned visit is already a fixed,
 // budget-consuming stop the generator routes around via the plain
 // same-place-same-day exclusion (lockedElsewherePlaceIds/
 // committedElsewherePlaceIds, both unscoped by source) and
 // committedVisitsQuery/evaluateDay's budget accounting - blocking day
-// SELECTION on top of that added nothing, it just made a manually-planned
-// day unreachable from the planner entirely. Same source:'planner' scoping
-// precedent as reopenCommittedDay just below.
+// SELECTION on top of that would add nothing, it would just make a
+// manually-planned day unreachable from the planner entirely (reversed
+// 2026-08-19, see feedback_route_planner_proposals_only). `source` itself
+// stays the right scoping for reopenCommittedDay just below, which is a
+// different question ("can this row be pulled back into a re-orderable
+// draft right now" - correctly still 'no' once a rep has hand-edited it).
 //
 // The returned COUNT, once a date clears that gate, is every status:
-// 'planned' visit on it regardless of source - NOT re-scoped to
-// source:'planner' (caught 2026-08-20: doing that made a day's "Already
-// Planned" count silently undercount whenever a manual visit shared the
-// date with a planner-committed one). This has to stay in sync with
-// committedDayVisits below, which is genuinely unscoped by source - the
-// drill-down a rep opens from clicking one of these rows shows every visit
-// on the date, so the count above it needs to match that list exactly, not
-// just the subset that happened to gate the date.
+// 'planned' visit on it regardless of source (caught 2026-08-20: scoping
+// the count the same way the gate is scoped made a day's "Already Planned"
+// count silently undercount whenever a manual visit shared the date with a
+// planner-committed one). This has to stay in sync with committedDayVisits
+// below, which is genuinely unscoped by source - the drill-down a rep opens
+// from clicking one of these rows shows every visit on the date, so the
+// count above it needs to match that list exactly, not just the subset
+// that happened to gate the date.
 //
 // Scoped to today-or-later: a past committed date can never be selected
 // anyway (validateDays rejects any date <= today on its own), so there's no
@@ -438,7 +452,7 @@ async function ownDraftPlaceIds(db, draftId) {
 async function committedDateSummaries(db, userId, { today } = {}) {
   const cutoff = today || orgToday();
   const gatingRows = await db('visits')
-    .where({ user_id: userId, status: 'planned', source: 'planner' })
+    .where({ user_id: userId, status: 'planned', planner_committed: 1 })
     .andWhere('scheduled_date', '>=', cutoff)
     .groupBy('scheduled_date')
     .select('scheduled_date as date');
@@ -1473,6 +1487,13 @@ async function commitDay({ draftId, userId, date, db = knex }) {
       // only two reps' planner commits racing for the same place/date should
       // ever be blocked.
       source: 'planner',
+      // A permanent birth fact, never touched again by anything (not even
+      // editVisit's own promotion, which mutates `source` above freely) -
+      // see 20260822000000_add_visits_planner_committed.js for why this had
+      // to be split out of `source`: committedDateSummaries needs to know
+      // "was this date ever really committed by the planner" in a way a
+      // later hand-edit can't silently erase.
+      planner_committed: 1,
     }));
 
     // Insert one row at a time (rather than one bulk insert) so that a

@@ -4,7 +4,7 @@ import { getCurrentPosition } from '../geolocation';
 import MonthCalendar from './ui/MonthCalendar';
 import CompletedVisitsModal from './CompletedVisitsModal';
 import SkippedVisitsModal from './SkippedVisitsModal';
-import SkippedVisitDetailModal from './SkippedVisitDetailModal';
+import ResolvedVisitDetailModal from './ResolvedVisitDetailModal';
 import PlannedDayModal from './PlannedDayModal';
 import DayOverflowModal from './DayOverflowModal';
 import BirthdayModal from './BirthdayModal';
@@ -165,7 +165,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
   // viewingVisit/editingVisit pattern.
   const [viewingPlaceId, setViewingPlaceId] = useState(null);
   const [viewingVisit, setViewingVisit] = useState(null); // completed visit open in VisitDetailModal
-  const [viewingSkippedVisit, setViewingSkippedVisit] = useState(null); // skipped visit open in SkippedVisitDetailModal
+  const [viewingResolvedVisit, setViewingResolvedVisit] = useState(null); // skipped/snoozed visit open in ResolvedVisitDetailModal
   const [editingVisit, setEditingVisit] = useState(null); // visit open in VisitLogModal from VisitDetailModal's Edit
 
   // Mirrors RoutePlanner.jsx's own reopenDay/deleteCommittedDay busy-state
@@ -481,7 +481,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
           visits={otherVisitsForSelected}
           showRepName={scope === 'all'}
           onClose={() => setSelectedDate(null)}
-          onViewVisit={(visit) => setViewingSkippedVisit(visit)}
+          onViewVisit={(visit) => setViewingResolvedVisit(visit)}
           onViewPlace={(placeId) => setViewingPlaceId(placeId)}
         />
       )}
@@ -555,11 +555,11 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
         />
       )}
 
-      {viewingSkippedVisit && (
-        <SkippedVisitDetailModal
-          visit={viewingSkippedVisit}
-          onClose={() => setViewingSkippedVisit(null)}
-          onComplete={(v) => { setViewingSkippedVisit(null); setEditingVisit(v); }}
+      {viewingResolvedVisit && (
+        <ResolvedVisitDetailModal
+          visit={viewingResolvedVisit}
+          onClose={() => setViewingResolvedVisit(null)}
+          onComplete={(v) => { setViewingResolvedVisit(null); setEditingVisit(v); }}
         />
       )}
     </div>

@@ -20,6 +20,7 @@ const {
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware, snoozeSwallowsCommitment } = require('../services/visitLifecycle');
 const { createManualVisit, editVisit, canDeleteManualVisit, canEditManualVisit } = require('../services/manualVisits');
+const { parseVisitListParams, listVisits, summarizeVisits } = require('../services/visitQuery');
 const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
@@ -412,6 +413,32 @@ function monthRange(monthKey) {
     end: `${y}-${mm}-${String(lastDay).padStart(2, '0')}`,
   };
 }
+
+// GET /api/visits - the Visits tab's search/filter/paginate endpoint. Rides
+// the same skipSweepMiddleware mounted at the top of this router (see
+// router.use above), so a lapsed 'planned' row is always resolved to
+// 'skipped' BEFORE this list is built - the tab can never show a stale
+// "planned" visit dated in the past. Unlike every other list route in this
+// app (places.js/people.js return their whole filtered set in one shot),
+// visits accumulate without bound, so this one paginates - see
+// services/visitQuery.js for the filter/count/summary machinery.
+router.get('/', async (req, res, next) => {
+  try {
+    const params = parseVisitListParams(req.query);
+    const { visits, total, limit, offset } = await listVisits(knex, params);
+    const summary = await summarizeVisits(knex, params);
+
+    const withEncounters = await attachEncounters(knex, visits);
+    const withCommitments = await attachCommitmentsMade(knex, withEncounters);
+    const crossRepByPlace = await crossRepVisitsByPlace(knex, withCommitments.map((v) => v.place_id));
+    const decorated = attachCrossRepFloorWarnings(withCommitments, crossRepByPlace, schedulingConfig);
+
+    res.json({ visits: decorated, total, limit, offset, summary });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
 
 // GET /api/visits/calendar?month=YYYY-MM[&userId=<int>] - every visit
 // scheduled in the given month, flat (not grouped by day - the frontend buckets

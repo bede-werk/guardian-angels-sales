@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { api, today, formatDate, VISIT_TYPE_LABELS } from '../api';
+import { api, today, formatDate, VISIT_TYPE_LABELS, DEFAULT_VISIT_TYPE } from '../api';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
 
@@ -50,7 +50,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
   // uses when nothing else specifies a type, rather than starting blank -
   // matches RoutePlanner.jsx's draft-stop select, which likewise always
   // shows a real type rather than an empty option.
-  const [visitType, setVisitType] = useState('drop_in');
+  const [visitType, setVisitType] = useState(DEFAULT_VISIT_TYPE);
   const [assignedUserId, setAssignedUserId] = useState(String(userId));
   const [notes, setNotes] = useState('');
   const [warnings, setWarnings] = useState(null);
@@ -82,6 +82,13 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
   async function save() {
     setSaving(true);
     setError(null);
+    // Cleared here too, not just on field-change (below) - a "Plan anyway"
+    // resend that hits a FRESH problem (someone just took the slot, a
+    // permission error) must never leave the earlier warning on screen
+    // alongside the new error. Safe to clear before reading `warnings` into
+    // `force` just below: setState doesn't mutate this closure's binding
+    // mid-call, so that read still sees the pre-clear value either way.
+    setWarnings(null);
     try {
       const result = await api.planVisit({
         place_id: resolvedPlaceId,

@@ -3,6 +3,7 @@ import { api, today, formatDate, getToken, clearToken } from './api';
 import Dashboard from './components/Dashboard';
 import RoutePlanner from './components/RoutePlanner';
 import VisitsCalendar from './components/VisitsCalendar';
+import Visits, { DEFAULT_VISIT_FILTERS } from './components/Visits';
 import Places from './components/Places';
 import People from './components/People';
 import Login from './components/Login';
@@ -17,7 +18,7 @@ import Settings from './components/Settings';
 //
 // Settings is deliberately NOT in here. It's reached from the gear button in
 // the header rather than the tab bar: it's a place you visit occasionally to
-// tune how the app behaves, not one of the five screens the daily job runs
+// tune how the app behaves, not one of the six screens the daily job runs
 // through, and putting it in the row would give it the same standing as
 // Dashboard or Places. It still renders in the same slot below, so the tab
 // bar stays visible and clicking any tab is the way back out.
@@ -25,6 +26,7 @@ const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'planner', label: 'Route Planner' },
   { id: 'calendar', label: 'Calendar' },
+  { id: 'visits', label: 'Visits' },
   { id: 'places', label: 'Places' },
   { id: 'people', label: 'People' },
 ];
@@ -39,6 +41,13 @@ export default function App() {
   // another tab and back - VisitsCalendar unmounts entirely when its tab
   // isn't active. Reset on logout so a fresh session always starts on "Mine".
   const [calendarScope, setCalendarScope] = useState('mine');
+  // The Visits tab's filter bar, lifted up here for the exact same reason as
+  // calendarScope right above: Visits unmounts entirely on every tab switch
+  // (see the render below), so a plain local useState there would silently
+  // reset a hard-won filter set every time a rep tabbed away and back.
+  // Reset on logout, same as calendarScope, so a fresh session always
+  // starts unfiltered.
+  const [visitFilters, setVisitFilters] = useState(DEFAULT_VISIT_FILTERS);
 
   const [authUser, setAuthUser] = useState(null); // the logged-in user, or null if not logged in
   const [authLoading, setAuthLoading] = useState(true); // true while checking for a saved session on load
@@ -70,6 +79,7 @@ export default function App() {
     clearToken();
     setAuthUser(null);
     setCalendarScope('mine');
+    setVisitFilters(DEFAULT_VISIT_FILTERS);
   }
 
   // Three possible screens: branded loading splash, the login form, or the app itself.
@@ -113,6 +123,14 @@ export default function App() {
           onNavigateToPlanner={() => setTab('planner')}
           scope={calendarScope}
           onScopeChange={setCalendarScope}
+        />
+      )}
+      {tab === 'visits' && (
+        <Visits
+          userId={authUser.id}
+          onNavigateToPlanner={() => setTab('planner')}
+          filters={visitFilters}
+          onFiltersChange={setVisitFilters}
         />
       )}
       {tab === 'places' && <Places userId={authUser.id} />}

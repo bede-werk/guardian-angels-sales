@@ -148,6 +148,21 @@ export const api = {
   deleteVisitEncounter: (visitId, encounterId) =>
     request(`/visits/${visitId}/encounters/${encounterId}`, { method: 'DELETE' }),
   visitsCalendar: (month, userId) => request(`/visits/calendar?month=${month}${userId ? `&userId=${userId}` : ''}`),
+  // The Visits tab's search/filter/paginate call (server/src/routes/
+  // visits.js's GET /). Unlike every other list call in this file (places(),
+  // people.list(), ...), the response is NOT a bare array - it's an envelope
+  // `{ visits, total, limit, offset, summary }` - because visits are the one
+  // table that grows without bound, so this endpoint paginates rather than
+  // returning everything at once. Same "drop empty/undefined params" query-
+  // string building as api.places()/api.people.list().
+  visits: {
+    list: (params = {}) => {
+      const q = new URLSearchParams(
+        Object.entries(params).filter(([, v]) => v !== '' && v != null)
+      ).toString();
+      return request(`/visits${q ? `?${q}` : ''}`);
+    },
+  },
 
   // Dashboard rollup - server/src/routes/dashboard.js
   dashboard: (userId, date) =>
@@ -294,6 +309,21 @@ export const MET_WITH_LABELS = {
   nobody: 'Nobody - drop-off',
 };
 
+// Display labels for a visit's status (server/src/routes/visits.js's
+// STATUSES). Two of these are easy to confuse: 'skipped' is a PASSIVE lapse,
+// stamped automatically by services/visitLifecycle.js's sweep once a planned
+// date passes without being logged; 'snoozed' is a DELIBERATE rep deferral
+// (POST /visits/:id/snooze) that also sets the place's own snooze_until,
+// suppressing it from route-planner generation for the whole snooze window.
+// Both are terminal - neither writes lastVisitedAt/urgency the way
+// 'completed' does.
+export const VISIT_STATUS_LABELS = {
+  planned: 'Planned',
+  completed: 'Completed',
+  skipped: 'Skipped',
+  snoozed: 'Snoozed',
+};
+
 // Display labels for a computed relationship level (services/relationship.js).
 export const RELATIONSHIP_LABELS = {
   strong: 'Strong',
@@ -317,6 +347,16 @@ export const VISIT_TYPE_LABELS = {
   presentation: 'Presentation / in-service',
   pre_qualification: 'Pre-qualification',
 };
+
+// A MIRROR of server/src/config/visitTypes.js's DEFAULT_VISIT_TYPE - same
+// small-duplication tradeoff as VISIT_TYPE_LABELS/VISIT_TYPE_MINUTES above,
+// but pulled into one named constant rather than left as a bare 'drop_in'
+// literal repeated at each call site: PlanVisitModal.jsx's new-visit form
+// and UpcomingVisitDetailModal.jsx's edit panel both need "always show a
+// real type, never blank" fallback, and a literal copied into two places
+// is exactly the kind of thing that quietly drifts if the server's default
+// ever changes and only one call site gets updated.
+export const DEFAULT_VISIT_TYPE = 'drop_in';
 
 // Planned minutes per visit type - a MIRROR of server/src/config/visitTypes.js's
 // VISIT_TYPES[*].minutes, used only to prefill the "how long did it actually

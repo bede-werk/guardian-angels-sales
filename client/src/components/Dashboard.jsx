@@ -470,6 +470,7 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
       {viewingVisit && (
         <UpcomingVisitDetailModal
           visit={viewingVisit}
+          userId={userId}
           onClose={() => setViewingVisit(null)}
           onComplete={(v) => { setViewingVisit(null); setLoggingVisit(v); }}
           onSnoozed={() => { setViewingVisit(null); load(); }}

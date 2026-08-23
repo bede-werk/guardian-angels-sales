@@ -23,12 +23,19 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api, formatDate, today, RELATIONSHIP_LABELS } from '../api';
 import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
+import { useTunables } from '../hooks/useTunables';
 
 // Converged SCORE values, not buckets - see services/relationship.js's
-// thresholds (strong >= 3.4, medium >= 1.3). 4.0 lands a person's place
-// solidly in strong on its own; 2.0 in medium; 0.8 is deliberately below the
-// medium threshold, so an acquaintance reads weak-ish rather than promoting a
-// place on its own.
+// thresholds (RELATIONSHIP_THRESHOLDS.strong/.medium, now a Settings-page
+// tunable - see previewLevel below for why this component can't just
+// hardcode a fixed bucket mapping the way it used to). 4.0 lands a person's
+// place solidly in strong AT THE SHIPPED DEFAULTS; 2.0 in medium; 0.8 is
+// deliberately below the medium default, so an acquaintance reads weak-ish
+// rather than promoting a place on its own. If those defaults are retuned
+// from the Settings page far enough, a choice's real landing bucket can
+// shift too - that's a genuine consequence of retuning the algorithm, not a
+// bug, and it's exactly why the preview below reads the LIVE thresholds
+// instead of repeating this comment's assumption as fact.
 const SEED_CHOICES = [
   { value: 4.0, label: 'Champion', hint: 'Knows me, sends business, I could call them' },
   { value: 2.0, label: 'Solid', hint: 'Real working relationship' },
@@ -37,11 +44,20 @@ const SEED_CHOICES = [
 
 // The row's "Relationship status" reflects the server-computed level, which
 // only changes after a save round-trip. While a choice is only pending (not
-// saved yet), this stands in as a preview using the same solidly-lands-in-
-// that-bucket mapping the choices themselves were built on above - not a
-// live recompute (that needs the person's real visit history, which this
-// screen never fetches), just an honest best guess at where it's headed.
-const SEED_LEVEL_PREVIEW = { 4.0: 'strong', 2.0: 'medium', 0.8: 'weak' };
+// saved yet), this stands in as a preview - not a live recompute (that needs
+// the person's real visit history, which this screen never fetches), just an
+// honest best guess at where it's headed. Mirrors services/relationship.js's
+// levelForScore exactly (score >= strong -> strong, score >= medium ->
+// medium, else weak), fed the LIVE threshold values via useTunables below -
+// a hardcoded bucket map here would silently go wrong the moment someone
+// retunes RELATIONSHIP_THRESHOLDS from the Settings page, since this
+// screen's preview would keep assuming the shipped defaults forever while
+// the server (and this same screen, post-save) used the real ones.
+function previewLevel(score, thresholds) {
+  if (score >= thresholds.strong) return 'strong';
+  if (score >= thresholds.medium) return 'medium';
+  return 'weak';
+}
 
 // Same colors as the RelationshipChip badge (see styles.css's .badge.rel-*),
 // just the text half - this line is plain text, not a pill.
@@ -49,6 +65,11 @@ const RELATIONSHIP_TEXT_COLOR = { strong: 'var(--teal-dark)', medium: 'var(--blu
 
 export default function SeedRelationshipsModal({ onClose, onSaved }) {
   const { closing, requestClose } = useClosingTransition(onClose);
+  const tunables = useTunables();
+  const thresholds = {
+    strong: tunables['relationship.RELATIONSHIP_THRESHOLDS.strong'],
+    medium: tunables['relationship.RELATIONSHIP_THRESHOLDS.medium'],
+  };
   const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -143,7 +164,7 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
 
   // What the status line + "last rated" label show for a row. Pending (this
   // session, unsaved) takes priority over whatever's already on the person -
-  // see SEED_LEVEL_PREVIEW above for why the status half is only a preview.
+  // see previewLevel above for why the status half is only a preview.
   // `level` is the raw bucket key (for color), `status` its display label.
   function rowDisplay(person) {
     if (!Object.prototype.hasOwnProperty.call(pending, person.id)) {
@@ -158,7 +179,7 @@ export default function SeedRelationshipsModal({ onClose, onSaved }) {
     if (value == null) {
       return { level: 'weak', status: RELATIONSHIP_LABELS.weak, ratedAt: 'Never rated' };
     }
-    const level = SEED_LEVEL_PREVIEW[value];
+    const level = previewLevel(value, thresholds);
     return { level, status: RELATIONSHIP_LABELS[level], ratedAt: formatDate(today()) };
   }
 

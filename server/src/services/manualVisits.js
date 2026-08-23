@@ -1,11 +1,14 @@
 // Manual Visit Planning - creating a `visits` row directly, by hand, rather
-// than committing a route-planner draft. See
-// docs/manual-visit-planning-spec.md (v2, 2026-08-12) for the full design.
-// Short version (§1): today the only path to a status:'planned' visit is a
-// draft commit; this is the "I'm going to Tabitha on Thursday" path - the
-// human decides, the planner arranges itself around the decision (see
-// scheduleGenerator.js's hard exclusion and zone/anchor logic for that
-// side of it, §7).
+// than committing a route-planner draft. See HANDOFF.md §20/§20A/§20B for
+// the full design and history (§ numbers below refer to §20 there - there
+// is no separate docs/manual-visit-planning-spec.md file; that was this
+// feature's original working-doc name and was never actually checked in,
+// so HANDOFF.md is the real, current spec). Short version (§1): today the
+// only path to a status:'planned' visit is a draft commit; this is the
+// "I'm going to Tabitha on Thursday" path - the human decides, the planner
+// arranges itself around the decision (see scheduleGenerator.js's hard
+// exclusion logic for that side of it - the zone/anchor mechanism §7
+// originally described was removed the same day it shipped, see §20A).
 //
 // This is a POLICY LAYER over services/conflictDetection.js, not a second
 // detector (§4) - that module already computes every finding this needs
@@ -61,21 +64,45 @@ function classifyConflicts(conflicts) {
 // single place+date pair anyway.
 function blockingMessage(conflict) {
   if (conflict.type === 'SAME_DATE_VISIT') {
+    // "on this date" (not "today") and "a {status} visit" (not "is
+    // visiting") - the manual-plan's target date is essentially always a
+    // FUTURE date (pastDateError blocks anything earlier; this feature
+    // exists specifically for dates ahead), so both the word "today" and a
+    // present-continuous "is visiting" claim were wrong the moment this
+    // ran for any date but literally today. The {status} noun phrase
+    // ("planned"/"completed" visit) sidesteps needing separate past/future
+    // verb tenses entirely - same trick routes/visits.js's own SAME_DATE_VISIT
+    // 409 message (POST /api/visits) already uses.
     const who = conflict.otherUserName || 'Someone';
-    return `${who} is already visiting this place today.`;
+    return `${who} already has a ${conflict.status} visit here on this date.`;
   }
   // DRAFT_ELSEWHERE
   const who = conflict.otherUserName || 'another rep';
   return `This place is already in ${who}'s draft for this day.`;
 }
 
-// A FLOOR_COMPLETED/FLOOR_PLANNED conflict -> its warning line. Same wording
-// for both per spec §4.2 - the point of the message is "recently active
-// here," not a completed/planned distinction the rep would need to parse
-// mid-confirm.
+// A FLOOR_COMPLETED/FLOOR_PLANNED conflict -> its warning line. daysApart is
+// measured against the date being PLANNED, not real-world today (see
+// conflictDetection.js's detectConflicts: `today` is always the target date
+// under evaluation).
+//
+// FLOOR_COMPLETED is always a real past event (a completed visit's date can
+// never be in the future - see VisitLogModal.jsx's date input, capped at
+// today()), so "was visited ... prior" is always accurate there. FLOOR_PLANNED
+// hasn't happened - it's another still-open plan, which could land on
+// either side of the date being evaluated (nearestPlanned picks whichever
+// planned visit is CLOSEST, not necessarily earlier) - "was visited" is
+// wrong tense-wise (nothing happened yet) and "prior" would sometimes be
+// wrong direction-wise too. "already has a visit planned within N days"
+// makes neither claim while keeping the same "recently active here" signal
+// spec §4.2 wants, so this no longer needs the shared wording that used to
+// paper over the difference.
 function floorWarningMessage(conflict) {
   const n = conflict.daysApart;
-  return `This place was visited ${n} day${n === 1 ? '' : 's'} ago. Plan anyway?`;
+  const nDays = `${n} day${n === 1 ? '' : 's'}`;
+  return conflict.type === 'FLOOR_COMPLETED'
+    ? `This place was visited ${nDays} prior. Plan anyway?`
+    : `This place already has a visit planned within ${nDays}. Plan anyway?`;
 }
 
 // do_not_visit is not a conflictDetection.js finding (that module only
@@ -105,6 +132,31 @@ function blockedError(blocking) {
   err.status = 409;
   err.code = 'MANUAL_VISIT_BLOCKED';
   err.conflicts = blocking;
+  return err;
+}
+
+// Recognizes a unique-constraint violation across both engines this app
+// runs on (SQLite dev, Postgres prod) - twin of scheduleDraft.js's own
+// isUniqueViolation (duplicated rather than shared: this module is
+// deliberately a thin policy layer with no scheduleDraft.js dependency).
+function isUniqueViolation(err) {
+  return err.code === '23505' // Postgres
+    || (typeof err.code === 'string' && err.code.startsWith('SQLITE_CONSTRAINT'))
+    || /unique constraint/i.test(err.message || '');
+}
+
+// The DB-level backstop (visits_place_date_planned_unique, migration
+// 20260822010000) is only ever reached here - never by a normal user -
+// because a second request won an identical race in the gap between this
+// function's own conflict check above and its write, which that check
+// can't see coming. Same 409 shape as blockedError so the client renders it
+// identically, just without a specific `conflicts` entry to name (there's
+// no fresh Conflict[] to report - only the fact that someone else's write
+// got there first).
+function racedError() {
+  const err = new Error('This place was just booked for this date by someone else. Please refresh and try again.');
+  err.status = 409;
+  err.code = 'MANUAL_VISIT_BLOCKED';
   return err;
 }
 
@@ -172,7 +224,13 @@ async function createManualVisit(db, { placeId, scheduledDate, userId, createdBy
     notes: notes || null,
     visit_type: visitType || null,
   };
-  const [inserted] = await db('visits').insert(payload).returning('id');
+  let inserted;
+  try {
+    [inserted] = await db('visits').insert(payload).returning('id');
+  } catch (err) {
+    if (isUniqueViolation(err)) throw racedError();
+    throw err;
+  }
   const id = inserted && inserted.id !== undefined ? inserted.id : inserted;
   return { visit: await db('visits').where({ id }).first(), warnings: [] };
 }
@@ -281,7 +339,12 @@ async function editVisit(db, id, { scheduledDate, notes, visitType, force = fals
     update.scheduled_date = scheduledDate;
   }
 
-  await db('visits').where({ id }).update(update);
+  try {
+    await db('visits').where({ id }).update(update);
+  } catch (err) {
+    if (isUniqueViolation(err)) throw racedError();
+    throw err;
+  }
   return { visit: await db('visits').where({ id }).first(), warnings: [] };
 }
 
