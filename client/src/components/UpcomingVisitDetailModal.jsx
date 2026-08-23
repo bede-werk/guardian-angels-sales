@@ -227,7 +227,15 @@ export default function UpcomingVisitDetailModal({ visit, userId, onClose, onCom
           {visit.crossRepFloorWarning && (
             <div
               className="tiny"
-              style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+              // alignSelf: this modal's body is a .stack (display:flex;
+              // flex-direction:column), so every direct child stretches to
+              // the container's full width by the flex default
+              // (align-items: stretch) regardless of the pill's own
+              // display:inline-block - that only controls how ITS OWN
+              // content lays out, not how the flex parent sizes it. Without
+              // this override the pill's background/border stretched edge
+              // to edge instead of hugging its text.
+              style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', alignSelf: 'flex-start', fontWeight: 600 }}
             >
               {crossRepFloorWarningText(visit.crossRepFloorWarning)}
             </div>

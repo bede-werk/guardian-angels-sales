@@ -866,7 +866,18 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                         {v.crossRepFloorWarning && (
                           <div
                             className="tiny"
-                            style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', fontWeight: 600 }}
+                            // alignSelf: this row (<li className="stack ...">)
+                            // is display:flex;flex-direction:column, so every
+                            // direct child stretches to the row's full width
+                            // by the flex default (align-items: stretch)
+                            // regardless of the pill's own display:inline-block
+                            // - that only governs how ITS OWN content lays
+                            // out, not how the flex parent sizes it. Without
+                            // this the pill's background/border stretched
+                            // edge to edge instead of hugging its text - same
+                            // fix as UpcomingVisitDetailModal.jsx's own copy
+                            // of this exact pill.
+                            style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', alignSelf: 'flex-start', fontWeight: 600 }}
                           >
                             {crossRepFloorWarningText(v.crossRepFloorWarning)}
                           </div>
