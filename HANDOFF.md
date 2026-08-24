@@ -80,6 +80,55 @@ legacy `capacity_monthly_referrals`/`capacity_status` columns) that used to be d
 **removed 2026-08-07** once step 7 landed and was verified - nothing ranking-related reads those
 two columns anymore, so there was nothing left for it to bridge to. See §18's "Step 7" subsection.
 
+### 2026-08-25 - Seven retired `places` columns dropped (new §25)
+
+`tier`, `is_priority`, `priority_score`, `capacity_level`, `capacity_status`,
+`capacity_monthly_referrals` and `relationship_level` are GONE (migration `20260825000000`). If
+you're reading older code comments that describe any of them as "kept but frozen for one release,"
+that release is over. This also closes `capacity-computation-spec.md`'s step 9.
+
+`capacity_level` and `relationship_level` still appear in API responses - those are the COMPUTED
+values, attached explicitly in `routes/places.js`. There is no column behind either name.
+
+### 2026-08-24 - A third axis: all-star (new §24)
+
+`places.is_all_star` marks the ~25 places that matter most and lifts a place ONE capacity row in
+the cadence lookup and the exploration ordering. It exists because capacity is a pure COUNT and
+`referrals` has no value/duration/payer column, so a low-volume, high-value source is structurally
+invisible. **Read §24 before touching the cadence lookup or "simplifying" what looks like a
+duplicate of the flag §23 just deleted.**
+
+Two things that will otherwise mislead:
+
+1. **This IS the ⭐ Priority flag, rebuilt one day after being retired, on purpose.** §24 lists the
+   three things that killed the old one (no defined meaning, no consequence, no protected scarcity)
+   and what replaces each. If any of them regress, so has this.
+2. **It currently does nothing on Guardian Angels' data, and that's expected.** All 23 all-stars
+   already read `high` capacity, and there's no row above `high`. An all-star that's already at the
+   top is a normal case, not a broken backfill - the flag means "one of the most important," not
+   "punches above its volume." Another agency's top 25 will include low-volume sources where the
+   bump does real work.
+
+### 2026-08-23 - Tier and ⭐ Priority are gone; capacity has a human rating (new §23)
+
+`places.tier`/`is_priority`/`priority_score` are retired. Tier meant "how much business could this
+place send us," which is capacity's own definition, so the judgment moved to
+`places.capacity_seed` and now feeds the capacity axis instead of a tie-break almost nothing read.
+`CAPACITY_THRESHOLDS` retuned 6/16 → 4/11 the same day. **Read §23 before touching capacity
+resolution, the Places/Visits capacity filters, or anything that used to read tier.**
+
+Three things that will otherwise look like bugs:
+
+1. **46% of places changed capacity level** the day this shipped, and that's the point - 99.2% of
+   them had been running on a keyword match against their category name. Level source
+   `category_seed` went from 99.2% to 0%.
+2. **The rating deliberately does not decay and deliberately never touches `confidence`** - unlike
+   `relationship_seed`, which does both. Capacity is a rate, not a decaying quantity; §23 explains
+   why decaying it would silently demote the whole book.
+3. **`tier`/`is_priority`/`priority_score` columns still exist**, frozen and unread, pending a
+   follow-up drop migration. `capacity_level` (the legacy column) is likewise still there and is
+   deliberately *shadowed* by the computed level in API responses - never serve the stale one.
+
 ### 2026-08-10 - Visit terminal states: `snoozed` + `skipped` (new §19 at the bottom of this doc)
 
 Every planned visit now resolves to exactly one of `completed`/`snoozed`/`skipped` - `skipped` is
@@ -2389,3 +2438,293 @@ summary's status-independence. 517 backend tests passing total. Verified live in
 (Playwright + system Chrome, per the existing local-testing convention) against real data -
 confirmed both actual snoozed visits in the dev DB are now visible for the first time anywhere in
 the app.
+
+---
+
+## 23. Tier and ⭐ Priority retired - the capacity rating (2026-08-23)
+
+Replaces `places.tier`, `places.is_priority` and `places.priority_score` with a single human
+capacity rating, `places.capacity_seed`, which feeds the computed capacity axis (§18) instead of
+a tie-break almost nothing read.
+
+### Why
+
+`services/priority.js` turned tier (1/2/3) plus the ⭐ flag into a 100/75/50/25 `priority_score`.
+Two problems, both structural:
+
+1. **It was a four-level scale wearing a three-level costume.** All 23 starred places were tier 1,
+   so the pair had exactly four realised states. The checkbox looked orthogonal and never was.
+2. **It fed almost nothing.** `priority_score` was the EXPLORATION tier's second sort key and the
+   Places directory's default sort. That was the entire consumer list - its own header comment
+   admitted the intended referral-history feedback loop "isn't wired in yet," and it never was.
+
+Meanwhile capacity - one of the two axes of the cadence table - had *no* human input at all. A
+place that had never been pre-qualified fell all the way through to a keyword match on its
+category name (`CATEGORY_CAPACITY_SEED`), which governed **99.2% of the book**. So the rep's own
+read on each place was being discarded while a keyword guess drove the routing.
+
+Bede confirmed 2026-08-23 that tier meant "how much business could this place send us" - word for
+word `capacity.js`'s own locked definition. Tier was never a separate axis that correlated with
+capacity; it *was* a capacity reading. This moves it to where it counts.
+
+### The resolution ladder (`computeCapacityPure`)
+
+A third rung between the two that existed:
+
+1. `declared` - a real pre-qual answer. **Supersedes the rating outright.**
+2. `seed` - the rep's rating, standing in until a real answer exists.
+3. `category_seed` - the keyword guess, now a genuine last resort.
+
+`measuredFloor` still raises whichever rung won, through the same `Math.max`. **The asymmetry
+invariant is untouched.**
+
+**Why precedence and not a max** (the thing most likely to get "helpfully" refactored): `declared`
+and `measuredFloor` measure genuinely different quantities - "total to anyone" vs "just to us" -
+which is why neither may correct the other downward. `declared` and `seed` measure *the same
+quantity*, so once the place has actually told us, the guess has nothing left to contribute in
+either direction. There's a test named for this.
+
+### The rating does NOT decay, and that is the design
+
+`relationship_seed` (§16) decays because a relationship score *is* a decaying quantity. Capacity
+is a **rate**. A place that could send 10 a month does not become a 3-a-month place because time
+passed, so decaying this would silently demote the entire book - the exact opposite of the
+ratchet-only invariant.
+
+What expresses "this is still only a guess" is **`confidence`, which the rating never touches**. A
+rated place stays `unknown`, stays in the EXPLORATION tier, and stays queued for real
+pre-qualification. The rating makes its *cadence* honest today without making the ranker believe
+it knows anything. Nothing expires; nothing needs a cleanup task.
+
+### Thresholds retuned, and the boundary-margin rule
+
+`CAPACITY_THRESHOLDS` went from 6/16 to **4/11** (low 0-3, medium 4-10, high 11+). At a 16/month
+bar nothing in this book ever reaches high, so the top row of `CADENCE_DAYS` would never apply to
+anything. Only places carrying a real *number* re-bucket when these move - 2 of 263 at the time -
+since `CATEGORY_CAPACITY_SEED` assigns levels directly.
+
+The four rating values are `major: 15, strong: 13, steady: 7, occasional: 1`
+(`CAPACITY_SEED_VALUES`). **Every value deliberately sits at least 2 away from a threshold.**
+Bede's first draft used 11 against a `HIGH_MIN` of 11; both thresholds are independently editable
+from Settings with no cross-validation against these numbers, so a value sitting *on* a boundary
+would let a one-digit tweak silently re-level 25 places and halve their cadence. The rating screen
+prints which bucket each choice currently lands in, computed from the live thresholds, so the
+coupling stays visible. There's a test asserting the margins.
+
+`major` and `strong` both resolve to `high` at the shipped values, on purpose: capacity has three
+levels, so any four-choice scale collapses somewhere, and the gap between "great account" and
+"best account" matters less for cadence than the gap between "occasional" and "steady." The
+distinction survives as the EXPLORATION tie-break, which now reads `capacity_seed` directly.
+
+### Measured impact (before vs. after, thresholds held constant to isolate the rating)
+
+```
+             before   after          level source: category_seed 99.2% -> 0%
+  high          66      49
+  medium        91      67           visits/day demanded: 14.9 -> 11.8
+  low          106     147           moved: 120 of 263 (31 up, 89 down)
+```
+
+**46% of the book changes level.** The front of the EXPLORATION queue - which picks each day's
+zone - reshuffles completely: it was GO Physical Therapy ×3 plus four assisted-living facilities
+(all keyword hits) and is now CHI Health at Home, Aging Partners, four family-medicine practices,
+and McHenry Haszard Law. That last one is the tell - the keyword table sends anything matching
+`legal|attorney|trust` to `low`, so a top account was structurally unreachable at the front of the
+queue. The 89 places that moved *down* are mostly PT and assisted living the keyword table called
+high and Bede had tiered 3.
+
+### Schema and what's still frozen
+
+Migration `20260823000000` adds `capacity_seed` (integer, referrals/month) and
+`capacity_seeded_at` ('YYYY-MM-DD'), backfilled losslessly: tier1+★→15, tier1→13, tier2→7,
+tier3→1. The four values are hardcoded in the migration on purpose - a migration that reads
+mutable config produces a different database depending on when it runs.
+
+**A NULL `capacity_seeded_at` means "backfilled from the spreadsheet tier, nobody has actually
+confirmed it,"** which is the review queue the rating screen works through (`?unrated=1`).
+Confirming a place stamps the date *even when the value doesn't change* - "looked and agreed" is a
+real answer, and it's what moves a place out of the queue.
+
+`tier`, `is_priority` and `priority_score` **still exist and are frozen** - nothing writes them,
+every reader has moved. Same one-release transition pattern `relationship_level`/`capacity_level`
+used. **Dropping them is a follow-up migration, not done yet.**
+
+### Watch out for
+
+- **`capacity_level` is a shadowed name.** The legacy column (frozen 2026-07-12 keyword seed) is
+  still on the table and comes through any `p.*` select. `GET /places` deliberately overwrites it
+  with the computed level, and `toDraftStopShape` deliberately does *not* read it. Nothing should
+  ever hand out the stale one under that name.
+- **The Places and Visits `capacity` filters can't be SQL.** The level is computed, so
+  `GET /places` filters in JS after resolving, and `GET /visits` resolves to a set of place ids
+  first (`attachCapacityPlaceIds`, which must run before both `listVisits` and `summarizeVisits`
+  or the page and the counts drift).
+- **Settings cross-check**: the four rating values must stay strictly descending.
+
+### Testing
+
+525 backend tests (8 new in `capacity.test.js` covering the seed rung, precedence over a *lower*
+declared answer, the confidence invariant, contributor rules, and the boundary margins). Client
+build clean. Verified live against the real dev DB with a temporary Lisa Marks token (reverted
+afterwards, place 2 restored to its exact backfilled state): the bulk save stamps `seeded_at` and
+recomputes the level while `confidence` stays `unknown`, an off-menu seed value is rejected by
+name, and the capacity filters return 49/67/147 on places and reject an unknown level with a 400.
+
+---
+
+## 24. The all-star axis - a third input, not a third dimension (2026-08-24)
+
+Adds `places.is_all_star`: a scarce human designation of the ~25 places that matter most, which
+lifts a place one capacity row when the cadence table looks it up. Built the day after §23, and
+**read §23 first** - this rebuilds a flag that section had just retired, deliberately.
+
+### Why a third axis at all
+
+Capacity is locked as a COUNT ("the number of homecare referrals a place SENDS per month"), and
+`referrals` carries no value, service type, case duration, or payer column - only a date, a person,
+a place, and free-text notes. So the model structurally cannot see that a trust attorney sending
+one 24/7 live-in case a quarter is worth more than a PT clinic sending four short post-op cases a
+month. The attorney reads `low` and gets a 90-day cadence.
+
+Bede's framing: in homecare you only need ~20-25 genuine all-star referral sources and the rest are
+ordinary. That's what makes this a scarce FLAG rather than a per-place "referral value" rating - a
+per-place rating has no natural ceiling and could drift to 90 "high-value" places, where a top-25
+list can't inflate without someone noticing.
+
+### One row, not 27 cells
+
+`bumpCapacityLevel(level, isAllStar)`: `low`→`medium`, `medium`→`high`, `high` unchanged. A third
+3-level axis would make `CADENCE_DAYS` 27 cells; across 263 places most would hold two or three,
+which is never enough cases to tune against. The bump buys the same expressiveness for the case it
+exists to fix, against a 9-cell table nobody has to re-learn.
+
+Applied in exactly two places, both in `schedulingEngine.js`:
+- **`urgency()`** - the cadence lookup. `low`+`weak` is 90 days; all-star puts it on the 21-day row.
+- **`rankKey()`'s EXPLORATION branch** - possibly the more valuable half. That tier's front picks a
+  whole day's ZONE, so a place named as one of the ~25 that matters most and never pre-qualified
+  now surfaces first. Nothing surfaced that before.
+
+**It never touches the capacity level `capacity.js` computes or any UI displays.** Capacity keeps
+reporting honest volume; the adjustment lives in the ranker. A place shown `low` but visited every
+21 days is explained by its ★ chip, not by capacity quietly reporting a number nobody declared.
+
+### What "all-star" means - the correction worth not re-making
+
+The first draft of this work defined an all-star as a place that "matters MORE than its referral
+volume says" - a corrective flag scoped to low-volume sources. **That was too narrow.** Reasoning
+from it produced a wrong conclusion: since all 23 backfilled all-stars already read `high`, the bump
+does nothing for any of them, which briefly looked like a broken backfill.
+
+Bede's actual meaning is the broader one: **simply the ~25 places that matter most.** An all-star
+that's already high-capacity is normal and expected - the flag lifts a place unless it's already at
+the top, and being at the top is not a failure of the flag. That GA's own book currently saturates
+says nothing about the design; **this is a general product feature, and another agency's top 25 will
+include low-volume sources where the bump does real work.** Verified live: starring a `low` place
+moved its cadence 90d → 21d and its urgency 0.50 → 2.14.
+
+### Scarcity is the mechanism, and it is SOFT
+
+`ALL_STAR_TARGET: 25` (Settings-editable). Nothing refuses the 26th - Bede's explicit call. What
+keeps the flag honest is that the **live count is always visible** wherever it's set (the Rate
+capacity screen shows "★ 23 of 25 all-stars" at all times, not only when over, and switches to a
+`.warn-banner` past the target explaining why scarcity is the point). A budget you can only see once
+you've blown it isn't a budget.
+
+**This is the ⭐ Priority flag rebuilt on purpose.** §23 retired `is_priority` one day earlier. It
+died of three things, and if any of them come back this has regressed into what it replaced:
+1. **No defined meaning** - "priority" was never written down. This one is: the ~25 that matter most.
+2. **No consequence** - it fed `priority_score`, a tie-break almost nothing read. This changes cadence.
+3. **No protected scarcity** - a checkbox with no sense of "25". Hence the target and the count.
+
+Backfilled from the retired `is_priority` (23 places, inside the target) and **kept** - "the ones I'd
+starred" and "the ones that matter most" are close enough to be a good seed.
+
+### Watch out for
+
+- `is_all_star` reaches the ranker via `buildCandidatePool`'s `select('*')`. SQLite stores 0/1;
+  `bumpCapacityLevel` treats it as truthy, which is correct in both drivers.
+- The bulk save (`POST /places/rate-capacity`) takes `{ place_id, seed?, is_all_star? }` - an
+  **absent key leaves that field alone**, so starring a place does NOT re-stamp
+  `capacity_seeded_at` and pull it out of the rating review queue. There's a live-verified case for
+  this.
+- The Places filter folds all-star into the Capacity dropdown for the user but sends a **separate
+  `allStar` param** - it's orthogonal to the level (a low-capacity all-star is the whole point), not
+  a fourth level.
+- `.warn-banner` was added to `styles.css` sharing `.error-banner`'s rule - a soft warning where
+  nothing failed. Don't reach for `.error-banner` for these.
+
+### Testing
+
+533 backend tests (8 new): the bump's truth table, `high` as a ceiling, an unrecognized level
+passing through, the cadence/urgency effect, inertness for a high-capacity all-star, an all-star
+outranking an identical non-all-star in EXPLORATION (constructed so the id tiebreak works *against*
+it, or the test would prove nothing), and the one-row limit not leapfrogging a genuinely high place.
+Client build clean. Verified live against the dev DB with a temporary Lisa Marks token (reverted;
+Union College un-starred, count back to 23).
+
+---
+
+## 25. Seven retired `places` columns dropped (2026-08-25)
+
+Migration `20260825000000` removes `tier`, `is_priority`, `priority_score`, `capacity_level`,
+`capacity_status`, `capacity_monthly_referrals`, and `relationship_level` - the cleanup pass for
+three separate transitions that each deferred "for one release."
+
+Every one was a MANUAL field that governed routing or pretended to, and every one had already been
+replaced by something computed. They were kept readable so computed values could be diffed against
+the old ones on real data; that comparison happened for all three, so this closes them out.
+
+- **tier / is_priority / priority_score** - retired 2026-08-23 (§23), replaced by
+  `capacity_seed` and `is_all_star`.
+- **capacity_level / capacity_status / capacity_monthly_referrals** - this is
+  `capacity-computation-spec.md`'s **step 9**, the last open item in that spec. Marked done there.
+  (Step 8, the drop-off detector, is still BLOCKED on the eRSP migration - not merely unstarted.)
+- **relationship_level** - §16's equivalent. It defaulted to `'weak'`, had no write path anywhere,
+  and was never once edited, so every place read `'weak'` and a whole cadence axis did nothing.
+
+### The three transition shims went with them - and that mattered more than it looks
+
+`schedulingEngine.js` carried `effectiveRelationshipLevel`, `effectiveCapacityLevel`, and
+`effectiveCapacityConfidence`, each of the form `explicitValue ?? place.<legacy column>`. Each
+one's own comment said to delete it along with its column.
+
+**Only 6 of ~69 engine unit tests were passing the values explicitly.** The other 63 were reaching
+the fallback - so they were exercising a code path production never took, and would have kept
+passing through a regression in the real one. Both pure-object test files now translate their
+fixtures into explicit arguments in a single documented helper (`fixtureArgs` +
+`rankKeyF`/`urgencyF`/`eligibilityF`/`rankCandidatesF` in `schedulingEngine.test.js`; the
+`candidate()` helper in `scheduleGenerator.test.js`). The fixtures still read the same; the calls
+now match production.
+
+### Also removed
+
+- `scripts/capacity-legacy-diff.js` and its `capacity:legacy-diff` npm script - its whole job was
+  diffing `capacity_level` against the computed level.
+- A vestigial `p.capacity_level` in `relationship.js`'s select that nothing read.
+- Three dead fields (`capacity_level`/`capacity_status`/`relationship_level`) on
+  `scheduleGenerator.js`'s stop shape that no consumer ever looked at.
+- ~139 now-invalid column keys across nine DB-backed test fixtures.
+
+### Watch out for
+
+- **`capacity_level` and `relationship_level` still appear in API responses.** Both are the
+  COMPUTED values, attached explicitly in `routes/places.js` - there is no column behind either
+  name any more, so `...p` contributes nothing and those lines are the only source. Don't read them
+  as columns.
+- **Migration order is load-bearing.** `20260823000000` backfills `capacity_seed` from `tier` and
+  `20260824000000` backfills `is_all_star` from `is_priority`; both run BEFORE this one, so a
+  from-scratch migrate still sees what it needs. **Don't renumber this migration earlier.**
+- `down` restores the columns' SHAPE only - every value comes back NULL. Their contents are not
+  recoverable and would be worthless anyway, since the entire point is that each was stale or never
+  written.
+- The Excel importer is now the only place `tier`/`Priority` exist at all; it translates them into
+  a capacity rating on the way in, using the same four-way mapping the backfill used.
+
+### Verification
+
+533 backend tests, client build clean. Migration round-tripped (`down` then `up`) on a throwaway
+copy of the dev DB with data intact (23 all-stars, 263 rated). Live smoke test against the migrated
+dev DB with a temporary Lisa Marks token, reverted afterwards: places list/detail, the visits list,
+the capacity filter, dashboard and settings all 200, and a **real route-planner draft generated
+end to end** (zone "Southeast Lincoln", 9 stops, capacity levels resolved) - then that throwaway
+draft was deleted.

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
 import { useTunables } from '../hooks/useTunables';
 import { getCurrentPosition } from '../geolocation';
-import { TierChip, CategoryChip } from './ui/Chip';
+import { CapacityChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
 import AddressAutocomplete from './ui/AddressAutocomplete';
@@ -598,7 +598,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     </div>
                     <div className="tag-list" style={{ marginTop: 6 }}>
                       {v.category && <CategoryChip category={v.category} />}
-                      {v.tier && <TierChip tier={v.tier} />}
+                      {v.capacity_level && <CapacityChip level={v.capacity_level} />}
                       <span className="tiny muted">{VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}</span>
                       {/* Manual Visit Planning spec §5/§7.3 - marker(s) only
                           on a manually-planned row; a normal
@@ -670,7 +670,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                     <div className="tag-list" style={{ alignItems: 'center' }}>
                       <div className="name">{stop.place_name}</div>
                       <CategoryChip category={stop.category} />
-                      <TierChip tier={stop.tier} />
+                      <CapacityChip level={stop.capacity_level} />
                     </div>
                     <div className="meta">
                       {stop.address ? `${stop.address}, ` : ''}{stop.city} {stop.zip}

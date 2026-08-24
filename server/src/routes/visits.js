@@ -9,7 +9,7 @@ const { VISIT_TYPES } = require('../config/visitTypes');
 const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, findCrossRepFloorWarning, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
 const { detectConflicts } = require('../services/conflictDetection');
-const { computeCapacityForPlace, stampExplorationEligibility } = require('../services/capacity');
+const { computeCapacityForPlace, attachCapacityLevel, stampExplorationEligibility } = require('../services/capacity');
 const {
   createCommitment,
   fulfillCommitment,
@@ -20,7 +20,7 @@ const {
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware, snoozeSwallowsCommitment } = require('../services/visitLifecycle');
 const { createManualVisit, editVisit, canDeleteManualVisit, canEditManualVisit } = require('../services/manualVisits');
-const { parseVisitListParams, listVisits, summarizeVisits } = require('../services/visitQuery');
+const { parseVisitListParams, listVisits, summarizeVisits, attachCapacityPlaceIds } = require('../services/visitQuery');
 const schedulingConfig = require('../config/scheduling');
 
 const router = express.Router();
@@ -425,13 +425,21 @@ function monthRange(monthKey) {
 router.get('/', async (req, res, next) => {
   try {
     const params = parseVisitListParams(req.query);
+    // Must run BEFORE both queries below: it resolves the computed capacity
+    // filter into place ids on `params`, and listVisits/summarizeVisits have
+    // to see the identical filter or the page and the counts drift apart.
+    await attachCapacityPlaceIds(knex, params);
     const { visits, total, limit, offset } = await listVisits(knex, params);
     const summary = await summarizeVisits(knex, params);
 
     const withEncounters = await attachEncounters(knex, visits);
     const withCommitments = await attachCommitmentsMade(knex, withEncounters);
-    const crossRepByPlace = await crossRepVisitsByPlace(knex, withCommitments.map((v) => v.place_id));
-    const decorated = attachCrossRepFloorWarnings(withCommitments, crossRepByPlace, schedulingConfig);
+    // The capacity chip's level - the same word the Places directory and the
+    // route planner use for this place. Scoped to the page, so this is one
+    // bulk resolution over at most `limit` places, not the whole book.
+    const withCapacity = await attachCapacityLevel(knex, withCommitments);
+    const crossRepByPlace = await crossRepVisitsByPlace(knex, withCapacity.map((v) => v.place_id));
+    const decorated = attachCrossRepFloorWarnings(withCapacity, crossRepByPlace, schedulingConfig);
 
     res.json({ visits: decorated, total, limit, offset, summary });
   } catch (err) {
@@ -482,7 +490,6 @@ router.get('/calendar', async (req, res, next) => {
         'v.place_id',
         'v.place_name',
         'p.category',
-        'p.tier',
         'p.address',
         'p.city',
         'p.zip',

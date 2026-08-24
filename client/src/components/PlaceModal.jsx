@@ -1,11 +1,12 @@
 import React, { useId, useState } from 'react';
-import { api } from '../api';
+import { api, capacityRatingKey, capacitySeedChoices, CAPACITY_RATING_KEYS, CAPACITY_RATING_LABELS, CAPACITY_RATING_HINTS } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
 import ConfirmDialog from './ui/ConfirmDialog';
 import CategoriesModal from './CategoriesModal';
 import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
 import useClosingTransition from '../hooks/useClosingTransition';
+import { useTunables } from '../hooks/useTunables';
 
 // The category select's last option is a sentinel that opens the manage-
 // categories modal instead of actually picking a category - same pattern as
@@ -28,6 +29,9 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
   // its input via htmlFor/id - tapping a label now actually focuses the
   // field it names, on top of just visually captioning it.
   const uid = useId();
+  // The rating choices' current referrals/month values - Settings-editable,
+  // so they're read live rather than hardcoded here (SETTINGS_PAGE.md's rule).
+  const seedChoices = capacitySeedChoices(useTunables());
   // category must be one of the categories table's values (see
   // routes/categories.js) - include the place's own current value
   // defensively even if it somehow isn't in the list (e.g. a category was
@@ -39,8 +43,12 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
   const [form, setForm] = useState({
     name: place?.name || '',
     category: place?.category || '',
-    tier: place ? String(place.tier) : '3',
-    is_priority: place?.is_priority || false,
+    // The capacity rating, stored as its choice KEY here and converted to a
+    // referrals/month number on save. '' means unrated, which is a real
+    // answer - the place falls back to the category guess - and is the
+    // default for a new place rather than assuming the lowest rating.
+    capacity_rating: capacityRatingKey(place?.capacity_seed, seedChoices) || '',
+    is_all_star: !!place?.is_all_star,
     address: place?.address || '',
     city: place?.city || '',
     state: place?.state || 'NE',
@@ -52,12 +60,20 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
   const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null - see ConfirmDialog
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const toggle = (k) => () => setForm((f) => ({ ...f, [k]: !f[k] }));
 
   const handleCategoryChange = (e) => {
     if (e.target.value === MANAGE_CATEGORIES_OPTION) { setManagingCategories(true); return; }
     set('category')(e);
   };
+
+  // The form holds the rating as its choice KEY (stable, readable, safe to
+  // compare); the API takes referrals/month. Convert at the boundary rather
+  // than storing the number in form state, so a Settings change mid-edit
+  // can't leave a stale number sitting in the form.
+  function toPayload(extra = {}) {
+    const { capacity_rating, ...rest } = form;
+    return { ...rest, capacity_seed: capacity_rating ? seedChoices[capacity_rating] : null, ...extra };
+  }
 
   // One save attempt against the API. Returns 'ok' or 'failed' ('error' is
   // already set in the latter case). `confirm_address` is always sent true
@@ -118,11 +134,11 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
     if (issues.length > 0) {
       setConfirmPrompt({
         issues,
-        onConfirm: () => { setConfirmPrompt(null); attemptSave({ ...form, confirm_address: true }); },
+        onConfirm: () => { setConfirmPrompt(null); attemptSave(toPayload({ confirm_address: true })); },
       });
       return;
     }
-    attemptSave(form);
+    attemptSave(toPayload());
   }
 
   return (
@@ -151,18 +167,35 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
               </select>
             </div>
             <div>
-              <label className="field" htmlFor={`${uid}-tier`}>Tier</label>
-              <select id={`${uid}-tier`} value={form.tier} onChange={set('tier')}>
-                <option value="1">Tier 1</option>
-                <option value="2">Tier 2</option>
-                <option value="3">Tier 3</option>
+              <label className="field" htmlFor={`${uid}-capacity`}>Referral capacity</label>
+              <select id={`${uid}-capacity`} value={form.capacity_rating} onChange={set('capacity_rating')}>
+                <option value="">Not rated yet</option>
+                {CAPACITY_RATING_KEYS.map((k) => (
+                  <option key={k} value={k}>{CAPACITY_RATING_LABELS[k]}</option>
+                ))}
               </select>
             </div>
           </div>
 
-          <label className="tiny" htmlFor={`${uid}-priority`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input id={`${uid}-priority`} type="checkbox" style={{ width: 'auto' }} checked={form.is_priority} onChange={toggle('is_priority')} />
-            ★ Priority
+          <p className="tiny muted" style={{ marginTop: -4 }}>
+            {form.capacity_rating
+              ? CAPACITY_RATING_HINTS[form.capacity_rating]
+              : 'Your best guess at how much business this place could send, to anyone. Leave it unrated and the planner falls back to guessing from the category.'}
+          </p>
+
+          {/* No count shown here on purpose - this form edits ONE place and
+              has no view of the book. The scarcity counter lives on the Rate
+              capacity screen, which is where all-stars are actually managed
+              against each other. */}
+          <label className="tiny" htmlFor={`${uid}-all-star`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              id={`${uid}-all-star`}
+              type="checkbox"
+              style={{ width: 'auto' }}
+              checked={form.is_all_star}
+              onChange={() => setForm((f) => ({ ...f, is_all_star: !f.is_all_star }))}
+            />
+            ★ All-star — one of the handful of places that matter most
           </label>
 
           <div>

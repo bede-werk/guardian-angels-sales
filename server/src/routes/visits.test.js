@@ -86,7 +86,7 @@ describe('PATCH /api/visits/:id — authorization on a still-planned visit', () 
       { id: 1, name: 'Rep A', email: 'a@test.local' },
       { id: 2, name: 'Rep B', email: 'b@test.local' },
     ]);
-    await testKnex('places').insert({ id: 1, name: 'Test Place', category: 'Hospice', tier: 1, priority_score: 75 });
+    await testKnex('places').insert({ id: 1, name: 'Test Place', category: 'Hospice' });
 
     const app = buildApp();
     server = app.listen(0);

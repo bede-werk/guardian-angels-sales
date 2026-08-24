@@ -8,7 +8,8 @@
 const path = require('path');
 const XLSX = require('xlsx');
 const knex = require('../db/knex');
-const { priorityScore, regionForPlace } = require('../services/priority');
+const { regionForPlace } = require('../services/priority');
+const schedulingConfig = require('../config/scheduling');
 
 const DEFAULT_FILE = path.join(__dirname, '..', '..', '..', 'Guardian Angels Sales List.xlsx');
 const SHEET_NAME = '📋 Visit Tracker';
@@ -25,11 +26,28 @@ function normalizeCategory(raw) {
   return fixes[c] || c;
 }
 
-// Pulls the first digit out of the Tier column (e.g. "Tier 1" -> 1). Defaults
-// to 3 (lowest priority) if the cell is blank or doesn't contain a digit.
-function parseTier(raw) {
-  const m = String(raw || '').match(/(\d)/);
-  return m ? parseInt(m[1], 10) : 3;
+// Translates the spreadsheet's Tier column (e.g. "Tier 1") plus its Priority
+// column into a capacity rating in referrals/month - the same four-way
+// mapping migration 20260823000000 used to backfill the existing 263 places,
+// kept identical so a re-import can't disagree with what's already in the DB.
+//
+// The tier/is_priority COLUMNS are gone (dropped in 20260825000000); this
+// spreadsheet is now the only place those two values exist at all, and they're
+// translated into a capacity rating on the way in rather than stored.
+//
+// A blank/unparseable Tier cell now yields NULL - "nobody rated this" - where
+// it used to default to 3. That default is exactly how 147 places came to
+// assert a judgment nobody had made; an unrated place falls through to the
+// category guess instead, which is the honest answer.
+function parseCapacitySeed(tierRaw, priorityRaw, seedValues) {
+  const m = String(tierRaw || '').match(/(\d)/);
+  if (!m) return null;
+  const tier = parseInt(m[1], 10);
+  const isPriority = /priority/i.test(String(priorityRaw || ''));
+  if (tier === 1) return isPriority ? seedValues.major : seedValues.strong;
+  if (tier === 2) return seedValues.steady;
+  if (tier === 3) return seedValues.occasional;
+  return null; // a tier outside 1-3 has no honest translation
 }
 
 // Normalizes a spreadsheet cell: trims whitespace and turns blank strings into
@@ -75,17 +93,18 @@ async function importPlaces(file) {
     const name = clean(r[idx.name]);
     if (!name) continue; // skip blank/spacer rows
 
-    const tier = parseTier(r[idx.tier]);
-    const isPriority = /priority/i.test(String(r[idx.priority] || ''));
+    const capacitySeed = parseCapacitySeed(r[idx.tier], r[idx.priority], schedulingConfig.CAPACITY_SEED_VALUES);
     const city = clean(r[idx.city]);
     const zip = clean(r[idx.zip]);
 
     places.push({
       name,
       category: normalizeCategory(r[idx.category]),
-      tier,
-      is_priority: isPriority,
-      priority_score: priorityScore(tier, isPriority),
+      capacity_seed: capacitySeed,
+      // Left NULL deliberately, matching the migration's own backfill: a
+      // rating that came off a spreadsheet has not been confirmed by anyone,
+      // and NULL here is what puts the place in the review queue.
+      capacity_seeded_at: null,
       address: clean(r[idx.address]),
       city,
       state: clean(r[idx.state]),

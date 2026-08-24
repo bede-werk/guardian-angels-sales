@@ -279,14 +279,14 @@ describe('detectConflicts (real DB)', () => {
       { id: 2, name: 'Sarah', email: 'sarah@test.local' },
     ]);
     await db('places').insert([
-      { id: 1, name: 'Floor Test Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Same Date Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Draft Elsewhere Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 4, name: 'Skipped Same Date Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 5, name: 'Commitment Exempt Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 6, name: 'Untouched Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 7, name: 'Floor Planned Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 8, name: 'Two Trips Today Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Floor Test Place', category: 'Hospice' },
+      { id: 2, name: 'Same Date Place', category: 'Hospice' },
+      { id: 3, name: 'Draft Elsewhere Place', category: 'Hospice' },
+      { id: 4, name: 'Skipped Same Date Place', category: 'Hospice' },
+      { id: 5, name: 'Commitment Exempt Place', category: 'Hospice' },
+      { id: 6, name: 'Untouched Place', category: 'Hospice' },
+      { id: 7, name: 'Floor Planned Place', category: 'Hospice' },
+      { id: 8, name: 'Two Trips Today Place', category: 'Hospice' },
     ]);
 
     // Place 1: Bede himself completed a visit 2 days before TARGET_DATE -
@@ -428,12 +428,12 @@ describe('detectConflictsForStops (real DB, batched)', () => {
       { id: 2, name: 'Sarah', email: 'sarah@test.local' },
     ]);
     await db('places').insert([
-      { id: 1, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Same Date Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Floor Completed Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 4, name: 'Floor Planned Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 5, name: 'Draft Elsewhere Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 6, name: 'Own Draft Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Clean Place', category: 'Hospice' },
+      { id: 2, name: 'Same Date Place', category: 'Hospice' },
+      { id: 3, name: 'Floor Completed Place', category: 'Hospice' },
+      { id: 4, name: 'Floor Planned Place', category: 'Hospice' },
+      { id: 5, name: 'Draft Elsewhere Place', category: 'Hospice' },
+      { id: 6, name: 'Own Draft Place', category: 'Hospice' },
     ]);
 
     // Bede's own draft - the "draft being loaded" whose conflicts get

@@ -149,6 +149,33 @@ const SECTIONS = [
         ],
       },
       {
+        // Not 'capacity-seed' - that id belongs to the CATEGORY keyword table
+        // further down. Two different fallbacks share the word "seed": this
+        // one is the rep's own rating, that one is the guess from the
+        // category name when no rating exists either.
+        id: 'capacity-rating',
+        title: 'Rating choices',
+        blurb: 'The four options the "Rate capacity" screen offers, in referrals per month. A rating is your own estimate standing in for a real pre-qualification answer until you get one - it sets the place\'s level, but never marks it as known, so a rated place still shows up for pre-qualification. The moment a place actually tells you its number, that answer replaces your rating outright. Keep each value at least 2 away from a threshold above, or nudging a threshold will silently re-level everything you rated.',
+        fields: [
+          { key: 'scheduling.CAPACITY_SEED_VALUES.major', label: 'Major source', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
+            help: 'Your biggest referral sources - the handful of places you would protect above all others.',
+            raise: 'Nothing changes unless it crosses a threshold, at which point every place you rated this way jumps a level.',
+            lower: 'Same in reverse. This number only matters relative to the level thresholds above.' },
+          { key: 'scheduling.CAPACITY_SEED_VALUES.strong', label: 'Strong source', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
+            help: 'Places that send real, regular business without being your very top accounts.',
+            raise: 'Nothing changes unless it crosses a threshold, at which point every place you rated this way jumps a level.',
+            lower: 'Same in reverse. This number only matters relative to the level thresholds above.' },
+          { key: 'scheduling.CAPACITY_SEED_VALUES.steady', label: 'Steady source', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
+            help: 'Places good for business on a predictable but modest basis.',
+            raise: 'Nothing changes unless it crosses a threshold, at which point every place you rated this way jumps a level.',
+            lower: 'Same in reverse. This number only matters relative to the level thresholds above.' },
+          { key: 'scheduling.CAPACITY_SEED_VALUES.occasional', label: 'Occasional source', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
+            help: 'Places that send something once in a while, or that you have no reason to expect much from yet.',
+            raise: 'Nothing changes unless it crosses a threshold, at which point every place you rated this way jumps a level.',
+            lower: 'Same in reverse. This number only matters relative to the level thresholds above.' },
+        ],
+      },
+      {
         id: 'capacity-measured',
         title: 'Measured floor gate',
         blurb: 'Your own referral history can raise a place\'s capacity above what it declared, but only once there is enough of it to not be noise. This gate only ever raises a number, never lowers it, so a loose setting over-states capacity rather than under-stating it.',

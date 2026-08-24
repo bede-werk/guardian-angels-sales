@@ -27,7 +27,7 @@ const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 const { orgToday, orgDateOf } = require('./orgDate');
 const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
-const { computeCapacityForPlaces, computeCapacityForPlace } = require('./capacity');
+const { computeCapacityForPlaces, computeCapacityForPlace, attachCapacityLevel } = require('./capacity');
 const { getBindingCommitmentsForPlaces, getOutstandingCommitmentsForPlaces } = require('./placeCommitments');
 
 // Recognizes a unique-constraint violation across both engines this app runs
@@ -662,7 +662,11 @@ function toDraftStopShape(row) {
     lng: row.lng,
     visitType: row.visit_type,
     category: row.category,
-    tier: row.tier,
+    // No `tier` any more, and deliberately NOT row.capacity_level either:
+    // these rows come from `p.*`, so that name carries the DEAD legacy
+    // column (the frozen 2026-07-12 keyword seed), not the computed level.
+    // Callers attach the real one from computeCapacityForPlaces - see both
+    // loadDraftView and loadDraftDayView below.
     address: row.address,
     city: row.city,
     zip: row.zip,
@@ -728,7 +732,6 @@ function committedVisitsQuery(db, { userId }) {
       'v.created_by_user_id',
       'creator.name as created_by_name',
       'p.category',
-      'p.tier',
       'p.address',
       'p.city',
       'p.zip',
@@ -894,7 +897,9 @@ async function loadDraftView(db, draftId) {
   // JS - same "reduce multiple rows to one-per-key in JS rather than N
   // queries in a loop" precedent this codebase already uses (see
   // buildCandidatePool/dashboard.js), instead of a query per day.
-  const committedRows = await committedVisitsQuery(db, { userId: draft.user_id }).whereIn('v.scheduled_date', dates);
+  // capacity_level for each planned stop's chip - one bulk resolution for the
+  // whole window, matching what the Places directory and the Visits tab show.
+  const committedRows = await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).whereIn('v.scheduled_date', dates));
   const committedByDate = {};
   for (const row of committedRows) (committedByDate[row.scheduled_date] ||= []).push(row);
 
@@ -931,6 +936,9 @@ async function loadDraftView(db, draftId) {
   // this draft's places, one query, shaped per-stop below via the pure
   // commitmentBadge helper.
   const commitmentRowsByPlace = await getOutstandingCommitmentsForPlaces(db, stopRows.map((r) => r.id));
+  // Once for the whole window, not once per date - the loop below would
+  // otherwise re-resolve the same places on every iteration.
+  const stopCapacity = await computeCapacityForPlaces(db, stopRows.map((r) => r.id));
   const today = orgToday();
 
   const days = [];
@@ -938,6 +946,7 @@ async function loadDraftView(db, draftId) {
     const rows = byDate[date] || [];
     const stops = rows.map(toDraftStopShape).map((s) => ({
       ...s,
+      capacity_level: stopCapacity.get(s.place_id)?.level ?? null,
       alreadyVisitedToday: todaySet.has(s.place_id),
       crossRepFloorWarning: findCrossRepFloorWarning(
         { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
@@ -982,9 +991,11 @@ async function loadDraftDayView(db, draftId, date) {
   // Place Commitments badge - see loadDraftView's identical comment; this is
   // its one-day sibling.
   const commitmentRowsByPlace = await getOutstandingCommitmentsForPlaces(db, rows.map((r) => r.id));
+  const stopCapacity = await computeCapacityForPlaces(db, rows.map((r) => r.id));
   const today = orgToday();
   const stops = rows.map(toDraftStopShape).map((s) => ({
     ...s,
+    capacity_level: stopCapacity.get(s.place_id)?.level ?? null,
     alreadyVisitedToday: todaySet.has(s.place_id),
     crossRepFloorWarning: findCrossRepFloorWarning(
       { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
@@ -996,7 +1007,7 @@ async function loadDraftDayView(db, draftId, date) {
   })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
-  const committed = await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date);
+  const committed = await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date));
   const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed });
 
   return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, ...evaluated };

@@ -127,22 +127,22 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
       { id: 2, name: 'Lisa', email: 'lisa@test.local' },
     ]);
     await db('places').insert([
-      { id: 1, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Same Day Planned Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Same Day Completed Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 4, name: 'Draft Elsewhere Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 5, name: 'Recently Visited Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 6, name: 'Long Ago Visited Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 8, name: 'Cross-Rep Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 10, name: 'Commitment Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 11, name: 'Reschedule Test Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Clean Place', category: 'Hospice' },
+      { id: 2, name: 'Same Day Planned Place', category: 'Hospice' },
+      { id: 3, name: 'Same Day Completed Place', category: 'Hospice' },
+      { id: 4, name: 'Draft Elsewhere Place', category: 'Hospice' },
+      { id: 5, name: 'Recently Visited Place', category: 'Hospice' },
+      { id: 6, name: 'Long Ago Visited Place', category: 'Hospice' },
+      { id: 8, name: 'Cross-Rep Place', category: 'Hospice' },
+      { id: 10, name: 'Commitment Place', category: 'Hospice' },
+      { id: 11, name: 'Reschedule Test Place', category: 'Hospice' },
     ]);
     // Separate insert: a batched multi-row insert fills any column absent
     // from one row's object with an explicit NULL for that row (to keep a
     // single union-select statement), not the column's own default - and
     // places.do_not_visit is NOT NULL, so mixing this into the array above
     // would fail every row, not just this one.
-    await db('places').insert({ id: 7, name: 'Do Not Visit Place', category: 'Hospice', tier: 1, priority_score: 75, do_not_visit: true });
+    await db('places').insert({ id: 7, name: 'Do Not Visit Place', category: 'Hospice', do_not_visit: true });
 
     await db('visits').insert({ place_id: 2, user_id: 2, status: 'planned', scheduled_date: isoOffset(3), place_name: 'Same Day Planned Place' });
     await db('visits').insert({ place_id: 3, user_id: 2, status: 'completed', scheduled_date: isoOffset(3), place_name: 'Same Day Completed Place' });

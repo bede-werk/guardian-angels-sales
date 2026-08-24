@@ -1,29 +1,32 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { api, formatDate } from '../api';
-import { TierChip, CategoryChip } from './ui/Chip';
+import { api, formatDate, CAPACITY_LABELS } from '../api';
+import { CapacityChip, CategoryChip, AllStarChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
 import PlaceModal from './PlaceModal';
 import CategoriesModal from './CategoriesModal';
+import RateCapacityModal from './RateCapacityModal';
 
 // Searchable / filterable place directory with last-visit + contact info.
 // Clicking any row opens that place's full detail (PlaceDetail.jsx).
 export default function Places({ userId }) {
-  const [filters, setFilters] = useState({ categories: [], allCategories: [], regions: [], tiers: [] }); // dropdown options, loaded once
-  const [q, setQ] = useState({ search: '', category: '', tier: '', region: '', sort: '' }); // current filter values
+  const [filters, setFilters] = useState({ categories: [], allCategories: [], regions: [], capacityLevels: [], allStarCount: 0, allStarTarget: 0 }); // dropdown options, loaded once
+  const [q, setQ] = useState({ search: '', category: '', capacity: '', allStar: '', region: '', sort: '' }); // current filter values
   const [rows, setRows] = useState([]); // the filtered place list from the API
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null); // place id whose detail modal is open, if any
   const [adding, setAdding] = useState(false); // whether the Add Place modal is open
+  const [rating, setRating] = useState(false); // the bulk capacity-rating screen
   const [managingCategories, setManagingCategories] = useState(false);
   // Bumped on every load() call; a response only gets applied if it's still
   // the most recent request when it resolves - guards against a slower
   // earlier keystroke's response overwriting a faster later one.
   const requestIdRef = useRef(0);
 
-  // Load the filter dropdown options (distinct categories/tiers/regions).
+  // Load the filter dropdown options (distinct categories/regions, plus the
+  // fixed capacity levels).
   // Re-run via `refresh` (not just on mount) whenever a place create/edit/
   // delete could have introduced or removed a region - otherwise a value
   // added while this tab stays mounted won't show up in the dropdown until
@@ -67,6 +70,15 @@ export default function Places({ userId }) {
   // Shorthand for wiring an <input>/<select> straight into the `q` filter state.
   const set = (k) => (e) => setQ((s) => ({ ...s, [k]: e.target.value }));
 
+  // Sentinel for the all-star entry in the Capacity dropdown - picking it sets
+  // the separate `allStar` param and clears `capacity`, since the two filters
+  // answer different questions and stacking them would be confusing.
+  const ALL_STAR_OPTION = '__all_star__';
+  const handleCapacityChange = (e) => {
+    const v = e.target.value;
+    setQ((s) => (v === ALL_STAR_OPTION ? { ...s, capacity: '', allStar: '1' } : { ...s, capacity: v, allStar: '' }));
+  };
+
   // The category dropdown's last option is a sentinel that opens the manage-
   // categories modal instead of actually filtering - picking it never
   // touches q.category, so the select just reverts to showing whatever was
@@ -87,7 +99,7 @@ export default function Places({ userId }) {
     <div className="grid" style={{ gap: 16 }}>
       {error && <div className="error-banner">{error}</div>}
 
-      {/* Filter bar: search box + category/tier/region dropdowns + sort. */}
+      {/* Filter bar: search box + category/capacity/region dropdowns + sort. */}
       <div className="card">
         <div className="card-body">
           <div className="row">
@@ -105,10 +117,17 @@ export default function Places({ userId }) {
               </select>
             </div>
             <div>
-              <label className="field">Tier</label>
-              <select value={q.tier} onChange={set('tier')}>
+              <label className="field">Capacity</label>
+              {/* One dropdown for the user, two params for the server:
+                  all-star is orthogonal to the level (a low-capacity all-star
+                  is the entire point of the flag), so it can't just be a
+                  fourth capacity value - but it belongs in the same "how much
+                  does this place matter" control rather than a sixth filter. */}
+              <select value={q.allStar === '1' ? ALL_STAR_OPTION : q.capacity} onChange={handleCapacityChange}>
                 <option value="">All</option>
-                {filters.tiers.map((t) => <option key={t} value={t}>Tier {t}</option>)}
+                {filters.capacityLevels.map((l) => <option key={l} value={l}>{CAPACITY_LABELS[l]}</option>)}
+                <option disabled>──────────</option>
+                <option value={ALL_STAR_OPTION}>★ All-stars{filters.allStarCount ? ` (${filters.allStarCount})` : ''}</option>
               </select>
             </div>
             <div>
@@ -140,7 +159,20 @@ export default function Places({ userId }) {
       <div className="card">
         <div className="card-head">
           <h2>{loading ? 'Loading…' : `${rows.length} places`}</h2>
-          <Button variant="secondary" size="small" title="Create a brand-new place" onClick={() => setAdding(true)}>+ Add place</Button>
+          <div className="tag-list" style={{ flex: 'unset' }}>
+            {/* Same placement rationale as People's "Rate relationships":
+                an occasional, re-runnable bulk task over exactly this list,
+                not somewhere anyone needs to go day to day. */}
+            <Button
+              variant="secondary"
+              size="small"
+              title="Estimate how much business each place could send, so the planner isn't guessing from the category name"
+              onClick={() => setRating(true)}
+            >
+              Rate capacity
+            </Button>
+            <Button variant="secondary" size="small" title="Create a brand-new place" onClick={() => setAdding(true)}>+ Add place</Button>
+          </div>
         </div>
         <div className="card-body table-scroll" style={{ padding: 0 }}>
           <table>
@@ -148,7 +180,7 @@ export default function Places({ userId }) {
               <tr>
                 <th>Organization</th>
                 <th>Category</th>
-                <th>Priority</th>
+                <th>Capacity</th>
                 <th>Region</th>
                 <th>Referrals</th>
                 <th>{sortingByMe ? 'Last visit (you)' : 'Last visit'}</th>
@@ -159,7 +191,12 @@ export default function Places({ userId }) {
                 <tr key={p.id} onClick={() => setSelected(p.id)}>
                   <td><strong>{p.name}</strong></td>
                   <td><CategoryChip category={p.category} /></td>
-                  <td><TierChip tier={p.tier} isPriority={p.is_priority} /></td>
+                  <td>
+                    <span className="tag-list">
+                      <CapacityChip level={p.capacity_level} />
+                      <AllStarChip isAllStar={p.is_all_star} />
+                    </span>
+                  </td>
                   <td className="muted tiny">{p.region}</td>
                   <td className="tiny">
                     {p.referral_metrics.lifetime_referrals > 0 ? (
@@ -198,6 +235,10 @@ export default function Places({ userId }) {
           onSaved={refresh}
           onCategoriesChanged={loadFilters}
         />
+      )}
+
+      {rating && (
+        <RateCapacityModal onClose={() => setRating(false)} onSaved={refresh} />
       )}
 
       {managingCategories && (

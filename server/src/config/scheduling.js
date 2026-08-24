@@ -34,10 +34,66 @@ module.exports = {
   // Tunables for services/capacity.js (capacity-computation-spec.md). Single
   // scale across every category - see the spec's §4 for why per-category
   // thresholds were rejected.
+  // Retuned 2026-08-23 (was 6/16). Bede's call, against his own market: at a
+  // 16/month bar essentially nothing in this book ever reaches high, so the
+  // top row of CADENCE_DAYS would never apply to anything. Only places
+  // carrying a real NUMBER re-bucket when these move (2 of 263 at the time of
+  // the change) - CATEGORY_CAPACITY_SEED below assigns levels directly, so
+  // the ~99% of places still on the category guess are untouched by a
+  // threshold change. These bite later, as pre-qualification actually
+  // happens, which is why they were worth getting right before that data
+  // exists rather than after.
   CAPACITY_THRESHOLDS: {
-    MEDIUM_MIN: 6, // 0-5 => low
-    HIGH_MIN: 16, // 6-15 => medium, 16+ => high
+    MEDIUM_MIN: 4, // 0-3 => low
+    HIGH_MIN: 11, // 4-10 => medium, 11+ => high
   },
+
+  // The four choices the place capacity rating screen offers, in
+  // referrals/month - the human seed that stands in for a real pre-qual
+  // answer until one exists (see services/capacity.js's resolution ladder and
+  // migration 20260823000000, which backfilled these from the old
+  // tier/is_priority pair).
+  //
+  // Same unit as capacity_observations.monthly_referrals on purpose: a seed
+  // is a guess at exactly the quantity a pre-qual answer measures, which is
+  // what makes it legitimate to substitute one for the other.
+  //
+  // Every value deliberately sits at least 2 away from a CAPACITY_THRESHOLDS
+  // boundary. Both thresholds are independently editable from the Settings
+  // page with no cross-validation against these numbers, so a value sitting
+  // ON a boundary would let a one-digit threshold tweak silently re-level a
+  // whole tier of the book. The rating screen shows which bucket each choice
+  // currently lands in, computed live from the thresholds, so the coupling
+  // stays visible rather than silent.
+  //
+  // `major` and `strong` both resolve to high at the shipped thresholds, and
+  // that is intended: capacity has three levels, so any four-choice scale
+  // collapses somewhere, and the gap between "great account" and "best
+  // account" matters less for cadence than the gap between "occasional" and
+  // "steady." The distinction survives as places.priority_score, which is the
+  // EXPLORATION tier's tie-break within a capacity level.
+  CAPACITY_SEED_VALUES: {
+    major: 15,
+    strong: 13,
+    steady: 7,
+    occasional: 1,
+  },
+
+  // How many all-star places the book is meant to hold (see migration
+  // 20260824000000 and schedulingEngine.js's bumpCapacityLevel). An all-star
+  // is one of the handful of places that matter most. It exists because
+  // capacity is a pure count and cannot see the low-volume, high-value source
+  // - but it is not restricted to those: an already-high-capacity all-star is
+  // a normal, expected case where the bump simply has nothing left to give.
+  //
+  // This is a SOFT target, deliberately (Bede's call). Nothing refuses to
+  // set the 26th; the UI shows the live count against this number and warns
+  // past it. The number is the point, not the enforcement: a flag with no
+  // sense of scarcity drifts until it means nothing, which is exactly how the
+  // ⭐ Priority flag this replaced died. 25 comes from Bede's own read on
+  // homecare - you need ~20 genuine all-star sources and the rest are
+  // ordinary.
+  ALL_STAR_TARGET: 25,
 
   // Our own referral throughput only counts as a measured floor once there's
   // enough of it to not be noise - small counts over a short window are

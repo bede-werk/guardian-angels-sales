@@ -186,7 +186,7 @@ describe('trend (heating up / cooling down)', () => {
 
   test('isPlaceCoolingDown is false with no visit history at all - nothing to be overdue from', () => {
     assert.equal(
-      isPlaceCoolingDown({ place: { capacity_level: 'medium' }, lastVisitDate: null, recentCompletedCount: 0, relationshipLevel: 'medium', today: ASOF }),
+      isPlaceCoolingDown({ place: {}, lastVisitDate: null, recentCompletedCount: 0, relationshipLevel: 'medium', capacityLevel: 'medium', today: ASOF }),
       false
     );
   });
@@ -194,14 +194,17 @@ describe('trend (heating up / cooling down)', () => {
   test('isPlaceCoolingDown fires once elapsed time clears COOLING_THRESHOLD x the target cadence', () => {
     // capacity 'medium' x relationship 'medium' -> a 21-day target cadence
     // (config/scheduling.js CADENCE_DAYS). 1.25 x 21 = 26.25.
-    const place = { capacity_level: 'medium' };
+    // capacityLevel is passed EXPLICITLY, as production does - urgency() no
+    // longer falls back to a places.capacity_level column (dropped in
+    // 20260825000000), so a level on the place object would be ignored.
+    const place = {};
     assert.equal(
-      isPlaceCoolingDown({ place, lastVisitDate: daysBefore(ASOF, 20), recentCompletedCount: 0, relationshipLevel: 'medium', today: ASOF }),
+      isPlaceCoolingDown({ place, lastVisitDate: daysBefore(ASOF, 20), recentCompletedCount: 0, relationshipLevel: 'medium', capacityLevel: 'medium', today: ASOF }),
       false,
       '20 days is still under the 26.25-day line'
     );
     assert.equal(
-      isPlaceCoolingDown({ place, lastVisitDate: daysBefore(ASOF, 27), recentCompletedCount: 0, relationshipLevel: 'medium', today: ASOF }),
+      isPlaceCoolingDown({ place, lastVisitDate: daysBefore(ASOF, 27), recentCompletedCount: 0, relationshipLevel: 'medium', capacityLevel: 'medium', today: ASOF }),
       true,
       '27 days clears it'
     );
@@ -610,12 +613,12 @@ describe('bulk DB paths', () => {
     // Place 2 (Churches, default clock): one contact with a seed, no visits.
     // Place 3: nothing at all.
     await db('places').insert([
-      { id: 1, name: 'Fast Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Slow Place', category: 'Churches', tier: 3, priority_score: 25 },
-      { id: 3, name: 'Empty Place', category: 'Churches', tier: 3, priority_score: 25 },
+      { id: 1, name: 'Fast Place', category: 'Hospice' },
+      { id: 2, name: 'Slow Place', category: 'Churches' },
+      { id: 3, name: 'Empty Place', category: 'Churches' },
       // Exists specifically to hold a person with CROSS-PLACE history - see
       // person 6 below and the "single vs bulk parity" test.
-      { id: 6, name: 'Cross-Place Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 6, name: 'Cross-Place Place', category: 'Hospice' },
     ]);
     await db('people').insert([
       { id: 1, place_id: 1, name: 'Sharon K.', email: 's@test.local', phone: '(402) 555-0100' },
@@ -791,7 +794,7 @@ describe('bulk DB paths', () => {
   });
 
   test('a place well past its own target cadence reads as cooling down', async () => {
-    await db('places').insert({ id: 5, name: 'Overdue Place', category: 'Hospice', tier: 3, priority_score: 25, capacity_level: 'medium' });
+    await db('places').insert({ id: 5, name: 'Overdue Place', category: 'Hospice' });
     // A single old, unremarkable visit: enough to give the place a
     // (barely-nonzero, 'weak') score and a lastVisitDate, without any
     // named-person contact to make it 'heating up' territory. 40 days on a
@@ -813,7 +816,7 @@ describe('bulk DB paths', () => {
   });
 
   test('a fresh visit inside the heating-up window reads as heating up, for both the person and the place', async () => {
-    await db('places').insert({ id: 4, name: 'Fresh Place', category: 'Hospice', tier: 1, priority_score: 75 });
+    await db('places').insert({ id: 4, name: 'Fresh Place', category: 'Hospice' });
     await db('people').insert({ id: 4, place_id: 4, name: 'New Contact' });
     // A substantive visit just 2 days ago, inside the ~4-day heating-up
     // window for a 30-day (Hospice) half-life - there was no relationship at
@@ -967,9 +970,9 @@ describe('the visit_encounters split', () => {
 
     await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
     await db('places').insert([
-      { id: 10, name: 'Hospice A', category: 'Hospice', tier: 1, priority_score: 80 },   // fast clock
-      { id: 11, name: 'Church B', category: 'Churches', tier: 2, priority_score: 50 },   // default clock
-      { id: 12, name: 'Bare Place', category: 'Funeral Homes', tier: 3, priority_score: 20 },
+      { id: 10, name: 'Hospice A', category: 'Hospice' },   // fast clock
+      { id: 11, name: 'Church B', category: 'Churches' },   // default clock
+      { id: 12, name: 'Bare Place', category: 'Funeral Homes' },
     ]);
     await db('people').insert([
       // Every reciprocity signal is represented across these four: contact
@@ -1186,7 +1189,7 @@ describe('visit_encounters unique-person index', () => {
     db = memoryDb();
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
-    await db('places').insert({ id: 1, name: 'Somewhere', category: 'Churches', tier: 2, priority_score: 50 });
+    await db('places').insert({ id: 1, name: 'Somewhere', category: 'Churches' });
     await db('people').insert([{ id: 1, place_id: 1, name: 'A' }, { id: 2, place_id: 1, name: 'B' }]);
     await db('visits').insert([
       { id: 1, place_id: 1, user_id: 1, status: 'completed', scheduled_date: ASOF, place_name: 'Somewhere' },

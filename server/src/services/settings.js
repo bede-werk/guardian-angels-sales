@@ -182,6 +182,19 @@ const CROSS_CHECKS = [
     message: 'High capacity must start above where medium starts, otherwise no place can ever be medium.',
   },
   {
+    keys: [
+      'scheduling.CAPACITY_SEED_VALUES.major',
+      'scheduling.CAPACITY_SEED_VALUES.strong',
+      'scheduling.CAPACITY_SEED_VALUES.steady',
+      'scheduling.CAPACITY_SEED_VALUES.occasional',
+    ],
+    check: (v) =>
+      v['scheduling.CAPACITY_SEED_VALUES.major'] > v['scheduling.CAPACITY_SEED_VALUES.strong'] &&
+      v['scheduling.CAPACITY_SEED_VALUES.strong'] > v['scheduling.CAPACITY_SEED_VALUES.steady'] &&
+      v['scheduling.CAPACITY_SEED_VALUES.steady'] > v['scheduling.CAPACITY_SEED_VALUES.occasional'],
+    message: 'The four rating choices must decrease from major down to occasional, or the rating screen would offer a bigger source a smaller number.',
+  },
+  {
     keys: ['driveTime.SHORT_BAND_MAX_MILES', 'driveTime.MEDIUM_BAND_MAX_MILES'],
     check: (v) => v['driveTime.MEDIUM_BAND_MAX_MILES'] > v['driveTime.SHORT_BAND_MAX_MILES'],
     message: 'The medium distance band must end further out than the short band, otherwise the short band swallows it.',

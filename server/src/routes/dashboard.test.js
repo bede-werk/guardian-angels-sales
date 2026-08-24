@@ -75,9 +75,9 @@ describe('GET /api/dashboard', () => {
       { id: 2, name: 'Rep B', email: 'b@test.local' },
     ]);
     await testKnex('places').insert([
-      { id: 1, name: 'Alpha Hospice', category: 'Hospice', tier: 1, priority_score: 90, city: 'Lincoln', lat: DOWNTOWN.lat, lng: DOWNTOWN.lng },
-      { id: 2, name: 'Beta Clinic', category: 'Physicians', tier: 2, priority_score: 60, city: 'Lincoln', lat: EAST.lat, lng: EAST.lng },
-      { id: 3, name: 'Gamma Home', category: 'Assisted Living', tier: 3, priority_score: 30, city: 'Waverly' }, // deliberately ungeocoded
+      { id: 1, name: 'Alpha Hospice', category: 'Hospice', city: 'Lincoln', lat: DOWNTOWN.lat, lng: DOWNTOWN.lng },
+      { id: 2, name: 'Beta Clinic', category: 'Physicians', city: 'Lincoln', lat: EAST.lat, lng: EAST.lng },
+      { id: 3, name: 'Gamma Home', category: 'Assisted Living', city: 'Waverly' }, // deliberately ungeocoded
     ]);
     await testKnex('people').insert([
       { id: 1, name: 'Dana Ortiz', title: 'DON', place_id: 1 },

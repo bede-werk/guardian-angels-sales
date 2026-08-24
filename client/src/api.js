@@ -63,8 +63,9 @@ async function request(path, options = {}) {
 export const api = {
   // Places - server/src/routes/places.js
   places: (params = {}) => {
-    // Turns { search: 'foo', tier: 1 } into "?search=foo&tier=1", dropping
-    // any empty/undefined filter so it doesn't get sent at all.
+    // Turns { search: 'foo', capacity: 'high' } into
+    // "?search=foo&capacity=high", dropping any empty/undefined filter so it
+    // doesn't get sent at all.
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== '' && v != null)
     ).toString();
@@ -84,6 +85,11 @@ export const api = {
     ).toString();
     return request(`/places/check-duplicate${q ? `?${q}` : ''}`);
   },
+  // Bulk capacity rating (the "Rate capacity" screen). entries:
+  // [{ place_id, seed?, is_all_star? }] - a null seed clears that place's
+  // rating; an omitted key leaves that field alone, so a place can be starred
+  // without re-stamping its rating date.
+  rateCapacity: (entries) => request('/places/rate-capacity', { method: 'POST', body: entries }),
   createPlace: (body) => request('/places', { method: 'POST', body }),
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
@@ -337,6 +343,49 @@ export const CAPACITY_LABELS = {
   medium: 'Medium',
   low: 'Low',
 };
+
+// The four choices the capacity rating screen offers, in the order they're
+// shown (biggest first). The KEYS are the durable identity; the numbers each
+// one is worth live in server config/scheduling.js's CAPACITY_SEED_VALUES and
+// are Settings-editable, which is exactly why nothing here hardcodes them.
+export const CAPACITY_RATING_LABELS = {
+  major: 'Major',
+  strong: 'Strong',
+  steady: 'Steady',
+  occasional: 'Occasional',
+};
+
+export const CAPACITY_RATING_KEYS = ['major', 'strong', 'steady', 'occasional'];
+
+// One-line description of what each rating means, shown under its label on
+// the rating screen. Phrased as what the rep OBSERVES, not as a number - the
+// number is the implementation, the observation is the question being asked.
+export const CAPACITY_RATING_HINTS = {
+  major: 'One of my biggest sources. I would protect this one above almost anything.',
+  strong: 'Sends real, regular business without being one of the very top accounts.',
+  steady: 'Good for business on a predictable but modest basis.',
+  occasional: 'Something once in a while, or no reason to expect much yet.',
+};
+
+// Which rating a stored capacity_seed corresponds to, given the CURRENT
+// values from the server (settings.values()). Returns null when the stored
+// number matches no current choice - which is a real state, not an error: the
+// four values are Settings-editable, so retuning one strands every place
+// rated at the old number until it's rated again. Callers should render that
+// as "needs re-rating" rather than as a missing value.
+// Pulls the four rating values out of a useTunables() map into the
+// { major, strong, steady, occasional } shape capacityRatingKey wants. The
+// hook returns one flat key per setting, so without this every caller
+// rebuilds the same four-line object.
+export function capacitySeedChoices(tunables) {
+  return Object.fromEntries(CAPACITY_RATING_KEYS.map((k) => [k, tunables[`scheduling.CAPACITY_SEED_VALUES.${k}`]]));
+}
+
+export function capacityRatingKey(seed, seedValues) {
+  if (seed == null || !seedValues) return null;
+  const hit = CAPACITY_RATING_KEYS.find((k) => seedValues[k] === seed);
+  return hit || null;
+}
 
 
 // Display labels for a draft stop's visit type (server/src/config/visitTypes.js's VISIT_TYPES).

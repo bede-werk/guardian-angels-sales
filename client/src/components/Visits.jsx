@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { api, formatDate, VISIT_TYPE_LABELS, OUTCOME_LABELS, MET_WITH_LABELS } from '../api';
+import { api, formatDate, VISIT_TYPE_LABELS, OUTCOME_LABELS, MET_WITH_LABELS, CAPACITY_LABELS } from '../api';
 import { StatusChip } from './ui/Chip';
 import { encounterSummary } from './VisitDetailModal';
 import Button from './ui/Button';
@@ -32,7 +32,7 @@ export const DEFAULT_VISIT_FILTERS = {
   outcome: '',
   metWith: '',
   category: '',
-  tier: '',
+  capacity: '',
   region: '',
   origin: '',
   plannedBy: '',
@@ -93,7 +93,7 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
   const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   const [users, setUsers] = useState([]);
-  const [placeFilters, setPlaceFilters] = useState({ categories: [], regions: [], tiers: [] });
+  const [placeFilters, setPlaceFilters] = useState({ categories: [], regions: [], capacityLevels: [] });
 
   const [planningVisit, setPlanningVisit] = useState(false);
 
@@ -279,10 +279,10 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
                 </select>
               </div>
               <div>
-                <label className="field">Tier</label>
-                <select value={filters.tier} onChange={set('tier')}>
+                <label className="field">Capacity</label>
+                <select value={filters.capacity} onChange={set('capacity')}>
                   <option value="">Any</option>
-                  {placeFilters.tiers.map((t) => <option key={t} value={t}>Tier {t}</option>)}
+                  {placeFilters.capacityLevels.map((l) => <option key={l} value={l}>{CAPACITY_LABELS[l]}</option>)}
                 </select>
               </div>
               <div>
@@ -324,7 +324,7 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
       {/* Results table. */}
       <div className="card">
         <div className="card-head">
-          <h2>{loading && visits.length === 0 ? 'Loading…' : `${total} visit${total === 1 ? '' : 's'}`}</h2>
+          <h2>{loading && visits.length === 0 ? 'Loading…' : `${total} Visit${total === 1 ? '' : 's'}`}</h2>
           <div className="tag-list" style={{ flex: 'unset' }}>
             <Button
               variant="secondary"
@@ -366,7 +366,7 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
                     {v.place_name || 'Unknown place'}
                     {/* detach-not-delete: a visit outlives its place. See
                         this file's header comment on why the filter bar's
-                        category/tier/region excludes rows like this one. */}
+                        category/capacity/region excludes rows like this one. */}
                     {v.place_id == null && <span className="muted"> (place deleted)</span>}
                   </td>
                   <td className="tiny">{VISIT_TYPE_LABELS[v.visit_type] || <span className="muted">—</span>}</td>

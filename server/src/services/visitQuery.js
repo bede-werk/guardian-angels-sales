@@ -12,6 +12,7 @@
 // summarizeVisits are the thin async layer that actually hits the DB.
 const STATUSES = ['planned', 'completed', 'skipped', 'snoozed'];
 const ORIGINS = ['manual', 'planner'];
+const CAPACITY_LEVELS = ['high', 'medium', 'low'];
 const SORTS = ['date_desc', 'date_asc', 'place_asc', 'rep', 'status'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -32,6 +33,13 @@ function badRequest(message) {
 // "category is the empty string" filter.
 function present(v) {
   return v !== undefined && v !== null && v !== '';
+}
+
+function parseEnumParam(value, allowed, label) {
+  if (!present(value)) return null;
+  const v = String(value);
+  if (!allowed.includes(v)) throw badRequest(`Unknown ${label} "${v}"`);
+  return v;
 }
 
 function parseCommaList(value, allowed, label) {
@@ -93,7 +101,13 @@ function parseVisitListParams(query = {}) {
     placeId: parseIntParam(query.placeId, 'placeId'),
     personId: parseIntParam(query.personId, 'personId'),
     category: present(query.category) ? String(query.category) : null,
-    tier: parseIntParam(query.tier, 'tier'),
+    // Replaced the old `tier` filter 2026-08-23. Unlike every other filter
+    // here this one can't become a WHERE clause on its own: capacity is
+    // computed (services/capacity.js), not a column, so the ROUTE resolves it
+    // to a set of place ids and hands them back on `capacityPlaceIds`. This
+    // parser stays synchronous and DB-free, which is the whole point of it.
+    capacity: parseEnumParam(query.capacity, CAPACITY_LEVELS, 'capacity'),
+    capacityPlaceIds: null,
     region: present(query.region) ? String(query.region) : null,
     visitType: present(query.visitType) ? String(query.visitType) : null,
     outcome: present(query.outcome) ? String(query.outcome) : null,
@@ -113,7 +127,7 @@ function parseVisitListParams(query = {}) {
 // conditions anywhere else is exactly how "showing 50 of 3" bugs happen.
 // `qb` is expected to be knex('visits as v') already left-joined to
 // `places as p` (on p.id = v.place_id) by the caller, since every caller
-// needs that join anyway (for category/tier/region and for place_asc sort).
+// needs that join anyway (for category/region and for place_asc sort).
 //
 // Every filter that reaches into visit_encounters or place_commitments uses
 // whereExists, never a join - joining would fan a trip with N matching
@@ -155,12 +169,18 @@ function applyVisitFilters(qb, params) {
   // Place-attribute filters run against the LEFT-joined `p` row, so a
   // detached visit (place deleted, v.place_id NULL, p.* all NULL) never
   // matches one of these - that's intended, not an oversight: a category/
-  // tier/region filter is asking "of the places I can still describe that
+  // capacity/region filter is asking "of the places I can still describe that
   // way," and a detached visit has no place left to describe. An
   // unfiltered list still shows it (via v.place_name's durable snapshot).
+  // The capacity filter inherits the same behaviour for free, since a
+  // detached visit's NULL place_id can't be in the id list either.
   if (params.category) qb.where('p.category', params.category);
-  if (params.tier != null) qb.where('p.tier', params.tier);
   if (params.region) qb.where('p.region', params.region);
+  // Resolved by the route (see attachCapacityPlaceIds) because the level is
+  // computed rather than stored. An empty array is a real answer - "no place
+  // currently reads that level" - and must match nothing rather than being
+  // skipped as if the filter were unset.
+  if (params.capacityPlaceIds) qb.whereIn('v.place_id', params.capacityPlaceIds);
 
   if (params.visitType) qb.where('v.visit_type', params.visitType);
   if (params.hasNotes) qb.whereRaw('COALESCE(v.notes, \'\') != \'\'');
@@ -216,7 +236,10 @@ function applySort(qb, sort) {
 }
 
 const ROW_COLUMNS = [
-  'v.id', 'v.place_id', 'v.place_name', 'p.category', 'p.tier', 'p.address', 'p.city', 'p.zip',
+  // No 'p.tier' (retired 2026-08-23) and deliberately no 'p.capacity_level'
+  // either - that column name is the dead legacy keyword seed. The route
+  // attaches the real computed level via attachCapacityLevel.
+  'v.id', 'v.place_id', 'v.place_name', 'p.category', 'p.address', 'p.city', 'p.zip',
   'v.user_id', 'u.name as user_name', 'v.scheduled_date', 'v.status', 'v.notes', 'v.visit_type',
   'v.source', 'v.planned_manually', 'v.created_by_user_id', 'creator.name as created_by_name',
   'v.snoozed_until', 'v.actual_duration_minutes', 'v.completed_at', 'v.resolved_at', 'v.sort_order',
@@ -278,12 +301,32 @@ async function summarizeVisits(db, params) {
   return { ...summary, total, places: Number(placesRow?.n) || 0 };
 }
 
+// Resolves a `capacity` level filter into the set of place ids that currently
+// read at that level, mutating `params` in place so listVisits, its total,
+// and summarizeVisits all see the identical filter - the same "one builder,
+// three consumers, never disagree" rule applyVisitFilters exists to enforce.
+// A no-op when no capacity filter was requested.
+//
+// This is the one filter that needs a DB round-trip before the query can be
+// built, which is why it lives here as its own impure step rather than inside
+// the synchronous parser.
+async function attachCapacityPlaceIds(db, params) {
+  if (!params.capacity) return params;
+  const { computeCapacityForPlaces } = require('./capacity');
+  const ids = await db('places').pluck('id');
+  const byPlace = await computeCapacityForPlaces(db, ids);
+  params.capacityPlaceIds = ids.filter((id) => byPlace.get(id)?.level === params.capacity);
+  return params;
+}
+
 module.exports = {
   STATUSES,
   ORIGINS,
   SORTS,
+  CAPACITY_LEVELS,
   parseVisitListParams,
   applyVisitFilters,
+  attachCapacityPlaceIds,
   listVisits,
   summarizeVisits,
 };

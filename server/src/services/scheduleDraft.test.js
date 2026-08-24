@@ -306,9 +306,9 @@ describe('buildCandidatePool fatigue counting', () => {
     //          dedup below still has to collapse now that a multi-contact
     //          trip is no longer expressed as several rows).
     await db('places').insert([
-      { id: 1, name: 'One Big Meeting', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Four Real Trips', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Twice In A Day', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'One Big Meeting', category: 'Hospice' },
+      { id: 2, name: 'Four Real Trips', category: 'Hospice' },
+      { id: 3, name: 'Twice In A Day', category: 'Hospice' },
     ]);
     await db('people').insert([
       { id: 1, place_id: 1, name: 'A' }, { id: 2, place_id: 1, name: 'B' },
@@ -386,10 +386,10 @@ describe('buildCandidatePool plannedVisitDates', () => {
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Planned Only', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Planned And Completed', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Two Planned Visits', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 4, name: 'Neither', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Planned Only', category: 'Hospice' },
+      { id: 2, name: 'Planned And Completed', category: 'Hospice' },
+      { id: 3, name: 'Two Planned Visits', category: 'Hospice' },
+      { id: 4, name: 'Neither', category: 'Hospice' },
     ]);
 
     await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', scheduled_date: '2026-08-05', place_name: 'Planned Only' });
@@ -462,10 +462,10 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Manual Only Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Planner Committed Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Both Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 4, name: 'Both Place Two', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Manual Only Place', category: 'Hospice' },
+      { id: 2, name: 'Planner Committed Place', category: 'Hospice' },
+      { id: 3, name: 'Both Place', category: 'Hospice' },
+      { id: 4, name: 'Both Place Two', category: 'Hospice' },
     ]);
 
     // A date with ONLY a manual visit - must NOT appear in the summary, so
@@ -517,7 +517,7 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
   // this. Own place/date, isolated from the shared before() fixture above
   // since this test mutates a row.
   test('a notes-only edit through editVisit does not drop the date out of the gate', async () => {
-    await db('places').insert({ id: 5, name: 'Edited Notes Place', category: 'Hospice', tier: 1, priority_score: 75 });
+    await db('places').insert({ id: 5, name: 'Edited Notes Place', category: 'Hospice' });
     const [inserted] = await db('visits')
       .insert({ place_id: 5, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-23', place_name: 'Edited Notes Place' })
       .returning('id');
@@ -571,8 +571,8 @@ describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 req
       { id: 2, name: 'Sarah', email: 'sarah@test.local' },
     ]);
     await db('places').insert([
-      { id: 1, name: 'Same Day Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
-      { id: 2, name: 'Nearby Day Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+      { id: 1, name: 'Same Day Place', category: 'Hospice', lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Nearby Day Place', category: 'Hospice', lat: 41.8, lng: -87.7 },
     ]);
   });
 
@@ -676,8 +676,8 @@ describe('loadDraftView / loadDraftDayView - Place Commitments badge', () => {
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Promised Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
-      { id: 2, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+      { id: 1, name: 'Promised Place', category: 'Hospice', lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Clean Place', category: 'Hospice', lat: 41.8, lng: -87.7 },
     ]);
     await db('people').insert({ id: 1, place_id: 1, name: 'Sharon Klein' });
     // Two outstanding commitments at place 1: the binding one (earliest,
@@ -750,7 +750,7 @@ describe('loadDraftView / loadDraftDayView - day.committed is planned-only', () 
     });
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
-    await db('places').insert({ id: 1, name: 'Guardian Angels (Test)', category: 'Community Partners', tier: 1, priority_score: 50, lat: 41.9, lng: -87.6 });
+    await db('places').insert({ id: 1, name: 'Guardian Angels (Test)', category: 'Community Partners', lat: 41.9, lng: -87.6 });
   });
 
   after(async () => {
@@ -832,8 +832,8 @@ describe('evaluateDay via loadDraftView - committed visits count against the bud
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Committed Place', category: 'Hospice', tier: 1, priority_score: 75, lat: PLACE_A.lat, lng: PLACE_A.lng },
-      { id: 2, name: 'Proposed Place', category: 'Hospice', tier: 1, priority_score: 75, lat: PLACE_B.lat, lng: PLACE_B.lng },
+      { id: 1, name: 'Committed Place', category: 'Hospice', lat: PLACE_A.lat, lng: PLACE_A.lng },
+      { id: 2, name: 'Proposed Place', category: 'Hospice', lat: PLACE_B.lat, lng: PLACE_B.lng },
     ]);
   });
 
@@ -959,8 +959,8 @@ describe('commitDay - per-row collision recovery in the insert loop', () => {
     await db.migrate.latest();
     await db('users').insert([{ id: 1, name: 'Bede', email: 'bede@test.local' }]);
     await db('places').insert([
-      { id: 1, name: 'Colliding Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
-      { id: 2, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+      { id: 1, name: 'Colliding Place', category: 'Hospice', lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Clean Place', category: 'Hospice', lat: 41.8, lng: -87.7 },
     ]);
   });
 

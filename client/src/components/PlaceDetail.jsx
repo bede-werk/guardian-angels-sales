@@ -632,7 +632,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             {/* People here: names, click one to open their full detail
                 (PersonDetail) - each person's own referral metrics show in
                 their row (the per-person breakdown); the place-level roll-up
-                lives up top next to the category/tier badges, and again below
+                lives up top next to the category/capacity badges, and again below
                 as a one-line summary since it's important place-level info. */}
             <div className="card detail-card-240" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">

@@ -61,9 +61,6 @@
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
 
   /* Tier badges (Tier 1/2/3 - see TierChip in ui/Chip.jsx) */
-  --tier1: var(--blue-dark);
-  --tier2: var(--teal-dark);
-  --tier3: var(--grey-dark);
 
   /* ---- Type ----
      Source Serif 4 / Nunito Sans are free substitutes for the licensed brand
@@ -250,13 +247,24 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .link-button { background: none; border: none; padding: 0; font: inherit; color: var(--blue); cursor: pointer; text-decoration: underline; }
 .link-button:hover { color: var(--blue-dark); }
 
-/* Chips / badges - small colored pills. See ui/Chip.jsx (TierChip/
+/* Chips / badges - small colored pills. See ui/Chip.jsx (CapacityChip/
    OutcomeChip) for which component renders which class below. */
 .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; white-space: nowrap; }
-.badge.t1 { background: var(--blue-tint-1); color: var(--tier1); } /* Tier 1 */
-.badge.t2 { background: var(--teal-tint-1); color: var(--tier2); } /* Tier 2 */
-.badge.t3 { background: var(--grey-tint-1); color: var(--tier3); } /* Tier 3 */
-.badge.star { background: var(--mauve-tint-1); color: var(--mauve); } /* ⭐ Priority flag */
+/* The rep's own capacity rating - CapacityRatingChip, shown only where the
+   rating itself is the subject (the rating screen, the place form). Four
+   steps down the same blue->grey ramp the old tier badges used, since it's
+   the same judgment this replaced. Read-only lists show .cap-* instead. */
+.badge.rate-major { background: var(--blue-tint-1); color: var(--blue-dark); }
+.badge.rate-strong { background: var(--teal-tint-1); color: var(--teal-dark); }
+.badge.rate-steady { background: var(--grey-tint-1); color: var(--grey-dark); }
+.badge.rate-occasional { background: var(--grey-tint-1); color: var(--muted); }
+/* All-star (places.is_all_star) - mauve, the app's "pay attention" colour,
+   shared with .badge.attention. Distinct from the cap-* family on purpose:
+   it is not a capacity level, it is the flag that overrides one. */
+.badge.all-star { background: var(--mauve-tint-1); color: var(--mauve); }
+/* A place holding a rating that matches no current choice, because the
+   Settings values were retuned after it was rated - see capacityRatingKey. */
+.badge.rate-unknown { background: var(--mauve-tint-1); color: var(--mauve); }
 .badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* Over-budget flag on a Route Planner day/stop */
 .badge.committed { background: var(--teal-tint-2); color: var(--teal-dark); } /* Route Planner: stops already committed to real visits for this day */
 /* Visit outcomes, strongest signal first. Graded warm->neutral so a glance
@@ -502,7 +510,11 @@ td .tag-list { flex-wrap: nowrap; }
 .picker-item:last-child { border-bottom: none; }
 .picker-item:hover { background: var(--blue-tint-1); }
 
-.error-banner { background: var(--mauve-tint-1); color: var(--mauve); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
+/* Mauve is this app's attention tint (same one the snoozed status chip uses).
+   .warn-banner is the same pill under an honest name, for a soft warning that
+   is NOT an error - nothing failed, nothing is blocked, the user is just past
+   a soft limit. Sharing one rule so the two can't drift apart visually. */
+.error-banner, .warn-banner { background: var(--mauve-tint-1); color: var(--mauve); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
 .notice-banner { background: var(--blue-tint-1); color: var(--blue); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; opacity: 1; transition: opacity 0.5s ease; }
 .notice-banner.fading { opacity: 0; }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
