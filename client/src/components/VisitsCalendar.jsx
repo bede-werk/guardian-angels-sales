@@ -560,6 +560,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
           visit={viewingResolvedVisit}
           onClose={() => setViewingResolvedVisit(null)}
           onComplete={(v) => { setViewingResolvedVisit(null); setEditingVisit(v); }}
+          onDelete={(v) => { setViewingResolvedVisit(null); removeVisit(v); }}
         />
       )}
     </div>

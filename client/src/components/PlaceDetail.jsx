@@ -1082,6 +1082,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           visit={viewingResolvedVisit}
           onClose={() => setViewingResolvedVisit(null)}
           onComplete={(v) => { setViewingResolvedVisit(null); setEditingVisit(v); }}
+          onDelete={(v) => { setViewingResolvedVisit(null); removeVisit(v); }}
         />
       )}
 
