@@ -145,7 +145,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{place ? 'Edit place' : 'Add a place'}</h2>
+          <h2>{place ? 'Edit place' : 'Add a Place'}</h2>
           <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
@@ -177,10 +177,10 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
             </div>
           </div>
 
-          <p className="tiny muted" style={{ marginTop: -4 }}>
+          <p className="tiny muted" style={{ marginTop: -4, textAlign: 'right' }}>
             {form.capacity_rating
               ? CAPACITY_RATING_HINTS[form.capacity_rating]
-              : 'Your best guess at how much business this place could send, to anyone. Leave it unrated and the planner falls back to guessing from the category.'}
+              : 'Your best guess at how much business this place could send, to anyone.'}
           </p>
 
           {/* No count shown here on purpose - this form edits ONE place and
@@ -195,7 +195,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
               checked={form.is_all_star}
               onChange={() => setForm((f) => ({ ...f, is_all_star: !f.is_all_star }))}
             />
-            ★ All-star — one of the handful of places that matter most
+            ★ All-star (one of the places that matters most)
           </label>
 
           <div>
