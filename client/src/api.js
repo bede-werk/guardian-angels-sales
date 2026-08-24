@@ -544,13 +544,30 @@ export const MAX_ROUTE_WAYPOINTS = 9;
 //
 // A stop with no usable address (a detached visit, or a place missing one)
 // is dropped rather than breaking the whole link. Returns null if nothing
-// usable remains. `dropped` on the result counts every stop left out - for
-// a missing address as well as for running past MAX_ROUTE_WAYPOINTS - so
-// the caller can show one honest count either way.
+// usable remains.
+//
+// THE TWO REASONS A STOP GETS LEFT OUT ARE REPORTED SEPARATELY, and that is
+// the point of this shape. They used to share one `dropped` total, which
+// made the only caller's caveat line say "didn't fit in one Maps trip" for
+// a stop that was actually missing an address - a false claim on a 3-stop
+// day that never went near the cap, and one that buried the only part a
+// rep can do something about (go add the address). They are different
+// facts: `overCap` is Google's limit and there is nothing to be done about
+// it, `noAddressStops` is a data gap on our side.
+//
+// `noAddressStops` hands back the STOPS, not a count, so the caller can name
+// them and link to them - the count is just its length. Keeping it here
+// rather than letting the caller re-filter means "has a usable address"
+// stays defined in exactly one place (addressOf, above); a caller with its
+// own copy of that test would eventually disagree with the link itself
+// about which stops made it in.
 export function navigateRouteUrl(stops) {
-  const usable = (stops || []).filter((s) => addressOf(s));
+  const all = stops || [];
+  const usable = all.filter((s) => addressOf(s));
   if (usable.length === 0) return null;
-  if (usable.length === 1) return { url: navigateUrl(usable[0]), dropped: (stops || []).length - 1 };
+
+  const noAddressStops = all.filter((s) => !addressOf(s));
+  if (usable.length === 1) return { url: navigateUrl(usable[0]), included: 1, overCap: 0, noAddressStops };
 
   const included = usable.slice(0, MAX_ROUTE_WAYPOINTS + 1); // + 1: the last of these is the destination, not a waypoint
   const destination = included[included.length - 1];
@@ -559,5 +576,12 @@ export function navigateRouteUrl(stops) {
   const params = new URLSearchParams({ api: '1', destination: addressOf(destination), travelmode: 'driving' });
   if (waypoints.length) params.set('waypoints', waypoints.map(addressOf).join('|'));
 
-  return { url: `https://www.google.com/maps/dir/?${params.toString()}`, dropped: (stops || []).length - included.length };
+  return {
+    url: `https://www.google.com/maps/dir/?${params.toString()}`,
+    included: included.length,
+    // Measured against `usable`, not against every stop: the cap only ever
+    // applied to the stops that could have been routed in the first place.
+    overCap: usable.length - included.length,
+    noAddressStops,
+  };
 }

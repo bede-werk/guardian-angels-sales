@@ -1127,7 +1127,17 @@ td .tag-list { flex-wrap: nowrap; }
      by the same amount again, past the space just reserved for it. Margin
      sits outside that edge, so it grows the card without moving the
      caveat's anchor point. */
-  .dash-today-action { margin-bottom: 36px; }
+  .dash-today-action { margin-bottom: 52px; }
+  /* Naming the missing-address places (NavCaveat in Dashboard.jsx) makes
+     this line longer than the cap message it used to be, and place names
+     here run long. nowrap is safe on the desktop row - the caveat is
+     right-anchored to a narrow column and overflows leftward into the empty
+     space under the facts - but on a phone the same overflow runs off the
+     screen and gives the whole page a horizontal scrollbar. Wrapping
+     instead: with `right: 0` and no `left`, this shrink-to-fits against the
+     full card width, so it wraps inside the card. The margin above is the
+     reserved space, widened to the two lines that allows. */
+  .dash-nav-caveat { white-space: normal; text-align: right; }
 }
 
 /* This week's headline numbers, above the strip. */

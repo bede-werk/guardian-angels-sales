@@ -49,6 +49,67 @@ function dueLabel(daysOut) {
   return { text: `In ${daysOut} days`, tone: 'later' };
 }
 
+// How many missing-address places the caveat names before it stops listing
+// them. The line is one nowrap row in a fixed amount of reserved space (see
+// .dash-nav-caveat), and place names here run long ("Homewood at Frederick
+// Rehabilitation Center"), so two is where naming them stops being the
+// short version and starts being the list. Past that it says how many.
+const MAX_NAMED_NO_ADDRESS = 2;
+
+// The caveat under the Navigate button. Two unrelated things can keep a stop
+// out of that link, and the line has to name the right one: Google Maps' cap
+// on a single link (nothing anyone can do about it) versus a stop with no
+// address on file. They used to share one count, so a 3-stop day with one
+// address missing claimed the day was too long for Maps.
+//
+// The missing-address half NAMES the places and links them straight to
+// PlaceDetail, because it is the only half a rep can act on and the address
+// field is one modal away. Not every such stop is openable: place deletion
+// is ON DELETE SET NULL (detach-not-delete), so a planned stop can outlive
+// its place - keeping visits.place_name as a snapshot but having no place
+// left to open. That is the same split the commitments card below makes
+// with its own `openable`, and it renders the same way (plain text, no
+// link). A detached stop is in fact the likeliest one to land here at all,
+// since every real place currently on file does have an address.
+//
+// Renders ONE line: .dash-nav-caveat is absolutely positioned into a single
+// line's worth of reserved space (styles.css - that reservation is what
+// keeps the Navigate button from shifting on days that have a caveat), so
+// the rare day that trips both joins them rather than stacking.
+function NavCaveat({ nav, onOpenPlace }) {
+  const capped = nav.overCap > 0;
+  const missing = nav.noAddressStops;
+  if (!capped && missing.length === 0) return null;
+
+  const named = missing.slice(0, MAX_NAMED_NO_ADDRESS);
+  const unnamed = missing.length - named.length;
+
+  return (
+    <div className="muted tiny dash-nav-caveat">
+      {capped && <>Only the first {nav.included} of {nav.included + nav.overCap} stops fit in one Maps trip</>}
+      {capped && missing.length > 0 && ' · '}
+      {missing.length > 0 && (
+        <>
+          {named.map((stop, i) => (
+            <React.Fragment key={stop.visit_id}>
+              {i > 0 && ', '}
+              {stop.place_id != null ? (
+                <button type="button" className="link-button" onClick={() => onOpenPlace(stop.place_id)}>
+                  {stop.name}
+                </button>
+              ) : (
+                stop.name || 'A removed place'
+              )}
+            </React.Fragment>
+          ))}
+          {unnamed > 0 && ` and ${unnamed} more`}
+          {' '}left out. No address on file
+        </>
+      )}
+    </div>
+  );
+}
+
 // The Today card's "Next visit" - a small card, not a link, since this is
 // the single most load-bearing fact on the whole dashboard and it deserves
 // more visual weight than a line of underlined text. Shows the visit TYPE
@@ -271,14 +332,10 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
                 Navigate today&rsquo;s route ↗
               </a>
             )}
-            {/* Google Maps' own cap on a single link's stops, not this app's
-                - see navigateRouteUrl's own comment in api.js. Only worth
-                mentioning on the rare day long enough to hit it. */}
-            {routeNav && routeNav.dropped > 0 && (
-              <div className="muted tiny dash-nav-caveat">
-                Only the first {remainingStops.length - routeNav.dropped} of {remainingStops.length} stops left fit in one Maps trip
-              </div>
-            )}
+            {/* Why a stop isn't in the link - see NavCaveat above. Neither
+                reason is the common case, so most days this renders
+                nothing at all. */}
+            {routeNav && <NavCaveat nav={routeNav} onOpenPlace={setSelectedPlaceId} />}
           </div>
         </div>
         {/* Edit/Discard failures from the full-day modal below - same inline
