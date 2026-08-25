@@ -102,7 +102,7 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{person ? 'Edit person' : placeName ? `Add a new person to ${placeName}` : 'Add a person'}</h2>
+          <h2>{person ? 'Edit Person' : placeName ? `Add a Person · ${placeName}` : 'Add a Person'}</h2>
           <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">

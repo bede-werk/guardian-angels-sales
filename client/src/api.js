@@ -63,8 +63,9 @@ async function request(path, options = {}) {
 export const api = {
   // Places - server/src/routes/places.js
   places: (params = {}) => {
-    // Turns { search: 'foo', tier: 1 } into "?search=foo&tier=1", dropping
-    // any empty/undefined filter so it doesn't get sent at all.
+    // Turns { search: 'foo', capacity: 'high' } into
+    // "?search=foo&capacity=high", dropping any empty/undefined filter so it
+    // doesn't get sent at all.
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== '' && v != null)
     ).toString();
@@ -84,6 +85,11 @@ export const api = {
     ).toString();
     return request(`/places/check-duplicate${q ? `?${q}` : ''}`);
   },
+  // Bulk capacity rating (the "Rate capacity" screen). entries:
+  // [{ place_id, seed?, is_all_star? }] - a null seed clears that place's
+  // rating; an omitted key leaves that field alone, so a place can be starred
+  // without re-stamping its rating date.
+  rateCapacity: (entries) => request('/places/rate-capacity', { method: 'POST', body: entries }),
   createPlace: (body) => request('/places', { method: 'POST', body }),
   updatePlace: (id, body) => request(`/places/${id}`, { method: 'PATCH', body }),
   deletePlace: (id) => request(`/places/${id}`, { method: 'DELETE' }),
@@ -306,7 +312,10 @@ export const MET_WITH_LABELS = {
   named_person: 'A specific person',
   staff: 'A staff member (name unknown)',
   receptionist: 'Receptionist or front desk',
-  nobody: 'Nobody - drop-off',
+  // Just 'Nobody', not 'Nobody - drop-off': meeting no one doesn't mean
+  // materials got left. Whether it did is its own question - see
+  // VisitLogModal.jsx's NOBODY_OUTCOME_LABELS picker.
+  nobody: 'Nobody',
 };
 
 // Display labels for a visit's status (server/src/routes/visits.js's
@@ -324,6 +333,29 @@ export const VISIT_STATUS_LABELS = {
   snoozed: 'Snoozed',
 };
 
+// One phrase for a manually-planned stop, "manually planned by Lisa Marks" or
+// plain "manually planned" (null when the visit wasn't manually planned at
+// all). Both callers - RoutePlanner's PLANNED list and PlannedDayModal's stop
+// lines - used to render this as two adjacent pieces, which read as "manually
+// planned planned by Lisa Marks" (Bede, 2026-08-25).
+//
+// The name shows when the CREATOR isn't the ASSIGNEE - a fact about the visit,
+// not about who's looking at it. RoutePlanner used to compare the creator
+// against the VIEWER instead, so a stop one rep planned for another showed the
+// name in PlannedDayModal and hid it in RoutePlanner; centralizing the rule
+// here is what settles that.
+export function manualPlanNote(visit) {
+  if (!visit || !visit.planned_manually) return null;
+  // Both ids required: a row that didn't select user_id would otherwise
+  // compare against undefined and name the planner on every manual stop,
+  // self-planned ones included. Falling back to the plain phrase keeps a
+  // missing field from inventing an attribution.
+  const plannedByOther =
+    visit.created_by_user_id != null && visit.user_id != null && visit.created_by_user_id !== visit.user_id;
+  if (!plannedByOther) return 'manually planned';
+  return `manually planned by ${visit.created_by_name || 'another rep'}`;
+}
+
 // Display labels for a computed relationship level (services/relationship.js).
 export const RELATIONSHIP_LABELS = {
   strong: 'Strong',
@@ -337,6 +369,49 @@ export const CAPACITY_LABELS = {
   medium: 'Medium',
   low: 'Low',
 };
+
+// The four choices the capacity rating screen offers, in the order they're
+// shown (biggest first). The KEYS are the durable identity; the numbers each
+// one is worth live in server config/scheduling.js's CAPACITY_SEED_VALUES and
+// are Settings-editable, which is exactly why nothing here hardcodes them.
+export const CAPACITY_RATING_LABELS = {
+  major: 'Major',
+  strong: 'Strong',
+  steady: 'Steady',
+  occasional: 'Occasional',
+};
+
+export const CAPACITY_RATING_KEYS = ['major', 'strong', 'steady', 'occasional'];
+
+// One-line description of what each rating means, shown under its label on
+// the rating screen. Phrased as what the rep OBSERVES, not as a number - the
+// number is the implementation, the observation is the question being asked.
+export const CAPACITY_RATING_HINTS = {
+  major: 'One of my biggest sources. I would protect this one above almost anything.',
+  strong: 'Sends real, regular business without being one of the very top accounts.',
+  steady: 'Good for business on a predictable but modest basis.',
+  occasional: 'Something once in a while, or no reason to expect much yet.',
+};
+
+// Which rating a stored capacity_seed corresponds to, given the CURRENT
+// values from the server (settings.values()). Returns null when the stored
+// number matches no current choice - which is a real state, not an error: the
+// four values are Settings-editable, so retuning one strands every place
+// rated at the old number until it's rated again. Callers should render that
+// as "needs re-rating" rather than as a missing value.
+// Pulls the four rating values out of a useTunables() map into the
+// { major, strong, steady, occasional } shape capacityRatingKey wants. The
+// hook returns one flat key per setting, so without this every caller
+// rebuilds the same four-line object.
+export function capacitySeedChoices(tunables) {
+  return Object.fromEntries(CAPACITY_RATING_KEYS.map((k) => [k, tunables[`scheduling.CAPACITY_SEED_VALUES.${k}`]]));
+}
+
+export function capacityRatingKey(seed, seedValues) {
+  if (seed == null || !seedValues) return null;
+  const hit = CAPACITY_RATING_KEYS.find((k) => seedValues[k] === seed);
+  return hit || null;
+}
 
 
 // Display labels for a draft stop's visit type (server/src/config/visitTypes.js's VISIT_TYPES).
@@ -495,13 +570,30 @@ export const MAX_ROUTE_WAYPOINTS = 9;
 //
 // A stop with no usable address (a detached visit, or a place missing one)
 // is dropped rather than breaking the whole link. Returns null if nothing
-// usable remains. `dropped` on the result counts every stop left out - for
-// a missing address as well as for running past MAX_ROUTE_WAYPOINTS - so
-// the caller can show one honest count either way.
+// usable remains.
+//
+// THE TWO REASONS A STOP GETS LEFT OUT ARE REPORTED SEPARATELY, and that is
+// the point of this shape. They used to share one `dropped` total, which
+// made the only caller's caveat line say "didn't fit in one Maps trip" for
+// a stop that was actually missing an address - a false claim on a 3-stop
+// day that never went near the cap, and one that buried the only part a
+// rep can do something about (go add the address). They are different
+// facts: `overCap` is Google's limit and there is nothing to be done about
+// it, `noAddressStops` is a data gap on our side.
+//
+// `noAddressStops` hands back the STOPS, not a count, so the caller can name
+// them and link to them - the count is just its length. Keeping it here
+// rather than letting the caller re-filter means "has a usable address"
+// stays defined in exactly one place (addressOf, above); a caller with its
+// own copy of that test would eventually disagree with the link itself
+// about which stops made it in.
 export function navigateRouteUrl(stops) {
-  const usable = (stops || []).filter((s) => addressOf(s));
+  const all = stops || [];
+  const usable = all.filter((s) => addressOf(s));
   if (usable.length === 0) return null;
-  if (usable.length === 1) return { url: navigateUrl(usable[0]), dropped: (stops || []).length - 1 };
+
+  const noAddressStops = all.filter((s) => !addressOf(s));
+  if (usable.length === 1) return { url: navigateUrl(usable[0]), included: 1, overCap: 0, noAddressStops };
 
   const included = usable.slice(0, MAX_ROUTE_WAYPOINTS + 1); // + 1: the last of these is the destination, not a waypoint
   const destination = included[included.length - 1];
@@ -510,5 +602,12 @@ export function navigateRouteUrl(stops) {
   const params = new URLSearchParams({ api: '1', destination: addressOf(destination), travelmode: 'driving' });
   if (waypoints.length) params.set('waypoints', waypoints.map(addressOf).join('|'));
 
-  return { url: `https://www.google.com/maps/dir/?${params.toString()}`, dropped: (stops || []).length - included.length };
+  return {
+    url: `https://www.google.com/maps/dir/?${params.toString()}`,
+    included: included.length,
+    // Measured against `usable`, not against every stop: the cap only ever
+    // applied to the stops that could have been routed in the first place.
+    overCap: usable.length - included.length,
+    noAddressStops,
+  };
 }

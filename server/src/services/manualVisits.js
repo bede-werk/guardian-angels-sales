@@ -15,17 +15,30 @@
 // (SAME_DATE_VISIT, FLOOR_COMPLETED, FLOOR_PLANNED, DRAFT_ELSEWHERE) at the
 // right threshold (HARD_FLOOR_DAYS is already 5, matching this feature's own
 // warning window). The only new thing is which findings BLOCK versus WARN -
-// and that split is deliberately DIFFERENT from routes/visits.js's existing
-// ad-hoc "Log a visit" policy: DRAFT_ELSEWHERE is a soft warning there, but a
-// hard block here. Same finding, different policy by surface - see
-// classifyConflicts below. That divergence is intentional (spec §4.1), not
-// duplicated logic that drifted.
+// see classifyConflicts below.
+//
+// DRAFT_ELSEWHERE used to be a hard block here, deliberately diverging from
+// routes/visits.js's "Log a visit" policy, which only ever warned on it
+// (spec §4.1). That divergence was retired 2026-08-25: it contradicted the
+// rule scheduleDraft.js's committedElsewherePlaceIds states outright - "an
+// uncommitted draft is a proposal, not a claim; first to actually commit is
+// the only real lock" - which is why commitDay has never let another rep's
+// draft stop a commit. Blocking the DELIBERATE hand-plan path on a proposal
+// that commit itself ignores was the strictest reading of the weakest
+// signal, and it could lock a rep out of a real decision until the other
+// rep's draft aged out at the next day rollover. It warns now, like
+// everywhere else. Losing the race is already handled: the winner's row
+// makes the loser's stop a SAME_DATE_VISIT, which drops it from their day
+// and says so by name (scheduleDraft.js's partitionSameDateDrops), and
+// visits_place_date_planned_unique + racedError below backstop a true
+// simultaneous double-book.
 //
 // Same pure/impure split as conflictDetection.js/scheduleDraft.js: policy
 // decisions are plain, synchronous, directly-testable functions; a thin
 // async layer does the real DB reads/writes and calls into them.
 const { orgToday } = require('./orgDate');
 const { detectConflicts } = require('./conflictDetection');
+const { isDoNotVisitActive } = require('./doNotVisit');
 
 // -- Pure policy ------------------------------------------------------------
 
@@ -42,18 +55,27 @@ function pastDateError(scheduledDate, today) {
 }
 
 // Splits a detectConflicts() Conflict[] into what BLOCKS manual planning
-// outright versus what only WARNS. SAME_DATE_VISIT and DRAFT_ELSEWHERE block
-// (§4.1) - a second planned/completed visit that day is literally
-// impossible to resolve after the fact (a rep can't be in two places), and
-// two same-day drafts create the exact conflict SAME_DATE_VISIT already
-// treats as unresolvable, so DRAFT_ELSEWHERE gets the same hard treatment
-// here even though the OTHER "Log a visit" route (routes/visits.js) only
-// warns on it. FLOOR_COMPLETED/FLOOR_PLANNED stay warnings (§4.2) - a
-// deliberate override, not a mistake, is exactly what this feature exists
-// to allow past the floor.
+// outright versus what only WARNS. SAME_DATE_VISIT is the only hard block
+// (§4.1): a second planned/completed visit on the same day is a real,
+// already-recorded fact and is literally impossible to resolve after the
+// fact - a rep can't be in two places. Everything else warns (§4.2) - a
+// deliberate override, not a mistake, is exactly what this feature exists to
+// allow. FLOOR_COMPLETED/FLOOR_PLANNED are recency heuristics. DRAFT_ELSEWHERE
+// is another rep's uncommitted PROPOSAL, which nothing downstream honours as
+// a claim (see this file's header, and scheduleDraft.js's
+// committedElsewherePlaceIds) - it is worth saying out loud, not worth
+// refusing on.
+//
+// scheduleDraft.js's addStop keeps its own copy of this same one-type filter
+// rather than importing this (that module has no manualVisits.js dependency,
+// and these were two deliberately DIFFERENT policies until they converged) -
+// if the set of blocking types ever changes again, change it in both, and
+// see addStop's own header for the other half of the reasoning.
 function classifyConflicts(conflicts) {
-  const blocking = conflicts.filter((c) => c.type === 'SAME_DATE_VISIT' || c.type === 'DRAFT_ELSEWHERE');
-  const warnings = conflicts.filter((c) => c.type === 'FLOOR_COMPLETED' || c.type === 'FLOOR_PLANNED');
+  const blocking = conflicts.filter((c) => c.type === 'SAME_DATE_VISIT');
+  const warnings = conflicts.filter(
+    (c) => c.type === 'FLOOR_COMPLETED' || c.type === 'FLOOR_PLANNED' || c.type === 'DRAFT_ELSEWHERE'
+  );
   return { blocking, warnings };
 }
 
@@ -61,30 +83,44 @@ function classifyConflicts(conflicts) {
 // FIRST blocking conflict (see createManualVisit/editManualVisit below) -
 // same "one named conflict" convention detectConflictsPure itself uses per
 // type, and there is realistically never more than one of each type for a
-// single place+date pair anyway.
-function blockingMessage(conflict) {
-  if (conflict.type === 'SAME_DATE_VISIT') {
-    // "on this date" (not "today") and "a {status} visit" (not "is
-    // visiting") - the manual-plan's target date is essentially always a
-    // FUTURE date (pastDateError blocks anything earlier; this feature
-    // exists specifically for dates ahead), so both the word "today" and a
-    // present-continuous "is visiting" claim were wrong the moment this
-    // ran for any date but literally today. The {status} noun phrase
-    // ("planned"/"completed" visit) sidesteps needing separate past/future
-    // verb tenses entirely - same trick routes/visits.js's own SAME_DATE_VISIT
-    // 409 message (POST /api/visits) already uses.
-    const who = conflict.otherUserName || 'Someone';
-    return `${who} already has a ${conflict.status} visit here on this date.`;
-  }
-  // DRAFT_ELSEWHERE
-  const who = conflict.otherUserName || 'another rep';
-  return `This place is already in ${who}'s draft for this day.`;
+// single place+date pair anyway. SAME_DATE_VISIT is the only type
+// classifyConflicts puts in `blocking`, so there is nothing to branch on:
+// the DRAFT_ELSEWHERE arm this used to carry moved to warningMessage below
+// when that type stopped blocking (see this file's header), rather than
+// being kept here as an unreachable second copy of the same sentence.
+//
+// "on this date" (not "today") and "a {status} visit" (not "is visiting") -
+// the manual-plan's target date is essentially always a FUTURE date
+// (pastDateError blocks anything earlier; this feature exists specifically
+// for dates ahead), so both the word "today" and a present-continuous "is
+// visiting" claim were wrong the moment this ran for any date but literally
+// today. The {status} noun phrase ("planned"/"completed" visit) sidesteps
+// needing separate past/future verb tenses entirely - same trick
+// routes/visits.js's own SAME_DATE_VISIT 409 message (POST /api/visits)
+// already uses.
+//
+// `viewerId` is the rep this sentence is being SHOWN to (the acting user -
+// createManualVisit's createdByUserId, editVisit's actingUserId), not the
+// visit's assignee: planning for someone else and hitting THEIR existing
+// visit should name them, not say "you". Without this branch the collision
+// read "Bede Fulton already has a planned visit here" to Bede himself -
+// same "You" vs a name handling routes/visits.js's POST /api/visits and
+// RoutePlanner.jsx's stopConflictMessage/droppedStopMessage all already do,
+// and the last of the four surfaces to get it.
+function blockingMessage(conflict, viewerId) {
+  const isViewer = viewerId != null && conflict.otherUserId === viewerId;
+  const who = isViewer ? 'You' : conflict.otherUserName || 'Someone';
+  const verb = isViewer ? 'have' : 'has';
+  return `${who} already ${verb} a ${conflict.status} visit here on this date.`;
 }
 
-// A FLOOR_COMPLETED/FLOOR_PLANNED conflict -> its warning line. daysApart is
-// measured against the date being PLANNED, not real-world today (see
-// conflictDetection.js's detectConflicts: `today` is always the target date
-// under evaluation).
+// A warning-tier conflict -> its line. Named for the tier rather than the
+// types in it (it was floorWarningMessage) since DRAFT_ELSEWHERE joined
+// them, and it is not a floor rule at all.
+//
+// daysApart is measured against the date being PLANNED, not real-world today
+// (see conflictDetection.js's detectConflicts: `today` is always the target
+// date under evaluation).
 //
 // FLOOR_COMPLETED is always a real past event (a completed visit's date can
 // never be in the future - see VisitLogModal.jsx's date input, capped at
@@ -97,7 +133,14 @@ function blockingMessage(conflict) {
 // makes neither claim while keeping the same "recently active here" signal
 // spec §4.2 wants, so this no longer needs the shared wording that used to
 // paper over the difference.
-function floorWarningMessage(conflict) {
+function warningMessage(conflict) {
+  // Word-for-word the sentence blockingMessage used to return for this type,
+  // plus the same "Plan anyway?" every other warning ends in - the fact
+  // being reported did not change, only whether it stops you.
+  if (conflict.type === 'DRAFT_ELSEWHERE') {
+    const who = conflict.otherUserName || 'another rep';
+    return `This place is already in ${who}'s draft for this day. Plan anyway?`;
+  }
   const n = conflict.daysApart;
   const nDays = `${n} day${n === 1 ? '' : 's'}`;
   return conflict.type === 'FLOOR_COMPLETED'
@@ -106,29 +149,34 @@ function floorWarningMessage(conflict) {
 }
 
 // do_not_visit is not a conflictDetection.js finding (that module only
-// covers the floor/collision rules) - same precedence check
-// schedulingEngine.js's eligibility() uses: do_not_visit_until null means
-// indefinite, a date means it lapses once today passes it.
+// covers the floor/collision rules) - it rides this feature's own §4.2
+// warning list instead. The PREDICATE is shared, though: services/doNotVisit.js
+// owns the "is this mark still live today" rule that schedulingEngine.js's
+// eligibility(), routes/visits.js's "Log a visit" and scheduleDraft.js's
+// draft views all read too, so the flag can never mean one thing here and
+// another there. Only the sentence is local - this surface plans a visit, so
+// it asks "Plan anyway?".
 function doNotVisitWarning(place, today) {
-  if (place.do_not_visit && (!place.do_not_visit_until || place.do_not_visit_until >= today)) {
+  if (isDoNotVisitActive(place, today)) {
     return { type: 'DO_NOT_VISIT', message: 'This place is marked do-not-visit. Plan anyway?' };
   }
   return null;
 }
 
-// Assembles the full warning list for a proposed create/edit - floor
-// warnings first (in whatever order detectConflicts returned them), then
-// do_not_visit. Order only matters for display; nothing downstream depends
-// on it.
-function buildWarnings({ floorConflicts, place, today }) {
-  const warnings = floorConflicts.map((c) => ({ type: c.type, message: floorWarningMessage(c), daysApart: c.daysApart }));
+// Assembles the full warning list for a proposed create/edit - the
+// detector's warning-tier conflicts first (in whatever order detectConflicts
+// returned them), then do_not_visit. Order only matters for display; nothing
+// downstream depends on it (both clients run their own primaryWarning
+// priority over this array).
+function buildWarnings({ warningConflicts, place, today }) {
+  const warnings = warningConflicts.map((c) => ({ type: c.type, message: warningMessage(c), daysApart: c.daysApart }));
   const dnv = doNotVisitWarning(place, today);
   if (dnv) warnings.push(dnv);
   return warnings;
 }
 
-function blockedError(blocking) {
-  const err = new Error(blockingMessage(blocking[0]));
+function blockedError(blocking, viewerId) {
+  const err = new Error(blockingMessage(blocking[0], viewerId));
   err.status = 409;
   err.code = 'MANUAL_VISIT_BLOCKED';
   err.conflicts = blocking;
@@ -205,10 +253,12 @@ async function createManualVisit(db, { placeId, scheduledDate, userId, createdBy
   // correctly exclude the assignee's OWN open draft from the DRAFT_ELSEWHERE
   // search - same `ctx.userId` contract addStop already relies on.
   const conflicts = await detectConflicts(db, placeId, scheduledDate, { userId });
-  const { blocking, warnings: floorConflicts } = classifyConflicts(conflicts);
-  if (blocking.length > 0) throw blockedError(blocking);
+  const { blocking, warnings: warningConflicts } = classifyConflicts(conflicts);
+  // createdByUserId, not userId: the message goes back to whoever submitted
+  // this request, and "You" has to mean them - see blockingMessage.
+  if (blocking.length > 0) throw blockedError(blocking, createdByUserId);
 
-  const warnings = buildWarnings({ floorConflicts, place, today });
+  const warnings = buildWarnings({ warningConflicts, place, today });
   if (warnings.length > 0 && !force) {
     return { visit: null, warnings };
   }
@@ -329,10 +379,10 @@ async function editVisit(db, id, { scheduledDate, notes, visitType, force = fals
       throw err;
     }
     const conflicts = await detectConflicts(db, visit.place_id, scheduledDate, { userId: visit.user_id, excludeVisitId: id });
-    const { blocking, warnings: floorConflicts } = classifyConflicts(conflicts);
-    if (blocking.length > 0) throw blockedError(blocking);
+    const { blocking, warnings: warningConflicts } = classifyConflicts(conflicts);
+    if (blocking.length > 0) throw blockedError(blocking, actingUserId);
 
-    const warnings = buildWarnings({ floorConflicts, place, today });
+    const warnings = buildWarnings({ warningConflicts, place, today });
     if (warnings.length > 0 && !force) {
       return { visit: null, warnings };
     }
@@ -352,7 +402,7 @@ module.exports = {
   pastDateError,
   classifyConflicts,
   blockingMessage,
-  floorWarningMessage,
+  warningMessage,
   doNotVisitWarning,
   buildWarnings,
   canEditManualVisit,

@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
 
-const { parseVisitListParams, listVisits, summarizeVisits } = require('./visitQuery');
+const { parseVisitListParams, listVisits, summarizeVisits, attachCapacityPlaceIds } = require('./visitQuery');
 
 const testKnex = knexLib({
   client: 'better-sqlite3',
@@ -27,8 +27,13 @@ describe('visitQuery', () => {
     ]);
 
     await testKnex('places').insert([
-      { id: 1, name: 'Tabitha Hospice', category: 'Hospice', tier: 1, region: 'North', priority_score: 90 },
-      { id: 2, name: 'Sunrise Clinic', category: 'Physicians', tier: 2, region: 'South', priority_score: 50 },
+      // capacity_seed replaced tier/priority_score 2026-08-23. 15/mo buckets
+      // to high and 1/mo to low, so the capacity filter below separates these
+      // two unambiguously - and deliberately DISAGREES with what each
+      // category alone would seed ('Hospice' seeds medium), proving the
+      // filter reads the resolved level rather than the category guess.
+      { id: 1, name: 'Tabitha Hospice', category: 'Hospice', capacity_seed: 15, region: 'North' },
+      { id: 2, name: 'Sunrise Clinic', category: 'Physicians', capacity_seed: 1, region: 'South' },
     ]);
 
     await testKnex('people').insert([
@@ -141,7 +146,11 @@ describe('visitQuery', () => {
 
   describe('listVisits filters', () => {
     async function ids(overrides) {
-      const { visits } = await listVisits(testKnex, parseVisitListParams(overrides));
+      const params = parseVisitListParams(overrides);
+      // Mirrors the route: the capacity filter is resolved to place ids
+      // before the query is built, since the level is computed, not stored.
+      await attachCapacityPlaceIds(testKnex, params);
+      const { visits } = await listVisits(testKnex, params);
       return visits.map((v) => v.id);
     }
 
@@ -171,9 +180,11 @@ describe('visitQuery', () => {
       assert.deepEqual(await ids({ plannedBy: 1, status: 'planned' }), [4]);
     });
 
-    test('category/tier/region filter on the joined place', async () => {
+    test('category/capacity/region filter on the joined place', async () => {
       assert.deepEqual((await ids({ category: 'Physicians' })).sort((a, b) => a - b), [2, 4]);
-      assert.deepEqual((await ids({ tier: 1, status: 'completed' })).sort((a, b) => a - b), [1, 7, 8, 9, 10]);
+      assert.deepEqual((await ids({ capacity: 'high', status: 'completed' })).sort((a, b) => a - b), [1, 7, 8, 9, 10]);
+      assert.deepEqual((await ids({ capacity: 'low' })).sort((a, b) => a - b), [2, 4]);
+      assert.deepEqual(await ids({ capacity: 'medium' }), [], 'no place resolves to medium - an empty result, not an unfiltered one');
       assert.deepEqual((await ids({ region: 'South' })).sort((a, b) => a - b), [2, 4]);
     });
 
@@ -240,14 +251,14 @@ describe('visitQuery', () => {
 
     test('combined filters AND together', async () => {
       // completed AND tier 1 AND region North -> only place 1's completed visits.
-      const result = (await ids({ status: 'completed', tier: 1, region: 'North' })).sort((a, b) => a - b);
+      const result = (await ids({ status: 'completed', region: 'North' })).sort((a, b) => a - b);
       assert.deepEqual(result, [1, 7, 8, 9, 10]);
     });
   });
 
   describe('pagination and sort stability', () => {
     test('offset=0/limit=2 and offset=2/limit=2 are disjoint and together cover the first 4 in order', async () => {
-      const params = parseVisitListParams({ status: 'completed', tier: 1, region: 'North', sort: 'date_asc', limit: 2, offset: 0 });
+      const params = parseVisitListParams({ status: 'completed', region: 'North', sort: 'date_asc', limit: 2, offset: 0 });
       const page1 = (await listVisits(testKnex, params)).visits.map((v) => v.id);
       const page2 = (await listVisits(testKnex, { ...params, offset: 2 })).visits.map((v) => v.id);
       assert.equal(page1.length, 2);

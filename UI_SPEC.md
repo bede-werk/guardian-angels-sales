@@ -134,3 +134,58 @@ distinct values" question separate from "which colors": three-tint families
 reuse the teal/blue/grey scale by convention; a family with a different
 number of values (StatusChip has four) just extends the same underlying
 `--*-tint-*` custom properties rather than inventing new ones.
+
+---
+
+## Titles (card heads, modal heads, section heads)
+
+Audited 2026-08-25. Every visible heading in the app - `.card-head h2`,
+`.modal-head h2`, `.settings-section-head h3`, `.day-overview-popover-head h3`
+- follows the same three rules. The model to copy is `VisitLogModal.jsx`:
+`Log Visit · Sunrise Manor`.
+
+### Rule 1 - Title Case
+
+Capitalize every word except articles, coordinating conjunctions, and short
+prepositions (`a`, `an`, `the`, `and`, `or`, `of`, `to`, `by`, `in`, `at`).
+Both halves of a hyphenated compound get capitalized (`Per-Stop Overhead`).
+
+`Commitments Due`, `Top Referral Partners`, `Starting Guess by Category`,
+`Rolling People Up to Their Place`. Not `Commitments due`.
+
+This covers the Settings catalogue too: `section.title` and `group.title` in
+`server/src/config/tunables.js` are rendered as real headings, so they follow
+the same rule. (Their sibling `label:` fields are *form field labels*, not
+titles - those stay sentence case.)
+
+### Rule 2 - What it is first, which one second
+
+A heading that carries a date, a place name, a person's name, or a rep's name
+leads with the noun for what the thing *is*, then the identifying part:
+
+- `Planned Route · Mon, Aug 25` - not `Mon, Aug 25 · Planned Route`
+- `Skipped Visits · Mon, Aug 25`, `Completed Visits · …`, `Birthdays · Aug 25`
+- `Visit · Mon, Aug 25`, `Commitment · …`, `Referral · …`
+- `Log Visit · Sunrise Manor`, `Plan a Visit · …`, `Add a Person · …`
+- Multiple identifiers chain in the same order, widest first:
+  `Planned Route · Nikki Shasserre · Mon, Aug 25`
+
+A heading whose identifying part is the *entire* subject stays bare - the
+person/place name at the top of `PersonDetail`/`PlaceDetail`, or a day
+popover that is only ever "this day" (`DayOverflowModal`). There's no noun to
+put in front of those without inventing copy.
+
+### Rule 3 - Raised dots, never dashes
+
+The separator between segments is ` · ` (U+00B7, spaces both sides). Not
+` - `, not an en/em dash. Dashes inside a single word are fine (`Per-Stop`);
+this rule is about separators.
+
+### Decision rule
+
+Writing a new heading: say what the thing is in Title Case, then append
+` · ` plus each identifier from widest scope to narrowest. If the heading is
+only a name or only a date, leave it bare rather than bolting on a noun.
+Sentence-case prose that happens to sit near a heading (`.settings-section-blurb`,
+`.meta`, `.tiny`, tooltips, `EmptyState` messages) is not a title and is not
+covered by any of this.

@@ -6,6 +6,7 @@ const { orgToday } = require('./orgDate');
 const {
   pastDateError,
   classifyConflicts,
+  blockingMessage,
   doNotVisitWarning,
   canEditManualVisit,
   canDeleteManualVisit,
@@ -35,23 +36,23 @@ describe('pastDateError', () => {
   });
 });
 
-describe('classifyConflicts - policy divergence from routes/visits.js', () => {
-  // routes/visits.js's own ad-hoc "Log a visit" POST only ever hard-blocks
-  // SAME_DATE_VISIT (see that route's `sameDateConflict` check) - every
-  // other finding, DRAFT_ELSEWHERE included, is informational there. Manual
-  // planning is stricter on purpose (spec §4.1): a place already in another
-  // rep's draft for that date is a real double-booking risk once BOTH sides
-  // might commit, not just a "someone else was recently here" heads-up. This
-  // test exists specifically to keep that divergence deliberate and visible,
-  // not something that quietly drifts back into agreement (or apart further)
-  // as either policy changes.
-  test('SAME_DATE_VISIT and DRAFT_ELSEWHERE both block here', () => {
+describe('classifyConflicts - one hard block, everything else warns', () => {
+  // This describe used to be titled "policy divergence from routes/visits.js"
+  // and existed to keep manual planning's EXTRA hard block on DRAFT_ELSEWHERE
+  // deliberate and visible. That divergence was retired 2026-08-25 (see
+  // manualVisits.js's header): another rep's uncommitted draft is a proposal
+  // that commitDay itself does not honour as a lock, so refusing a
+  // deliberate hand-plan over it was the strictest reading of the weakest
+  // signal. The test stays, inverted - it now pins the AGREEMENT, so the
+  // three human-driven surfaces can't quietly drift apart again.
+  test('SAME_DATE_VISIT is the only hard block', () => {
     const conflicts = [
       { type: 'SAME_DATE_VISIT', severity: 'hard' },
       { type: 'DRAFT_ELSEWHERE', severity: 'hard' },
     ];
-    const { blocking } = classifyConflicts(conflicts);
-    assert.deepEqual(blocking.map((c) => c.type).sort(), ['DRAFT_ELSEWHERE', 'SAME_DATE_VISIT']);
+    const { blocking, warnings } = classifyConflicts(conflicts);
+    assert.deepEqual(blocking.map((c) => c.type), ['SAME_DATE_VISIT']);
+    assert.deepEqual(warnings.map((c) => c.type), ['DRAFT_ELSEWHERE'], 'a draft elsewhere warns instead of refusing');
   });
 
   test('FLOOR_COMPLETED and FLOOR_PLANNED are warnings, not blocks', () => {
@@ -62,6 +63,37 @@ describe('classifyConflicts - policy divergence from routes/visits.js', () => {
     const { blocking, warnings } = classifyConflicts(conflicts);
     assert.equal(blocking.length, 0);
     assert.equal(warnings.length, 2);
+  });
+});
+
+describe('blockingMessage - names the viewer as "you"', () => {
+  const conflict = { type: 'SAME_DATE_VISIT', status: 'planned', otherUserId: 5, otherUserName: 'Lisa Marks' };
+
+  test("the viewer's own colliding visit is second-personed, not read back at them by name", () => {
+    assert.equal(blockingMessage(conflict, 5), 'You already have a planned visit here on this date.');
+  });
+
+  test("someone else's is named, in the third person", () => {
+    assert.equal(blockingMessage(conflict, 9), 'Lisa Marks already has a planned visit here on this date.');
+  });
+
+  test('no viewer id (an integration caller with no session) falls back to the third person', () => {
+    assert.equal(blockingMessage(conflict, null), 'Lisa Marks already has a planned visit here on this date.');
+    assert.equal(blockingMessage(conflict, undefined), 'Lisa Marks already has a planned visit here on this date.');
+  });
+
+  test('an unnamed other rep still reads as "Someone"', () => {
+    assert.equal(
+      blockingMessage({ status: 'completed', otherUserId: null, otherUserName: null }, 5),
+      'Someone already has a completed visit here on this date.'
+    );
+  });
+
+  // The viewer is the ACTING rep, not the assignee: planning for someone
+  // else and hitting THEIR existing visit must name them (see
+  // createManualVisit, which passes createdByUserId here).
+  test('planning for another rep and colliding with that rep\'s own visit names them, not "you"', () => {
+    assert.equal(blockingMessage(conflict, 1), 'Lisa Marks already has a planned visit here on this date.');
   });
 });
 
@@ -127,22 +159,22 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
       { id: 2, name: 'Lisa', email: 'lisa@test.local' },
     ]);
     await db('places').insert([
-      { id: 1, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Same Day Planned Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Same Day Completed Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 4, name: 'Draft Elsewhere Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 5, name: 'Recently Visited Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 6, name: 'Long Ago Visited Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 8, name: 'Cross-Rep Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 10, name: 'Commitment Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 11, name: 'Reschedule Test Place', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Clean Place', category: 'Hospice' },
+      { id: 2, name: 'Same Day Planned Place', category: 'Hospice' },
+      { id: 3, name: 'Same Day Completed Place', category: 'Hospice' },
+      { id: 4, name: 'Draft Elsewhere Place', category: 'Hospice' },
+      { id: 5, name: 'Recently Visited Place', category: 'Hospice' },
+      { id: 6, name: 'Long Ago Visited Place', category: 'Hospice' },
+      { id: 8, name: 'Cross-Rep Place', category: 'Hospice' },
+      { id: 10, name: 'Commitment Place', category: 'Hospice' },
+      { id: 11, name: 'Reschedule Test Place', category: 'Hospice' },
     ]);
     // Separate insert: a batched multi-row insert fills any column absent
     // from one row's object with an explicit NULL for that row (to keep a
     // single union-select statement), not the column's own default - and
     // places.do_not_visit is NOT NULL, so mixing this into the array above
     // would fail every row, not just this one.
-    await db('places').insert({ id: 7, name: 'Do Not Visit Place', category: 'Hospice', tier: 1, priority_score: 75, do_not_visit: true });
+    await db('places').insert({ id: 7, name: 'Do Not Visit Place', category: 'Hospice', do_not_visit: true });
 
     await db('visits').insert({ place_id: 2, user_id: 2, status: 'planned', scheduled_date: isoOffset(3), place_name: 'Same Day Planned Place' });
     await db('visits').insert({ place_id: 3, user_id: 2, status: 'completed', scheduled_date: isoOffset(3), place_name: 'Same Day Completed Place' });
@@ -184,6 +216,20 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     );
   });
 
+  // The wiring behind blockingMessage's viewer branch above: the 409 sentence
+  // has to be built against the ACTING rep, so a rep planning over their own
+  // existing visit isn't told about themselves in the third person.
+  test('same-day block names the acting rep as "you" - and another rep by name', async () => {
+    await assert.rejects(
+      () => createManualVisit(db, { placeId: 2, scheduledDate: isoOffset(3), userId: 2, createdByUserId: 2 }),
+      /^Error: You already have a planned visit here on this date\.$/
+    );
+    await assert.rejects(
+      () => createManualVisit(db, { placeId: 2, scheduledDate: isoOffset(3), userId: 1, createdByUserId: 1 }),
+      /^Error: Lisa already has a planned visit here on this date\.$/
+    );
+  });
+
   test('same-day block: place already visited (completed) that day', async () => {
     await assert.rejects(
       () => createManualVisit(db, { placeId: 3, scheduledDate: isoOffset(3), userId: 1, createdByUserId: 1 }),
@@ -195,15 +241,19 @@ describe('createManualVisit / rescheduleManualVisit (real DB)', () => {
     );
   });
 
-  test('draft block: place is in another rep\'s live draft for that day', async () => {
-    await assert.rejects(
-      () => createManualVisit(db, { placeId: 4, scheduledDate: isoOffset(3), userId: 1, createdByUserId: 1 }),
-      (err) => {
-        assert.equal(err.status, 409);
-        assert.ok(err.conflicts.some((c) => c.type === 'DRAFT_ELSEWHERE'));
-        return true;
-      }
-    );
+  // Was 'draft block: ...' and asserted a 409. Same fixture, opposite
+  // expectation as of 2026-08-25: another rep's live draft warns and yields
+  // to force, exactly like the floor and do-not-visit warnings around it.
+  test('draft warning: place is in another rep\'s live draft for that day -> warns, force:true proceeds', async () => {
+    const attempt = await createManualVisit(db, { placeId: 4, scheduledDate: isoOffset(3), userId: 1, createdByUserId: 1 });
+    assert.equal(attempt.visit, null, 'nothing written until the rep confirms');
+    const warning = attempt.warnings.find((w) => w.type === 'DRAFT_ELSEWHERE');
+    assert.ok(warning, 'the other rep\'s draft is reported as a warning, not a block');
+    assert.match(warning.message, /draft for this day\. Plan anyway\?$/);
+
+    const forced = await createManualVisit(db, { placeId: 4, scheduledDate: isoOffset(3), userId: 1, createdByUserId: 1, force: true });
+    assert.ok(forced.visit, 'force:true plans it - first to actually commit wins');
+    assert.equal(forced.visit.status, 'planned');
   });
 
   test('5-day warning is not a block: visited 3 days before the target date -> warns, force:true proceeds', async () => {

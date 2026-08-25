@@ -16,11 +16,11 @@
 //      tier just as easily as a high-capacity one).
 //   2. Exploration        - capacity confidence 'unknown' or 'stale' (spec
 //      capacity-computation-spec.md §8, step 7). Ordered by explorationRank
-//      (capacity-level guess, stale ranked below unknown, aged down toward 0
-//      the longer a place has waited - see explorationRank below), then
-//      priority_score descending, then place.id ascending as a final
-//      deterministic tiebreak (spec §8.1) - NOT by urgency; learning beats
-//      maintaining during the pre-qualification era.
+//      (capacity-level guess, all-star-bumped, stale ranked below unknown,
+//      aged down toward 0 the longer a place has waited - see explorationRank
+//      below), then the place's own capacity rating descending, then place.id
+//      ascending as a final deterministic tiebreak (spec §8.1) - NOT by
+//      urgency; learning beats maintaining during the pre-qualification era.
 //   3. Everything else     - fresh places below the neglect threshold.
 //      Ordered by urgency, descending. Never-visited is Infinity urgency,
 //      but a never-visited place is essentially always still
@@ -40,6 +40,7 @@
 // daysSince (crossRepFloorWarning.js, relationship.js) don't need to change
 // their require() at all.
 const { daysSince, isCommitmentDue, isFloorConflict } = require('./conflictDetection');
+const { isDoNotVisitActive } = require('./doNotVisit');
 
 const TIERS = { COMMITMENT: 0, ENDANGERED: 1, EXPLORATION: 2, MAINTENANCE: 3 };
 
@@ -68,40 +69,48 @@ function targetCadenceDays(capacityLevel, relationshipLevel, config) {
 // tiers 1 and 3.
 function urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today, config }) {
   if (!lastVisitDate) return Infinity;
-  let cadence = targetCadenceDays(effectiveCapacityLevel({ place, capacityLevel }), effectiveRelationshipLevel({ place, relationshipLevel }), config);
+  let cadence = targetCadenceDays(bumpCapacityLevel(capacityLevel, place.is_all_star), relationshipLevel, config);
   if (recentCompletedCount >= config.FATIGUE_THRESHOLD) cadence *= config.FATIGUE_MULTIPLIER;
   return daysSince(lastVisitDate, today) / cadence;
 }
 
-// Relationship level is now COMPUTED (services/relationship.js) and supplied
-// per-candidate by buildCandidatePool, rather than read off the place row -
-// places.relationship_level was a manual field that defaulted to 'weak' and
-// was never once edited, which quietly flattened this whole axis of the
-// cadence table.
+// THE ALL-STAR AXIS (2026-08-24). `places.is_all_star` marks the handful of
+// places (see ALL_STAR_TARGET, ~25) that matter most, and this is the entire
+// mechanism: it moves the place up ONE capacity row, nothing more.
 //
-// The fallback to place.relationship_level exists only for the transition:
-// places.relationship_level is deliberately still on the table for one
-// release so computed values can be compared against the old manual ones on
-// real data. In production buildCandidatePool always supplies
-// relationshipLevel, so the fallback never fires; it's what keeps this
-// module's own pure tests (which construct bare place objects) meaningful in
-// the meantime. Delete it along with the column.
-function effectiveRelationshipLevel({ place, relationshipLevel }) {
-  return relationshipLevel ?? place.relationship_level;
-}
-
-// Same transition pattern as effectiveRelationshipLevel above, one release
-// later: capacity level is now COMPUTED (services/capacity.js,
-// capacity-computation-spec.md step 6) and supplied per-candidate by
-// buildCandidatePool, rather than read off place.capacity_level - the raw
-// column is a frozen one-time guess/pre-qual snapshot, never revised against
-// reality (see the spec's §1). The fallback to place.capacity_level exists
-// only so this module's own pure tests (bare place objects, no pool) stay
-// meaningful; buildCandidatePool always supplies capacityLevel in production,
-// so the fallback never fires there. Delete it once the legacy column is
-// dropped (spec step 9).
-function effectiveCapacityLevel({ place, capacityLevel }) {
-  return capacityLevel ?? place.capacity_level;
+// It exists because capacity is a pure COUNT of referrals per month, so a
+// place that sends little but sends gold is invisible to it - a trust
+// attorney sending one 24/7 live-in case a quarter reads 'low' and gets a
+// 90-day cadence. But the flag is NOT scoped to only those places: it means
+// "one of the most important," not "punches above its volume." Marking a
+// place that is already high-capacity is correct and expected - the bump
+// simply has nothing left to give it (see the ceiling note below).
+//
+// One row, not a third dimension of CADENCE_DAYS, on purpose. A third 3-level
+// axis would make that table 27 cells; with 263 places most cells would hold
+// two or three, which is not enough cases to ever tune them against. A bump
+// buys the same expressiveness for the case it exists to fix (the low-volume
+// all-star) against a 9-cell table nobody has to re-learn.
+//
+// 'high' stays 'high' - there is no row above it. So the bump is INERT for an
+// all-star that already reads high capacity, and that is correct rather than a
+// missed case: the place is already on the tightest cadence the table has.
+//
+// Worth knowing before reading anything into a live database: on Guardian
+// Angels' own book as of 2026-08-24, all 23 all-stars read 'high', so this
+// function changes nothing for any of them. That is a fact about one agency's
+// data, not about the design - another book's top 25 will include low-volume
+// sources, and the bump does real work there.
+//
+// This deliberately does NOT touch the capacity level that
+// services/capacity.js computes or that any UI displays. Capacity keeps
+// telling the truth about volume; the all-star adjustment lives here, in the
+// ranker, where the decision it changes actually gets made. A place shown as
+// 'low' capacity but visited on a medium cadence is explained by its all-star
+// chip, not by capacity quietly reporting a number nobody declared.
+function bumpCapacityLevel(level, isAllStar) {
+  if (!isAllStar) return level;
+  return { low: 'medium', medium: 'high' }[level] ?? level;
 }
 
 // Ordinal for "ordered among themselves by capacity level (guess)" within
@@ -110,27 +119,6 @@ function effectiveCapacityLevel({ place, capacityLevel }) {
 // scheduleDraft.test.js and older fixtures may still reference it directly.
 function capacityRank(capacityLevel) {
   return { high: 2, medium: 1, low: 0 }[capacityLevel] ?? -1;
-}
-
-// Same transition pattern once more, step 7: EXPLORATION tier MEMBERSHIP is
-// now governed by the computed capacity service's `confidence`, not the old
-// one-way `capacity_status` latch (estimated -> verified, never revisited).
-// A place whose declared observation ages past CAPACITY_STALE_DAYS now
-// correctly RE-ENTERS exploration - impossible under the old latch, and
-// exactly what capacity.js's confidence model exists to enable (spec §6.6,
-// §8).
-//
-// The fallback maps the OLD status values to their nearest confidence
-// equivalent so this module's own bare-place-object tests keep meaning
-// something: 'estimated' (never verified) -> 'unknown' (still in
-// exploration); anything else ('verified'/'adjusted') -> 'fresh' (out of
-// exploration) - exactly the old gate's own boolean, just re-expressed.
-// Production always supplies capacityConfidence from buildCandidatePool, so
-// this fallback never fires there. Delete it once the legacy column is
-// dropped (spec step 9).
-function effectiveCapacityConfidence({ place, capacityConfidence }) {
-  if (capacityConfidence) return capacityConfidence;
-  return place.capacity_status === 'estimated' ? 'unknown' : 'fresh';
 }
 
 // Spec §8.2 - how candidates are ordered AMONG THEMSELVES within the
@@ -193,10 +181,11 @@ function explorationRank({ level, confidence, daysWaiting, config }) {
 // cadence math below, and a planned-but-not-yet-happened visit must not
 // affect how overdue a place LOOKS - only whether it's eligible at all.
 function eligibility({ place, today, lastVisitDate, nextVisitDate, plannedVisitDates = [], lockedElsewhere, config }) {
-  // do_not_visit_until mirrors snooze_until's own "never cleared, just live-
-  // compared" convention - null/unset means indefinite once do_not_visit is
-  // true, a date means the mark lapses on its own once today passes it.
-  if (place.do_not_visit && (!place.do_not_visit_until || place.do_not_visit_until >= today)) {
+  // The live-mark rule itself lives in services/doNotVisit.js - one predicate
+  // for the ranker, the manual-plan policy layer, "Log a visit" and the route
+  // planner's draft views alike (see that module's header). Only the
+  // PRECEDENCE is this function's own business.
+  if (isDoNotVisitActive(place, today)) {
     return { eligible: false, reason: 'do_not_visit' };
   }
 
@@ -247,7 +236,7 @@ function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, re
     return [TIERS.COMMITMENT, daysSince(nextVisitDate, today)];
   }
 
-  const confidence = effectiveCapacityConfidence({ place, capacityConfidence });
+  const confidence = capacityConfidence;
   const inExploration = confidence !== 'fresh';
   const u = urgency({ place, lastVisitDate, recentCompletedCount, relationshipLevel, capacityLevel, today, config });
 
@@ -255,14 +244,30 @@ function rankKey({ place, lastVisitDate, recentCompletedCount, nextVisitDate, re
     return [TIERS.ENDANGERED, u];
   }
   if (inExploration) {
-    const level = effectiveCapacityLevel({ place, capacityLevel });
+    // Bumped here too, and this may be the more valuable half. This tier
+    // orders places nobody has pre-qualified yet, and its front picks the
+    // ZONE for a whole day - so a place named as one of the ~25 that matter
+    // most, which nobody has actually sat down with to learn what it sends,
+    // is the biggest gap in the book. Before this, nothing surfaced it.
+    const level = bumpCapacityLevel(capacityLevel, place.is_all_star);
     const daysWaiting = daysSince(place.exploration_eligible_since, today);
     const rank = explorationRank({ level, confidence, daysWaiting, config });
-    // Spec §8.1: explorationRank ascending, priority_score descending,
-    // place.id ascending - the first and third are negated so a single
-    // higher-first comparator (compareDesc, applied elementwise by
-    // compareRankKeys) produces the right order for all three at once.
-    return [TIERS.EXPLORATION, -rank, place.priority_score ?? 0, -place.id];
+    // Spec §8.1: explorationRank ascending, then the rep's own capacity
+    // rating descending, then place.id ascending - the first and third are
+    // negated so a single higher-first comparator (compareDesc, applied
+    // elementwise by compareRankKeys) produces the right order for all three
+    // at once.
+    //
+    // The middle key was places.priority_score until 2026-08-23. It now reads
+    // capacity_seed directly: priority_score was a denormalised 100/75/50/25
+    // mirror of tier+star, and once that judgment moved to capacity_seed on
+    // the same row there was nothing left for a second column to add except
+    // a way to drift. Note this is a FINER signal than explorationRank's own
+    // input - the rating has four values where the level it resolves to has
+    // three, so `major` still sorts ahead of `strong` even though both bucket
+    // to high. Unrated places sort last within their level, which is right:
+    // an unrated place's level came from the category keyword guess.
+    return [TIERS.EXPLORATION, -rank, place.capacity_seed ?? -1, -place.id];
   }
   return [TIERS.MAINTENANCE, u];
 }
@@ -305,9 +310,7 @@ module.exports = {
   TIERS,
   daysSince,
   targetCadenceDays,
-  effectiveRelationshipLevel,
-  effectiveCapacityLevel,
-  effectiveCapacityConfidence,
+  bumpCapacityLevel,
   urgency,
   capacityRank,
   explorationRank,

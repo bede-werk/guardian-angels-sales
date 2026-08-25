@@ -76,29 +76,38 @@ function buildApp() {
   return app;
 }
 
+// One migrated db and one listening server for the whole FILE, not per
+// describe: the require-cache substitution above is process-wide, so a
+// per-describe `after` that called testKnex.destroy() would tear the shared
+// connection out from under every describe that ran later.
+let server;
+let baseUrl;
+
+before(async () => {
+  await testKnex.migrate.latest();
+  await testKnex('users').insert([
+    { id: 1, name: 'Rep A', email: 'a@test.local' },
+    { id: 2, name: 'Rep B', email: 'b@test.local' },
+  ]);
+  // Separate single-row inserts, not one batch: places.do_not_visit is NOT
+  // NULL, and a batched insert fills a column absent from one row's object
+  // with an explicit NULL for that row rather than the column's default.
+  await testKnex('places').insert({ id: 1, name: 'Test Place', category: 'Hospice' });
+  await testKnex('places').insert({ id: 2, name: 'Do Not Visit Place', category: 'Hospice', do_not_visit: true });
+  await testKnex('places').insert({ id: 3, name: 'Lapsed Mark Place', category: 'Hospice', do_not_visit: true, do_not_visit_until: '2020-01-01' });
+
+  const app = buildApp();
+  server = app.listen(0);
+  await new Promise((resolve) => server.once('listening', resolve));
+  baseUrl = `http://127.0.0.1:${server.address().port}`;
+});
+
+after(async () => {
+  await new Promise((resolve) => server.close(resolve));
+  await testKnex.destroy();
+});
+
 describe('PATCH /api/visits/:id — authorization on a still-planned visit', () => {
-  let server;
-  let baseUrl;
-
-  before(async () => {
-    await testKnex.migrate.latest();
-    await testKnex('users').insert([
-      { id: 1, name: 'Rep A', email: 'a@test.local' },
-      { id: 2, name: 'Rep B', email: 'b@test.local' },
-    ]);
-    await testKnex('places').insert({ id: 1, name: 'Test Place', category: 'Hospice', tier: 1, priority_score: 75 });
-
-    const app = buildApp();
-    server = app.listen(0);
-    await new Promise((resolve) => server.once('listening', resolve));
-    baseUrl = `http://127.0.0.1:${server.address().port}`;
-  });
-
-  after(async () => {
-    await new Promise((resolve) => server.close(resolve));
-    await testKnex.destroy();
-  });
-
   // Fresh planned visit owned by Rep B (id 2) for each test, so one test's
   // mutation (or lack of it) can't bleed into another's. Clears out any
   // still-'planned' leftover from a PREVIOUS test first — a rejected (403)
@@ -170,5 +179,75 @@ describe('PATCH /api/visits/:id — authorization on a still-planned visit', () 
     visitId = await freshPlannedVisitOwnedByRepB();
     const res = await patchAs(1, visitId, { scheduled_date: FUTURE_DATE });
     assert.equal(res.status, 403);
+  });
+});
+
+// do_not_visit used to be honoured on only two of the five visit write paths
+// (services/manualVisits.js's create and edit). This route — "Log a visit"
+// from PlaceDetail/PersonDetail — was one of the three that ignored it
+// entirely: a rep could record a visit to a place they had deliberately
+// marked "stop going here" and see nothing at all.
+//
+// It warns, it does not block. The mark is about future trips; a trip that
+// already happened can't be un-taken by refusing to record it. So the
+// finding rides the same `conflicts` array the floor/collision findings
+// already use (services/doNotVisit.js's doNotVisitFinding), the response is
+// the same 200-with-findings-and-nothing-written the floor warnings get, and
+// force:true is the same override.
+//
+// LOG_DATE is deliberately in the past — this route's normal case is a trip
+// that already happened, and the mark is compared against org-today, not the
+// visit's own date (only the mark's END is stored, so "was this place marked
+// back then" is unanswerable). That's exactly the behaviour these tests pin.
+describe('POST /api/visits — do_not_visit warns on the "Log a visit" path', () => {
+  const LOG_DATE = '2020-06-15';
+
+  function logVisit(placeId, body = {}) {
+    return fetch(`${baseUrl}/api/visits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-test-user-id': '1' },
+      body: JSON.stringify({
+        place_id: placeId,
+        scheduled_date: LOG_DATE,
+        status: 'completed',
+        user_id: 1,
+        encounters: [{ met_with_type: 'receptionist', outcome: 'materials_only' }],
+        ...body,
+      }),
+    });
+  }
+
+  const visitsAt = (placeId) => testKnex('visits').where({ place_id: placeId, scheduled_date: LOG_DATE });
+
+  test('an unmarked place logs straight through, with no confirm step', async () => {
+    const res = await logVisit(1);
+    assert.equal(res.status, 201);
+    assert.equal((await visitsAt(1)).length, 1);
+  });
+
+  test('a marked place comes back 200 with a DO_NOT_VISIT finding and writes nothing', async () => {
+    const res = await logVisit(2);
+    assert.equal(res.status, 200, 'a warning is not an error - the request succeeded, nothing was rejected');
+    const body = await res.json();
+    assert.equal(body.id, undefined, 'no visit was created');
+    assert.deepEqual(
+      body.conflicts.filter((c) => c.type === 'DO_NOT_VISIT'),
+      [{ type: 'DO_NOT_VISIT', severity: 'soft', placeId: 2 }]
+    );
+    assert.equal((await visitsAt(2)).length, 0, 'nothing written until the rep confirms');
+  });
+
+  test('force:true logs it anyway - the flag never blocks', async () => {
+    const res = await logVisit(2, { force: true });
+    assert.equal(res.status, 201);
+    const rows = await visitsAt(2);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].status, 'completed');
+  });
+
+  test('a mark whose until-date has already passed does not warn', async () => {
+    const res = await logVisit(3);
+    assert.equal(res.status, 201, 'a lapsed mark is no mark at all');
+    assert.equal((await visitsAt(3)).length, 1);
   });
 });

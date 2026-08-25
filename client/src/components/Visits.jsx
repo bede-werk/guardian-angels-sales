@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { api, today, formatDate, VISIT_TYPE_LABELS, OUTCOME_LABELS, MET_WITH_LABELS } from '../api';
+import { api, formatDate, VISIT_TYPE_LABELS, OUTCOME_LABELS, MET_WITH_LABELS, CAPACITY_LABELS } from '../api';
 import { StatusChip } from './ui/Chip';
 import { encounterSummary } from './VisitDetailModal';
 import Button from './ui/Button';
@@ -24,7 +24,7 @@ const PAGE_SIZE = 50;
 export const DEFAULT_VISIT_FILTERS = {
   search: '',
   status: '',
-  userId: '', // "Mine" toggle - a string (matches <select>'s value type), not the number api.visits.list expects
+  userId: '', // Rep filter - a string (matches <select>'s value type), not the number api.visits.list expects
   from: '',
   to: '',
   sort: 'date_desc',
@@ -32,67 +32,18 @@ export const DEFAULT_VISIT_FILTERS = {
   outcome: '',
   metWith: '',
   category: '',
-  tier: '',
+  capacity: '',
   region: '',
   origin: '',
   plannedBy: '',
-  theyRequested: false,
-  madeCommitment: false,
-  hasNotes: false,
 };
 
-// Local, same-shape helper as PlaceDetail.jsx's/UpcomingVisitDetailModal's
-// own addDaysISO - built from local Date getters, never toISOString()
-// (see api.js's today() comment: that rolls the date to tomorrow for the
-// whole early-evening-through-midnight stretch in any timezone behind UTC,
-// which is exactly the org's timezone).
-function addDaysISO(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-// Each quick filter is a PATCH over just {status, from, to} - applying one
-// always clears the other two's fields first (via the spread in the click
-// handler below), so "Today" and "Skipped" can never silently combine into
-// a confusing joint filter. `isActive` reads back the same three fields to
-// decide whether to render as pressed.
-const QUICK_FILTERS = [
-  { key: 'today', label: 'Today', patch: () => ({ status: '', from: today(), to: today() }) },
-  { key: 'week', label: 'This week', patch: () => ({ status: '', from: today(), to: addDaysISO(6) }) },
-  // No date bound needed - the skip sweep (visitLifecycle.js) resolves any
-  // lapsed 'planned' row to 'skipped' before this list is ever built, so a
-  // still-'planned' visit is, by construction, always upcoming.
-  { key: 'upcoming', label: 'Upcoming', patch: () => ({ status: 'planned', from: '', to: '' }) },
-  // The recoverable-work bucket - ResolvedVisitDetailModal offers "Log this
-  // visit" on every row here. Bounded to the last 30 days so ancient lapses
-  // don't dominate; older ones are still reachable by clearing the date.
-  { key: 'skipped', label: 'Skipped', patch: () => ({ status: 'skipped', from: addDaysISO(-30), to: '' }) },
-  // This tab is the ONLY place in the app that can list a snoozed visit -
-  // the Calendar tab deliberately drops them (see VisitsCalendar.jsx's own
-  // comment): a snooze never moves scheduled_date, so there's no day on the
-  // grid that's honestly "about" it.
-  { key: 'snoozed', label: 'Snoozed', patch: () => ({ status: 'snoozed', from: '', to: '' }) },
-];
-
-function quickFilterActive(quick, filters) {
-  const patch = quick.patch();
-  return filters.status === patch.status && filters.from === patch.from && filters.to === patch.to;
-}
-
 // Turns the filter-state object into the query params api.visits.list
-// expects. Boolean checkbox filters become the API's '1'/absent convention;
-// api.visits.list itself drops every '' /null/undefined entry, so an unset
-// text/select filter needs no special-casing here.
+// expects. api.visits.list itself drops every '' /null/undefined entry, so
+// an unset text/select filter needs no special-casing here.
 function buildParams(filters, limit) {
   return {
     ...filters,
-    theyRequested: filters.theyRequested ? '1' : undefined,
-    madeCommitment: filters.madeCommitment ? '1' : undefined,
-    hasNotes: filters.hasNotes ? '1' : undefined,
     limit,
     offset: 0,
   };
@@ -137,13 +88,12 @@ function truncate(text, max) {
 export default function Visits({ userId, onNavigateToPlanner, filters, onFiltersChange }) {
   const [visits, setVisits] = useState([]); // never reset to [] on a refetch - see load() below
   const [total, setTotal] = useState(0);
-  const [summary, setSummary] = useState(null); // null until the first response - see the summary strip's own guard
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
 
   const [users, setUsers] = useState([]);
-  const [placeFilters, setPlaceFilters] = useState({ categories: [], regions: [], tiers: [] });
+  const [placeFilters, setPlaceFilters] = useState({ categories: [], regions: [], capacityLevels: [] });
 
   const [planningVisit, setPlanningVisit] = useState(false);
 
@@ -182,7 +132,6 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
       if (requestIdRef.current !== requestId) return; // a newer request already won
       setVisits(data.visits);
       setTotal(data.total);
-      setSummary(data.summary);
     } catch (e) {
       if (requestIdRef.current === requestId) setError(e.message);
     } finally {
@@ -229,18 +178,6 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
   function set(key) {
     return (e) => onFiltersChange({ ...filters, [key]: e.target.value });
   }
-  function setChecked(key) {
-    return (e) => onFiltersChange({ ...filters, [key]: e.target.checked });
-  }
-
-  function toggleQuickFilter(quick) {
-    onFiltersChange({ ...filters, ...(quickFilterActive(quick, filters) ? { status: '', from: '', to: '' } : quick.patch()) });
-  }
-
-  function toggleMine() {
-    const mine = String(userId);
-    onFiltersChange({ ...filters, userId: filters.userId === mine ? '' : mine });
-  }
 
   const isDefault = JSON.stringify(filters) === JSON.stringify(DEFAULT_VISIT_FILTERS);
 
@@ -268,35 +205,6 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
     <div className="grid" style={{ gap: 16 }}>
       {error && <div className="error-banner">{error}</div>}
 
-      {/* Quick filters - one click sets several fields at once. Clicking an
-          already-active one clears back to no date/status filter; "Mine" is
-          an independent toggle (composable with any of the others) since it
-          filters on a different field (userId) entirely. */}
-      <div className="card">
-        <div className="card-body">
-          <div className="tag-list">
-            {QUICK_FILTERS.map((q) => (
-              <Button
-                key={q.key}
-                variant={quickFilterActive(q, filters) ? 'secondary' : 'ghost'}
-                size="small"
-                onClick={() => toggleQuickFilter(q)}
-              >
-                {q.label}
-              </Button>
-            ))}
-            <Button variant={filters.userId === String(userId) ? 'secondary' : 'ghost'} size="small" onClick={toggleMine}>
-              Mine
-            </Button>
-            {!isDefault && (
-              <Button variant="ghost" size="small" style={{ marginLeft: 'auto' }} onClick={() => onFiltersChange(DEFAULT_VISIT_FILTERS)}>
-                Clear all
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* Filter bar. */}
       <div className="card">
         <div className="card-body stack">
@@ -307,9 +215,7 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
             </div>
             <div>
               {/* Single-select even though the API accepts a comma list -
-                  the UI has no use for "planned OR skipped" today, and the
-                  quick-filter chips above already cover the common
-                  combinations. */}
+                  the UI has no use for "planned OR skipped" today. */}
               <label className="field">Status</label>
               <select value={filters.status} onChange={set('status')}>
                 <option value="">All</option>
@@ -373,10 +279,10 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
                 </select>
               </div>
               <div>
-                <label className="field">Tier</label>
-                <select value={filters.tier} onChange={set('tier')}>
+                <label className="field">Capacity</label>
+                <select value={filters.capacity} onChange={set('capacity')}>
                   <option value="">Any</option>
-                  {placeFilters.tiers.map((t) => <option key={t} value={t}>Tier {t}</option>)}
+                  {placeFilters.capacityLevels.map((l) => <option key={l} value={l}>{CAPACITY_LABELS[l]}</option>)}
                 </select>
               </div>
               <div>
@@ -402,60 +308,23 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
             </div>
           )}
 
-          {showMoreFilters && (
-            <div className="tag-list">
-              <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <input type="checkbox" checked={filters.theyRequested} onChange={setChecked('theyRequested')} />
-                They asked for something
-              </label>
-              <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <input type="checkbox" checked={filters.madeCommitment} onChange={setChecked('madeCommitment')} />
-                Made a commitment
-              </label>
-              <label className="tiny" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <input type="checkbox" checked={filters.hasNotes} onChange={setChecked('hasNotes')} />
-                Has notes
-              </label>
-            </div>
-          )}
-
-          <Button variant="ghost" size="small" style={{ alignSelf: 'flex-start' }} onClick={() => setShowMoreFilters((s) => !s)}>
-            {showMoreFilters ? 'Fewer filters ▴' : 'More filters ▾'}
-          </Button>
-        </div>
-      </div>
-
-      {/* Summary strip - deliberately ignores the status filter (see
-          server/src/services/visitQuery.js's summarizeVisits) so the four
-          counts stay a stable segmented control: clicking "Skipped" narrows
-          the table below without the OTHER three numbers changing out from
-          under the click. Hidden entirely until the first response lands,
-          rather than flashing zeros. */}
-      {summary && (
-        <div className="card">
-          <div className="card-body">
-            <div className="tag-list" style={{ alignItems: 'center' }}>
-              <span className="tiny muted" style={{ marginRight: 8 }}>Across all statuses matching these filters:</span>
-              {['planned', 'completed', 'skipped', 'snoozed'].map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className="link-button tiny"
-                  onClick={() => onFiltersChange({ ...filters, status: filters.status === s ? '' : s })}
-                >
-                  <strong>{summary[s]}</strong> {s}
-                </button>
-              ))}
-              <span className="tiny muted">· <strong>{summary.places}</strong> places touched</span>
-            </div>
+          <div className="tag-list">
+            <Button variant="ghost" size="small" onClick={() => setShowMoreFilters((s) => !s)}>
+              {showMoreFilters ? 'Fewer filters ▴' : 'More filters ▾'}
+            </Button>
+            {!isDefault && (
+              <Button variant="ghost" size="small" style={{ marginLeft: 'auto' }} onClick={() => onFiltersChange(DEFAULT_VISIT_FILTERS)}>
+                Reset filters
+              </Button>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Results table. */}
       <div className="card">
         <div className="card-head">
-          <h2>{loading && visits.length === 0 ? 'Loading…' : `${total} visit${total === 1 ? '' : 's'}`}</h2>
+          <h2>{loading && visits.length === 0 ? 'Loading…' : `${total} Visit${total === 1 ? '' : 's'}`}</h2>
           <div className="tag-list" style={{ flex: 'unset' }}>
             <Button
               variant="secondary"
@@ -497,7 +366,7 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
                     {v.place_name || 'Unknown place'}
                     {/* detach-not-delete: a visit outlives its place. See
                         this file's header comment on why the filter bar's
-                        category/tier/region excludes rows like this one. */}
+                        category/capacity/region excludes rows like this one. */}
                     {v.place_id == null && <span className="muted"> (place deleted)</span>}
                   </td>
                   <td className="tiny">{VISIT_TYPE_LABELS[v.visit_type] || <span className="muted">—</span>}</td>
@@ -578,6 +447,7 @@ export default function Visits({ userId, onNavigateToPlanner, filters, onFilters
           visit={viewingResolved}
           onClose={() => setViewingResolved(null)}
           onComplete={(v) => { setViewingResolved(null); setEditingVisit(v); }}
+          onDelete={(v) => deleteVisit(v, setViewingResolved)}
         />
       )}
 

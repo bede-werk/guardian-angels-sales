@@ -520,7 +520,7 @@ async function computeRelationshipForPlaces(knex, placeIds, { asOf, includeTrend
   const places = await knex('places as p')
     .leftJoin('users as u', 'u.id', 'p.relationship_override_by')
     .whereIn('p.id', placeIds)
-    .select('p.id', 'p.category', 'p.capacity_level', 'p.relationship_level_override', 'p.relationship_override_at', 'p.relationship_override_by')
+    .select('p.id', 'p.category', 'p.relationship_level_override', 'p.relationship_override_at', 'p.relationship_override_by')
     .select('u.name as override_by_name');
 
   const people = await knex('people').whereIn('place_id', placeIds).select(PERSON_FIELDS);
@@ -540,10 +540,10 @@ async function computeRelationshipForPlaces(knex, placeIds, { asOf, includeTrend
   const referred = await referredPersonIds(knex, peopleIds);
 
   // Only fetched when trend is actually requested - the cooling-down check
-  // below needs each place's CURRENT computed capacity level, not the
-  // frozen places.capacity_level column that effectiveCapacityLevel()
-  // otherwise silently falls back to (a tests-only fallback per that
-  // function's own comment - it must not fire here in production).
+  // below needs each place's CURRENT computed capacity level. (This used to
+  // carry a warning about not accidentally reading the frozen
+  // places.capacity_level column instead; that column no longer exists - see
+  // migration 20260825000000.)
   const capacityByPlace = includeTrend ? await computeCapacityForPlaces(knex, placeIds, { asOf: date }) : null;
 
   const peopleByPlace = groupBy(people, 'place_id');

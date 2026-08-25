@@ -1,11 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import { api, formatDate, crossRepFloorWarningText, manualPlanNote, VISIT_TYPE_LABELS } from '../api';
 import { CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import VisitLogModal from './VisitLogModal';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 import useClosingTransition from '../hooks/useClosingTransition';
+
+// api.js's manualPlanNote returns its phrase lowercase. Here it follows a
+// ' · ' break where a capital reads better, so it gets sentence-cased on the
+// way in (same one-liner RoutePlanner.jsx and Settings.jsx keep locally
+// rather than any of them exporting a generic string util).
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // "Already Planned" day drill-down - clicking a committed date's row (see
 // RoutePlanner.jsx) opens this instead of exposing Edit/Delete directly on the
@@ -25,11 +31,11 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // Also reused read-only for another rep's planned route (VisitsCalendar.jsx,
 // "All reps" scope) - pass `visits` directly (already-loaded calendar rows,
 // skipping this component's own fetch), `readOnly` to drop the whole-day
-// Edit/Delete footer down to a bare Close, and `title` to swap the header
-// from "Planned Route" to e.g. "Nikki Shasserre's Planned Route". Someone
+// Edit/Delete footer down to a bare Close, and `repName` to name whose
+// route it is in the header ("Planned Route · Nikki Shasserre · ..."). Someone
 // else's route can never be reopened/deleted from here - only the owning
 // rep's own committed-day endpoints support that (see scheduleDrafts.js).
-export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, title, readOnly, userId, onChanged }) {
+export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, repName, readOnly, userId, onChanged }) {
   const { closing, requestClose } = useClosingTransition(onClose);
   const [visits, setVisits] = useState(providedVisits ?? null);
   const [loadError, setLoadError] = useState(null);
@@ -90,7 +96,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{formatDate(date)} · {title || 'Planned Route'}</h2>
+          <h2>Planned Route{repName ? ` · ${repName}` : ''} · {formatDate(date)}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">
@@ -115,19 +121,18 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
                     </div>
                     <div className="tiny muted">
                       {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
-                      {/* Manual Visit Planning spec §5/§7.3 - "manually
-                          planned" always shown for a manual stop; "Planned
-                          by {Name}" only when someone OTHER than the
-                          assignee planned it (cross-rep). userId is this
-                          modal's OWN viewer, not necessarily v.user_id -
-                          "planned it for someone else" reads correctly
-                          either way since it compares against the row's own
-                          assignee, not the viewer. */}
-                      {v.planned_manually === 1 && (
+                      {/* Manual Visit Planning spec §5/§7.3 - one phrase for
+                          the whole fact, including who planned it when that
+                          isn't the assignee (see api.js's manualPlanNote).
+                          Capitalized here because it follows a ' · ' break
+                          rather than sitting in a row of lowercase chips the
+                          way RoutePlanner's does. */}
+                      {manualPlanNote(v) && (
                         <>
                           {' · '}
-                          <span style={{ color: 'var(--blue-dark)', fontWeight: 600 }}>Manually planned</span>
-                          {v.created_by_user_id != null && v.created_by_user_id !== v.user_id ? ` · planned by ${v.created_by_name || 'another rep'}` : ''}
+                          <span style={{ color: 'var(--blue-dark)', fontWeight: 600 }}>
+                            {capitalize(manualPlanNote(v))}
+                          </span>
                         </>
                       )}
                     </div>

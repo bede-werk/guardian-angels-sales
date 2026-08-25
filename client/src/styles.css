@@ -61,9 +61,6 @@
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
 
   /* Tier badges (Tier 1/2/3 - see TierChip in ui/Chip.jsx) */
-  --tier1: var(--blue-dark);
-  --tier2: var(--teal-dark);
-  --tier3: var(--grey-dark);
 
   /* ---- Type ----
      Source Serif 4 / Nunito Sans are free substitutes for the licensed brand
@@ -250,15 +247,24 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .link-button { background: none; border: none; padding: 0; font: inherit; color: var(--blue); cursor: pointer; text-decoration: underline; }
 .link-button:hover { color: var(--blue-dark); }
 
-/* Chips / badges - small colored pills. See ui/Chip.jsx (TierChip/
+/* Chips / badges - small colored pills. See ui/Chip.jsx (CapacityChip/
    OutcomeChip) for which component renders which class below. */
 .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-family: var(--font-sans); font-size: 11px; font-weight: 700; white-space: nowrap; }
-.badge.t1 { background: var(--blue-tint-1); color: var(--tier1); } /* Tier 1 */
-.badge.t2 { background: var(--teal-tint-1); color: var(--tier2); } /* Tier 2 */
-.badge.t3 { background: var(--grey-tint-1); color: var(--tier3); } /* Tier 3 */
-.badge.star { background: var(--mauve-tint-1); color: var(--mauve); } /* ⭐ Priority flag */
-.badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* Over-budget flag on a Route Planner day/stop */
-.badge.committed { background: var(--teal-tint-2); color: var(--teal-dark); } /* Route Planner: stops already committed to real visits for this day */
+/* The rep's own capacity rating - CapacityRatingChip, shown only where the
+   rating itself is the subject (the rating screen, the place form). Four
+   steps down the same blue->grey ramp the old tier badges used, since it's
+   the same judgment this replaced. Read-only lists show .cap-* instead. */
+.badge.rate-major { background: var(--blue-tint-1); color: var(--blue-dark); }
+.badge.rate-strong { background: var(--teal-tint-1); color: var(--teal-dark); }
+.badge.rate-steady { background: var(--grey-tint-1); color: var(--grey-dark); }
+.badge.rate-occasional { background: var(--grey-tint-1); color: var(--muted); }
+/* All-star (places.is_all_star) - mauve, the app's "pay attention" colour.
+   Distinct from the cap-* family on purpose: it is not a capacity level, it
+   is the flag that overrides one. */
+.badge.all-star { background: var(--mauve-tint-1); color: var(--mauve); }
+/* A place holding a rating that matches no current choice, because the
+   Settings values were retuned after it was rated - see capacityRatingKey. */
+.badge.rate-unknown { background: var(--mauve-tint-1); color: var(--mauve); }
 /* Visit outcomes, strongest signal first. Graded warm->neutral so a glance
    down a visit history reads as "how much real contact happened." */
 .badge.o-substantive { background: var(--teal-tint-2); color: var(--teal-dark); }
@@ -363,28 +369,31 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    merging into it. */
 .hover-row:hover .btn.secondary:not(:hover) { background: var(--card); }
 
-/* Route Planner's stop rows: the click-to-open-detail area is only .main
-   (the drag handle + reorder buttons sit to its left, the time estimate +
-   remove button to its right, as separate flex siblings - see .stop below)
-   - painting just .main's own box on hover looked like a narrow, off-center
-   highlight rather than "this whole row opens the place." :has() lets the
-   full-width .stop <li> (no horizontal padding, so its background already
-   reaches edge to edge) repaint itself off its .main child's hover state
-   instead. Both this and .main's own highlight are explicitly cancelled
-   while hovering the visit-type <select> nested inside .main - picking a
-   visit type isn't "open the detail" and shouldn't look selected as if it
-   were; the extra :has(select:hover) on each makes that override reliably
-   win on specificity over the plain :hover/:has(.main…) rules above, no
-   source-order dependency. Hovering the reorder/remove buttons never
-   triggers any of this in the first place, since they're .main's siblings,
-   not descendants. Instant on/off here (no fade) - .hover-row's shared
+/* Stop rows whose click-to-open target is only .main (PlannedDayModal,
+   SkippedVisitsModal - the row's other controls sit outside it as separate
+   flex siblings). Painting just .main's own box on hover looked like a
+   narrow, off-center highlight rather than "this whole row opens." :has()
+   lets the full-width .stop <li> (no horizontal padding, so its background
+   already reaches edge to edge) repaint itself off its .main child's hover
+   state instead. Instant on/off here (no fade) - .hover-row's shared
    transition would only animate .main's own background, not the .stop
-   background painted alongside it below, so the two layers visibly fell out
-   of sync (one fading, one snapping) instead of reading as one highlight. */
+   background painted alongside it, so the two layers visibly fell out of
+   sync (one fading, one snapping) instead of reading as one highlight. */
 .stop .main.hover-row { transition: none; }
-.stop .main.hover-row:hover:has(select:hover) { background: none; }
 .stop:has(.main.hover-row:hover) { background: var(--blue-tint-1); }
-.stop:has(.main.hover-row:hover):has(select:hover) { background: none; }
+
+/* Route Planner's proposal rows take the simpler route: the whole <li> is
+   the click target, so the plain .hover-row:hover rule above already paints
+   it edge to edge and only one layer is involved (the shared fade is fine
+   here). What still needs cancelling is the controls that live INSIDE that
+   target but don't open anything - the reorder handle/arrows and the
+   visit-type <select>. Nudging a stop up a slot or picking a visit type
+   isn't "open the detail" and shouldn't look selected as if it were.
+   Hovering a real .btn (Remove, and the commitment badge's Reschedule/
+   Waive) is already cancelled by the shared .hover-row:has(.btn:hover)
+   rule above. */
+.stop.hover-row:hover:has(select:hover) { background: none; }
+.stop.hover-row:hover:has(.reorder:hover) { background: none; }
 /* Persistent version of the above for rows that stay picked after the click
    (e.g. AssignPersonModal's person list) - a stronger tint so it still reads
    as "on" once the mouse moves away. */
@@ -502,7 +511,11 @@ td .tag-list { flex-wrap: nowrap; }
 .picker-item:last-child { border-bottom: none; }
 .picker-item:hover { background: var(--blue-tint-1); }
 
-.error-banner { background: var(--mauve-tint-1); color: var(--mauve); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
+/* Mauve is this app's attention tint (same one the snoozed status chip uses).
+   .warn-banner is the same pill under an honest name, for a soft warning that
+   is NOT an error - nothing failed, nothing is blocked, the user is just past
+   a soft limit. Sharing one rule so the two can't drift apart visually. */
+.error-banner, .warn-banner { background: var(--mauve-tint-1); color: var(--mauve); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; }
 .notice-banner { background: var(--blue-tint-1); color: var(--blue); padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: 13px; opacity: 1; transition: opacity 0.5s ease; }
 .notice-banner.fading { opacity: 0; }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
@@ -1050,11 +1063,17 @@ td .tag-list { flex-wrap: nowrap; }
    same problem solved the same way one level in. */
 .dash-today-facts { display: flex; align-items: center; gap: 20px; min-width: 0; }
 /* The count and the View button, pieced together as one section: a tight
-   gap and no divider between them, since they're one stat plus the action
-   that belongs to it (not two separate facts the way count/Next-visit are).
-   flex-shrink: 0 keeps this whole group from getting squeezed as
-   dash-today-next (below) gives way first. */
+   gap and only a short hairline between them, since they're one stat plus
+   the action that belongs to it (not two separate facts the way
+   count/Next-visit are). flex-shrink: 0 keeps this whole group from getting
+   squeezed as dash-today-next (below) gives way first. */
 .dash-today-summary { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+/* A deliberately short rule - shorter than the count tile beside it, and
+   well short of the full-height border that splits the summary from Next
+   visit - so it reads as a light separation within one section rather than
+   a second break as strong as the row's real one. Its own element rather
+   than a border on the button, which already has one of its own. */
+.dash-summary-divider { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
 /* min-width: 0 - a flex child's default min-width is its content's own
    width, which would let a long place name push the summary group out of
    the row instead of shrinking (same reasoning as dash-next-visit's own
@@ -1115,7 +1134,17 @@ td .tag-list { flex-wrap: nowrap; }
      by the same amount again, past the space just reserved for it. Margin
      sits outside that edge, so it grows the card without moving the
      caveat's anchor point. */
-  .dash-today-action { margin-bottom: 36px; }
+  .dash-today-action { margin-bottom: 52px; }
+  /* Naming the missing-address places (NavCaveat in Dashboard.jsx) makes
+     this line longer than the cap message it used to be, and place names
+     here run long. nowrap is safe on the desktop row - the caveat is
+     right-anchored to a narrow column and overflows leftward into the empty
+     space under the facts - but on a phone the same overflow runs off the
+     screen and gives the whole page a horizontal scrollbar. Wrapping
+     instead: with `right: 0` and no `left`, this shrink-to-fits against the
+     full card width, so it wraps inside the card. The margin above is the
+     reserved space, widened to the two lines that allows. */
+  .dash-nav-caveat { white-space: normal; text-align: right; }
 }
 
 /* This week's headline numbers, above the strip. */

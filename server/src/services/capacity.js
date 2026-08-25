@@ -74,24 +74,44 @@ function categorySeedLevel(category, seedTable, defaultLevel) {
 // split as schedulingEngine.js and relationship.js.
 //
 // declared: { value, observedAt, source, personId } | null
+// seed: { value, seededAt } | null - the rep's own estimate, same unit as
+//   declared (referrals/month). See THE CLAIMED RUNG below.
 // measuredFloor: number | null (already gated - see measuredFloorByPlace;
 //   this function never re-applies the exposure/count gate itself)
 // overrideLevel: 'high' | 'medium' | 'low' | null
-function computeCapacityPure({ declared, measuredFloor, overrideLevel, category, asOf, config }) {
+function computeCapacityPure({ declared, seed, measuredFloor, overrideLevel, category, asOf, config }) {
+  // THE CLAIMED RUNG: what someone says this place sends per month, from the
+  // most credible source that has an opinion. A real pre-qual answer
+  // supersedes the human seed OUTRIGHT rather than being maxed against it -
+  // the seed is a guess at the very quantity `declared` measures, so once the
+  // place has actually told us, the guess has nothing left to contribute. A
+  // guess does not get to floor the truth in either direction.
+  //
+  // This is deliberately NOT part of the Math.max below. The asymmetry
+  // invariant exists because declared and measuredFloor measure genuinely
+  // different quantities ("total to anyone" vs "just to us"), so neither
+  // can correct the other downward. declared and seed measure the SAME
+  // quantity, so precedence - not a max - is the honest combination.
+  const claimed = declared != null
+    ? { value: declared.value, source: 'declared' }
+    : seed != null
+      ? { value: seed.value, source: 'human_seed' }
+      : null;
+
   // THE INVARIANT: max, never anything that could let measuredFloor pull
   // the number down. See this file's header before changing this line.
-  const effectiveMonthly = declared == null && measuredFloor == null ? null : Math.max(declared?.value ?? 0, measuredFloor ?? 0);
+  const effectiveMonthly = claimed == null && measuredFloor == null ? null : Math.max(claimed?.value ?? 0, measuredFloor ?? 0);
 
   let computedLevel;
   let computedLevelSource;
   if (effectiveMonthly != null) {
     computedLevel = bucketForMonthlyReferrals(effectiveMonthly, config.CAPACITY_THRESHOLDS);
-    // Which side actually produced effectiveMonthly - ties (declared exactly
+    // Which side actually produced effectiveMonthly - ties (the claim exactly
     // equals measuredFloor) credit 'measured', since the point of the floor
     // winning is "our own numbers confirm/exceed the claim," which a tie
     // still does.
-    const floorWon = measuredFloor != null && measuredFloor >= (declared?.value ?? 0);
-    computedLevelSource = floorWon ? 'measured' : 'declared';
+    const floorWon = measuredFloor != null && measuredFloor >= (claimed?.value ?? 0);
+    computedLevelSource = floorWon ? 'measured' : claimed.source;
   } else {
     computedLevel = categorySeedLevel(category, config.CATEGORY_CAPACITY_SEED, config.CATEGORY_CAPACITY_SEED_DEFAULT);
     computedLevelSource = 'category_seed';
@@ -108,6 +128,16 @@ function computeCapacityPure({ declared, measuredFloor, overrideLevel, category,
   // Confidence is about the DECLARED observation's age only - an override
   // does not reset this clock (spec §6.6: "the override just says you don't
   // trust the stale number in the meantime," it doesn't refresh it).
+  //
+  // A human seed does not touch it either, and that is the whole design, not
+  // an omission. Capacity is a RATE, not a decaying quantity - a place that
+  // could send 10 a month does not become a 3-a-month place because time
+  // passed - so this seed has no decay clock of its own the way
+  // relationship_seed does (see migration 20260823000000's "THE DECAY
+  // QUESTION"). Confidence is the mechanism that expresses "this is still
+  // only a guess": a seeded place stays 'unknown', stays in the EXPLORATION
+  // tier, and stays queued for real pre-qualification. The seed makes its
+  // cadence honest today without making the ranker believe it knows anything.
   let confidence;
   let staleAt;
   if (!declared) {
@@ -118,9 +148,15 @@ function computeCapacityPure({ declared, measuredFloor, overrideLevel, category,
     confidence = daysSince(declared.observedAt, asOf) > config.CAPACITY_STALE_DAYS ? 'stale' : 'fresh';
   }
 
+  // Only the rung that actually won a say appears here. A seed superseded by
+  // a real declared answer is still returned on `seed` below (the UI shows
+  // "you rated this 13, they said 4" as provenance) but must not show up as a
+  // contributor, since it contributed nothing.
   const contributors = [];
   if (declared) {
     contributors.push({ type: 'declared', value: declared.value, observedAt: declared.observedAt, source: declared.source, personId: declared.personId ?? null });
+  } else if (seed != null) {
+    contributors.push({ type: 'human_seed', value: seed.value, seededAt: seed.seededAt ?? null });
   }
   if (measuredFloor != null) {
     contributors.push({ type: 'measured', value: measuredFloor });
@@ -128,6 +164,7 @@ function computeCapacityPure({ declared, measuredFloor, overrideLevel, category,
 
   return {
     declared,
+    seed,
     measuredFloor,
     effectiveMonthly,
     level,
@@ -216,6 +253,13 @@ async function latestObservationsByPlace(knex, placeIds, asOf) {
 // property of the BUILDING, not the contact (spec §14), so a referral a
 // place's building generated should stay attributed to that building even
 // after whichever staff member logged it moves on.
+//
+// Corollary: a referral logged by a person who had NO place at the time
+// carries a null snapshot, so it credits no building here - ever, even once
+// that person is assigned somewhere. Correct for a referrer who genuinely
+// isn't in a building; a conservative under-count for one whose place simply
+// hadn't been entered yet. See routes/referrals.js's POST for why it isn't
+// backfilled on assignment.
 async function measuredFloorByPlace(knex, placeIds, asOf, config) {
   const out = new Map();
   if (!placeIds.length) return out;
@@ -262,7 +306,7 @@ async function computeCapacityForPlaces(knex, placeIds, { asOf, config = default
 
   const places = await knex('places')
     .whereIn('id', placeIds)
-    .select('id', 'category', 'capacity_override_level', 'capacity_override_reason', 'capacity_override_at');
+    .select('id', 'category', 'capacity_seed', 'capacity_seeded_at', 'capacity_override_level', 'capacity_override_reason', 'capacity_override_at');
 
   const [declaredByPlace, measuredByPlace] = await Promise.all([
     latestObservationsByPlace(knex, placeIds, date),
@@ -273,8 +317,13 @@ async function computeCapacityForPlaces(knex, placeIds, { asOf, config = default
     const declared = declaredByPlace.get(place.id) || null;
     const measuredFloor = measuredByPlace.has(place.id) ? measuredByPlace.get(place.id) : null;
     const overrideLevel = place.capacity_override_level || null;
+    // NULL seed (a place whose tier fell outside 1-3 at backfill, or one
+    // created before the rating screen existed) means "no read given" - it
+    // falls through to the category guess, exactly as every place did before
+    // this rung existed. Not missing data to backfill.
+    const seed = place.capacity_seed == null ? null : { value: place.capacity_seed, seededAt: place.capacity_seeded_at || null };
 
-    const result = computeCapacityPure({ declared, measuredFloor, overrideLevel, category: place.category, asOf: date, config });
+    const result = computeCapacityPure({ declared, seed, measuredFloor, overrideLevel, category: place.category, asOf: date, config });
 
     out.set(place.id, {
       ...result,
@@ -284,6 +333,27 @@ async function computeCapacityForPlaces(knex, placeIds, { asOf, config = default
     });
   }
   return out;
+}
+
+// Decorates a list of rows that each reference a place with that place's
+// resolved capacity `level`, in one bulk pass. Exists so every list surface
+// that shows a capacity chip (the Visits tab, the route planner's planned and
+// proposed stops) says the same word for the same place, instead of each
+// query hand-rolling its own approximation.
+//
+// Deliberately the LEVEL and not places.capacity_seed, which these callers
+// used to carry as `tier`: the rating is a raw referrals/month number whose
+// label depends on the current Settings values, so a rating captured before
+// someone retunes those numbers would render as a blank or wrong chip. The
+// level is always current by construction.
+//
+// Rows whose place is missing (a detached visit, place_id NULL) get a null
+// level rather than being dropped - the caller still needs the row.
+async function attachCapacityLevel(knex, rows, { idKey = 'place_id', asOf, config } = {}) {
+  const ids = [...new Set(rows.map((r) => r[idKey]).filter((id) => id != null))];
+  if (!ids.length) return rows.map((r) => ({ ...r, capacity_level: null }));
+  const byPlace = await computeCapacityForPlaces(knex, ids, { asOf, config });
+  return rows.map((r) => ({ ...r, capacity_level: byPlace.get(r[idKey])?.level ?? null }));
 }
 
 // Single-place convenience wrapper - implemented literally as a one-element
@@ -308,5 +378,6 @@ module.exports = {
   measuredFloorByPlace,
   computeCapacityForPlaces,
   computeCapacityForPlace,
+  attachCapacityLevel,
   stampExplorationEligibility,
 };

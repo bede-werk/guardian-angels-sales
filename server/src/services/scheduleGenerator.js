@@ -20,7 +20,7 @@ const defaultSchedulingConfig = require('../config/scheduling');
 const defaultDriveConfig = require('../config/driveTime');
 const defaultVisitTypesConfig = require('../config/visitTypes');
 const defaultRouteOptimizerConfig = require('../config/routeOptimizer');
-const { rankCandidates, TIERS, effectiveCapacityLevel, effectiveCapacityConfidence } = require('./schedulingEngine');
+const { rankCandidates, TIERS } = require('./schedulingEngine');
 const { packTimeBlock, packOptimizedTimeBlock, isGeocoded, resolveVisitType, visitDurationMinutes } = require('./driveTime');
 
 // A place's default visit type: 'pre_qualification' until its capacity has
@@ -48,12 +48,14 @@ function toPackableStop({ place, capacityLevel, capacityConfidence }) {
     lat: place.lat,
     lng: place.lng,
     visitType: defaultVisitTypeForCapacity({
-      level: effectiveCapacityLevel({ place, capacityLevel }),
-      confidence: effectiveCapacityConfidence({ place, capacityConfidence }),
+      level: capacityLevel,
+      confidence: capacityConfidence,
     }),
-    capacity_level: place.capacity_level,
-    capacity_status: place.capacity_status,
-    relationship_level: place.relationship_level,
+    // capacity_level/capacity_status/relationship_level used to be echoed
+    // here straight off the place row. All three columns are gone (see
+    // migration 20260825000000) and nothing ever consumed them from this
+    // shape - the route planner's chips read the computed level attached in
+    // scheduleDraft.js instead.
   };
 }
 

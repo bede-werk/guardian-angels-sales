@@ -27,8 +27,9 @@ const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
 const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
 const { orgToday, orgDateOf } = require('./orgDate');
 const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
-const { computeCapacityForPlaces, computeCapacityForPlace } = require('./capacity');
+const { computeCapacityForPlaces, computeCapacityForPlace, attachCapacityLevel } = require('./capacity');
 const { getBindingCommitmentsForPlaces, getOutstandingCommitmentsForPlaces } = require('./placeCommitments');
+const { doNotVisitFinding } = require('./doNotVisit');
 
 // Recognizes a unique-constraint violation across both engines this app runs
 // on (SQLite in dev, Postgres in prod) - see commitDay's per-row insert loop,
@@ -400,68 +401,33 @@ async function ownDraftPlaceIds(db, draftId) {
 }
 
 // Every date this user has a still-open (status: 'planned') visits row on,
-// GATED to dates that include at least one visit commitDay ever created
-// (planner_committed: 1) - i.e. a date already committed from a previous
-// draft. Once a date is in here, the calendar disables it and /generate
-// rejects it (see validateDays) - a committed day is done, not something a
-// future plan should ever touch again. Deliberately excludes completed/
-// skipped visits: those are finished history, not an open plan - a date
-// where the only visit on the books is already completed should still be
-// freely plannable.
+// with its visit count - this is the "Already Planned" list's own data,
+// so it's unscoped by source/planner_committed on purpose (fixed
+// 2026-08-25): a manual-only date - nothing on it ever went through
+// commitDay - is a real commitment a rep made and deserves to show up here
+// exactly like a planner-committed one does, not just once it happens to
+// share a date with one. Deliberately excludes completed/skipped visits:
+// those are finished history, not an open plan.
 //
-// Gate scoped to planner_committed (fixed 2026-08-22 - see
-// 20260822000000_add_visits_planner_committed.js): this used to gate on
-// source: 'planner' instead, which broke the moment editVisit started
-// promoting ANY successful hand-edit - even a notes-only one - to source:
-// 'manual' (services/manualVisits.js's editVisit). A rep fixing a typo on
-// the day's only committed visit would flip its `source` away from
-// 'planner' and silently drop the whole date out of this gate, reopening it
-// for a fresh /generate even though the visit was still sitting there,
-// unresolved - confirmed live before this fix. planner_committed is a
-// permanent birth fact set once by commitDay and never touched again by
-// anything, including editVisit's promotion, so it can't be erased by an
-// unrelated later edit the way `source` can.
+// This is NOT the "can this date be selected/regenerated" gate - that's a
+// separate, deliberately narrower question answered by committedDatesForUser
+// below. The two used to be the same query (this function derived from a
+// planner_committed-gated set), which meant a manual-only date was invisible
+// here too - caught 2026-08-25 when a manually-planned visit with no
+// planner-committed sibling that day, and zero further proposed stops once
+// the date was generated, turned out to be unreachable anywhere in Route
+// Planner (openDays' "already reflected in Already Planned above" assumption
+// was false for it). Splitting the two queries apart fixes the visibility
+// gap without touching the selection gate's own scoping.
 //
-// A manual-only date (nothing here ever went through commitDay) still
-// correctly does NOT gate - a manually-planned visit is already a fixed,
-// budget-consuming stop the generator routes around via the plain
-// same-place-same-day exclusion (lockedElsewherePlaceIds/
-// committedElsewherePlaceIds, both unscoped by source) and
-// committedVisitsQuery/evaluateDay's budget accounting - blocking day
-// SELECTION on top of that would add nothing, it would just make a
-// manually-planned day unreachable from the planner entirely (reversed
-// 2026-08-19, see feedback_route_planner_proposals_only). `source` itself
-// stays the right scoping for reopenCommittedDay just below, which is a
-// different question ("can this row be pulled back into a re-orderable
-// draft right now" - correctly still 'no' once a rep has hand-edited it).
-//
-// The returned COUNT, once a date clears that gate, is every status:
-// 'planned' visit on it regardless of source (caught 2026-08-20: scoping
-// the count the same way the gate is scoped made a day's "Already Planned"
-// count silently undercount whenever a manual visit shared the date with a
-// planner-committed one). This has to stay in sync with committedDayVisits
-// below, which is genuinely unscoped by source - the drill-down a rep opens
-// from clicking one of these rows shows every visit on the date, so the
-// count above it needs to match that list exactly, not just the subset
-// that happened to gate the date.
-//
-// Scoped to today-or-later: a past committed date can never be selected
-// anyway (validateDays rejects any date <= today on its own), so there's no
-// reason to drag the user's full visit history through this query as it
-// grows over time.
+// Scoped to today-or-later: a past date can never be selected/generated
+// anyway, so there's no reason to drag the user's full visit history through
+// this query as it grows over time.
 async function committedDateSummaries(db, userId, { today } = {}) {
   const cutoff = today || orgToday();
-  const gatingRows = await db('visits')
-    .where({ user_id: userId, status: 'planned', planner_committed: 1 })
-    .andWhere('scheduled_date', '>=', cutoff)
-    .groupBy('scheduled_date')
-    .select('scheduled_date as date');
-  const committedDates = gatingRows.map((r) => r.date);
-  if (committedDates.length === 0) return [];
-
   const rows = await db('visits')
     .where({ user_id: userId, status: 'planned' })
-    .whereIn('scheduled_date', committedDates)
+    .andWhere('scheduled_date', '>=', cutoff)
     .groupBy('scheduled_date')
     .orderBy('scheduled_date')
     .select('scheduled_date as date')
@@ -532,9 +498,50 @@ async function committedDayVisits(db, userId, date) {
   }));
 }
 
+// Every date that's locked from a fresh /generate call (see validateDays)
+// because at least one visit commitDay ever created (planner_committed: 1)
+// is still open on it - a committed day is done, not something a future
+// plan should ever touch again.
+//
+// Gate scoped to planner_committed (fixed 2026-08-22 - see
+// 20260822000000_add_visits_planner_committed.js): this used to gate on
+// source: 'planner' instead, which broke the moment editVisit started
+// promoting ANY successful hand-edit - even a notes-only one - to source:
+// 'manual' (services/manualVisits.js's editVisit). A rep fixing a typo on
+// the day's only committed visit would flip its `source` away from
+// 'planner' and silently drop the whole date out of this gate, reopening it
+// for a fresh /generate even though the visit was still sitting there,
+// unresolved - confirmed live before this fix. planner_committed is a
+// permanent birth fact set once by commitDay and never touched again by
+// anything, including editVisit's promotion, so it can't be erased by an
+// unrelated later edit the way `source` can.
+//
+// A manual-only date (nothing here ever went through commitDay) still
+// correctly does NOT gate - a manually-planned visit is already a fixed,
+// budget-consuming stop the generator routes around via the plain
+// same-place-same-day exclusion (lockedElsewherePlaceIds/
+// committedElsewherePlaceIds, both unscoped by source) and
+// committedVisitsQuery/evaluateDay's budget accounting - blocking day
+// SELECTION on top of that would add nothing, it would just make a
+// manually-planned day unreachable from the planner entirely (reversed
+// 2026-08-19, see feedback_route_planner_proposals_only). `source` itself
+// stays the right scoping for reopenCommittedDay just below, which is a
+// different question ("can this row be pulled back into a re-orderable
+// draft right now" - correctly still 'no' once a rep has hand-edited it).
+//
+// Deliberately its own query rather than derived from committedDateSummaries
+// above (split 2026-08-25) - that function is now intentionally unscoped by
+// planner_committed so manual-only dates show up in "Already Planned", and
+// reusing it here would have silently widened this selection gate to match,
+// re-blocking the exact manual-only dates the 2026-08-19 reversal freed up.
 async function committedDatesForUser(db, userId, { today } = {}) {
-  const summaries = await committedDateSummaries(db, userId, { today });
-  return new Set(summaries.map((s) => s.date));
+  const cutoff = today || orgToday();
+  const rows = await db('visits')
+    .where({ user_id: userId, status: 'planned', planner_committed: 1 })
+    .andWhere('scheduled_date', '>=', cutoff)
+    .groupBy('scheduled_date')
+    .select('scheduled_date as date');
+  return new Set(rows.map((r) => r.date));
 }
 
 async function getActiveDraft(db, userId) {
@@ -603,7 +610,7 @@ async function generateAndPersistDraft({ userId, params, regenerate = false }) {
 
   // A date can already carry a real committed visit the moment generation
   // runs on it now (most commonly a manual visit planned first - see
-  // committedDateSummaries' own comment on why that no longer blocks the
+  // committedDatesForUser's own comment on why that no longer blocks the
   // date outright). Reuses evaluateDay's exact committed-segment math (real
   // OSRM drive time between committed stops when available, same as the
   // view-time budget accounting already does) purely to learn how many
@@ -662,7 +669,11 @@ function toDraftStopShape(row) {
     lng: row.lng,
     visitType: row.visit_type,
     category: row.category,
-    tier: row.tier,
+    // No `tier` any more, and deliberately NOT row.capacity_level either:
+    // these rows come from `p.*`, so that name carries the DEAD legacy
+    // column (the frozen 2026-07-12 keyword seed), not the computed level.
+    // Callers attach the real one from computeCapacityForPlaces - see both
+    // loadDraftView and loadDraftDayView below.
     address: row.address,
     city: row.city,
     zip: row.zip,
@@ -683,19 +694,20 @@ function toDraftStopShape(row) {
 // and the `place_name` snapshot column both exist specifically to survive
 // that.
 //
-// status: 'planned' only, any source - same scope committedDayVisits above
-// already uses for this exact "Already Planned"/budget-accounting concept
-// (deliberately NOT source-scoped like committedDateSummaries is: a manual
-// visit still has to count here as a real, budget-consuming commitment for
-// the day, even though it no longer blocks the day from being selected in
-// the first place). Same reason as committedDayVisits too: RoutePlanner.jsx
-// renders every row here under a hardcoded "✓ Planned" badge, so a
-// completed (or skipped) visit that happens to share
-// the date would show up mislabeled as still-planned, duplicated once per
-// real visit row logged that day at that place. A completed visit isn't
-// "still open on the books" - it already happened; it has no business in a
-// list whose whole point is "what's already committed for this day that the
-// proposal below doesn't need to re-suggest."
+// status: 'planned' only, any source - same scope committedDayVisits and
+// committedDateSummaries above already use for this exact "Already
+// Planned"/budget-accounting concept (deliberately NOT gated to
+// planner_committed like committedDatesForUser is: a manual visit still has
+// to count here as a real, budget-consuming commitment for the day, even
+// though it no longer blocks the day from being selected in the first
+// place). Same reason as committedDayVisits too: RoutePlanner.jsx renders
+// every row here under its own "Planned" section, so a completed (or
+// skipped) visit that happens to share the date would show up mislabeled as
+// still-open, duplicated once per real visit row logged that day at that
+// place. A completed visit isn't "still open on the books" - it already
+// happened; it has no business in a list whose whole point is "what's
+// already committed for this day that the proposal below doesn't need to
+// re-suggest."
 function committedVisitsQuery(db, { userId }) {
   return db('visits as v')
     .leftJoin('places as p', 'p.id', 'v.place_id')
@@ -720,15 +732,27 @@ function committedVisitsQuery(db, { userId }) {
       // value to put here, and nothing was reading it.
       'v.scheduled_date',
       'v.sort_order',
-      // Manual Visit Planning spec §7.3/§5 - the "manually planned"/
-      // "Planned by {Name}" markers need these on the committed row itself;
-      // a manual visit is never a draft stop (it's already a real `visits`
-      // row), so this is the only place they can come from.
+      // RoutePlanner's PLANNED rows open UpcomingVisitDetailModal, whose Edit
+      // panel seeds its Notes field from this and writes the field back on
+      // save - without it that panel would start blank and silently clear a
+      // real note. committedDayVisits already selects it, for the same modal
+      // reached from the Calendar.
+      'v.notes',
+      // Manual Visit Planning spec §7.3/§5 - the "manually planned by {Name}"
+      // marker needs these on the committed row itself; a manual visit is
+      // never a draft stop (it's already a real `visits` row), so this is the
+      // only place they can come from.
       'v.planned_manually',
       'v.created_by_user_id',
       'creator.name as created_by_name',
+      // Constant across this query (the where clause above pins it to
+      // `userId`), selected anyway so the row is self-describing: client-side
+      // api.js's manualPlanNote decides whether to name the planner by
+      // comparing creator against ASSIGNEE, and a row without user_id would
+      // leave it comparing against undefined. committedDayVisits already
+      // selects it, for the same marker.
+      'v.user_id',
       'p.category',
-      'p.tier',
       'p.address',
       'p.city',
       'p.zip',
@@ -849,6 +873,59 @@ function hasSameDateVisitConflict(conflicts) {
   return (conflicts || []).some((c) => c.type === 'SAME_DATE_VISIT');
 }
 
+// Splits a day's already-shaped stops into the ones the proposal still
+// holds and the ones a real same-date visit has claimed since they were
+// added. Both view functions below used to apply hasSameDateVisitConflict as
+// a bare .filter(), which dropped the stop correctly but told nobody: the
+// row vanished from the day on the next read - and that read is triggered by
+// ANY draft mutation (a reorder, a visit-type change), so the disappearance
+// was decoupled in time from the collision that caused it. The stop's own
+// `schedule_draft_stops` row survives regardless (this is a view-level
+// filter, not a delete), so commitDay still finds it and still reports it in
+// `skippedCollisions` - but only for a rep who never reloaded in between.
+// Reporting the drop here closes that gap: same fact, named at the moment
+// the view acts on it, in the same { place_id, place_name } shape
+// skippedCollisions already uses, plus the Conflict itself so the client can
+// name who took it rather than falling back to "booked elsewhere".
+function partitionSameDateDrops(shapedStops) {
+  const stops = [];
+  const droppedCollisions = [];
+  for (const stop of shapedStops) {
+    if (hasSameDateVisitConflict(stop.conflicts)) {
+      droppedCollisions.push({
+        place_id: stop.place_id,
+        place_name: stop.place_name,
+        conflict: stop.conflicts.find((c) => c.type === 'SAME_DATE_VISIT'),
+      });
+    } else {
+      stops.push(stop);
+    }
+  }
+  return { stops, droppedCollisions };
+}
+
+// A stop's full finding list: the detector's Conflict[] for this place+date,
+// plus the place's own do_not_visit mark if it's still live (see
+// services/doNotVisit.js - not a conflictDetection.js finding, but it rides
+// the same array so the client renders it through the one badge it already
+// has). `row` is the raw joined `p.*` row, which is where the two flag
+// columns live - toDraftStopShape deliberately doesn't carry them onto the
+// shaped stop.
+//
+// This is the whole of addStop's do-not-visit handling, on purpose and for
+// exactly the reason its own header gives for DRAFT_ELSEWHERE: a human
+// deliberately adding a stop is trusted to have a reason a screen can't
+// see, so the flag is worth SAYING, not worth refusing on. Attaching it on
+// the read (rather than one-shot at add time) also catches the case a
+// one-shot check never could - a place marked do-not-visit AFTER it was
+// already sitting in the draft, which is the version a rep is most likely
+// to have forgotten about by commit time.
+function stopFindings(row, date, conflictsByStop, today) {
+  const conflicts = conflictsByStop.get(`${row.id}|${date}`) || [];
+  const dnv = doNotVisitFinding(row, today);
+  return dnv ? [...conflicts, dnv] : conflicts;
+}
+
 // Shapes one place's outstanding commitments (already earliest-first - see
 // getOutstandingCommitmentsForPlaces) into the route planner's badge (Place
 // Commitments spec §6.1): who it was promised to, the date, and how overdue
@@ -894,7 +971,9 @@ async function loadDraftView(db, draftId) {
   // JS - same "reduce multiple rows to one-per-key in JS rather than N
   // queries in a loop" precedent this codebase already uses (see
   // buildCandidatePool/dashboard.js), instead of a query per day.
-  const committedRows = await committedVisitsQuery(db, { userId: draft.user_id }).whereIn('v.scheduled_date', dates);
+  // capacity_level for each planned stop's chip - one bulk resolution for the
+  // whole window, matching what the Places directory and the Visits tab show.
+  const committedRows = await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).whereIn('v.scheduled_date', dates));
   const committedByDate = {};
   for (const row of committedRows) (committedByDate[row.scheduled_date] ||= []).push(row);
 
@@ -931,26 +1010,38 @@ async function loadDraftView(db, draftId) {
   // this draft's places, one query, shaped per-stop below via the pure
   // commitmentBadge helper.
   const commitmentRowsByPlace = await getOutstandingCommitmentsForPlaces(db, stopRows.map((r) => r.id));
+  // Once for the whole window, not once per date - the loop below would
+  // otherwise re-resolve the same places on every iteration.
+  const stopCapacity = await computeCapacityForPlaces(db, stopRows.map((r) => r.id));
   const today = orgToday();
 
   const days = [];
   for (const date of dates) {
     const rows = byDate[date] || [];
-    const stops = rows.map(toDraftStopShape).map((s) => ({
-      ...s,
-      alreadyVisitedToday: todaySet.has(s.place_id),
-      crossRepFloorWarning: findCrossRepFloorWarning(
-        { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
-        crossRepByPlace.get(s.place_id) || [],
-        defaultSchedulingConfig
-      ),
-      conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
-      commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
-    })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
+    // One pass over the RAW rows (not `.map(toDraftStopShape).map(...)` as
+    // this used to be) - stopFindings needs the place columns toDraftStopShape
+    // drops.
+    const { stops, droppedCollisions } = partitionSameDateDrops(rows.map((row) => {
+      const s = toDraftStopShape(row);
+      return {
+        ...s,
+        capacity_level: stopCapacity.get(s.place_id)?.level ?? null,
+        alreadyVisitedToday: todaySet.has(s.place_id),
+        crossRepFloorWarning: findCrossRepFloorWarning(
+          { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
+          crossRepByPlace.get(s.place_id) || [],
+          defaultSchedulingConfig
+        ),
+        conflicts: stopFindings(row, date, conflictsByStop, today),
+        commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
+      };
+    }));
     const committedForDay = committedByDate[date] || [];
     const budgetMinutes = hoursPerDayByDate[date] * 60;
+    // evaluateDay sees only the kept stops, exactly as before - a dropped
+    // stop must not go on counting against the day's time budget.
     const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed: committedForDay });
-    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedForDay, ...evaluated });
+    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedForDay, droppedCollisions, ...evaluated });
   }
 
   return { id: draft.id, userId: draft.user_id, params, days };
@@ -982,40 +1073,66 @@ async function loadDraftDayView(db, draftId, date) {
   // Place Commitments badge - see loadDraftView's identical comment; this is
   // its one-day sibling.
   const commitmentRowsByPlace = await getOutstandingCommitmentsForPlaces(db, rows.map((r) => r.id));
+  const stopCapacity = await computeCapacityForPlaces(db, rows.map((r) => r.id));
   const today = orgToday();
-  const stops = rows.map(toDraftStopShape).map((s) => ({
-    ...s,
-    alreadyVisitedToday: todaySet.has(s.place_id),
-    crossRepFloorWarning: findCrossRepFloorWarning(
-      { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
-      crossRepByPlace.get(s.place_id) || [],
-      defaultSchedulingConfig
-    ),
-    conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
-    commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
-  })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
+  // Same single pass, same partition (and same reasoning) as loadDraftView
+  // above - this is its one-day sibling, so the drop has to be reported here
+  // too or every MUTATION response (reorder/add/remove/visit-type, which all
+  // return this shape) would go back to silently losing the stop.
+  const { stops, droppedCollisions } = partitionSameDateDrops(rows.map((row) => {
+    const s = toDraftStopShape(row);
+    return {
+      ...s,
+      capacity_level: stopCapacity.get(s.place_id)?.level ?? null,
+      alreadyVisitedToday: todaySet.has(s.place_id),
+      crossRepFloorWarning: findCrossRepFloorWarning(
+        { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
+        crossRepByPlace.get(s.place_id) || [],
+        defaultSchedulingConfig
+      ),
+      conflicts: stopFindings(row, date, conflictsByStop, today),
+      commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
+    };
+  }));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
-  const committed = await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date);
+  const committed = await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date));
   const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed });
 
-  return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, ...evaluated };
+  return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, droppedCollisions, ...evaluated };
 }
 
 // Adds a stop (from a suggestion, or ad hoc) to one day of a draft.
 // Rejects (409) a place already used anywhere else in this user's own draft,
-// or locked elsewhere (committed by anyone, or on another user's active
-// draft) for this specific date - both checked fresh, not against whatever
-// was true when the draft was generated. A place visited OR already planned
-// within the hard floor (FLOOR_COMPLETED/FLOOR_PLANNED) is allowed through,
-// not rejected - a human deliberately adding a stop is trusted to have a
-// reason a screen can't see; the floor blocks GENERATION from proposing it,
-// not this. loadDraftDayView's own fresh read below (every stop's `conflicts`
+// or one that already has a real visit (anyone's, planned or completed) on
+// this specific date - both checked fresh, not against whatever was true
+// when the draft was generated. A place visited OR already planned within
+// the hard floor (FLOOR_COMPLETED/FLOOR_PLANNED) is allowed through, not
+// rejected - a human deliberately adding a stop is trusted to have a reason
+// a screen can't see; the floor blocks GENERATION from proposing it, not
+// this.
+//
+// DRAFT_ELSEWHERE (another rep has this place in their own uncommitted draft
+// for this date) is allowed through for the same reason as of 2026-08-25 -
+// it used to be a hard reject here. See manualVisits.js's header for the
+// full reasoning; the short version is that commitDay has never treated
+// another rep's draft as a lock, so neither surface a human drives should
+// either. Nothing extra is needed to WARN about it: the stop picks up a
+// DRAFT_ELSEWHERE entry in its `conflicts` on the very next read and renders
+// as the same informational badge every other non-blocking conflict does.
+// Generation is deliberately untouched and still steers around those places
+// (lockedElsewherePlaceIdsByDate, getSuggestions) - declining to PROPOSE a
+// contested place costs nobody anything, which is not the same as refusing a
+// rep who asked for it by name. loadDraftDayView's own fresh read below (every stop's `conflicts`
 // field, recomputed on every load - see its header) is what surfaces the
 // flag, so there's no separate one-shot signal to carry out of this
 // function. The reject and the flag both run through the one shared
 // detector, not several separately-maintained checks (see the 2026-08
 // remediation ticket).
+//
+// A do_not_visit place is allowed through on exactly the same terms, and
+// surfaced exactly the same way (stopFindings, attached on every read) -
+// see that function's own header.
 async function addStop({ draftId, userId, date, placeId, visitType }) {
   await knex.transaction(async (trx) => {
     const draft = await assertOwnsDraft(trx, draftId, userId);
@@ -1034,9 +1151,15 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
       throw err;
     }
 
-    const blocking = conflicts.filter((c) => c.type === 'SAME_DATE_VISIT' || c.type === 'DRAFT_ELSEWHERE');
+    const blocking = conflicts.filter((c) => c.type === 'SAME_DATE_VISIT');
     if (blocking.length > 0) {
-      const err = new Error('That place is already booked elsewhere for this date');
+      // "already booked" rather than the old "already booked elsewhere":
+      // with DRAFT_ELSEWHERE no longer in this filter, the only way to get
+      // here is a real visit on this exact date, which may well be the
+      // caller's own. The client replaces this string with a named one
+      // anyway (RoutePlanner.jsx's addStopErrorMessage); this is what other
+      // consumers of the endpoint see.
+      const err = new Error('That place already has a visit booked for this date');
       err.status = 409;
       err.conflicts = blocking; // named/dated - see conflictDetection.js's Conflict shape
       throw err;
@@ -1490,7 +1613,7 @@ async function commitDay({ draftId, userId, date, db = knex }) {
       // A permanent birth fact, never touched again by anything (not even
       // editVisit's own promotion, which mutates `source` above freely) -
       // see 20260822000000_add_visits_planner_committed.js for why this had
-      // to be split out of `source`: committedDateSummaries needs to know
+      // to be split out of `source`: committedDatesForUser needs to know
       // "was this date ever really committed by the planner" in a way a
       // later hand-edit can't silently erase.
       planner_committed: 1,
@@ -1608,8 +1731,10 @@ async function commitAll({ draftId, userId }) {
 // there, which this must never touch (same "never destroy visit history"
 // spirit as detach-not-delete elsewhere in this app - see project-overview)
 // - only the still-open plan gets removed. Once this empties a date out
-// entirely, committedDateSummaries naturally stops counting it, which is
-// what frees it back up as a selectable calendar date.
+// entirely, committedDatesForUser naturally stops counting it, which is
+// what frees it back up as a selectable calendar date (and
+// committedDateSummaries naturally stops listing it in "Already Planned"
+// too, for the same reason).
 //
 // NOT scoped to source: 'planner' (deliberate reversal, Bede's call): "Discard
 // plan" on PlannedDayModal is understood as "clear my whole day," manually-
@@ -1722,6 +1847,7 @@ module.exports = {
   validateDays,
   mergeLockedElsewhereIds,
   partitionCommittableStops,
+  partitionSameDateDrops,
   buildCandidatePool,
   lockedElsewherePlaceIds,
   lockedElsewherePlaceIdsByDate,

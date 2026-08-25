@@ -50,14 +50,14 @@ const SECTIONS = [
   // ---------------------------------------------------------------- cadence
   {
     id: 'cadence',
-    title: 'Visit cadence',
+    title: 'Visit Cadence',
     icon: '🔁',
     blurb:
       'How often a place should be visited, and when the planner is allowed to override that. This is the core of the route planner: every place is scored on how far past its target cadence it has drifted, and the ones that have drifted furthest get proposed first.',
     groups: [
       {
         id: 'cadence-table',
-        title: 'Target days between visits',
+        title: 'Target Days Between Visits',
         layout: 'matrix',
         blurb:
           'The target gap between visits, looked up by the place\'s capacity (how much business it can send) and relationship (how strong the tie already is). The table is deliberately INVERTED: high capacity + weak relationship is visited most often, because that is the biggest gap between potential and reality. If you flatten that inversion, the planner stops chasing opportunity and just services whoever you already know well.',
@@ -94,7 +94,7 @@ const SECTIONS = [
       },
       {
         id: 'cadence-fatigue',
-        title: 'Fatigue guard',
+        title: 'Fatigue Guard',
         blurb: 'Stops the planner hammering one place. If somewhere has already had a lot of visits recently, its target cadence is stretched until the recent count drops back down.',
         fields: [
           { key: 'scheduling.FATIGUE_WINDOW_DAYS', label: 'Fatigue lookback window', unit: 'days', type: 'integer', min: 1, max: 365,
@@ -113,7 +113,7 @@ const SECTIONS = [
       },
       {
         id: 'cadence-exploration',
-        title: 'Exploration starvation guard',
+        title: 'Exploration Starvation Guard',
         blurb: 'Places that have never been pre-qualified sit in their own tier, ordered by best guess at their potential. This stops the least promising of them waiting forever.',
         fields: [
           { key: 'scheduling.EXPLORATION_AGING_DAYS', label: 'Exploration ageing period', unit: 'days', type: 'integer', min: 1, max: 3650,
@@ -135,7 +135,7 @@ const SECTIONS = [
     groups: [
       {
         id: 'capacity-thresholds',
-        title: 'Level thresholds',
+        title: 'Level Thresholds',
         blurb: 'Where the cut lines sit on the single monthly-referral scale that every category shares. Per-category thresholds were deliberately rejected: a place that can send 20 a month is high capacity whether it is a hospital or a law firm.',
         fields: [
           { key: 'scheduling.CAPACITY_THRESHOLDS.MEDIUM_MIN', label: 'Medium starts at', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
@@ -149,8 +149,35 @@ const SECTIONS = [
         ],
       },
       {
+        // Not 'capacity-seed' - that id belongs to the CATEGORY keyword table
+        // further down. Two different fallbacks share the word "seed": this
+        // one is the rep's own rating, that one is the guess from the
+        // category name when no rating exists either.
+        id: 'capacity-rating',
+        title: 'Rating Choices',
+        blurb: 'The four options the "Rate capacity" screen offers, in referrals per month. A rating is your own estimate standing in for a real pre-qualification answer until you get one - it sets the place\'s level, but never marks it as known, so a rated place still shows up for pre-qualification. The moment a place actually tells you its number, that answer replaces your rating outright. Keep each value at least 2 away from a threshold above, or nudging a threshold will silently re-level everything you rated.',
+        fields: [
+          { key: 'scheduling.CAPACITY_SEED_VALUES.major', label: 'Major source', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
+            help: 'Your biggest referral sources - the handful of places you would protect above all others.',
+            raise: 'Nothing changes unless it crosses a threshold, at which point every place you rated this way jumps a level.',
+            lower: 'Same in reverse. This number only matters relative to the level thresholds above.' },
+          { key: 'scheduling.CAPACITY_SEED_VALUES.strong', label: 'Strong source', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
+            help: 'Places that send real, regular business without being your very top accounts.',
+            raise: 'Nothing changes unless it crosses a threshold, at which point every place you rated this way jumps a level.',
+            lower: 'Same in reverse. This number only matters relative to the level thresholds above.' },
+          { key: 'scheduling.CAPACITY_SEED_VALUES.steady', label: 'Steady source', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
+            help: 'Places good for business on a predictable but modest basis.',
+            raise: 'Nothing changes unless it crosses a threshold, at which point every place you rated this way jumps a level.',
+            lower: 'Same in reverse. This number only matters relative to the level thresholds above.' },
+          { key: 'scheduling.CAPACITY_SEED_VALUES.occasional', label: 'Occasional source', unit: 'referrals/mo', type: 'integer', min: 1, max: 1000,
+            help: 'Places that send something once in a while, or that you have no reason to expect much from yet.',
+            raise: 'Nothing changes unless it crosses a threshold, at which point every place you rated this way jumps a level.',
+            lower: 'Same in reverse. This number only matters relative to the level thresholds above.' },
+        ],
+      },
+      {
         id: 'capacity-measured',
-        title: 'Measured floor gate',
+        title: 'Measured Floor Gate',
         blurb: 'Your own referral history can raise a place\'s capacity above what it declared, but only once there is enough of it to not be noise. This gate only ever raises a number, never lowers it, so a loose setting over-states capacity rather than under-stating it.',
         fields: [
           { key: 'scheduling.MEASURED_MIN_EXPOSURE_DAYS', label: 'Minimum relationship age', unit: 'days', type: 'integer', min: 0, max: 3650,
@@ -175,7 +202,7 @@ const SECTIONS = [
       },
       {
         id: 'capacity-seed',
-        title: 'Starting guess by category',
+        title: 'Starting Guess by Category',
         blurb: 'For a place that has never been pre-qualified and has no referral history yet, the app guesses capacity from its category name. Rules are checked top to bottom and the FIRST match wins, so order matters: put the more specific rules above the general ones. Matching is case-insensitive and looks for the keyword anywhere in the category name.',
         fields: [
           { key: 'scheduling.CATEGORY_CAPACITY_SEED', label: 'Category rules', type: 'seedTable', options: LEVEL_OPTIONS,
@@ -190,14 +217,14 @@ const SECTIONS = [
   // ----------------------------------------------------------- relationship
   {
     id: 'relationship',
-    title: 'Relationship strength',
+    title: 'Relationship Strength',
     icon: '🤝',
     blurb:
       'Relationship is the other axis of the cadence table, and like capacity it is computed rather than typed in. Every completed visit scores WHO you actually spoke to multiplied by WHAT happened, that score decays with time, and the results roll up from people to their place. One rule worth protecting: relationship must never be driven by referral VOLUME. Volume is the capacity axis, and if both axes read the same signal they collapse into one and the inversion that makes the cadence table useful stops working.',
     groups: [
       {
         id: 'rel-metwith',
-        title: 'Who you met',
+        title: 'Who You Met',
         blurb: 'The first half of a visit\'s score. Only a named person builds that person\'s own relationship; everything else credits the place as a whole, so a place serviced diligently without ever meeting anyone reads as present but shallow, which is accurate.',
         fields: [
           { key: 'relationship.MET_WITH_WEIGHT.named_person', label: 'A named contact', type: 'number', min: 0, max: 1, step: 0.01, help: 'The full-value case, and the only one that can build an individual person\'s score. Normally left at 1.0, since the rest of this group is expressed relative to it.' },
@@ -208,7 +235,7 @@ const SECTIONS = [
       },
       {
         id: 'rel-outcome',
-        title: 'What happened',
+        title: 'What Happened',
         blurb: 'The second half of a visit\'s score, multiplied by the who-you-met weight above. These are deliberately observable events rather than judgements about how the visit felt, so they do not inflate over time. A substantive sit-down with a named contact scores 1.0; a drop-off at the front desk scores about 0.01. Both are real visits, and their relationship value genuinely differs by that much.',
         fields: [
           { key: 'relationship.OUTCOME_WEIGHT.substantive', label: 'Substantive conversation', type: 'number', min: 0, max: 1, step: 0.01, help: 'A real conversation with a decision-maker or influencer.' },
@@ -221,7 +248,7 @@ const SECTIONS = [
       },
       {
         id: 'rel-decay',
-        title: 'How fast a relationship cools',
+        title: 'How Fast a Relationship Cools',
         blurb: 'Every visit\'s contribution halves over its category\'s half-life. A hospital relationship genuinely goes cold faster than a funeral home\'s, so the clock is set per category rather than globally.',
         fields: [
           { key: 'relationship.FAST_DECAY_CATEGORIES', label: 'Fast-decay categories', type: 'categories',
@@ -261,7 +288,7 @@ const SECTIONS = [
       },
       {
         id: 'rel-levels',
-        title: 'Strong / medium / weak cut lines',
+        title: 'Strong / Medium / Weak Cut Lines',
         blurb: 'These thresholds are deliberately independent of category. Under a constant visit rhythm the score settles at a value that depends only on the ratio of visit gap to half-life, so a fast-decay place visited every 15 days and a normal place visited every 30 both settle at 3.41. One scale, two clocks. For reference: visiting twice as often as the half-life settles at 3.41, exactly at the half-life settles at 2.0, half as often settles at 1.33.',
         fields: [
           { key: 'relationship.RELATIONSHIP_THRESHOLDS.strong', label: 'Strong starts at', type: 'number', min: 0, max: 20, step: 0.1,
@@ -280,7 +307,7 @@ const SECTIONS = [
       },
       {
         id: 'rel-rollup',
-        title: 'Rolling people up to their place',
+        title: 'Rolling People Up to Their Place',
         fields: [
           { key: 'relationship.CONTRIBUTOR_DECAY', label: 'Each extra contact is worth', unit: 'x the last', type: 'number', min: 0, max: 1, step: 0.05,
             help: 'A place\'s score is its strongest contact, plus this fraction of the next strongest, plus that fraction again of the third, and so on. The strongest relationship sets the floor and breadth still counts, but with sharply diminishing returns, so one genuine champion beats six lukewarm contacts while still pricing in the risk of that champion leaving. A zero-scoring contact contributes exactly zero at any position, so extra weak contacts can never dilute a strong one.',
@@ -290,7 +317,7 @@ const SECTIONS = [
       },
       {
         id: 'rel-trend',
-        title: 'Heating up and cooling down',
+        title: 'Heating Up and Cooling Down',
         blurb: 'Display-only badges: they never feed back into the score or level. These are TWO independent mechanisms and neither can stand in for the other. Heating up asks "did something real just happen" by comparing today\'s score with the same computation re-run as of a past date. Cooling down asks "has too much time passed", measured against a target cadence rather than a score ratio, because decay is self-similar: once nothing new happens the ratio locks onto a fixed number and stops moving, so it can say "quiet recently" but never "quiet for a long time".',
         fields: [
           { key: 'relationship.TREND_RELATIVE_THRESHOLD', label: 'Heating-up sensitivity', type: 'number', min: 0.01, max: 2, step: 0.01,
@@ -321,14 +348,14 @@ const SECTIONS = [
   // ------------------------------------------------------------ visit types
   {
     id: 'visitTypes',
-    title: 'Visit types and time',
+    title: 'Visit Types and Time',
     icon: '⏱️',
     blurb:
       'How long each kind of visit is budgeted for. This is what the planner packs a day against: get these wrong and every generated day is either over-stuffed or half empty. These are budgeting estimates for planning, not targets you are held to.',
     groups: [
       {
         id: 'vt-durations',
-        title: 'Expected duration by visit type',
+        title: 'Expected Duration by Visit Type',
         fields: [
           { key: 'visitTypes.VISIT_TYPES.drop_in.minutes', label: 'Drop-in', unit: 'min', type: 'integer', min: 1, max: 480, help: 'A quick stop: say hello, leave something, go. The cheapest block the planner can fit.' },
           { key: 'visitTypes.VISIT_TYPES.check_in.minutes', label: 'Check-in', unit: 'min', type: 'integer', min: 1, max: 480, help: 'A short relationship touch with one contact.' },
@@ -339,7 +366,7 @@ const SECTIONS = [
       },
       {
         id: 'vt-overhead',
-        title: 'Per-stop overhead',
+        title: 'Per-Stop Overhead',
         blurb: 'Time that is neither driving nor the visit itself, added to every stop regardless of type.',
         fields: [
           { key: 'visitTypes.PREP_MINUTES', label: 'Prep time', unit: 'min', type: 'integer', min: 0, max: 120,
@@ -352,7 +379,7 @@ const SECTIONS = [
       },
       {
         id: 'vt-defaults',
-        title: 'Default visit type',
+        title: 'Default Visit Type',
         blurb: 'Which type the planner assumes when nothing else is specified. Anywhere that has not been pre-qualified yet always defaults to a pre-qualification visit regardless of what is set here; this table only applies once capacity has actually been declared.',
         fields: [
           { key: 'visitTypes.DEFAULT_VISIT_TYPE', label: 'Global fallback', type: 'select', options: VISIT_TYPE_OPTIONS,
@@ -368,14 +395,14 @@ const SECTIONS = [
   // ------------------------------------------------------------- drive time
   {
     id: 'driveTime',
-    title: 'Drive time estimates',
+    title: 'Drive Time Estimates',
     icon: '🚗',
     blurb:
       'How the app estimates travel between stops when the routing service is unavailable. It works from straight-line distance rather than real roads: good enough to rank and pack stops, not to navigate by. When the routing service does answer, its real numbers are used instead and only the minimum below still applies.',
     groups: [
       {
         id: 'dt-bands',
-        title: 'Speed bands',
+        title: 'Speed Bands',
         blurb: 'One average speed cannot serve both a parking-lot-to-parking-lot hop and a cross-town trip that gets onto a highway, so speed is banded by how far you are actually driving. Bands are measured on estimated ROAD distance, after the circuity factor below is applied.',
         fields: [
           { key: 'driveTime.SHORT_BAND_MAX_MILES', label: 'Short trips are under', unit: 'miles', type: 'number', min: 0.1, max: 100, step: 0.1, help: 'Road distance below which a trip counts as short.' },
@@ -414,14 +441,14 @@ const SECTIONS = [
   // ---------------------------------------------------------- route planner
   {
     id: 'planning',
-    title: 'Route planner',
+    title: 'Route Planner',
     icon: '🗺️',
     blurb:
       'Bounds on what you can ask the planner for, and the settings for the external routing service it uses to sequence a day\'s stops.',
     groups: [
       {
         id: 'plan-bounds',
-        title: 'Planning bounds',
+        title: 'Planning Bounds',
         fields: [
           { key: 'planning.MAX_PLAN_DATES', label: 'Maximum dates per draft', unit: 'dates', type: 'integer', min: 1, max: 60,
             help: 'How many dates can go into a single draft. Each date is planned independently, so this is a limit on how much you take on at once rather than anything the engine needs.',
@@ -438,7 +465,7 @@ const SECTIONS = [
       },
       {
         id: 'plan-optimizer',
-        title: 'Route optimizer',
+        title: 'Route Optimizer',
         blurb: 'The app calls a free public OSRM server to put a day\'s stops in the best driving order. It carries no service guarantee, so a slow or failed response never blocks planning: the app quietly falls back to its own straight-line estimates instead.',
         fields: [
           { key: 'routeOptimizer.OSRM_BASE_URL', label: 'Routing service URL', type: 'text', maxLength: 300,
@@ -467,7 +494,7 @@ const SECTIONS = [
     groups: [
       {
         id: 'ref-window',
-        title: 'Recent activity window',
+        title: 'Recent Activity Window',
         fields: [
           { key: 'referrals.RECENT_WINDOW_DAYS', label: 'Recent referrals window', unit: 'days', type: 'integer', min: 1, max: 3650,
             help: 'The trailing window behind the "recent referrals" figure shown on people and places. The label follows this number, so it reads "last 90 days" or "last 60 days" to match whatever you set. Note this is display only: the capacity model uses its own, longer gate so that a short burst of referrals cannot permanently ratchet a place\'s capacity up.',
@@ -488,7 +515,7 @@ const SECTIONS = [
     groups: [
       {
         id: 'dash-commitments',
-        title: 'Commitments due',
+        title: 'Commitments Due',
         blurb:
           'The card that lists promises you have made to go back somewhere. Anything already overdue is always shown no matter what these are set to: a promise does not stop counting because it aged out of a window.',
         fields: [
@@ -502,14 +529,14 @@ const SECTIONS = [
       },
       {
         id: 'dash-referrals',
-        title: 'Referral cards',
+        title: 'Referral Cards',
         blurb:
           'The two referral cards. The "how many lately" figure on the first one follows the Referrals section\'s own recent-activity window, not these.',
         fields: [
           { key: 'dashboard.RECENT_REFERRALS_LIMIT', label: 'Recent referrals to list', unit: 'rows', type: 'integer', min: 1, max: 50,
-            help: 'How many of the most recently dated referrals the "Recent referrals" card lists.' },
+            help: 'How many of the most recently dated referrals the "Recent Referrals" card lists.' },
           { key: 'dashboard.TOP_PARTNERS_LIMIT', label: 'Top partners to list', unit: 'people', type: 'integer', min: 1, max: 50,
-            help: 'How many people the "Top referral partners" leaderboard shows, ranked by lifetime referrals sent.' },
+            help: 'How many people the "Top Referral Partners" leaderboard shows, ranked by lifetime referrals sent.' },
         ],
       },
     ],

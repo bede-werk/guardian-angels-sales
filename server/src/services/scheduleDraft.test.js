@@ -2,7 +2,7 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, commitDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, committedDatesForUser, commitDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 const { estimateDriveMinutes } = require('./driveTime');
 const { editVisit } = require('./manualVisits');
 
@@ -306,9 +306,9 @@ describe('buildCandidatePool fatigue counting', () => {
     //          dedup below still has to collapse now that a multi-contact
     //          trip is no longer expressed as several rows).
     await db('places').insert([
-      { id: 1, name: 'One Big Meeting', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Four Real Trips', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Twice In A Day', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'One Big Meeting', category: 'Hospice' },
+      { id: 2, name: 'Four Real Trips', category: 'Hospice' },
+      { id: 3, name: 'Twice In A Day', category: 'Hospice' },
     ]);
     await db('people').insert([
       { id: 1, place_id: 1, name: 'A' }, { id: 2, place_id: 1, name: 'B' },
@@ -386,10 +386,10 @@ describe('buildCandidatePool plannedVisitDates', () => {
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Planned Only', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Planned And Completed', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Two Planned Visits', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 4, name: 'Neither', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Planned Only', category: 'Hospice' },
+      { id: 2, name: 'Planned And Completed', category: 'Hospice' },
+      { id: 3, name: 'Two Planned Visits', category: 'Hospice' },
+      { id: 4, name: 'Neither', category: 'Hospice' },
     ]);
 
     await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', scheduled_date: '2026-08-05', place_name: 'Planned Only' });
@@ -448,7 +448,7 @@ describe('buildCandidatePool plannedVisitDates', () => {
 // in "3 visits planned," not just the 2 the route planner itself proposed;
 // the drill-down committedDayVisits opens from clicking the row already
 // shows all of them, so the count has to match.
-describe('committedDateSummaries - gated by a planner-committed visit, counted by all visits on the date', () => {
+describe('committedDateSummaries lists every open date unscoped by source; committedDatesForUser gates re-selection to planner-committed dates only', () => {
   let db;
   const TODAY = '2026-08-12';
 
@@ -462,14 +462,16 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Manual Only Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Planner Committed Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 3, name: 'Both Place', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 4, name: 'Both Place Two', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Manual Only Place', category: 'Hospice' },
+      { id: 2, name: 'Planner Committed Place', category: 'Hospice' },
+      { id: 3, name: 'Both Place', category: 'Hospice' },
+      { id: 4, name: 'Both Place Two', category: 'Hospice' },
     ]);
 
-    // A date with ONLY a manual visit - must NOT appear in the summary, so
-    // it stays selectable in /generate.
+    // A date with ONLY a manual visit - appears in the summary (2026-08-25:
+    // manual-only dates are meant to show in "Already Planned"), but must
+    // stay OUT of committedDatesForUser's gate so it stays selectable in
+    // /generate.
     await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-20', place_name: 'Manual Only Place' });
 
     // A date with ONLY a real planner commit - still counted, unaffected by this change.
@@ -478,7 +480,8 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
     // 20260822000000_add_visits_planner_committed.js).
     await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-21', place_name: 'Planner Committed Place' });
 
-    // A date with BOTH - the planner row is what gates it in, but both rows count.
+    // A date with BOTH - the planner row is what gates re-selection, but the
+    // summary counts both rows regardless.
     await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-22', place_name: 'Both Place' });
     await db('visits').insert({ place_id: 4, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-22', place_name: 'Both Place Two' });
   });
@@ -487,24 +490,31 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
     await db.destroy();
   });
 
-  test('a manual-only date is absent from the summary - still selectable in /generate', async () => {
+  test('a manual-only date appears in the summary, but is absent from the re-selection gate', async () => {
     const summaries = await committedDateSummaries(db, 1, { today: TODAY });
     const row = summaries.find((s) => s.date === '2026-08-20');
-    assert.equal(row, undefined);
+    assert.ok(row, 'a manual-only date is a real commitment and belongs in "Already Planned"');
+    assert.equal(row.count, 1);
+
+    const gated = await committedDatesForUser(db, 1, { today: TODAY });
+    assert.equal(gated.has('2026-08-20'), false, 'still selectable in /generate - a manual-only date never blocks re-selection');
   });
 
-  test('a planner-committed-only date still appears, count unchanged', async () => {
+  test('a planner-committed-only date appears in both the summary and the re-selection gate', async () => {
     const summaries = await committedDateSummaries(db, 1, { today: TODAY });
     const row = summaries.find((s) => s.date === '2026-08-21');
     assert.ok(row);
     assert.equal(row.count, 1);
+
+    const gated = await committedDatesForUser(db, 1, { today: TODAY });
+    assert.ok(gated.has('2026-08-21'));
   });
 
   test('a date with both counts every visit on it, not just the planner-sourced one', async () => {
     const summaries = await committedDateSummaries(db, 1, { today: TODAY });
     const row = summaries.find((s) => s.date === '2026-08-22');
     assert.ok(row);
-    assert.equal(row.count, 2, 'the manual visit still counts once the date is gated in by the planner-committed one');
+    assert.equal(row.count, 2, 'the manual visit still counts alongside the planner-committed one');
   });
 
   // Regression test for the bug fixed 2026-08-22: editVisit
@@ -515,23 +525,25 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
   // reopening the date for a fresh /generate even though the visit was
   // still sitting there. planner_committed is meant to survive exactly
   // this. Own place/date, isolated from the shared before() fixture above
-  // since this test mutates a row.
+  // since this test mutates a row. Targets committedDatesForUser - the
+  // function that now owns the re-selection gate this bug was about (split
+  // out from committedDateSummaries 2026-08-25).
   test('a notes-only edit through editVisit does not drop the date out of the gate', async () => {
-    await db('places').insert({ id: 5, name: 'Edited Notes Place', category: 'Hospice', tier: 1, priority_score: 75 });
+    await db('places').insert({ id: 5, name: 'Edited Notes Place', category: 'Hospice' });
     const [inserted] = await db('visits')
       .insert({ place_id: 5, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-23', place_name: 'Edited Notes Place' })
       .returning('id');
     const visitId = inserted && inserted.id !== undefined ? inserted.id : inserted;
 
-    let summaries = await committedDateSummaries(db, 1, { today: TODAY });
-    assert.ok(summaries.find((s) => s.date === '2026-08-23'), 'the date gates in before any edit, same as any other planner commit');
+    let gated = await committedDatesForUser(db, 1, { today: TODAY });
+    assert.ok(gated.has('2026-08-23'), 'the date gates in before any edit, same as any other planner commit');
 
     const result = await editVisit(db, visitId, { notes: 'fixed a typo' }, 1);
     assert.equal(result.visit.notes, 'fixed a typo');
     assert.equal(result.visit.source, 'manual', 'the promotion itself is unaffected - still flips on any edit');
 
-    summaries = await committedDateSummaries(db, 1, { today: TODAY });
-    assert.ok(summaries.find((s) => s.date === '2026-08-23'), 'the date must still gate in - the visit never stopped being real');
+    gated = await committedDatesForUser(db, 1, { today: TODAY });
+    assert.ok(gated.has('2026-08-23'), 'the date must still gate in - the visit never stopped being real');
   });
 });
 
@@ -571,8 +583,8 @@ describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 req
       { id: 2, name: 'Sarah', email: 'sarah@test.local' },
     ]);
     await db('places').insert([
-      { id: 1, name: 'Same Day Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
-      { id: 2, name: 'Nearby Day Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+      { id: 1, name: 'Same Day Place', category: 'Hospice', lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Nearby Day Place', category: 'Hospice', lat: 41.8, lng: -87.7 },
     ]);
   });
 
@@ -605,6 +617,40 @@ describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 req
     const after1 = await loadDraftView(db, draftId);
     const stopAfter = after1.days[0].stops.find((s) => s.place_id === 1);
     assert.equal(stopAfter, undefined, 'a same-date real visit must remove the stop from the proposal, not just flag it');
+
+    // Removing it is only half the job: dropping it SILENTLY is what made
+    // the stop appear to evaporate on whatever unrelated draft edit happened
+    // to trigger the next read. The day has to say what it took out and who
+    // took the slot (partitionSameDateDrops in scheduleDraft.js).
+    const dropped = after1.days[0].droppedCollisions;
+    assert.equal(dropped.length, 1, 'the drop must be reported on the day, not just performed');
+    assert.equal(dropped[0].place_id, 1);
+    assert.equal(dropped[0].place_name, 'Same Day Place');
+    assert.equal(dropped[0].conflict.type, 'SAME_DATE_VISIT');
+    assert.equal(dropped[0].conflict.otherUserId, 2, 'the other rep is named, not left as a bare "booked elsewhere"');
+    assert.equal(dropped[0].conflict.status, 'planned');
+  });
+
+  // The draft row itself must SURVIVE the drop - this is a view-level filter,
+  // not a delete. That's what leaves commitDay still able to see the stop and
+  // report it in skippedCollisions, and it's why the notice above has to keep
+  // reappearing on every read rather than firing once.
+  test('loadDraftView: a dropped stop keeps its schedule_draft_stops row', async () => {
+    // Its own place+date pair, not DATE_A/place 1: this describe seeds once
+    // in before() (not beforeEach), so the earlier tests' visits are still
+    // on the table and reusing theirs trips visits_place_date_planned_unique.
+    const DATE_C = '2026-08-20';
+    const params = { days: [{ date: DATE_C, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 2, date: DATE_C, sort_order: 0 });
+    await db('visits').insert({ place_id: 2, user_id: 2, status: 'planned', scheduled_date: DATE_C, place_name: 'Nearby Day Place' });
+
+    const view = await loadDraftView(db, draftId);
+    assert.equal(view.days[0].stops.length, 0, 'dropped from the view');
+    assert.equal(view.days[0].droppedCollisions.length, 1, 'and reported');
+    const rows = await db('schedule_draft_stops').where({ draft_id: draftId, place_id: 2 });
+    assert.equal(rows.length, 1, 'but the underlying draft row is untouched');
   });
 
   test('loadDraftDayView: a nearby-day PLANNED visit committed after the fact produces FLOOR_PLANNED on reload', async () => {
@@ -647,6 +693,13 @@ describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 req
 
     const after1 = await loadDraftDayView(db, draftId, DATE_B);
     assert.equal(after1.stops.find((s) => s.place_id === 1), undefined, 'a same-date completed visit must remove the stop, not just flag it');
+
+    // Reported here too - this is the shape every draft MUTATION returns
+    // (reorder/add/remove/visit-type), which is exactly when a rep used to
+    // watch a stop vanish for no stated reason.
+    assert.equal(after1.droppedCollisions.length, 1, 'the one-day view reports the drop as well');
+    assert.equal(after1.droppedCollisions[0].place_name, 'Same Day Place');
+    assert.equal(after1.droppedCollisions[0].conflict.status, 'completed');
   });
 });
 
@@ -676,8 +729,8 @@ describe('loadDraftView / loadDraftDayView - Place Commitments badge', () => {
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Promised Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
-      { id: 2, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+      { id: 1, name: 'Promised Place', category: 'Hospice', lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Clean Place', category: 'Hospice', lat: 41.8, lng: -87.7 },
     ]);
     await db('people').insert({ id: 1, place_id: 1, name: 'Sharon Klein' });
     // Two outstanding commitments at place 1: the binding one (earliest,
@@ -727,6 +780,95 @@ describe('loadDraftView / loadDraftDayView - Place Commitments badge', () => {
   });
 });
 
+// do_not_visit rides the stop's `conflicts` array (services/doNotVisit.js's
+// doNotVisitFinding, attached by stopFindings) rather than a field of its
+// own, so RoutePlanner.jsx renders it through the one conflict badge it
+// already has. This is the whole of addStop's do-not-visit handling: the flag
+// warns, it never refuses - same policy addStop already applies to a floor
+// conflict and to another rep's draft.
+//
+// Attached on every READ, which is the case a one-shot check at add time
+// could never cover: a place marked do-not-visit AFTER it was already sitting
+// in the draft. The fixture leans on that - the mark is applied between two
+// loads of the same unchanged draft.
+//
+// Both the live and the lapsed mark use dates that don't depend on when this
+// suite runs (indefinite / years past), since loadDraft*View call the real
+// orgToday() internally.
+describe('loadDraftView / loadDraftDayView - do_not_visit finding on a stop', () => {
+  let db;
+  const originalFetch = global.fetch;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+
+  before(async () => {
+    global.fetch = async () => ({ ok: false, json: async () => ({}) });
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
+    // do_not_visit is spelled out on EVERY row: places.do_not_visit is NOT
+    // NULL, and a batched insert fills a column absent from one row's object
+    // with an explicit NULL for that row rather than the column default.
+    await db('places').insert([
+      { id: 1, name: 'Marked Place', category: 'Hospice', lat: 41.9, lng: -87.6, do_not_visit: false },
+      { id: 2, name: 'Clean Place', category: 'Hospice', lat: 41.8, lng: -87.7, do_not_visit: false },
+      { id: 3, name: 'Lapsed Mark Place', category: 'Hospice', lat: 41.7, lng: -87.8, do_not_visit: true, do_not_visit_until: '2020-01-01' },
+    ]);
+
+    const params = { days: [{ date: DATE_A, hoursPerDay: 8 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    db.draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert([
+      { draft_id: db.draftId, place_id: 1, date: DATE_A, sort_order: 0 },
+      { draft_id: db.draftId, place_id: 2, date: DATE_A, sort_order: 1 },
+      { draft_id: db.draftId, place_id: 3, date: DATE_A, sort_order: 2 },
+    ]);
+  });
+
+  after(async () => {
+    global.fetch = originalFetch;
+    await db.destroy();
+  });
+
+  function findingsFor(stop) {
+    return (stop.conflicts || []).filter((c) => c.type === 'DO_NOT_VISIT');
+  }
+
+  test('an unmarked place carries no do-not-visit finding', async () => {
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    assert.equal(findingsFor(view.stops.find((s) => s.place_id === 1)).length, 0);
+    assert.equal(findingsFor(view.stops.find((s) => s.place_id === 2)).length, 0);
+  });
+
+  test('a mark whose until-date has already passed carries no finding either', async () => {
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    assert.equal(findingsFor(view.stops.find((s) => s.place_id === 3)).length, 0);
+  });
+
+  test('marking the place do-not-visit AFTER it is already in the draft flags it on the next read', async () => {
+    await db('places').where({ id: 1 }).update({ do_not_visit: true, do_not_visit_until: null });
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    const stop = view.stops.find((s) => s.place_id === 1);
+    assert.deepEqual(findingsFor(stop), [{ type: 'DO_NOT_VISIT', severity: 'soft', placeId: 1 }]);
+    // The stop is still there: this warns, it does not drop the row the way
+    // a SAME_DATE_VISIT collision does (partitionSameDateDrops).
+    assert.ok(view.stops.some((s) => s.place_id === 1), 'a marked place stays in the proposal');
+    assert.equal(findingsFor(view.stops.find((s) => s.place_id === 2)).length, 0, 'the neighbouring clean stop is untouched');
+  });
+
+  test('loadDraftView: same finding on the whole-draft read', async () => {
+    const view = await loadDraftView(db, db.draftId);
+    const stop = view.days[0].stops.find((s) => s.place_id === 1);
+    assert.deepEqual(findingsFor(stop), [{ type: 'DO_NOT_VISIT', severity: 'soft', placeId: 1 }]);
+    assert.equal(findingsFor(view.days[0].stops.find((s) => s.place_id === 3)).length, 0);
+  });
+});
+
 // day.committed feeds RoutePlanner.jsx's "Already Planned"/"Planned" list,
 // which renders every row under a hardcoded "✓ Planned" badge - so
 // committedVisitsQuery must only ever return status:'planned' rows, the same
@@ -750,7 +892,7 @@ describe('loadDraftView / loadDraftDayView - day.committed is planned-only', () 
     });
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
-    await db('places').insert({ id: 1, name: 'Guardian Angels (Test)', category: 'Community Partners', tier: 1, priority_score: 50, lat: 41.9, lng: -87.6 });
+    await db('places').insert({ id: 1, name: 'Guardian Angels (Test)', category: 'Community Partners', lat: 41.9, lng: -87.6 });
   });
 
   after(async () => {
@@ -832,8 +974,8 @@ describe('evaluateDay via loadDraftView - committed visits count against the bud
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Committed Place', category: 'Hospice', tier: 1, priority_score: 75, lat: PLACE_A.lat, lng: PLACE_A.lng },
-      { id: 2, name: 'Proposed Place', category: 'Hospice', tier: 1, priority_score: 75, lat: PLACE_B.lat, lng: PLACE_B.lng },
+      { id: 1, name: 'Committed Place', category: 'Hospice', lat: PLACE_A.lat, lng: PLACE_A.lng },
+      { id: 2, name: 'Proposed Place', category: 'Hospice', lat: PLACE_B.lat, lng: PLACE_B.lng },
     ]);
   });
 
@@ -959,8 +1101,8 @@ describe('commitDay - per-row collision recovery in the insert loop', () => {
     await db.migrate.latest();
     await db('users').insert([{ id: 1, name: 'Bede', email: 'bede@test.local' }]);
     await db('places').insert([
-      { id: 1, name: 'Colliding Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.9, lng: -87.6 },
-      { id: 2, name: 'Clean Place', category: 'Hospice', tier: 1, priority_score: 75, lat: 41.8, lng: -87.7 },
+      { id: 1, name: 'Colliding Place', category: 'Hospice', lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Clean Place', category: 'Hospice', lat: 41.8, lng: -87.7 },
     ]);
   });
 

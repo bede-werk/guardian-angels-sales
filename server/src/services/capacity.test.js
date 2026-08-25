@@ -49,7 +49,7 @@ describe('computeCapacityPure - asymmetry invariant', () => {
       config,
     });
     assert.equal(r.effectiveMonthly, 12);
-    assert.equal(r.level, 'medium');
+    assert.equal(r.level, 'high'); // 12 is high under the 2026-08-23 thresholds (4/11); was medium under the original 6/16
     assert.equal(r.levelSource, 'measured');
   });
 
@@ -57,16 +57,20 @@ describe('computeCapacityPure - asymmetry invariant', () => {
   // comment. This must fail loudly if a future change ever lets measuredFloor
   // pull effectiveMonthly below declared.value.
   //
-  // Note: the spec's own prose for this case (§13, "Asymmetry - down")
-  // says "Declared 15, measured 0 -> effective 15, level high" - but 15
-  // buckets to 'medium' under the spec's own §4 thresholds (medium: 6-15,
-  // high: 16+), which its own bucket-boundaries test (§13, "15 -> medium")
-  // confirms explicitly. That's an internal inconsistency in the spec, not
-  // an ambiguity in the boundaries themselves - implementing against §4/the
-  // boundaries test (the self-consistent, unambiguous source) rather than
-  // the contradicting prose line. The asymmetry claim itself (effective
-  // stays at declared's value, never gets pulled down to 0) is unaffected
-  // either way and is what this test actually verifies.
+  // Historical note, since the level asserted here has changed once and the
+  // reasoning is easy to misread: the spec's own prose for this case (§13,
+  // "Asymmetry - down") always said "Declared 15, measured 0 -> effective 15,
+  // level high," but under the ORIGINAL 6/16 thresholds 15 bucketed to
+  // 'medium', contradicting that prose. The spec was corrected to 'medium'
+  // in 2026-08-07 to match its own §4 boundaries. The 2026-08-23 threshold
+  // retune (6/16 -> 4/11) has now moved 15 back into 'high', so this line
+  // reads like the spec's original prose again - by coincidence, not because
+  // the earlier correction was wrong. It was right for the thresholds in
+  // force at the time.
+  //
+  // Either way the bucket label is incidental: what this test actually
+  // guards is that effectiveMonthly stays at declared's value and is never
+  // pulled down toward the absent/zero measurement.
   test('down: zero/no measured signal never pulls the declared number down', () => {
     const r = computeCapacityPure({
       declared: { value: 15, observedAt: ASOF, source: 'prequal', personId: null },
@@ -77,18 +81,104 @@ describe('computeCapacityPure - asymmetry invariant', () => {
       config,
     });
     assert.equal(r.effectiveMonthly, 15, 'a missing/zero measured signal must never lower the declared value');
-    assert.equal(r.level, 'medium');
+    assert.equal(r.level, 'high');
     assert.equal(r.levelSource, 'declared');
   });
 });
 
+// Asserts the SHIPPED default thresholds (config/scheduling.js's
+// CAPACITY_THRESHOLDS, retuned 2026-08-23 from 6/16 to 4/11), on purpose:
+// these boundaries decide which cadence row every pre-qualified place gets,
+// so a change to them should have to come here and say so out loud.
 describe('bucketForMonthlyReferrals - boundaries', () => {
-  test('5 -> low, 6 -> medium, 15 -> medium, 16 -> high, 0 -> low', () => {
-    assert.equal(bucketForMonthlyReferrals(5, config.CAPACITY_THRESHOLDS), 'low');
-    assert.equal(bucketForMonthlyReferrals(6, config.CAPACITY_THRESHOLDS), 'medium');
-    assert.equal(bucketForMonthlyReferrals(15, config.CAPACITY_THRESHOLDS), 'medium');
-    assert.equal(bucketForMonthlyReferrals(16, config.CAPACITY_THRESHOLDS), 'high');
+  test('0 -> low, 3 -> low, 4 -> medium, 10 -> medium, 11 -> high', () => {
     assert.equal(bucketForMonthlyReferrals(0, config.CAPACITY_THRESHOLDS), 'low');
+    assert.equal(bucketForMonthlyReferrals(3, config.CAPACITY_THRESHOLDS), 'low');
+    assert.equal(bucketForMonthlyReferrals(4, config.CAPACITY_THRESHOLDS), 'medium');
+    assert.equal(bucketForMonthlyReferrals(10, config.CAPACITY_THRESHOLDS), 'medium');
+    assert.equal(bucketForMonthlyReferrals(11, config.CAPACITY_THRESHOLDS), 'high');
+  });
+
+  // The four rating choices must each land in the bucket the rating screen
+  // promises, and must not sit ON a boundary - both thresholds are editable
+  // from the Settings page with no cross-validation against these values, so
+  // a choice with zero margin would let a one-digit tweak silently re-level a
+  // whole tier of the book. See CAPACITY_SEED_VALUES' own comment.
+  test('every seed choice lands in its intended bucket with room to spare', () => {
+    const { major, strong, steady, occasional } = config.CAPACITY_SEED_VALUES;
+    const { MEDIUM_MIN, HIGH_MIN } = config.CAPACITY_THRESHOLDS;
+
+    assert.equal(bucketForMonthlyReferrals(major, config.CAPACITY_THRESHOLDS), 'high');
+    assert.equal(bucketForMonthlyReferrals(strong, config.CAPACITY_THRESHOLDS), 'high');
+    assert.equal(bucketForMonthlyReferrals(steady, config.CAPACITY_THRESHOLDS), 'medium');
+    assert.equal(bucketForMonthlyReferrals(occasional, config.CAPACITY_THRESHOLDS), 'low');
+
+    assert.ok(major > strong && strong > steady && steady > occasional, 'seed choices must be strictly descending');
+    assert.ok(strong - HIGH_MIN >= 2, 'the lowest high choice needs margin above HIGH_MIN');
+    assert.ok(steady - MEDIUM_MIN >= 2, 'the medium choice needs margin above MEDIUM_MIN');
+    assert.ok(HIGH_MIN - steady >= 2, 'the medium choice needs margin below HIGH_MIN');
+    assert.ok(MEDIUM_MIN - occasional >= 2, 'the low choice needs margin below MEDIUM_MIN');
+  });
+});
+
+describe('computeCapacityPure - the human seed rung', () => {
+  const seeded = (over) => computeCapacityPure({
+    declared: null, seed: { value: 13, seededAt: '2026-08-23' }, measuredFloor: null,
+    overrideLevel: null, category: 'Churches', asOf: ASOF, config, ...over,
+  });
+
+  test('a seed outranks the category guess', () => {
+    const r = seeded();
+    // 'Churches' seeds to low by keyword; the human said 13/mo.
+    assert.equal(r.level, 'high');
+    assert.equal(r.levelSource, 'human_seed');
+    assert.equal(r.effectiveMonthly, 13);
+  });
+
+  test('no seed and no declared still falls through to the category guess', () => {
+    const r = seeded({ seed: null });
+    assert.equal(r.level, 'low');
+    assert.equal(r.levelSource, 'category_seed');
+    assert.equal(r.effectiveMonthly, null);
+  });
+
+  // The precedence rule, and the reason it is precedence rather than a max:
+  // seed and declared measure the SAME quantity, so once the place has
+  // actually answered, the guess has nothing left to say - in EITHER
+  // direction. This is the test that fails if someone "helpfully" folds the
+  // seed into the Math.max alongside measuredFloor.
+  test('a real declared answer supersedes the seed outright, even a much lower one', () => {
+    const r = seeded({ declared: { value: 2, observedAt: ASOF, source: 'prequal', personId: null } });
+    assert.equal(r.effectiveMonthly, 2, 'the seed must not floor a lower declared answer');
+    assert.equal(r.level, 'low');
+    assert.equal(r.levelSource, 'declared');
+  });
+
+  test('the measured floor still raises a seed, and takes the credit', () => {
+    const r = seeded({ seed: { value: 1, seededAt: '2026-08-23' }, measuredFloor: 8 });
+    assert.equal(r.effectiveMonthly, 8);
+    assert.equal(r.level, 'medium');
+    assert.equal(r.levelSource, 'measured');
+  });
+
+  // The whole design of this rung: it moves the LEVEL without ever claiming
+  // the place is known. A seeded place must stay 'unknown' so it keeps its
+  // EXPLORATION-tier membership and stays queued for real pre-qualification.
+  test('a seed never touches confidence', () => {
+    assert.equal(seeded().confidence, 'unknown');
+    assert.equal(seeded().staleAt, null);
+  });
+
+  test('a superseded seed is returned for provenance but is not a contributor', () => {
+    const r = seeded({ declared: { value: 2, observedAt: ASOF, source: 'prequal', personId: null } });
+    assert.equal(r.seed.value, 13, 'the UI still shows what the rep had guessed');
+    assert.ok(!r.contributors.some((c) => c.type === 'human_seed'), 'a superseded seed contributed nothing');
+  });
+
+  test('an active seed IS a contributor', () => {
+    const c = seeded().contributors.find((x) => x.type === 'human_seed');
+    assert.equal(c.value, 13);
+    assert.equal(c.seededAt, '2026-08-23');
   });
 });
 
@@ -170,9 +260,9 @@ describe('measuredFloorByPlace - exposure gate', () => {
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Two Referrals, 200 Days', category: 'Hospice', tier: 1, priority_score: 50, created_at: daysBefore(ASOF, 400) },
-      { id: 2, name: 'Three Referrals, 170 Days', category: 'Hospice', tier: 1, priority_score: 50, created_at: daysBefore(ASOF, 400) },
-      { id: 3, name: 'Three Referrals, 200 Days', category: 'Hospice', tier: 1, priority_score: 50, created_at: daysBefore(ASOF, 400) },
+      { id: 1, name: 'Two Referrals, 200 Days', category: 'Hospice', created_at: daysBefore(ASOF, 400) },
+      { id: 2, name: 'Three Referrals, 170 Days', category: 'Hospice', created_at: daysBefore(ASOF, 400) },
+      { id: 3, name: 'Three Referrals, 200 Days', category: 'Hospice', created_at: daysBefore(ASOF, 400) },
     ]);
     await db('referrals').insert([
       // Place 1: fails the COUNT gate (2 < MEASURED_MIN_REFERRAL_COUNT) even
@@ -220,10 +310,10 @@ describe('computeCapacityForPlace(s) - asOf, bulk parity, and the empty case', (
     await db.migrate.latest();
     await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Two Observations Over Time', category: 'Hospice', tier: 1, priority_score: 50 },
-      { id: 2, name: 'Declared Only A', category: 'Physicians', tier: 1, priority_score: 50 },
-      { id: 3, name: 'Declared Only B', category: 'Community Partners', tier: 1, priority_score: 50 },
-      { id: 4, name: 'Never Touched', category: 'Churches', tier: 1, priority_score: 50 },
+      { id: 1, name: 'Two Observations Over Time', category: 'Hospice' },
+      { id: 2, name: 'Declared Only A', category: 'Physicians' },
+      { id: 3, name: 'Declared Only B', category: 'Community Partners' },
+      { id: 4, name: 'Never Touched', category: 'Churches' },
     ]);
     await db('capacity_observations').insert([
       { place_id: 1, monthly_referrals: 5, source: 'prequal', observed_at: '2026-01-01' },

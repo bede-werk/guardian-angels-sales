@@ -44,7 +44,7 @@ function place(id, overrides = {}) {
     relationship_level: 'weak',
     do_not_visit: false,
     snooze_until: null,
-    priority_score: 0,
+    capacity_seed: null,
     // Step 7's EXPLORATION ordering reads this directly, no created_at
     // fallback (see the migration that added it). Defaulted to TODAY here
     // (daysWaiting = 0) so existing fixtures that don't care about aging
@@ -54,9 +54,19 @@ function place(id, overrides = {}) {
   };
 }
 
+// Production builds candidates in buildCandidatePool, which attaches the
+// COMPUTED capacityLevel/capacityConfidence/relationshipLevel explicitly - the
+// generator has no fallback to a place column any more (those columns were
+// dropped in 20260825000000). The place() fixture above keeps the old column
+// names as readable shorthand, and this is the one place that translates them
+// into the explicit fields real candidates carry. Anything in `overrides`
+// still wins, since it is spread last.
 function candidate(p, overrides = {}) {
   return {
     place: p,
+    capacityLevel: p.capacity_level,
+    capacityConfidence: p.capacity_status === 'estimated' ? 'unknown' : 'fresh',
+    relationshipLevel: p.relationship_level,
     lastVisitDate: null,
     recentCompletedCount: 0,
     nextVisitDate: null,

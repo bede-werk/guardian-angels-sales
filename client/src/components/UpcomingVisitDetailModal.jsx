@@ -27,7 +27,14 @@ function addDaysISO(days) {
 // primaryWarning uses (do_not_visit is a deliberate flag, so it outranks a
 // floor warning's recency guess); duplicated rather than shared since
 // there's no client-side utils module these two pull from yet.
-const WARNING_PRIORITY = ['DO_NOT_VISIT', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+// DRAFT_ELSEWHERE joined this list on 2026-08-25, when it stopped being a
+// hard block (services/manualVisits.js's classifyConflicts). Ranked above
+// the two floor types and below DO_NOT_VISIT, matching the relative order
+// RoutePlanner.jsx's CONFLICT_PRIORITY already uses: another rep's actual
+// draft entry is a definite fact about someone's intent, where a floor
+// warning is a recency heuristic - but a do-not-visit flag someone set by
+// hand still outranks both.
+const WARNING_PRIORITY = ['DO_NOT_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
 function primaryWarning(warnings) {
   for (const type of WARNING_PRIORITY) {
     const found = warnings.find((w) => w.type === type);
@@ -204,7 +211,7 @@ export default function UpcomingVisitDetailModal({ visit, userId, onClose, onCom
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Visit - {formatDate(visit.scheduled_date)}</h2>
+          <h2>Visit · {formatDate(visit.scheduled_date)}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">
@@ -275,17 +282,36 @@ export default function UpcomingVisitDetailModal({ visit, userId, onClose, onCom
                 disabled={savingEdit}
               />
             </div>
-            {/* Left of the buttons (marginRight: auto against modal-foot's
-                own justify-content: flex-end), same as VisitLogModal/
-                PlanVisitModal's own footer notice - not its own full-width
-                line above them. Date/Notes above keep width: 100% (they need
-                the room for their own label+input), but this row packs
-                alongside the buttons since flexWrap on modal-foot already
-                forces a new line after each 100%-wide field. */}
-            <div ref={noticeRef} style={{ marginRight: 'auto' }}>
+            {/* Left of the buttons, same as VisitLogModal/PlanVisitModal's
+                own footer notice - not its own full-width line above them.
+                Date/Notes above keep width: 100% (they need the room for
+                their own label+input), but this row packs alongside the
+                buttons since flexWrap on modal-foot already forces a new
+                line after each 100%-wide field.
+
+                flex: 1 + minWidth: 0, NOT marginRight: auto (what this used
+                to be). flex-wrap picks its line breaks from each item's
+                UNFLEXED content width, so an auto-margined notice sized to
+                its own text would claim the whole line the moment the text
+                got long - shunting Cancel/Save onto a line of their own -
+                even though it would happily have shrunk to share. A
+                flex-basis of 0 (via flex: 1) makes that hypothetical width
+                zero, so the notice never forces a break and instead grows
+                into whatever the buttons leave, which is also the same
+                right-alignment the auto margin was there for. minWidth: 0
+                lets it actually shrink past min-content, so a long word
+                wraps inside the notice rather than overflowing it. */}
+            <div ref={noticeRef} style={{ flex: 1, minWidth: 0 }}>
               {editError && (
                 editError.conflict
-                  ? <div className="tiny" style={{ color: 'var(--mauve)' }}>{editError.message}</div>
+                  // Same reasoning as PlanVisitModal's own blockedAdvice: a
+                  // §4.1 block has no "Save anyway" to press, and it's styled
+                  // identically to the §4.2 warning right below it, so
+                  // without this it reads as an unexplained dead end. The
+                  // date is the only colliding field this panel can change
+                  // (the visit's place is fixed), so there's nothing to
+                  // branch on the way PlanVisitModal has to.
+                  ? <div className="tiny" style={{ color: 'var(--mauve)' }}>{editError.message} Pick a different date.</div>
                   : <div className="error-banner">{editError.message}</div>
               )}
               {editWarnings?.length > 0 && (
@@ -294,6 +320,10 @@ export default function UpcomingVisitDetailModal({ visit, userId, onClose, onCom
                 </div>
               )}
             </div>
+            {/* Not redundant with the modal's own x (UI_SPEC.md Kind 1),
+                despite the label: this backs out one LEVEL, to the
+                Delete/Edit/Snooze footer, where the x closes the modal
+                outright. Same for the Snooze panel's Cancel below. */}
             <Button variant="secondary" size="small" onClick={() => setEditing(false)} disabled={savingEdit}>Cancel</Button>
             <Button size="small" disabled={savingEdit || !editDate} onClick={() => doEdit({ force: !!editWarnings })}>
               {savingEdit ? 'Saving…' : editWarnings ? 'Save anyway' : 'Save'}

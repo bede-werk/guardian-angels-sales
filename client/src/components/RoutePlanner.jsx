@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS } from '../api';
+import { api, formatDate, crossRepFloorWarningText, manualPlanNote, VISIT_TYPE_LABELS } from '../api';
 import { useTunables } from '../hooks/useTunables';
 import { getCurrentPosition } from '../geolocation';
-import { TierChip, CategoryChip } from './ui/Chip';
+import { CapacityChip, CategoryChip } from './ui/Chip';
 import Button from './ui/Button';
 import PlacePicker from './ui/PlacePicker';
 import AddressAutocomplete from './ui/AddressAutocomplete';
@@ -10,6 +10,8 @@ import Calendar from './ui/Calendar';
 import EmptyState from './ui/EmptyState';
 import PlaceDetail from './PlaceDetail';
 import PlannedDayModal from './PlannedDayModal';
+import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
+import VisitLogModal from './VisitLogModal';
 import InlineDropdown from './ui/InlineDropdown';
 
 // The per-day budget picker shows hours + minutes as two selects, but the
@@ -19,6 +21,22 @@ import InlineDropdown from './ui/InlineDropdown';
 // the server's `hoursPerDay > 0` validation.
 const HOUR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const MINUTE_OPTIONS = [0, 15, 30, 45];
+
+// A PLANNED row carries neither the drag handle nor the order number a
+// PROPOSED row below it does, so its text starts ~74px further left. Matching
+// that full offset put the name too far in to read as part of the same card
+// (Bede, 2026-08-25), so it clears only the drag-handle column: .reorder
+// (24px) + .stop's 12px gap. The name then lines up with the order badges
+// under it rather than with their place names. Applied only when there IS a
+// proposed list below - on a day with nothing but planned visits there's no
+// handle column to clear and the indent would just be dead space.
+const PLANNED_ROW_INDENT = 36;
+
+// api.js's manualPlanNote returns its phrase lowercase; here it follows a
+// ' · ' break where a capital reads better. Same one-liner PlannedDayModal
+// and Settings keep locally rather than any of them exporting a generic
+// string util.
+const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 // The three planning bounds this screen respects (how many dates you may
 // pick, the starting hours budget, and how far ahead you may plan) are
 // tunable on the Settings page, so they're read from the server via
@@ -69,7 +87,13 @@ function addStopErrorMessage(err, viewerId) {
 // can genuinely carry more than one true conflict at once (e.g. both
 // FLOOR_COMPLETED and DRAFT_ELSEWHERE), but stacking every applicable one
 // reads as pile-on for what's really one "this place is spoken for" signal.
-const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+// DO_NOT_VISIT is not a conflictDetection.js type - it's the place's own
+// flag, attached to the same array by scheduleDraft.js's stopFindings. Ranked
+// below SAME_DATE_VISIT (a recorded fact about this exact date) and above the
+// rest, matching the WARNING_PRIORITY PlanVisitModal.jsx/
+// UpcomingVisitDetailModal.jsx already use: a flag a rep set by hand outranks
+// another rep's draft entry, which outranks a floor recency guess.
+const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DO_NOT_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
 function primaryConflict(conflicts) {
   for (const type of CONFLICT_PRIORITY) {
     const found = conflicts.find((c) => c.type === type);
@@ -80,12 +104,24 @@ function primaryConflict(conflicts) {
 
 function stopConflictMessage(c, viewerId) {
   switch (c.type) {
+    // Reachable ONLY via addStopErrorMessage's 409, never from the stop badge
+    // below: a stop carrying this conflict is partitioned out of the day
+    // entirely on the way in (services/scheduleDraft.js's
+    // partitionSameDateDrops) and reported as a droppedCollision instead, so
+    // primaryConflict never sees one. Kept, not deleted - the add-time 409 is
+    // a real caller, and it's the same sentence for the same fact.
     case 'SAME_DATE_VISIT': {
       const isViewer = viewerId != null && c.otherUserId === viewerId;
       const who = isViewer ? 'You' : c.otherUserName || 'Someone else';
       const verb = isViewer ? 'have' : 'has';
       return `${who} already ${verb} a ${c.status || 'planned'} visit here on ${formatDate(c.otherDate)}.`;
     }
+    // Terse, like every other badge here ("In Sarah's draft for 8/28.") -
+    // this row already names the place, so the sentence doesn't repeat it.
+    // The until-date isn't shown: it's on the place's own page, and the only
+    // thing this row has to answer is whether to keep the stop.
+    case 'DO_NOT_VISIT':
+      return 'Marked do-not-visit.';
     case 'FLOOR_COMPLETED': {
       // daysApart is measured against THIS STOP's own target date, not
       // real-world today (see conflictDetection.js's detectConflicts:
@@ -104,6 +140,22 @@ function stopConflictMessage(c, viewerId) {
       return null;
   }
 }
+// One line for a stop services/scheduleDraft.js's partitionSameDateDrops
+// took out of this day (`day.droppedCollisions`). Deliberately NOT
+// stopConflictMessage above, even though the underlying Conflict is the same
+// SAME_DATE_VISIT: that one ends in "on <date>", which is the day this card
+// is already headed by, so it reads as noise here - and it says "here",
+// which only works next to a stop row that names the place itself. Same
+// "You" vs a name handling though, for the same reason: a rep's own visit
+// taking the slot is exactly as worth naming as another rep's.
+function droppedStopMessage(d, viewerId) {
+  const c = d.conflict || {};
+  const isViewer = viewerId != null && c.otherUserId === viewerId;
+  const who = isViewer ? 'You' : c.otherUserName || 'Someone else';
+  const verb = isViewer ? 'have' : 'has';
+  return `${d.place_name} was dropped - ${who} already ${verb} a ${c.status || 'planned'} visit there.`;
+}
+
 // Place Commitments badge text (spec §6.1) - `stop.commitment`/`s.commitment`,
 // attached server-side by services/scheduleDraft.js's commitmentBadge. The
 // promise itself, not just a flag: who it was for (when known), the date,
@@ -208,6 +260,11 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   // have several days' cards scrolled well out of view.
   const [addError, setAddError] = useState(null);
   const [viewingPlaceId, setViewingPlaceId] = useState(null); // stop whose full PlaceDetail is open, if any
+  // A PLANNED row is a real visit, not a proposal, so clicking it opens that
+  // visit rather than its place - the same row-click/"View place"-button
+  // split PlannedDayModal already uses on the Calendar (see its header).
+  const [viewingVisit, setViewingVisit] = useState(null); // planned visit open in UpcomingVisitDetailModal, or null
+  const [loggingVisit, setLoggingVisit] = useState(null); // planned visit open in VisitLogModal for completing, or null
 
   // Place Commitments badge actions (spec §6.2) - reschedule/waive, reachable
   // straight from the badge instead of only from PlaceDetail's own fuller
@@ -312,6 +369,12 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
   const budgetMinutes = day.totalMinutes + day.remainingMinutes;
   const usedPct = budgetMinutes > 0 ? Math.min(100, Math.round((day.totalMinutes / budgetMinutes) * 100)) : 0;
 
+  // Defaulted rather than read straight off `day`: persistReorder below hands
+  // onDayUpdated a locally-spread `{ ...day, stops }` for its optimistic
+  // redraw, and the whole-draft load() path predates this field, so a day
+  // object can legitimately reach here without it.
+  const droppedCollisions = day.droppedCollisions || [];
+
   // Optimistically shows the new order right away (stale running totals until
   // the server responds, since those depend on real drive time between
   // stops). Rolls back via a full reload if the server rejects it.
@@ -356,6 +419,24 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
       onError(e.message);
     } finally {
       setPendingPlaceId(null);
+    }
+  }
+
+  // Deletes ONE already-planned visit off this day (the PLANNED list), as
+  // opposed to removeStop above, which drops a still-proposed stop out of the
+  // draft. Same confirm+delete shape as PlannedDayModal's own removeVisit;
+  // reload() rather than onDayUpdated, since this changes a real `visits` row
+  // and so the day's committed segment - which the budget/drive-time maths for
+  // every proposed stop below is evaluated against (see scheduleDraft.js's
+  // evaluateDay), not just this one row.
+  async function removeVisit(visit) {
+    if (!window.confirm("Delete this planned visit? This can't be undone.")) return;
+    try {
+      await api.deleteVisit(visit.visit_id ?? visit.id);
+      setViewingVisit(null);
+      reload();
+    } catch (e) {
+      onError(e.message);
     }
   }
 
@@ -538,10 +619,8 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
               </>
             )}
           </span>
-          {day.overBudget && <span className="badge attention" style={{ marginLeft: 8 }}>Over budget</span>}
         </h2>
         <div className="row" style={{ flex: 'unset', alignItems: 'center', gap: 8 }}>
-          {day.committed.length > 0 && <span className="badge committed" style={{ flex: 'none', minWidth: 0 }}>✓ {day.committed.length} planned</span>}
           {everEdited && day.stops.length >= 2 && (
             <Button
               size="small"
@@ -557,7 +636,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
             size="small"
             variant="danger"
             onClick={discardThisDay}
-            disabled={busy || day.stops.length === 0}
+            disabled={busy || (day.stops.length === 0 && droppedCollisions.length === 0)}
             title="Remove this day's still-open proposal (anything already accepted for this day is untouched)"
             style={{ flex: 'none', minWidth: 0 }}
           >
@@ -583,38 +662,113 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
           </div>
         </div>
 
+        {/* Stops this day's read just removed, because a real visit has since
+            landed on the same place+date (services/scheduleDraft.js's
+            partitionSameDateDrops). Sits directly under the stop count and
+            time budget on purpose: those are the numbers the drop just
+            changed, and without this a day quietly reads as shorter - or
+            empty - with nothing saying why. Recomputed on every read rather
+            than fired once, same as the per-stop conflict badges below: the
+            underlying draft row is still there, so this stays true until the
+            day is committed or discarded. */}
+        {droppedCollisions.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
+            {droppedCollisions.map((d) => (
+              <div
+                key={d.place_id}
+                className="tiny"
+                style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', alignSelf: 'flex-start', fontWeight: 600 }}
+              >
+                {droppedStopMessage(d, userId)}
+              </div>
+            ))}
+          </div>
+        )}
+
         {day.committed.length > 0 && (
-          <div style={{ marginBottom: day.stops.length > 0 ? 16 : 0 }}>
+          /* Hairline between the two lists when both are present. They read
+             as one continuous run of rows otherwise - same row style, only
+             the small uppercase headers telling them apart - and they're
+             different kinds of thing: real visits above, a still-editable
+             proposal below. */
+          <div
+            style={{
+              marginBottom: day.stops.length > 0 ? 16 : 0,
+              paddingBottom: day.stops.length > 0 ? 16 : 0,
+              borderBottom: day.stops.length > 0 ? '1px solid var(--border)' : 'none',
+            }}
+          >
             <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', marginBottom: 4 }}>
               Planned
             </div>
             <ul className="list">
               {day.committed.map((v) => (
-                <li key={v.visit_id} className="stop" style={{ alignItems: 'center' }}>
+                <li
+                  key={v.visit_id}
+                  /* Unlike a proposed stop (a place that isn't a visit yet),
+                     this row IS a real planned visit, so the row click opens
+                     the visit and a separate "View place" button is the way
+                     into PlaceDetail - the same split PlannedDayModal uses
+                     on the Calendar, deliberately the inverse of the
+                     proposed rows below. */
+                  className="stop hover-row"
+                  style={{ alignItems: 'center', paddingLeft: day.stops.length > 0 ? PLANNED_ROW_INDENT : 0 }}
+                  title="View this visit's details"
+                  onClick={() => setViewingVisit(v)}
+                >
                   <div className="main">
-                    <div className="name">{v.place_name}</div>
+                    {/* Same head as a proposed stop below - name and its two
+                        chips on one line, address underneath - so the two
+                        lists read as one kind of row rather than two. */}
+                    <div className="tag-list" style={{ alignItems: 'center' }}>
+                      <div className="name">{v.place_name}</div>
+                      {v.category && <CategoryChip category={v.category} />}
+                      {v.capacity_level && <CapacityChip level={v.capacity_level} />}
+                    </div>
                     <div className="meta">
                       {v.address ? `${v.address}, ` : ''}{v.city} {v.zip}
                     </div>
-                    <div className="tag-list" style={{ marginTop: 6 }}>
-                      {v.category && <CategoryChip category={v.category} />}
-                      {v.tier && <TierChip tier={v.tier} />}
-                      <span className="tiny muted">{VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}</span>
-                      {/* Manual Visit Planning spec §5/§7.3 - marker(s) only
+                    <div className="tiny muted" style={{ marginTop: 4 }}>
+                      {VISIT_TYPE_LABELS[v.visit_type] || 'Visit'}
+                      {/* Manual Visit Planning spec §5/§7.3 - one marker, only
                           on a manually-planned row; a normal
-                          planner-committed stop shows nothing extra here. */}
-                      {v.planned_manually === 1 && (
+                          planner-committed stop shows nothing extra here.
+                          Who planned it is part of the same phrase rather
+                          than a second chip beside it - see api.js's
+                          manualPlanNote, which also owns the when-to-name-them
+                          rule this used to get wrong. Rendered as the same
+                          blue phrase after a ' · ' that PlannedDayModal uses
+                          on the Calendar, so the fact looks identical
+                          wherever a rep meets it. */}
+                      {manualPlanNote(v) && (
                         <>
-                          <span className="tiny muted">manually planned</span>
-                          {v.created_by_user_id != null && v.created_by_user_id !== userId && (
-                            <span className="tiny muted">planned by {v.created_by_name || 'another rep'}</span>
-                          )}
+                          {' · '}
+                          <span style={{ color: 'var(--blue-dark)', fontWeight: 600 }}>
+                            {capitalize(manualPlanNote(v))}
+                          </span>
                         </>
                       )}
                     </div>
                   </div>
-                  <div className="tiny muted" style={{ whiteSpace: 'nowrap', color: 'var(--teal-dark)', fontWeight: 600 }}>
-                    ✓ Planned
+                  <div className="actions" style={{ alignItems: 'center', gap: 12, flexWrap: 'nowrap', marginRight: 12 }}>
+                    {/* stopPropagation: the row's own click opens the VISIT,
+                        and this button is the one thing on it that shouldn't.
+                        Guarded on place_id - a visit whose place was detached
+                        keeps only the place_name snapshot (see
+                        scheduleDraft.js's committedVisitsQuery) and has no
+                        detail to open; same guard PlannedDayModal's own
+                        "View place" carries. */}
+                    {v.place_id && (
+                      <Button
+                        variant="secondary"
+                        size="small"
+                        title="View this place's details"
+                        onClick={(e) => { e.stopPropagation(); setViewingPlaceId(v.place_id); }}
+                        style={{ flex: 'none', minWidth: 0 }}
+                      >
+                        View place
+                      </Button>
+                    )}
                   </div>
                 </li>
               ))}
@@ -648,29 +802,33 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
               return (
                 <li
                   key={stop.place_id}
-                  className={`stop ${stop.overBudget || stop.alreadyVisitedToday ? 'attention-flag' : ''} ${overIndex === i ? 'drag-over' : ''} ${dragIndex === i ? 'dragging' : ''}`}
+                  className={`stop hover-row ${stop.overBudget || stop.alreadyVisitedToday ? 'attention-flag' : ''} ${overIndex === i ? 'drag-over' : ''} ${dragIndex === i ? 'dragging' : ''}`}
                   draggable={!rowBusy}
                   onDragStart={() => { dragIndexRef.current = i; setDragIndex(i); }}
                   onDragOver={(e) => { e.preventDefault(); setOverIndex(i); }}
                   onDragLeave={() => setOverIndex((o) => (o === i ? null : o))}
                   onDrop={() => onDrop(i)}
                   onDragEnd={() => { dragIndexRef.current = null; setDragIndex(null); setOverIndex(null); }}
+                  title="View place details"
+                  onClick={() => setViewingPlaceId(stop.place_id)}
                 >
-                  <div className="reorder">
+                  {/* The reorder controls, the visit-type <select> and the
+                      remove button all sit INSIDE the row's own click target
+                      now, so each stops propagation - nudging a stop up a
+                      slot or picking a visit type shouldn't also open the
+                      place. Same rule the commitment badge's action buttons
+                      below already follow. */}
+                  <div className="reorder" onClick={(e) => e.stopPropagation()}>
                     <span className="drag-handle" title="Drag to reorder">⠿</span>
                     <button onClick={() => move(i, -1)} disabled={rowBusy || i === 0} title="Move up">▲</button>
                     <button onClick={() => move(i, 1)} disabled={rowBusy || i === day.stops.length - 1} title="Move down">▼</button>
                   </div>
                   <div className="order">{i + 1}</div>
-                  <div
-                    className="main hover-row"
-                    title="View place details"
-                    onClick={() => setViewingPlaceId(stop.place_id)}
-                  >
+                  <div className="main">
                     <div className="tag-list" style={{ alignItems: 'center' }}>
                       <div className="name">{stop.place_name}</div>
                       <CategoryChip category={stop.category} />
-                      <TierChip tier={stop.tier} />
+                      <CapacityChip level={stop.capacity_level} />
                     </div>
                     <div className="meta">
                       {stop.address ? `${stop.address}, ` : ''}{stop.city} {stop.zip}
@@ -722,11 +880,16 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         was added. Another rep can commit a colliding visit at
                         any point after that, and this is what catches it: a
                         stop sitting in a Thursday draft that someone else's
-                        Tuesday commit has since invalidated. Informational -
-                        addStop allows a floor conflict through; only a same-
-                        date/other-draft collision is rejected outright, at
-                        add time, before it can ever reach here. A stop can
-                        genuinely carry more than one true conflict at once -
+                        Tuesday commit has since invalidated. Everything that
+                        reaches here is informational: addStop rejects only a
+                        SAME_DATE_VISIT, and a stop that acquires one LATER is
+                        pulled out of the day by partitionSameDateDrops and
+                        reported as a droppedCollision above instead - so that
+                        one type never renders through this badge at all (see
+                        stopConflictMessage's own note on its arm). A floor
+                        conflict, another rep's draft entry and a do-not-visit
+                        mark are all allowed through by design. A stop can
+                        genuinely carry more than one true finding at once -
                         primaryConflict picks the single most-certain one to
                         show, same "one line, not a pile-on" rule as
                         VisitLogModal.jsx/PlanVisitModal.jsx's own notices. */}
@@ -742,8 +905,8 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         is exactly why this place jumped to the top of the
                         proposal, so the badge is what explains the ranking,
                         not just decorates it. stopPropagation throughout:
-                        the whole "main" block's own onClick opens
-                        PlaceDetail, and none of these clicks should. */}
+                        the whole row's own onClick opens PlaceDetail, and
+                        none of these clicks should. */}
                     {stop.commitment && (
                       <div style={{ marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
                         <div
@@ -825,7 +988,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                       ~{formatMinutes(stop.blockMinutes)}
                       {stop.overBudget && <div style={{ color: 'var(--mauve)', fontWeight: 600 }}>Over budget</div>}
                     </div>
-                    <Button variant="danger" size="small" onClick={() => removeStop(stop)} disabled={rowBusy} title="Remove from this day">✕</Button>
+                    <Button variant="danger" size="small" onClick={(e) => { e.stopPropagation(); removeStop(stop); }} disabled={rowBusy} title="Remove from this day">✕</Button>
                   </div>
                 </li>
               );
@@ -925,6 +1088,36 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
           onClose={() => setViewingPlaceId(null)}
           onChanged={reload}
           onDeleted={reload}
+        />
+      )}
+
+      {/* A PLANNED row's own modal - the same one PlaceDetail's "Upcoming
+          visits" card and PlannedDayModal open, so Edit/Snooze/Delete/
+          Complete behave identically wherever a rep reaches a planned visit
+          from. "Complete Visit" hands off to VisitLogModal below; every
+          outcome reload()s the whole draft rather than patching this day in
+          place, since completing/snoozing/deleting/re-dating a committed
+          visit changes the day's committed segment, which is what the
+          budget and drive time of every proposed stop under it are
+          evaluated against (scheduleDraft.js's evaluateDay). */}
+      {viewingVisit && (
+        <UpcomingVisitDetailModal
+          visit={viewingVisit}
+          userId={userId}
+          onClose={() => setViewingVisit(null)}
+          onComplete={(v) => { setViewingVisit(null); setLoggingVisit(v); }}
+          onSnoozed={() => { setViewingVisit(null); reload(); }}
+          onDelete={removeVisit}
+          onEdited={() => { setViewingVisit(null); reload(); }}
+        />
+      )}
+
+      {loggingVisit && (
+        <VisitLogModal
+          visit={loggingVisit}
+          userId={userId}
+          onClose={() => setLoggingVisit(null)}
+          onSaved={reload}
         />
       )}
     </div>

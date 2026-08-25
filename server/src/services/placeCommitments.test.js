@@ -53,8 +53,8 @@ describe('placeCommitments', () => {
 
     await db('users').insert({ id: 1, name: 'Test Rep', email: 'rep@test.local' });
     await db('places').insert([
-      { id: 1, name: 'Place One', category: 'Hospice', tier: 1, priority_score: 75 },
-      { id: 2, name: 'Place Two', category: 'Hospice', tier: 1, priority_score: 75 },
+      { id: 1, name: 'Place One', category: 'Hospice' },
+      { id: 2, name: 'Place Two', category: 'Hospice' },
     ]);
     await db('people').insert({ id: 1, place_id: 1, name: 'Sharon Klein' });
   });

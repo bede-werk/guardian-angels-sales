@@ -171,7 +171,7 @@ export default function VisitDetailModal({ visit, onClose, onEdit, onDelete, onC
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{trip.scheduled_date ? formatDate(trip.scheduled_date) : 'unscheduled'} · Visit</h2>
+          <h2>Visit · {trip.scheduled_date ? formatDate(trip.scheduled_date) : 'Unscheduled'}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">

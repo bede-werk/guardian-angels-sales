@@ -41,7 +41,7 @@ export default function ChangePassword({ onClose }) {
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={requestClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
         <div className="modal-head">
-          <h2>Change password</h2>
+          <h2>Change Password</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">

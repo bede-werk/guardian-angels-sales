@@ -33,13 +33,18 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // refetch, unlike VisitDetailModal's GET /api/visits/:id.
 const STATUS_TITLES = { skipped: 'Skipped Visit', snoozed: 'Snoozed Visit' };
 
-export default function ResolvedVisitDetailModal({ visit, onClose, onComplete }) {
+// Delete is skipped-only: a snoozed row is the audit trail for an active
+// place.snooze_until suppression (see this file's header comment), so
+// letting it be deleted here would leave that suppression with no visible
+// record of why the place is off-limits. A skipped row is just a passive
+// lapse with no such side effect - safe to clear outright.
+export default function ResolvedVisitDetailModal({ visit, onClose, onComplete, onDelete }) {
   const { closing, requestClose } = useClosingTransition(onClose);
   return (
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{formatDate(visit.scheduled_date)} · {STATUS_TITLES[visit.status] || 'Visit'}</h2>
+          <h2>{STATUS_TITLES[visit.status] || 'Visit'} · {formatDate(visit.scheduled_date)}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">
@@ -60,6 +65,16 @@ export default function ResolvedVisitDetailModal({ visit, onClose, onComplete })
           )}
         </div>
         <div className="modal-foot">
+          {onDelete && visit.status === 'skipped' && (
+            <Button
+              variant="danger"
+              style={{ marginRight: 'auto' }}
+              title="Delete this skipped visit"
+              onClick={() => onDelete(visit)}
+            >
+              Delete
+            </Button>
+          )}
           {onComplete && (
             <Button title="Log what happened and mark this visit completed" onClick={() => onComplete(visit)}>
               Log this visit

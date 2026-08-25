@@ -5,6 +5,24 @@ import PersonModal from './PersonModal';
 import AssignPersonModal from './AssignPersonModal';
 import useClosingTransition from '../hooks/useClosingTransition';
 
+// The only two things that can honestly have happened on a trip where the rep
+// met no one: nothing, or materials got left with nobody to hand them to.
+// Every other entry in OUTCOME_LABELS presupposes talking to someone, which is
+// why 'nobody' gets its own two-option picker instead of the full dropdown.
+//
+// Both keys are standard OUTCOMES (server/src/routes/visits.js) - the stored
+// values are ordinary ones that every other screen already knows how to
+// render. Only the wording is local: OUTCOME_LABELS.unavailable reads "They
+// were unavailable", which presupposes a "they" the rep never named here.
+const NOBODY_OUTCOME_LABELS = {
+  unavailable: 'No one was available',
+  materials_only: 'Left materials only',
+};
+const NOBODY_OUTCOMES = Object.keys(NOBODY_OUTCOME_LABELS);
+// Not meeting anyone doesn't mean materials got left (Bede, 2026-08-25), so
+// the no-contact answer is the default and the drop-off is the deliberate pick.
+const NOBODY_DEFAULT_OUTCOME = 'unavailable';
+
 // Per-type message templates (collision spec §3.1) for the structured
 // conflicts the server's pre-save check returns (see
 // server/src/services/conflictDetection.js's Conflict shape). SAME_DATE_VISIT
@@ -14,6 +32,12 @@ function conflictMessage(conflict, sameDateFallback) {
   switch (conflict.type) {
     case 'SAME_DATE_VISIT':
       return sameDateFallback;
+    // Not a detector finding - the place's own do_not_visit flag, pushed onto
+    // the same array by the route (services/doNotVisit.js). Word-for-word the
+    // sentence PlanVisitModal.jsx already shows for it, minus its "Plan
+    // anyway?" - the button below this notice already reads "Save anyway".
+    case 'DO_NOT_VISIT':
+      return 'This place is marked do-not-visit.';
     case 'FLOOR_COMPLETED': {
       // daysApart is measured against THIS visit's own date, not real-world
       // today (see conflictDetection.js's detectConflicts: `today` is
@@ -40,7 +64,11 @@ function conflictMessage(conflict, sameDateFallback) {
 // multiple qualifying visits down to one). Showing every applicable conflict
 // used to read as pile-on for what's really one "this place is spoken for"
 // signal - one line, the most certain one, is enough to act on.
-const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+// DO_NOT_VISIT sits below SAME_DATE_VISIT and above the rest, same relative
+// order PlanVisitModal.jsx/UpcomingVisitDetailModal.jsx's WARNING_PRIORITY and
+// RoutePlanner.jsx's CONFLICT_PRIORITY use: a flag a rep set by hand outranks
+// another rep's draft entry, which outranks a floor recency guess.
+const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DO_NOT_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
 function primaryConflict(conflicts) {
   for (const type of CONFLICT_PRIORITY) {
     const found = conflicts.find((c) => c.type === type);
@@ -272,14 +300,25 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     });
   }
 
-  // Meeting nobody can't produce a "substantive conversation" or any of the
-  // other outcomes that presuppose talking to someone - the only thing that
-  // actually happened is materials got left (or not even that, but that's
-  // the closest true answer on offer). Locked rather than left as a normal
-  // pick, so the dropdown itself is removed for this encounter below.
+  // Seeds the nobody encounter's answer so its picker is never blank (and
+  // never blocks canSave on an unanswered question the rep can't see yet).
+  //
+  // A DEFAULT, not a lock: this used to force 'materials_only' on every
+  // no-one-there trip, which put a drop-off claim on file even when the rep
+  // found a locked door and left nothing behind (Bede, 2026-08-25). It now
+  // seeds the no-contact answer and leaves the drop-off available as a pick.
+  // Anything already valid for this encounter is left alone - a rep's own
+  // choice, or an existing row's outcome in edit mode - since this re-runs on
+  // every metTypes change, including ones that have nothing to do with
+  // 'nobody'. Only an outcome that can't be true here (a 'substantive
+  // conversation' on a pre-2026-08-25 row, say) gets replaced.
   useEffect(() => {
     if (!metTypes.includes('nobody')) return;
-    setDetails((d) => ({ ...d, 'type:nobody': { outcome: 'materials_only', they_requested: false } }));
+    setDetails((d) => {
+      const current = d['type:nobody'];
+      if (current && NOBODY_OUTCOMES.includes(current.outcome)) return d;
+      return { ...d, 'type:nobody': { outcome: NOBODY_DEFAULT_OUTCOME, they_requested: false } };
+    });
   }, [metTypes]);
 
   // Editing/completing always refetches the trip, because the lists that open
@@ -572,7 +611,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Log Visit - {title}</h2>
+          <h2>Log Visit · {title}</h2>
           <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         {/* Nothing is editable until the trip's own encounters are in hand:
@@ -667,7 +706,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             {metTypes.includes('named_person') && (
               <div>
                 {pickerPeople.length === 0 ? (
-                  <div className="tiny muted">Nobody on file at this place yet - add someone below.</div>
+                  <div className="tiny muted">Nobody on file at this place yet. Add someone below</div>
                 ) : (
                   <>
                     <label className="field">
@@ -715,7 +754,20 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                     <div key={e.key} className="encounter-row">
                       <div className="encounter-name">{e.label}</div>
                       {e.met_with_type === 'nobody' ? (
-                        <div className="tiny muted">{OUTCOME_LABELS.materials_only}</div>
+                        // Two options rather than the full list - see
+                        // NOBODY_OUTCOME_LABELS. No empty "Select what
+                        // happened…" entry either: this one is always seeded,
+                        // so an empty option would only ever be a way to make
+                        // the form unsaveable. The `||` covers the single
+                        // render before the seeding effect has run.
+                        <select
+                          value={detailFor(e.key).outcome || NOBODY_DEFAULT_OUTCOME}
+                          onChange={(ev) => setDetail(e.key, { outcome: ev.target.value })}
+                        >
+                          {Object.entries(NOBODY_OUTCOME_LABELS).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                          ))}
+                        </select>
                       ) : (
                         <select
                           value={detailFor(e.key).outcome}
@@ -769,19 +821,41 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                 created. */}
             <div>
               <label className="field" htmlFor={`${uid}-promise-date`}>Promise a next visit (optional)</label>
-              <div className="tag-list" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                <input id={`${uid}-promise-date`} type="date" value={promiseDate} onChange={(e) => setPromiseDate(e.target.value)} />
-                <select aria-label="Promised to" value={promisePersonId} onChange={(e) => setPromisePersonId(e.target.value)} style={{ width: 160 }}>
-                  <option value="">No specific person</option>
-                  {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+              {/* Two lines, not three controls fighting over one: the date and
+                  who it was promised to are the promise itself, so they share
+                  the first line, and the note gets the whole second one. All
+                  three on one line left the note with room for about three
+                  words (Bede, 2026-08-25). Both lines end flush right - the
+                  select and the note each take whatever's left of their own. */}
+              <div className="stack" style={{ gap: 8 }}>
+                <div className="tag-list">
+                  {/* Narrower than the browser's intrinsic width for a date
+                      input, which is sized for its longest possible content
+                      and leaves a dead gap after M/D/YYYY. */}
+                  <input
+                    id={`${uid}-promise-date`}
+                    type="date"
+                    value={promiseDate}
+                    onChange={(e) => setPromiseDate(e.target.value)}
+                    style={{ width: 150 }}
+                  />
+                  <select
+                    aria-label="Promised to"
+                    value={promisePersonId}
+                    onChange={(e) => setPromisePersonId(e.target.value)}
+                    style={{ flex: 1, minWidth: 160 }}
+                  >
+                    <option value="">No specific person</option>
+                    {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
                 <input
                   type="text"
                   aria-label="Note"
                   placeholder="Note (optional)"
                   value={promiseNote}
                   onChange={(e) => setPromiseNote(e.target.value)}
-                  style={{ flex: 1, minWidth: 120 }}
+                  style={{ width: '100%' }}
                 />
               </div>
             </div>
@@ -824,17 +898,28 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
           </div>
         )}
         {/* Notice sits IN the footer, not stacked above it behind the
-            divider - left of the buttons (marginRight: auto against
-            modal-foot's own justify-content: flex-end, same trick
-            UpcomingVisitDetailModal's Delete button uses to sit apart from
-            its own row), so it reads as "here's why" right next to "here's
-            what you can do about it" rather than as a separate notice a rep
-            has to connect to the buttons below it themselves. flexWrap
-            handles a message too long to fit alongside both buttons on one
-            line. The ref (see the scrollIntoView effect above) still finds
-            it here as the sticky footer never moves off-screen. */}
+            divider - left of the button, so it reads as "here's why" right
+            next to "here's what you can do about it" rather than as a
+            separate notice a rep has to connect to the buttons below it
+            themselves. The ref (see the scrollIntoView effect above) still
+            finds it here as the sticky footer never moves off-screen.
+
+            flex: 1 + minWidth: 0, NOT marginRight: auto (what this used to
+            be, and what UpcomingVisitDetailModal's Delete button still
+            legitimately uses - a short button label never grows enough to
+            matter). This comment used to say flexWrap "handles a message
+            too long to fit alongside both buttons on one line," which
+            undersold what actually happened: flex-wrap picks its line
+            breaks from each item's UNFLEXED content width, so a notice
+            sized to its own text claimed the entire line the moment the
+            text got long, dropping Save onto a line by itself - the very
+            adjacency the rest of this comment is about. A flex-basis of 0
+            (via flex: 1) makes that hypothetical width zero, so the notice
+            never forces the break and instead grows into whatever the
+            button leaves. minWidth: 0 lets it shrink past min-content, so a
+            long word wraps inside the notice rather than overflowing it. */}
         <div className="modal-foot" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          <div ref={noticeRef} style={{ marginRight: 'auto' }}>
+          <div ref={noticeRef} style={{ flex: 1, minWidth: 0 }}>
             {error && <div className="error-banner">{error}</div>}
             {conflicts.length > 0 && (
               <div className="tiny" style={{ color: 'var(--mauve)' }}>

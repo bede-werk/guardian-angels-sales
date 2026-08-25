@@ -26,6 +26,16 @@ const FALLBACKS = {
   'planning.MAX_DAYS_AHEAD': 7,
   'relationship.RELATIONSHIP_THRESHOLDS.strong': 3.4,
   'relationship.RELATIONSHIP_THRESHOLDS.medium': 1.4,
+  // The capacity rating choices and the thresholds they're measured against.
+  // The rating screen renders which bucket each choice lands in from these
+  // two together, so a wrong fallback here would briefly show a choice in the
+  // wrong bucket - keep them equal to server config/scheduling.js.
+  'scheduling.CAPACITY_SEED_VALUES.major': 15,
+  'scheduling.CAPACITY_SEED_VALUES.strong': 13,
+  'scheduling.CAPACITY_SEED_VALUES.steady': 7,
+  'scheduling.CAPACITY_SEED_VALUES.occasional': 1,
+  'scheduling.CAPACITY_THRESHOLDS.MEDIUM_MIN': 4,
+  'scheduling.CAPACITY_THRESHOLDS.HIGH_MIN': 11,
 };
 
 let cache = null; // the last fetched values, or null if not fetched yet

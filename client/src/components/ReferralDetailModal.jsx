@@ -13,7 +13,7 @@ export default function ReferralDetailModal({ referral, onClose, onEdit, onDelet
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Referral - {referral.referral_date ? formatDate(referral.referral_date) : 'no date'}</h2>
+          <h2>Referral · {referral.referral_date ? formatDate(referral.referral_date) : 'No Date'}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">

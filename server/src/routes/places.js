@@ -3,7 +3,7 @@
 // options, and a single place's full detail (visits + people).
 const express = require('express');
 const knex = require('../db/knex');
-const { priorityLabel, priorityScore, regionForPlace } = require('../services/priority');
+const { regionForPlace } = require('../services/priority');
 const { geocodeAddress } = require('../services/geocoding');
 const { validatePhone } = require('../services/phone');
 const { referralMetricsByPersonId, referralMetricsByPlaceId, metricsFor, EMPTY_METRICS } = require('../services/referralMetrics');
@@ -11,7 +11,7 @@ const { compareDatesAsc } = require('../services/sortHelpers');
 const { computeRelationshipForPlaces, relationshipFor, LEVELS: RELATIONSHIP_LEVELS } = require('../services/relationship');
 const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
-const { computeCapacityForPlace, stampExplorationEligibility, latestObservationsByPlace } = require('../services/capacity');
+const { computeCapacityForPlace, computeCapacityForPlaces, stampExplorationEligibility, latestObservationsByPlace } = require('../services/capacity');
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware } = require('../services/visitLifecycle');
 const { createCommitment, rescheduleCommitment, waiveCommitment, deleteCommitment, attachCommitmentsMade } = require('../services/placeCommitments');
@@ -30,7 +30,7 @@ router.use(skipSweepMiddleware(knex));
 // referral_metrics attached) place list per the `sort` query param. Pure (no
 // knex) - takes/returns plain arrays, same shape/convention as
 // people.js's sortPeople. The default case returns `rows` unchanged,
-// preserving the SQL query's own `priority_score desc, name asc` order, so
+// preserving the SQL query's own `capacity_seed desc, name asc` order, so
 // "no sort picked" behaves exactly as it always has.
 function sortPlaces(rows, sort) {
   switch (sort) {
@@ -65,12 +65,22 @@ async function categoryError(category) {
   return null;
 }
 
-// tier is always 1, 2, or 3 - empty/null is allowed on PATCH (no change), but
-// anything provided must be one of the three valid numbers.
-function tierError(tier) {
-  if (tier === undefined || tier === null || tier === '') return null;
-  const n = Number(tier);
-  if (!Number.isInteger(n) || n < 1 || n > 3) return 'tier must be 1, 2, or 3';
+// The human capacity rating, in referrals/month (see migration
+// 20260823000000). Validated against the CURRENT set of rating choices rather
+// than a hardcoded list, since those four numbers are Settings-editable - read
+// at call time, never destructured at require time, or an override is silently
+// ignored (SETTINGS_PAGE.md's one rule).
+//
+// null/'' is meaningful and allowed: it clears the rating back to "no read
+// given," which drops the place to the category guess exactly as it behaved
+// before this rung existed.
+function capacitySeedError(seed) {
+  if (seed === undefined || seed === null || seed === '') return null;
+  const n = Number(seed);
+  const allowed = Object.values(schedulingConfig.CAPACITY_SEED_VALUES);
+  if (!Number.isInteger(n) || !allowed.includes(n)) {
+    return `capacity_seed must be one of the rating choices (${allowed.join(', ')})`;
+  }
   return null;
 }
 
@@ -83,16 +93,15 @@ function doNotVisitUntilError(v) {
 }
 
 // Fields a client is allowed to set on an existing place via PATCH. (POST
-// below has its own inline handling since it also derives priority_score/region.)
+// below has its own inline handling since it also derives region and stamps
+// capacity_seeded_at/exploration_eligible_since.)
 //
-// capacity_monthly_referrals/capacity_status are DELIBERATELY absent -
-// capacity-computation-spec.md §5: "stop writing immediately, keep reading
-// during verification" (the columns stay for now, since schedulingEngine.js
-// hasn't been swapped over to the computed value yet - see the spec's build
-// order step 6, not done here). Setting a place's declared capacity now
-// happens via POST /:id/capacity-observations below, which appends to
-// capacity_observations instead of overwriting a column - see that route's
-// own comment for why an append-only log replaced a single frozen number.
+// Setting a place's declared capacity happens via POST
+// /:id/capacity-observations below, which APPENDS to capacity_observations -
+// see that route's own comment for why an append-only log replaced a single
+// frozen number. (capacity_monthly_referrals/capacity_status used to be
+// called out as deliberately absent from this list; both columns were dropped
+// in 20260825000000, so there is nothing left to exclude.)
 // do_not_visit was previously a schema field with no write path anywhere in
 // the app (only ever read, by schedulingEngine.js's eligibility() guard) -
 // added here now because capacity-computation-spec.md §4/§11 gives it its
@@ -105,7 +114,18 @@ function doNotVisitUntilError(v) {
 // the pair together (see PlaceDetail.jsx's setDoNotVisit/liftDoNotVisit), so
 // a stale until date left over from a lapsed mark can never silently limit
 // a fresh one.
-const EDITABLE = ['name', 'category', 'tier', 'is_priority', 'address', 'city', 'state', 'zip', 'phone', 'notes', 'do_not_visit', 'do_not_visit_until'];
+//
+// tier/is_priority were REMOVED from this list 2026-08-23, replaced by
+// capacity_seed - the same judgment, in the unit it was always really
+// expressing (referrals/month), now feeding the capacity axis instead of a
+// tie-break. Both columns were dropped outright in 20260825000000. See
+// services/priority.js's header for the full reasoning.
+//
+// is_all_star (2026-08-24) is a plain boolean passthrough - the soft target in
+// config/scheduling.js's ALL_STAR_TARGET is surfaced to the client as a live
+// count (see /meta/filters below) and warned about there, deliberately NOT
+// enforced here. Bede's call: past the target it warns and lets it through.
+const EDITABLE = ['name', 'category', 'capacity_seed', 'is_all_star', 'address', 'city', 'state', 'zip', 'phone', 'notes', 'do_not_visit', 'do_not_visit_until'];
 
 // relationship_level_override is the manual "I know this one, trust me over
 // the math" escape hatch on the otherwise-computed relationship level (see
@@ -180,22 +200,27 @@ function monthlyReferralsError(v) {
 // or manually from the UI).
 router.post('/', async (req, res, next) => {
   try {
-    const { name, category, tier, is_priority, address, city, state, zip, phone, confirm_address } = req.body;
+    const { name, category, capacity_seed, is_all_star, address, city, state, zip, phone, confirm_address } = req.body;
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
     const phoneError = validatePhone(phone);
     if (phoneError) return res.status(400).json({ error: phoneError });
     const catError = await categoryError(category);
     if (catError) return res.status(400).json({ error: catError });
-    const tErr = tierError(tier);
-    if (tErr) return res.status(400).json({ error: tErr });
-    const t = tier === undefined || tier === null || tier === '' ? 3 : Number(tier);
-    const pri = !!is_priority;
+    const seedErr = capacitySeedError(capacity_seed);
+    if (seedErr) return res.status(400).json({ error: seedErr });
+    // An omitted rating stays NULL rather than defaulting to the lowest
+    // choice: "nobody has rated this yet" and "somebody looked and said it
+    // barely sends anything" are different claims, and only the first should
+    // fall through to the category guess. The old tier field defaulted to 3
+    // here, which is exactly how 147 places came to assert a judgment nobody
+    // had actually made.
+    const rated = !(capacity_seed === undefined || capacity_seed === null || capacity_seed === '');
     const payload = {
       name: String(name).trim(),
       category: category || null,
-      tier: t,
-      is_priority: pri,
-      priority_score: priorityScore(t, pri), // precomputed so list queries can sort on it cheaply
+      capacity_seed: rated ? Number(capacity_seed) : null,
+      capacity_seeded_at: rated ? orgToday() : null,
+      is_all_star: !!is_all_star,
       address: address || null,
       city: city || null,
       state: state || 'NE',
@@ -228,11 +253,12 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// Attach a human-friendly priority label ("Tier 1", "Priority · Tier 1") and
-// coerce is_priority to a real boolean (SQLite stores it as 0/1).
-function decorate(p) {
-  return { ...p, is_priority: !!p.is_priority, priority_label: priorityLabel(p.tier, !!p.is_priority) };
-}
+// (There used to be a `decorate(p)` here. It attached a `priority_label`
+// ("Tier 1", "Priority · Tier 1") that nothing in the client ever read, and
+// coerced places.is_priority from SQLite's 0/1 into a real boolean. Both
+// fields were retired 2026-08-23 - see services/priority.js's header - which
+// left the function spreading its argument and nothing else, so it's gone
+// and its four call sites spread the row directly.)
 
 // GET /api/places - searchable / filterable list with last-visit + contact info.
 // Query params: search, category, tier, region, sort (name [default] |
@@ -241,7 +267,7 @@ function decorate(p) {
 // last_referral_asc).
 router.get('/', async (req, res, next) => {
   try {
-    const { search, category, tier, region, sort } = req.query;
+    const { search, category, capacity, allStar, unrated, region, sort } = req.query;
 
     // Subquery: last *completed* visit per place. A visit that's only planned
     // (on today's route but not yet done) must not count as a real visit.
@@ -284,10 +310,24 @@ router.get('/', async (req, res, next) => {
       });
     }
     if (category) query.where('p.category', category);
-    if (tier) query.where('p.tier', Number(tier));
     if (region) query.where('p.region', region);
+    // The rating-review queue: places still carrying the tier backfill that
+    // nobody has explicitly confirmed. A NULL capacity_seeded_at is the
+    // marker - see the PATCH handler, which stamps it even when a rep
+    // re-confirms the same value.
+    if (unrated === '1') query.whereNull('p.capacity_seeded_at');
+    // Its own param rather than a fourth value on `capacity`: an all-star is
+    // orthogonal to the level, not another level (a low-capacity all-star is
+    // the whole point of the flag). The Places filter bar folds both into one
+    // dropdown for the user - see Places.jsx - but they stay separate here.
+    if (allStar === '1') query.where('p.is_all_star', true);
 
-    query.orderBy('p.priority_score', 'desc').orderBy('p.name', 'asc');
+    // capacity_seed, not priority_score - see services/priority.js's header.
+    // Descending puts the biggest referral sources at the top of the
+    // directory, which is what the old priority_score sort was really for.
+    // NULLs (unrated) sort last under both SQLite and Postgres only if we say
+    // so explicitly, hence the COALESCE rather than a bare orderBy.
+    query.orderByRaw('COALESCE(p.capacity_seed, -1) desc').orderBy('p.name', 'asc');
 
     // Pull each place's earliest-added person to show a name/phone preview in
     // the directory table without requiring a separate request per row.
@@ -316,17 +356,37 @@ router.get('/', async (req, res, next) => {
     // nothing in the directory view renders it.
     const relationshipByPlace = await computeRelationshipForPlaces(knex, ids);
 
+    // Capacity: same bulk-once pattern as relationship above (three queries
+    // regardless of row count), and the same trimmed shape - the list gets
+    // `capacity_level`, the detail route gets the full `capacity` object,
+    // exactly as relationship_level/relationship already split.
+    //
+    // The `capacity` filter below can only be applied HERE, not in SQL: the
+    // level is resolved from an observation log, a measured referral rate and
+    // the rating, so there is no column to put in a WHERE clause.
+    //
+    // `capacity_level` here is the COMPUTED level, not a column - the
+    // places.capacity_level column (the 2026-07-12 keyword seed) was dropped
+    // in 20260825000000, so `...p` no longer carries anything by that name
+    // and this line is its only source. Same shape as relationship_level
+    // just below it.
+    const capacityByPlace = await computeCapacityForPlaces(knex, ids);
+
     let decorated = places.map((p) => {
       const rel = relationshipFor(relationshipByPlace, p.id);
+      const cap = capacityByPlace.get(p.id);
       return {
-        ...decorate(p),
+        ...p,
         visit_count: Number(p.visit_count) || 0,
         person: personByPlace[p.id] || null,
         referral_metrics: metricsFor(metricsByPlace, p.id),
         relationship_level: rel.effective_level,
         relationship_score: rel.score,
+        capacity_level: cap ? cap.level : null,
+        capacity_level_source: cap ? cap.levelSource : null,
       };
     });
+    if (capacity) decorated = decorated.filter((p) => p.capacity_level === capacity);
     decorated = sortPlaces(decorated, sort);
 
     res.json(decorated);
@@ -377,21 +437,107 @@ router.get('/check-duplicate', async (req, res, next) => {
   }
 });
 
+// POST /api/places/rate-capacity - the rating screen's bulk save. Mirrors
+// routes/people.js's /people/seed-relationships exactly: validate everything
+// first, then apply in one transaction, because a half-applied rating pass is
+// worse than none - there'd be no way to tell which half landed.
+//
+// A null/'' seed CLEARS a place's rating (back to the category guess) rather
+// than being rejected, same as the single-place PATCH. Each entry may carry
+// `seed`, `is_all_star`, or both; an absent key leaves that field untouched,
+// so starring a place doesn't silently re-stamp its rating date.
+//
+// Re-runnable by design. Re-rating a place overwrites its value and re-stamps
+// capacity_seeded_at, and re-confirming the SAME value still re-stamps it:
+// the date records that a human looked, and "looked and agreed" is a real
+// answer - it's what moves a place out of the unrated review queue.
+router.post('/rate-capacity', async (req, res, next) => {
+  try {
+    const entries = req.body;
+    if (!Array.isArray(entries)) return res.status(400).json({ error: 'body must be an array of { place_id, seed }' });
+    if (!entries.length) return res.json({ updated: 0 });
+
+    const writes = [];
+    for (const entry of entries) {
+      const placeId = Number(entry?.place_id);
+      if (!Number.isInteger(placeId)) return res.status(400).json({ error: 'each entry needs a numeric place_id' });
+
+      // An entry may carry either field, or both - the rating screen lets a
+      // rep star a place without re-rating it, and vice versa. An ABSENT key
+      // means "leave this one alone", which is why each field is built into
+      // the update object conditionally rather than defaulted.
+      const update = {};
+      if ('seed' in entry) {
+        const seedErr = capacitySeedError(entry.seed);
+        if (seedErr) return res.status(400).json({ error: `place ${placeId}: ${seedErr}` });
+        const clearing = entry.seed === null || entry.seed === undefined || entry.seed === '';
+        update.capacity_seed = clearing ? null : Number(entry.seed);
+        update.capacity_seeded_at = clearing ? null : orgToday();
+      }
+      if ('is_all_star' in entry) update.is_all_star = !!entry.is_all_star;
+
+      if (!Object.keys(update).length) {
+        return res.status(400).json({ error: `place ${placeId}: entry changes nothing - send seed, is_all_star, or both` });
+      }
+      writes.push({ id: placeId, update });
+    }
+
+    const ids = writes.map((w) => w.id);
+    const found = await knex('places').whereIn('id', ids).select('id');
+    if (found.length !== new Set(ids).size) {
+      return res.status(400).json({ error: 'one or more places not found' });
+    }
+
+    await knex.transaction(async (trx) => {
+      for (const w of writes) {
+        await trx('places').where({ id: w.id }).update({ ...w.update, updated_at: trx.fn.now() });
+      }
+    });
+
+    res.json({ updated: writes.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/places/meta/filters - distinct values for the search screen's
 // filter dropdowns (category/region), plus the full canonical category list
 // (allCategories, the categories table - see routes/categories.js) for the
 // create/edit form's picker - deliberately not the same list: `categories`
 // only shows values places actually have today (so an empty filter option
 // never appears), while `allCategories` includes every category on file even
-// one with zero places on it yet. Tiers are always just 1/2/3.
+// one with zero places on it yet.
+//
+// `capacityLevels` replaced `tiers: [1, 2, 3]` on 2026-08-23. It's a fixed
+// list rather than a DISTINCT over the table for the same reason tiers was:
+// the three levels always exist as filter options even if no place currently
+// resolves to one of them. `seedChoices` gives the rating UI its four options
+// and their current values, read at call time so a Settings override is
+// picked up (SETTINGS_PAGE.md's one rule), alongside the thresholds each
+// choice is measured against - that pairing is what lets the rating screen
+// show which bucket a choice lands in instead of hardcoding it.
 router.get('/meta/filters', async (req, res, next) => {
   try {
-    const [categories, allCategories, regions] = await Promise.all([
+    const [categories, allCategories, regions, allStarRow] = await Promise.all([
       knex('places').distinct('category').whereNotNull('category').orderBy('category').pluck('category'),
       knex('categories').orderBy('name').pluck('name'),
       knex('places').distinct('region').whereNotNull('region').orderBy('region').pluck('region'),
+      knex('places').where({ is_all_star: true }).count({ n: '*' }).first(),
     ]);
-    res.json({ categories, allCategories, regions, tiers: [1, 2, 3] });
+    res.json({
+      categories,
+      allCategories,
+      regions,
+      capacityLevels: CAPACITY_LEVELS,
+      seedChoices: schedulingConfig.CAPACITY_SEED_VALUES,
+      capacityThresholds: schedulingConfig.CAPACITY_THRESHOLDS,
+      // The all-star scarcity pair. The count is what keeps this flag from
+      // drifting into meaninglessness the way ⭐ Priority did - it has to be
+      // visible wherever the flag is set, so it ships alongside the target
+      // rather than being something each screen counts for itself.
+      allStarCount: Number(allStarRow.n) || 0,
+      allStarTarget: schedulingConfig.ALL_STAR_TARGET,
+    });
   } catch (err) {
     next(err);
   }
@@ -528,7 +674,7 @@ router.get('/:id', async (req, res, next) => {
       .select('pc.*', 'pe.name as person_name', 'u.name as created_by_name');
 
     res.json({
-      ...decorate(place),
+      ...place,
       visits,
       upcoming_visits: upcomingVisits,
       people: peopleWithMetrics,
@@ -566,8 +712,8 @@ router.patch('/:id', async (req, res, next) => {
     if (phoneError) return res.status(400).json({ error: phoneError });
     const catError = await categoryError(update.category);
     if (catError) return res.status(400).json({ error: catError });
-    const tErr = tierError(update.tier);
-    if (tErr) return res.status(400).json({ error: tErr });
+    const seedErr = capacitySeedError(update.capacity_seed);
+    if (seedErr) return res.status(400).json({ error: seedErr });
     const dnvErr = doNotVisitUntilError(update.do_not_visit_until);
     if (dnvErr) return res.status(400).json({ error: dnvErr });
 
@@ -600,14 +746,21 @@ router.patch('/:id', async (req, res, next) => {
       update.capacity_override_at = clearing ? null : knex.fn.now();
     }
 
-    // Tier/region/priority changes need the same derived fields kept in sync
-    // as at creation time. Store the coerced numeric tier (not the raw body
-    // value) so it can never diverge from the priority_score derived from it.
-    if (update.tier !== undefined || update.is_priority !== undefined) {
-      const t = update.tier !== undefined ? Number(update.tier) : existing.tier;
-      const pri = update.is_priority !== undefined ? !!update.is_priority : !!existing.is_priority;
-      if (update.tier !== undefined) update.tier = t;
-      update.priority_score = priorityScore(t, pri);
+    // Rating the capacity stamps WHEN it was rated, server-side - the client
+    // never sends the date. A NULL capacity_seeded_at is what distinguishes
+    // "backfilled from the old spreadsheet tier, nobody has actually looked"
+    // from "a rep rated this place," which is the queue the rating screen
+    // works through. Store the coerced number, not the raw body value.
+    //
+    // Re-confirming the SAME value still stamps the date: the point of the
+    // review pass is recording that a human looked, and "looked and agreed"
+    // is a real answer. Clearing the rating clears the date with it, so a
+    // place can never claim to have been rated on a day when it holds no
+    // rating.
+    if (update.capacity_seed !== undefined) {
+      const clearing = update.capacity_seed === null || update.capacity_seed === '';
+      update.capacity_seed = clearing ? null : Number(update.capacity_seed);
+      update.capacity_seeded_at = clearing ? null : orgToday();
     }
     if (update.city !== undefined || update.zip !== undefined) {
       update.region = regionForPlace({
@@ -639,7 +792,7 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     await knex('places').where({ id }).update(update);
-    res.json(decorate(await knex('places').where({ id }).first()));
+    res.json(await knex('places').where({ id }).first());
   } catch (err) {
     next(err);
   }
@@ -849,7 +1002,7 @@ router.delete('/:id/snooze', async (req, res, next) => {
     const place = await knex('places').where({ id }).first();
     if (!place) return res.status(404).json({ error: 'Place not found' });
     await knex('places').where({ id }).update({ snooze_until: null });
-    res.json(decorate(await knex('places').where({ id }).first()));
+    res.json(await knex('places').where({ id }).first());
   } catch (err) {
     next(err);
   }

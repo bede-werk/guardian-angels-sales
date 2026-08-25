@@ -456,7 +456,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
       {plannedRouteView && !isPlannedViewMine && (
         <PlannedDayModal
           date={plannedRouteView.date}
-          title={`${plannedRouteView.group.repName || 'Unknown rep'}'s Planned Route`}
+          repName={plannedRouteView.group.repName || 'Unknown Rep'}
           visits={plannedRouteView.group.visits}
           readOnly
           onClose={() => setPlannedRouteView(null)}
@@ -560,6 +560,7 @@ export default function VisitsCalendar({ userId, onNavigateToPlanner, scope, onS
           visit={viewingResolvedVisit}
           onClose={() => setViewingResolvedVisit(null)}
           onComplete={(v) => { setViewingResolvedVisit(null); setEditingVisit(v); }}
+          onDelete={(v) => { setViewingResolvedVisit(null); removeVisit(v); }}
         />
       )}
     </div>
