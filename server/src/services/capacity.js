@@ -253,6 +253,13 @@ async function latestObservationsByPlace(knex, placeIds, asOf) {
 // property of the BUILDING, not the contact (spec §14), so a referral a
 // place's building generated should stay attributed to that building even
 // after whichever staff member logged it moves on.
+//
+// Corollary: a referral logged by a person who had NO place at the time
+// carries a null snapshot, so it credits no building here - ever, even once
+// that person is assigned somewhere. Correct for a referrer who genuinely
+// isn't in a building; a conservative under-count for one whose place simply
+// hadn't been entered yet. See routes/referrals.js's POST for why it isn't
+// backfilled on assignment.
 async function measuredFloorByPlace(knex, placeIds, asOf, config) {
   const out = new Map();
   if (!placeIds.length) return out;

@@ -80,6 +80,26 @@ legacy `capacity_monthly_referrals`/`capacity_status` columns) that used to be d
 **removed 2026-08-07** once step 7 landed and was verified - nothing ranking-related reads those
 two columns anymore, so there was nothing left for it to bridge to. See §18's "Step 7" subsection.
 
+### 2026-08-25 - A referral no longer requires the referrer to be at a place
+
+`POST /api/referrals` used to 400 when the person had no `place_id`. It doesn't any more - only
+`person_id` is required. That block was an inconsistency, not a guardrail: `POST /api/people` has
+always made `place_id` optional, the People directory left-joins so unassigned people still render,
+and detach-not-delete nulls a whole roster's `place_id` when a place is deleted - so a person can
+go placeless with the rep doing nothing wrong. The refusal's only real effect was to push a field
+rep into fake-assigning a plausible place (worse data than a null) or not logging the referral at
+all. Real referral sources genuinely outside any building we visit - an elder-law attorney, a
+fiduciary, a former client's family - now fit the model instead of having to be forced into it.
+
+Two knock-on behaviours, both intended, both commented at `routes/referrals.js`'s POST: the PLACE
+rollup heals itself (`referralMetricsByPlaceId` joins on the person's *current* place, so assigning
+them somewhere later sweeps in every referral they logged while placeless), while the CAPACITY
+measured floor never sees a null-snapshot referral at all, because it reads `referrals.place_id`
+directly - the deliberate split described in the mental-model principles below and §18. That second
+one is a one-directional, conservative under-count, and is deliberately NOT backfilled when the
+person is later assigned a place: backfilling would mis-credit every job-changer, which is the exact
+thing the snapshot exists to prevent.
+
 ### 2026-08-25 - Seven retired `places` columns dropped (new §25)
 
 `tier`, `is_priority`, `priority_score`, `capacity_level`, `capacity_status`,
@@ -343,7 +363,9 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
    derived live (rolled up from its current roster's own numbers), never stored. If you see
    a bug where a place's numbers don't match expectations, check who's currently assigned
    there first, not the referrals table's own `place_id`-shaped assumptions (`place_id` on
-   `referrals` is just a historical snapshot, not the source of truth for a place's total).
+   `referrals` is just a historical snapshot, not the source of truth for a place's total). A
+   referral doesn't even need a place - only a person. Logging one for someone with no `place_id`
+   is allowed and stamps a null snapshot (2026-08-25, see the dated entry near the top).
 3. **No more manual "smart" fields that need upkeep.** The old house style was
    suggested-but-not-applied (compute a suggestion, show it next to a manual value, let the
    user opt in) - that's how relationship temperature worked. It was replaced because the
@@ -527,7 +549,8 @@ guardian-angels-sales/
   recorded twice on one trip. A still-`planned` visit legitimately has ZERO encounters. See §17.
 - **referrals** - one referral, attributed to a `person_id` plus a `place_id` snapshot (both
   `ON DELETE SET NULL` - a referral outlives the person/place it came from, orphaned but
-  preserved), with `referral_date` and `notes`. Nothing about relationship strength is
+  preserved), with `referral_date` and `notes`. `place_id` can also be null from birth: the
+  referrer doesn't have to be assigned to a place at all (2026-08-25). Nothing about relationship strength is
   stored anywhere: `services/referralMetrics.js` derives lifetime count / last referral date
   / last-90-days count / a `needs_attention` flag live from this table, for both people and
   places, on every read (see section 9). **Known gap (§14A #1):** unlike `visits`, this table

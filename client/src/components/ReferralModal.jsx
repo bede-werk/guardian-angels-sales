@@ -12,7 +12,10 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // Every referral is attributed to a specific person - there's no "unknown
 // contact" option, since a place's referral total is just the sum of its
 // people's own counts (see PlaceDetail.jsx / routes/places.js), so a
-// referral with no person would have nowhere to be counted.
+// referral with no person would have nowhere to be counted. That person does
+// NOT have to be assigned to a place, though - opened from a person, this
+// saves fine for someone with a null place_id (routes/referrals.js explains
+// what that costs).
 export default function ReferralModal({ people = [], person, referral, onClose, onSaved }) {
   const { closing, requestClose } = useClosingTransition(onClose);
   // See PlaceModal's identical comment - pairs every label.field below with
