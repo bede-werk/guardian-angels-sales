@@ -25,11 +25,11 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // Also reused read-only for another rep's planned route (VisitsCalendar.jsx,
 // "All reps" scope) - pass `visits` directly (already-loaded calendar rows,
 // skipping this component's own fetch), `readOnly` to drop the whole-day
-// Edit/Delete footer down to a bare Close, and `title` to swap the header
-// from "Planned Route" to e.g. "Nikki Shasserre's Planned Route". Someone
+// Edit/Delete footer down to a bare Close, and `repName` to name whose
+// route it is in the header ("Planned Route · Nikki Shasserre · ..."). Someone
 // else's route can never be reopened/deleted from here - only the owning
 // rep's own committed-day endpoints support that (see scheduleDrafts.js).
-export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, title, readOnly, userId, onChanged }) {
+export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay, editingDay, onDeleteDay, deletingDay, visits: providedVisits, repName, readOnly, userId, onChanged }) {
   const { closing, requestClose } = useClosingTransition(onClose);
   const [visits, setVisits] = useState(providedVisits ?? null);
   const [loadError, setLoadError] = useState(null);
@@ -90,7 +90,7 @@ export default function PlannedDayModal({ date, onClose, onViewPlace, onEditDay,
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{formatDate(date)} · {title || 'Planned Route'}</h2>
+          <h2>Planned Route{repName ? ` · ${repName}` : ''} · {formatDate(date)}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">

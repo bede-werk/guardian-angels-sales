@@ -572,7 +572,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     <div className={`modal-backdrop${closing ? ' closing' : ''}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Log Visit - {title}</h2>
+          <h2>Log Visit · {title}</h2>
           <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         {/* Nothing is editable until the trip's own encounters are in hand:

@@ -13,7 +13,7 @@ export default function BirthdayModal({ label, people, onClose, onViewPerson }) 
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{label} · Birthdays</h2>
+          <h2>Birthdays · {label}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">

@@ -204,7 +204,7 @@ export default function UpcomingVisitDetailModal({ visit, userId, onClose, onCom
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Visit - {formatDate(visit.scheduled_date)}</h2>
+          <h2>Visit · {formatDate(visit.scheduled_date)}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body stack">

@@ -130,7 +130,7 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
     >
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Plan a Visit{resolvedPlaceName ? ` - ${resolvedPlaceName}` : ''}</h2>
+          <h2>Plan a Visit{resolvedPlaceName ? ` · ${resolvedPlaceName}` : ''}</h2>
           <button className="close" title="Close without saving" onClick={onClose}>×</button>
         </div>
         <div className="modal-body stack">

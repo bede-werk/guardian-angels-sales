@@ -158,7 +158,7 @@ export default function Places({ userId }) {
       {/* Results table. Each row is clickable and opens PlaceDetail. */}
       <div className="card">
         <div className="card-head">
-          <h2>{loading ? 'Loading…' : `${rows.length} places`}</h2>
+          <h2>{loading ? 'Loading…' : `${rows.length} Places`}</h2>
           <div className="tag-list" style={{ flex: 'unset' }}>
             {/* Same placement rationale as People's "Rate relationships":
                 an occasional, re-runnable bulk task over exactly this list,

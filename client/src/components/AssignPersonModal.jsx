@@ -94,7 +94,7 @@ export default function AssignPersonModal({ placeId, placeName, onClose, onAssig
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Assign people{placeName ? ` to ${placeName}` : ''}</h2>
+          <h2>Assign People{placeName ? ` · ${placeName}` : ''}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">

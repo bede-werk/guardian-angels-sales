@@ -94,7 +94,7 @@ export default function App() {
           className={`settings-trigger ${tab === 'settings' ? 'active' : ''}`}
           onClick={() => setTab('settings')}
           title="Algorithm settings - tune how visits are scheduled and scored"
-          aria-label="Algorithm settings"
+          aria-label="Algorithm Settings"
           aria-current={tab === 'settings' ? 'page' : undefined}
         >
           <span aria-hidden="true">⚙</span>

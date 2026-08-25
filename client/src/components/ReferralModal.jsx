@@ -53,7 +53,7 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{referral ? 'Edit referral' : 'Log a referral'}</h2>
+          <h2>{referral ? 'Edit Referral' : 'Log a Referral'}</h2>
           <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">

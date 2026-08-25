@@ -20,7 +20,7 @@ export default function SkippedVisitsModal({ date, visits, showRepName, onClose,
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{formatDate(date)} · Skipped Visits</h2>
+          <h2>Skipped Visits · {formatDate(date)}</h2>
           <button className="close" title="Close" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">

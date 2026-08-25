@@ -352,7 +352,7 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
         {/* ------------------------------------------------ 2. This week */}
         <div className="card">
           <div className="card-head">
-            <h2>This week</h2>
+            <h2>This Week</h2>
             <span className="muted tiny">{formatDate(week.start)} → {formatDate(week.end)}</span>
           </div>
           <div className="card-body">
@@ -387,7 +387,7 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
             promise the company made shows up here whoever made it. */}
         <div className="card">
           <div className="card-head">
-            <h2>Commitments due</h2>
+            <h2>Commitments Due</h2>
             <span className="muted tiny">
               next {due.horizon_days} days
               {due.overdue_count > 0 && <> · <span className="dash-overdue-count">{due.overdue_count} overdue</span></>}
@@ -445,7 +445,7 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
         {/* ------------------------------------------ 4. Recent referrals */}
         <div className="card">
           <div className="card-head">
-            <h2>Recent referrals</h2>
+            <h2>Recent Referrals</h2>
             <span className="muted tiny">{referrals.window_count} in the last {referrals.window_days} days</span>
           </div>
           <div className="card-body">
@@ -478,7 +478,7 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
         {/* -------------------------------------- 5. Top referral partners */}
         <div className="card">
           <div className="card-head">
-            <h2>Top referral partners</h2>
+            <h2>Top Referral Partners</h2>
             <span className="muted tiny">by referrals sent, all time</span>
           </div>
           <div className="card-body">

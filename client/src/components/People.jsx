@@ -135,7 +135,7 @@ export default function People({ userId }) {
       {/* Results table. Each row is clickable and opens PersonDetail. */}
       <div className="card">
         <div className="card-head">
-          <h2>{loading ? 'Loading…' : `${rows.length} people`}</h2>
+          <h2>{loading ? 'Loading…' : `${rows.length} People`}</h2>
           <div className="tag-list" style={{ flex: 'unset' }}>
             {/* Lives here rather than in the nav: it's an occasional
                 (re-runnable) bulk task over exactly this list, not a place

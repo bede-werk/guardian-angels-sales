@@ -145,7 +145,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
     <div className={`modal-backdrop${closing ? " closing" : ""}`} onClick={(e) => { e.stopPropagation(); requestClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>{place ? 'Edit place' : 'Add a Place'}</h2>
+          <h2>{place ? 'Edit Place' : 'Add a Place'}</h2>
           <button className="close" title="Close without saving" onClick={requestClose}>×</button>
         </div>
         <div className="modal-body">

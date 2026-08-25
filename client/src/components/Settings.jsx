@@ -430,7 +430,7 @@ export default function Settings() {
   return (
     <div className="settings-page">
       <div className="settings-intro">
-        <h2>Algorithm settings</h2>
+        <h2>Algorithm Settings</h2>
         <p>
           Every number the app's scheduling, capacity and relationship models run on lives here, with an
           explanation of what it does and what happens when you move it. Nothing on this page is a
