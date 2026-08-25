@@ -724,13 +724,26 @@ function committedVisitsQuery(db, { userId }) {
       // value to put here, and nothing was reading it.
       'v.scheduled_date',
       'v.sort_order',
-      // Manual Visit Planning spec §7.3/§5 - the "manually planned"/
-      // "Planned by {Name}" markers need these on the committed row itself;
-      // a manual visit is never a draft stop (it's already a real `visits`
-      // row), so this is the only place they can come from.
+      // RoutePlanner's PLANNED rows open UpcomingVisitDetailModal, whose Edit
+      // panel seeds its Notes field from this and writes the field back on
+      // save - without it that panel would start blank and silently clear a
+      // real note. committedDayVisits already selects it, for the same modal
+      // reached from the Calendar.
+      'v.notes',
+      // Manual Visit Planning spec §7.3/§5 - the "manually planned by {Name}"
+      // marker needs these on the committed row itself; a manual visit is
+      // never a draft stop (it's already a real `visits` row), so this is the
+      // only place they can come from.
       'v.planned_manually',
       'v.created_by_user_id',
       'creator.name as created_by_name',
+      // Constant across this query (the where clause above pins it to
+      // `userId`), selected anyway so the row is self-describing: client-side
+      // api.js's manualPlanNote decides whether to name the planner by
+      // comparing creator against ASSIGNEE, and a row without user_id would
+      // leave it comparing against undefined. committedDayVisits already
+      // selects it, for the same marker.
+      'v.user_id',
       'p.category',
       'p.address',
       'p.city',

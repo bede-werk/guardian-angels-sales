@@ -258,15 +258,13 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
 .badge.rate-strong { background: var(--teal-tint-1); color: var(--teal-dark); }
 .badge.rate-steady { background: var(--grey-tint-1); color: var(--grey-dark); }
 .badge.rate-occasional { background: var(--grey-tint-1); color: var(--muted); }
-/* All-star (places.is_all_star) - mauve, the app's "pay attention" colour,
-   shared with .badge.attention. Distinct from the cap-* family on purpose:
-   it is not a capacity level, it is the flag that overrides one. */
+/* All-star (places.is_all_star) - mauve, the app's "pay attention" colour.
+   Distinct from the cap-* family on purpose: it is not a capacity level, it
+   is the flag that overrides one. */
 .badge.all-star { background: var(--mauve-tint-1); color: var(--mauve); }
 /* A place holding a rating that matches no current choice, because the
    Settings values were retuned after it was rated - see capacityRatingKey. */
 .badge.rate-unknown { background: var(--mauve-tint-1); color: var(--mauve); }
-.badge.attention { background: var(--mauve-tint-1); color: var(--mauve); } /* Over-budget flag on a Route Planner day/stop */
-.badge.committed { background: var(--teal-tint-2); color: var(--teal-dark); } /* Route Planner: stops already committed to real visits for this day */
 /* Visit outcomes, strongest signal first. Graded warm->neutral so a glance
    down a visit history reads as "how much real contact happened." */
 .badge.o-substantive { background: var(--teal-tint-2); color: var(--teal-dark); }
@@ -371,28 +369,31 @@ label.field { display: block; font-size: 12px; color: var(--muted); margin-botto
    merging into it. */
 .hover-row:hover .btn.secondary:not(:hover) { background: var(--card); }
 
-/* Route Planner's stop rows: the click-to-open-detail area is only .main
-   (the drag handle + reorder buttons sit to its left, the time estimate +
-   remove button to its right, as separate flex siblings - see .stop below)
-   - painting just .main's own box on hover looked like a narrow, off-center
-   highlight rather than "this whole row opens the place." :has() lets the
-   full-width .stop <li> (no horizontal padding, so its background already
-   reaches edge to edge) repaint itself off its .main child's hover state
-   instead. Both this and .main's own highlight are explicitly cancelled
-   while hovering the visit-type <select> nested inside .main - picking a
-   visit type isn't "open the detail" and shouldn't look selected as if it
-   were; the extra :has(select:hover) on each makes that override reliably
-   win on specificity over the plain :hover/:has(.main…) rules above, no
-   source-order dependency. Hovering the reorder/remove buttons never
-   triggers any of this in the first place, since they're .main's siblings,
-   not descendants. Instant on/off here (no fade) - .hover-row's shared
+/* Stop rows whose click-to-open target is only .main (PlannedDayModal,
+   SkippedVisitsModal - the row's other controls sit outside it as separate
+   flex siblings). Painting just .main's own box on hover looked like a
+   narrow, off-center highlight rather than "this whole row opens." :has()
+   lets the full-width .stop <li> (no horizontal padding, so its background
+   already reaches edge to edge) repaint itself off its .main child's hover
+   state instead. Instant on/off here (no fade) - .hover-row's shared
    transition would only animate .main's own background, not the .stop
-   background painted alongside it below, so the two layers visibly fell out
-   of sync (one fading, one snapping) instead of reading as one highlight. */
+   background painted alongside it, so the two layers visibly fell out of
+   sync (one fading, one snapping) instead of reading as one highlight. */
 .stop .main.hover-row { transition: none; }
-.stop .main.hover-row:hover:has(select:hover) { background: none; }
 .stop:has(.main.hover-row:hover) { background: var(--blue-tint-1); }
-.stop:has(.main.hover-row:hover):has(select:hover) { background: none; }
+
+/* Route Planner's proposal rows take the simpler route: the whole <li> is
+   the click target, so the plain .hover-row:hover rule above already paints
+   it edge to edge and only one layer is involved (the shared fade is fine
+   here). What still needs cancelling is the controls that live INSIDE that
+   target but don't open anything - the reorder handle/arrows and the
+   visit-type <select>. Nudging a stop up a slot or picking a visit type
+   isn't "open the detail" and shouldn't look selected as if it were.
+   Hovering a real .btn (Remove, and the commitment badge's Reschedule/
+   Waive) is already cancelled by the shared .hover-row:has(.btn:hover)
+   rule above. */
+.stop.hover-row:hover:has(select:hover) { background: none; }
+.stop.hover-row:hover:has(.reorder:hover) { background: none; }
 /* Persistent version of the above for rows that stay picked after the click
    (e.g. AssignPersonModal's person list) - a stronger tint so it still reads
    as "on" once the mouse moves away. */

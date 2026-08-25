@@ -80,6 +80,24 @@ legacy `capacity_monthly_referrals`/`capacity_status` columns) that used to be d
 **removed 2026-08-07** once step 7 landed and was verified - nothing ranking-related reads those
 two columns anymore, so there was nothing left for it to bridge to. See §18's "Step 7" subsection.
 
+### 2026-08-25 - One "manually planned by {Name}" marker, not two
+
+`RoutePlanner.jsx` and `PlannedDayModal.jsx` each rendered the manual-stop marker as two adjacent
+pieces, which read as "manually planned planned by Bede Fulton" (Bede's own handwritten note). Both
+now call one helper, `api.js`'s `manualPlanNote(visit)`, which returns the whole phrase - `manually
+planned by {Name}` when the planner isn't the assignee, plain `manually planned` otherwise, `null`
+when the visit wasn't manually planned. PlannedDayModal sentence-cases it (it follows a ` · ` break;
+RoutePlanner's sits in a row of lowercase chips).
+
+Centralizing it settled a disagreement the two views had: RoutePlanner compared the creator against
+the **viewer**, PlannedDayModal against the **assignee**, so a stop one rep planned for another
+named the planner in one view and not the other. Assignee is the rule now, which is what §21 already
+documented. That comparison also needed `v.user_id`, which `scheduleDraft.js`'s
+`committedVisitsQuery` had never selected (it's pinned by the where clause) - added, or the helper
+would have compared against `undefined` and named the planner on every manual stop. `manualPlanNote`
+also treats a missing `user_id` as "don't name anyone", so a query that forgets the column loses the
+name rather than inventing an attribution.
+
 ### 2026-08-25 - "Nobody" no longer claims a drop-off
 
 Meeting no one used to be recorded as `materials_only` ("Left materials only"), locked in by
@@ -2036,7 +2054,7 @@ differ. The assignee may always edit or delete; the creator may additionally del
 visit planned for someone else; a third rep can do neither. **Known gap, not built:** no
 notification. If Nikki plans a stop on Lisa's Thursday and Lisa never opens that day, it lapses to
 `skipped` (the existing skip sweep, unchanged) and Nikki has no idea - there's no notification
-infrastructure and no dashboard yet. The "Planned by {Name}" marker (`RoutePlanner.jsx`'s
+infrastructure and no dashboard yet. The "manually planned by {Name}" marker (`RoutePlanner.jsx`'s
 committed rows, `PlannedDayModal.jsx`'s rows, the Calendar tab via the same modal) is the entire
 mitigation for now. **This is a real dashboard requirement once one exists**: cross-rep planned
 visits assigned to you need surfacing somewhere the assignee will actually see it.
@@ -2110,8 +2128,9 @@ only changes are display (below).
 - **`VisitsCalendar.jsx` / `DayOverflowModal.jsx`**: genuinely new UI - the day-number drill-down
   popover had no add affordance at all before this. Reuses `ui/PlacePicker.jsx` (the same
   searchable picker `RoutePlanner.jsx`'s own "Add a stop" already used) plus a rep `<select>`.
-- **`RoutePlanner.jsx`**: display-only. Committed rows show "manually planned" and, when the
-  creator differs from the assignee, "planned by {Name}"; a manually-planned row gets an anchor
+- **`RoutePlanner.jsx`**: display-only. Committed rows show "manually planned", or "manually
+  planned by {Name}" when the creator differs from the assignee (one phrase since 2026-08-25 - see
+  the dated entry near the top); a manually-planned row gets an anchor
   toggle button (⚓ Anchored / Anchor); the day header's zone dropdown carries the live detour-cost
   line described above. `PlannedDayModal.jsx` (shared by the Calendar tab's own "already planned"
   drill-down) got the same manual/cross-rep marker on its rows.

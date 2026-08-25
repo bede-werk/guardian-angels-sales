@@ -333,6 +333,29 @@ export const VISIT_STATUS_LABELS = {
   snoozed: 'Snoozed',
 };
 
+// One phrase for a manually-planned stop, "manually planned by Lisa Marks" or
+// plain "manually planned" (null when the visit wasn't manually planned at
+// all). Both callers - RoutePlanner's PLANNED list and PlannedDayModal's stop
+// lines - used to render this as two adjacent pieces, which read as "manually
+// planned planned by Lisa Marks" (Bede, 2026-08-25).
+//
+// The name shows when the CREATOR isn't the ASSIGNEE - a fact about the visit,
+// not about who's looking at it. RoutePlanner used to compare the creator
+// against the VIEWER instead, so a stop one rep planned for another showed the
+// name in PlannedDayModal and hid it in RoutePlanner; centralizing the rule
+// here is what settles that.
+export function manualPlanNote(visit) {
+  if (!visit || !visit.planned_manually) return null;
+  // Both ids required: a row that didn't select user_id would otherwise
+  // compare against undefined and name the planner on every manual stop,
+  // self-planned ones included. Falling back to the plain phrase keeps a
+  // missing field from inventing an attribution.
+  const plannedByOther =
+    visit.created_by_user_id != null && visit.user_id != null && visit.created_by_user_id !== visit.user_id;
+  if (!plannedByOther) return 'manually planned';
+  return `manually planned by ${visit.created_by_name || 'another rep'}`;
+}
+
 // Display labels for a computed relationship level (services/relationship.js).
 export const RELATIONSHIP_LABELS = {
   strong: 'Strong',
