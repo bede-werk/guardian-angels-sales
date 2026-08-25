@@ -1062,11 +1062,17 @@ td .tag-list { flex-wrap: nowrap; }
    same problem solved the same way one level in. */
 .dash-today-facts { display: flex; align-items: center; gap: 20px; min-width: 0; }
 /* The count and the View button, pieced together as one section: a tight
-   gap and no divider between them, since they're one stat plus the action
-   that belongs to it (not two separate facts the way count/Next-visit are).
-   flex-shrink: 0 keeps this whole group from getting squeezed as
-   dash-today-next (below) gives way first. */
+   gap and only a short hairline between them, since they're one stat plus
+   the action that belongs to it (not two separate facts the way
+   count/Next-visit are). flex-shrink: 0 keeps this whole group from getting
+   squeezed as dash-today-next (below) gives way first. */
 .dash-today-summary { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+/* A deliberately short rule - shorter than the count tile beside it, and
+   well short of the full-height border that splits the summary from Next
+   visit - so it reads as a light separation within one section rather than
+   a second break as strong as the row's real one. Its own element rather
+   than a border on the button, which already has one of its own. */
+.dash-summary-divider { width: 1px; height: 28px; background: var(--border); flex-shrink: 0; }
 /* min-width: 0 - a flex child's default min-width is its content's own
    width, which would let a long place name push the summary group out of
    the row instead of shrinking (same reasoning as dash-next-visit's own

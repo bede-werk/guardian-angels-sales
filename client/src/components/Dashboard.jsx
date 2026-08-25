@@ -278,8 +278,9 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
         <div className="card-body dash-today-body">
           <div className="dash-today-facts">
             {/* Count + View button pieced together as one section - a stat
-                and the action that belongs to it - with no divider between
-                them, only the one before Next visit (a separate fact). */}
+                and the action that belongs to it - separated only by a
+                short hairline, much smaller than the full-height divider
+                before Next visit (a separate fact). */}
             <div className="dash-today-summary">
               {/* A running tally of what's LEFT, not the day's total (Bede,
                   2026-08-18) - it counts down as each stop gets logged,
@@ -289,13 +290,16 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
                 <div className="label">{remainingStops.length === 1 ? 'stop' : 'stops'} left today</div>
               </div>
               {remainingStops.length > 0 && (
-                <Button variant="secondary" size="small" className="dash-view-all-link" onClick={() => setViewingTodayRoute(true)}>
-                  {/* "View all 1 stop" reads wrong - "all" implies more than
-                      one - so the singular case drops both "all" and the
-                      redundant count instead of just fixing the noun's
-                      plural. */}
-                  {remainingStops.length === 1 ? 'View the stop planned today' : `View all ${remainingStops.length} stops planned today`}
-                </Button>
+                <>
+                  <span className="dash-summary-divider" aria-hidden="true" />
+                  <Button variant="secondary" size="small" className="dash-view-all-link" onClick={() => setViewingTodayRoute(true)}>
+                    {/* "View all 1 stop" reads wrong - "all" implies more than
+                        one - so the singular case drops both "all" and the
+                        redundant count instead of just fixing the noun's
+                        plural. */}
+                    {remainingStops.length === 1 ? 'View the stop planned today' : `View all ${remainingStops.length} stops planned today`}
+                  </Button>
+                </>
               )}
             </div>
             {/* Side by side, not stacked above Next visit - same reasoning
