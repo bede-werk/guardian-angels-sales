@@ -2,7 +2,7 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
-const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, commitDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
+const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, committedDatesForUser, commitDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
 const { estimateDriveMinutes } = require('./driveTime');
 const { editVisit } = require('./manualVisits');
 
@@ -448,7 +448,7 @@ describe('buildCandidatePool plannedVisitDates', () => {
 // in "3 visits planned," not just the 2 the route planner itself proposed;
 // the drill-down committedDayVisits opens from clicking the row already
 // shows all of them, so the count has to match.
-describe('committedDateSummaries - gated by a planner-committed visit, counted by all visits on the date', () => {
+describe('committedDateSummaries lists every open date unscoped by source; committedDatesForUser gates re-selection to planner-committed dates only', () => {
   let db;
   const TODAY = '2026-08-12';
 
@@ -468,8 +468,10 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
       { id: 4, name: 'Both Place Two', category: 'Hospice' },
     ]);
 
-    // A date with ONLY a manual visit - must NOT appear in the summary, so
-    // it stays selectable in /generate.
+    // A date with ONLY a manual visit - appears in the summary (2026-08-25:
+    // manual-only dates are meant to show in "Already Planned"), but must
+    // stay OUT of committedDatesForUser's gate so it stays selectable in
+    // /generate.
     await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-20', place_name: 'Manual Only Place' });
 
     // A date with ONLY a real planner commit - still counted, unaffected by this change.
@@ -478,7 +480,8 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
     // 20260822000000_add_visits_planner_committed.js).
     await db('visits').insert({ place_id: 2, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-21', place_name: 'Planner Committed Place' });
 
-    // A date with BOTH - the planner row is what gates it in, but both rows count.
+    // A date with BOTH - the planner row is what gates re-selection, but the
+    // summary counts both rows regardless.
     await db('visits').insert({ place_id: 3, user_id: 1, status: 'planned', planned_manually: 1, scheduled_date: '2026-08-22', place_name: 'Both Place' });
     await db('visits').insert({ place_id: 4, user_id: 1, status: 'planned', planned_manually: 0, source: 'planner', planner_committed: 1, scheduled_date: '2026-08-22', place_name: 'Both Place Two' });
   });
@@ -487,24 +490,31 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
     await db.destroy();
   });
 
-  test('a manual-only date is absent from the summary - still selectable in /generate', async () => {
+  test('a manual-only date appears in the summary, but is absent from the re-selection gate', async () => {
     const summaries = await committedDateSummaries(db, 1, { today: TODAY });
     const row = summaries.find((s) => s.date === '2026-08-20');
-    assert.equal(row, undefined);
+    assert.ok(row, 'a manual-only date is a real commitment and belongs in "Already Planned"');
+    assert.equal(row.count, 1);
+
+    const gated = await committedDatesForUser(db, 1, { today: TODAY });
+    assert.equal(gated.has('2026-08-20'), false, 'still selectable in /generate - a manual-only date never blocks re-selection');
   });
 
-  test('a planner-committed-only date still appears, count unchanged', async () => {
+  test('a planner-committed-only date appears in both the summary and the re-selection gate', async () => {
     const summaries = await committedDateSummaries(db, 1, { today: TODAY });
     const row = summaries.find((s) => s.date === '2026-08-21');
     assert.ok(row);
     assert.equal(row.count, 1);
+
+    const gated = await committedDatesForUser(db, 1, { today: TODAY });
+    assert.ok(gated.has('2026-08-21'));
   });
 
   test('a date with both counts every visit on it, not just the planner-sourced one', async () => {
     const summaries = await committedDateSummaries(db, 1, { today: TODAY });
     const row = summaries.find((s) => s.date === '2026-08-22');
     assert.ok(row);
-    assert.equal(row.count, 2, 'the manual visit still counts once the date is gated in by the planner-committed one');
+    assert.equal(row.count, 2, 'the manual visit still counts alongside the planner-committed one');
   });
 
   // Regression test for the bug fixed 2026-08-22: editVisit
@@ -515,7 +525,9 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
   // reopening the date for a fresh /generate even though the visit was
   // still sitting there. planner_committed is meant to survive exactly
   // this. Own place/date, isolated from the shared before() fixture above
-  // since this test mutates a row.
+  // since this test mutates a row. Targets committedDatesForUser - the
+  // function that now owns the re-selection gate this bug was about (split
+  // out from committedDateSummaries 2026-08-25).
   test('a notes-only edit through editVisit does not drop the date out of the gate', async () => {
     await db('places').insert({ id: 5, name: 'Edited Notes Place', category: 'Hospice' });
     const [inserted] = await db('visits')
@@ -523,15 +535,15 @@ describe('committedDateSummaries - gated by a planner-committed visit, counted b
       .returning('id');
     const visitId = inserted && inserted.id !== undefined ? inserted.id : inserted;
 
-    let summaries = await committedDateSummaries(db, 1, { today: TODAY });
-    assert.ok(summaries.find((s) => s.date === '2026-08-23'), 'the date gates in before any edit, same as any other planner commit');
+    let gated = await committedDatesForUser(db, 1, { today: TODAY });
+    assert.ok(gated.has('2026-08-23'), 'the date gates in before any edit, same as any other planner commit');
 
     const result = await editVisit(db, visitId, { notes: 'fixed a typo' }, 1);
     assert.equal(result.visit.notes, 'fixed a typo');
     assert.equal(result.visit.source, 'manual', 'the promotion itself is unaffected - still flips on any edit');
 
-    summaries = await committedDateSummaries(db, 1, { today: TODAY });
-    assert.ok(summaries.find((s) => s.date === '2026-08-23'), 'the date must still gate in - the visit never stopped being real');
+    gated = await committedDatesForUser(db, 1, { today: TODAY });
+    assert.ok(gated.has('2026-08-23'), 'the date must still gate in - the visit never stopped being real');
   });
 });
 

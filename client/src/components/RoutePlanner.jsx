@@ -750,12 +750,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                       )}
                     </div>
                   </div>
-                  {/* Held off the card's right edge by the same 24px the
-                      "Already Planned" card gives its own ✓ Planned marker. */}
-                  <div className="actions" style={{ alignItems: 'center', gap: 12, flexWrap: 'nowrap', marginRight: 24 }}>
-                    <div className="tiny muted" style={{ whiteSpace: 'nowrap', color: 'var(--teal-dark)', fontWeight: 600 }}>
-                      ✓ Planned
-                    </div>
+                  <div className="actions" style={{ alignItems: 'center', gap: 12, flexWrap: 'nowrap', marginRight: 12 }}>
                     {/* stopPropagation: the row's own click opens the VISIT,
                         and this button is the one thing on it that shouldn't.
                         Guarded on place_id - a visit whose place was detached

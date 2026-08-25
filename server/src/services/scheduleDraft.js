@@ -401,68 +401,33 @@ async function ownDraftPlaceIds(db, draftId) {
 }
 
 // Every date this user has a still-open (status: 'planned') visits row on,
-// GATED to dates that include at least one visit commitDay ever created
-// (planner_committed: 1) - i.e. a date already committed from a previous
-// draft. Once a date is in here, the calendar disables it and /generate
-// rejects it (see validateDays) - a committed day is done, not something a
-// future plan should ever touch again. Deliberately excludes completed/
-// skipped visits: those are finished history, not an open plan - a date
-// where the only visit on the books is already completed should still be
-// freely plannable.
+// with its visit count - this is the "Already Planned" list's own data,
+// so it's unscoped by source/planner_committed on purpose (fixed
+// 2026-08-25): a manual-only date - nothing on it ever went through
+// commitDay - is a real commitment a rep made and deserves to show up here
+// exactly like a planner-committed one does, not just once it happens to
+// share a date with one. Deliberately excludes completed/skipped visits:
+// those are finished history, not an open plan.
 //
-// Gate scoped to planner_committed (fixed 2026-08-22 - see
-// 20260822000000_add_visits_planner_committed.js): this used to gate on
-// source: 'planner' instead, which broke the moment editVisit started
-// promoting ANY successful hand-edit - even a notes-only one - to source:
-// 'manual' (services/manualVisits.js's editVisit). A rep fixing a typo on
-// the day's only committed visit would flip its `source` away from
-// 'planner' and silently drop the whole date out of this gate, reopening it
-// for a fresh /generate even though the visit was still sitting there,
-// unresolved - confirmed live before this fix. planner_committed is a
-// permanent birth fact set once by commitDay and never touched again by
-// anything, including editVisit's promotion, so it can't be erased by an
-// unrelated later edit the way `source` can.
+// This is NOT the "can this date be selected/regenerated" gate - that's a
+// separate, deliberately narrower question answered by committedDatesForUser
+// below. The two used to be the same query (this function derived from a
+// planner_committed-gated set), which meant a manual-only date was invisible
+// here too - caught 2026-08-25 when a manually-planned visit with no
+// planner-committed sibling that day, and zero further proposed stops once
+// the date was generated, turned out to be unreachable anywhere in Route
+// Planner (openDays' "already reflected in Already Planned above" assumption
+// was false for it). Splitting the two queries apart fixes the visibility
+// gap without touching the selection gate's own scoping.
 //
-// A manual-only date (nothing here ever went through commitDay) still
-// correctly does NOT gate - a manually-planned visit is already a fixed,
-// budget-consuming stop the generator routes around via the plain
-// same-place-same-day exclusion (lockedElsewherePlaceIds/
-// committedElsewherePlaceIds, both unscoped by source) and
-// committedVisitsQuery/evaluateDay's budget accounting - blocking day
-// SELECTION on top of that would add nothing, it would just make a
-// manually-planned day unreachable from the planner entirely (reversed
-// 2026-08-19, see feedback_route_planner_proposals_only). `source` itself
-// stays the right scoping for reopenCommittedDay just below, which is a
-// different question ("can this row be pulled back into a re-orderable
-// draft right now" - correctly still 'no' once a rep has hand-edited it).
-//
-// The returned COUNT, once a date clears that gate, is every status:
-// 'planned' visit on it regardless of source (caught 2026-08-20: scoping
-// the count the same way the gate is scoped made a day's "Already Planned"
-// count silently undercount whenever a manual visit shared the date with a
-// planner-committed one). This has to stay in sync with committedDayVisits
-// below, which is genuinely unscoped by source - the drill-down a rep opens
-// from clicking one of these rows shows every visit on the date, so the
-// count above it needs to match that list exactly, not just the subset
-// that happened to gate the date.
-//
-// Scoped to today-or-later: a past committed date can never be selected
-// anyway (validateDays rejects any date <= today on its own), so there's no
-// reason to drag the user's full visit history through this query as it
-// grows over time.
+// Scoped to today-or-later: a past date can never be selected/generated
+// anyway, so there's no reason to drag the user's full visit history through
+// this query as it grows over time.
 async function committedDateSummaries(db, userId, { today } = {}) {
   const cutoff = today || orgToday();
-  const gatingRows = await db('visits')
-    .where({ user_id: userId, status: 'planned', planner_committed: 1 })
-    .andWhere('scheduled_date', '>=', cutoff)
-    .groupBy('scheduled_date')
-    .select('scheduled_date as date');
-  const committedDates = gatingRows.map((r) => r.date);
-  if (committedDates.length === 0) return [];
-
   const rows = await db('visits')
     .where({ user_id: userId, status: 'planned' })
-    .whereIn('scheduled_date', committedDates)
+    .andWhere('scheduled_date', '>=', cutoff)
     .groupBy('scheduled_date')
     .orderBy('scheduled_date')
     .select('scheduled_date as date')
@@ -533,9 +498,50 @@ async function committedDayVisits(db, userId, date) {
   }));
 }
 
+// Every date that's locked from a fresh /generate call (see validateDays)
+// because at least one visit commitDay ever created (planner_committed: 1)
+// is still open on it - a committed day is done, not something a future
+// plan should ever touch again.
+//
+// Gate scoped to planner_committed (fixed 2026-08-22 - see
+// 20260822000000_add_visits_planner_committed.js): this used to gate on
+// source: 'planner' instead, which broke the moment editVisit started
+// promoting ANY successful hand-edit - even a notes-only one - to source:
+// 'manual' (services/manualVisits.js's editVisit). A rep fixing a typo on
+// the day's only committed visit would flip its `source` away from
+// 'planner' and silently drop the whole date out of this gate, reopening it
+// for a fresh /generate even though the visit was still sitting there,
+// unresolved - confirmed live before this fix. planner_committed is a
+// permanent birth fact set once by commitDay and never touched again by
+// anything, including editVisit's promotion, so it can't be erased by an
+// unrelated later edit the way `source` can.
+//
+// A manual-only date (nothing here ever went through commitDay) still
+// correctly does NOT gate - a manually-planned visit is already a fixed,
+// budget-consuming stop the generator routes around via the plain
+// same-place-same-day exclusion (lockedElsewherePlaceIds/
+// committedElsewherePlaceIds, both unscoped by source) and
+// committedVisitsQuery/evaluateDay's budget accounting - blocking day
+// SELECTION on top of that would add nothing, it would just make a
+// manually-planned day unreachable from the planner entirely (reversed
+// 2026-08-19, see feedback_route_planner_proposals_only). `source` itself
+// stays the right scoping for reopenCommittedDay just below, which is a
+// different question ("can this row be pulled back into a re-orderable
+// draft right now" - correctly still 'no' once a rep has hand-edited it).
+//
+// Deliberately its own query rather than derived from committedDateSummaries
+// above (split 2026-08-25) - that function is now intentionally unscoped by
+// planner_committed so manual-only dates show up in "Already Planned", and
+// reusing it here would have silently widened this selection gate to match,
+// re-blocking the exact manual-only dates the 2026-08-19 reversal freed up.
 async function committedDatesForUser(db, userId, { today } = {}) {
-  const summaries = await committedDateSummaries(db, userId, { today });
-  return new Set(summaries.map((s) => s.date));
+  const cutoff = today || orgToday();
+  const rows = await db('visits')
+    .where({ user_id: userId, status: 'planned', planner_committed: 1 })
+    .andWhere('scheduled_date', '>=', cutoff)
+    .groupBy('scheduled_date')
+    .select('scheduled_date as date');
+  return new Set(rows.map((r) => r.date));
 }
 
 async function getActiveDraft(db, userId) {
@@ -604,7 +610,7 @@ async function generateAndPersistDraft({ userId, params, regenerate = false }) {
 
   // A date can already carry a real committed visit the moment generation
   // runs on it now (most commonly a manual visit planned first - see
-  // committedDateSummaries' own comment on why that no longer blocks the
+  // committedDatesForUser's own comment on why that no longer blocks the
   // date outright). Reuses evaluateDay's exact committed-segment math (real
   // OSRM drive time between committed stops when available, same as the
   // view-time budget accounting already does) purely to learn how many
@@ -688,19 +694,20 @@ function toDraftStopShape(row) {
 // and the `place_name` snapshot column both exist specifically to survive
 // that.
 //
-// status: 'planned' only, any source - same scope committedDayVisits above
-// already uses for this exact "Already Planned"/budget-accounting concept
-// (deliberately NOT source-scoped like committedDateSummaries is: a manual
-// visit still has to count here as a real, budget-consuming commitment for
-// the day, even though it no longer blocks the day from being selected in
-// the first place). Same reason as committedDayVisits too: RoutePlanner.jsx
-// renders every row here under a hardcoded "✓ Planned" badge, so a
-// completed (or skipped) visit that happens to share
-// the date would show up mislabeled as still-planned, duplicated once per
-// real visit row logged that day at that place. A completed visit isn't
-// "still open on the books" - it already happened; it has no business in a
-// list whose whole point is "what's already committed for this day that the
-// proposal below doesn't need to re-suggest."
+// status: 'planned' only, any source - same scope committedDayVisits and
+// committedDateSummaries above already use for this exact "Already
+// Planned"/budget-accounting concept (deliberately NOT gated to
+// planner_committed like committedDatesForUser is: a manual visit still has
+// to count here as a real, budget-consuming commitment for the day, even
+// though it no longer blocks the day from being selected in the first
+// place). Same reason as committedDayVisits too: RoutePlanner.jsx renders
+// every row here under its own "Planned" section, so a completed (or
+// skipped) visit that happens to share the date would show up mislabeled as
+// still-open, duplicated once per real visit row logged that day at that
+// place. A completed visit isn't "still open on the books" - it already
+// happened; it has no business in a list whose whole point is "what's
+// already committed for this day that the proposal below doesn't need to
+// re-suggest."
 function committedVisitsQuery(db, { userId }) {
   return db('visits as v')
     .leftJoin('places as p', 'p.id', 'v.place_id')
@@ -1606,7 +1613,7 @@ async function commitDay({ draftId, userId, date, db = knex }) {
       // A permanent birth fact, never touched again by anything (not even
       // editVisit's own promotion, which mutates `source` above freely) -
       // see 20260822000000_add_visits_planner_committed.js for why this had
-      // to be split out of `source`: committedDateSummaries needs to know
+      // to be split out of `source`: committedDatesForUser needs to know
       // "was this date ever really committed by the planner" in a way a
       // later hand-edit can't silently erase.
       planner_committed: 1,
@@ -1724,8 +1731,10 @@ async function commitAll({ draftId, userId }) {
 // there, which this must never touch (same "never destroy visit history"
 // spirit as detach-not-delete elsewhere in this app - see project-overview)
 // - only the still-open plan gets removed. Once this empties a date out
-// entirely, committedDateSummaries naturally stops counting it, which is
-// what frees it back up as a selectable calendar date.
+// entirely, committedDatesForUser naturally stops counting it, which is
+// what frees it back up as a selectable calendar date (and
+// committedDateSummaries naturally stops listing it in "Already Planned"
+// too, for the same reason).
 //
 // NOT scoped to source: 'planner' (deliberate reversal, Bede's call): "Discard
 // plan" on PlannedDayModal is understood as "clear my whole day," manually-
