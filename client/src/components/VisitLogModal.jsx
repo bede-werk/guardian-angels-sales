@@ -5,6 +5,24 @@ import PersonModal from './PersonModal';
 import AssignPersonModal from './AssignPersonModal';
 import useClosingTransition from '../hooks/useClosingTransition';
 
+// The only two things that can honestly have happened on a trip where the rep
+// met no one: nothing, or materials got left with nobody to hand them to.
+// Every other entry in OUTCOME_LABELS presupposes talking to someone, which is
+// why 'nobody' gets its own two-option picker instead of the full dropdown.
+//
+// Both keys are standard OUTCOMES (server/src/routes/visits.js) - the stored
+// values are ordinary ones that every other screen already knows how to
+// render. Only the wording is local: OUTCOME_LABELS.unavailable reads "They
+// were unavailable", which presupposes a "they" the rep never named here.
+const NOBODY_OUTCOME_LABELS = {
+  unavailable: 'No one was available',
+  materials_only: 'Left materials only',
+};
+const NOBODY_OUTCOMES = Object.keys(NOBODY_OUTCOME_LABELS);
+// Not meeting anyone doesn't mean materials got left (Bede, 2026-08-25), so
+// the no-contact answer is the default and the drop-off is the deliberate pick.
+const NOBODY_DEFAULT_OUTCOME = 'unavailable';
+
 // Per-type message templates (collision spec §3.1) for the structured
 // conflicts the server's pre-save check returns (see
 // server/src/services/conflictDetection.js's Conflict shape). SAME_DATE_VISIT
@@ -272,14 +290,25 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
     });
   }
 
-  // Meeting nobody can't produce a "substantive conversation" or any of the
-  // other outcomes that presuppose talking to someone - the only thing that
-  // actually happened is materials got left (or not even that, but that's
-  // the closest true answer on offer). Locked rather than left as a normal
-  // pick, so the dropdown itself is removed for this encounter below.
+  // Seeds the nobody encounter's answer so its picker is never blank (and
+  // never blocks canSave on an unanswered question the rep can't see yet).
+  //
+  // A DEFAULT, not a lock: this used to force 'materials_only' on every
+  // no-one-there trip, which put a drop-off claim on file even when the rep
+  // found a locked door and left nothing behind (Bede, 2026-08-25). It now
+  // seeds the no-contact answer and leaves the drop-off available as a pick.
+  // Anything already valid for this encounter is left alone - a rep's own
+  // choice, or an existing row's outcome in edit mode - since this re-runs on
+  // every metTypes change, including ones that have nothing to do with
+  // 'nobody'. Only an outcome that can't be true here (a 'substantive
+  // conversation' on a pre-2026-08-25 row, say) gets replaced.
   useEffect(() => {
     if (!metTypes.includes('nobody')) return;
-    setDetails((d) => ({ ...d, 'type:nobody': { outcome: 'materials_only', they_requested: false } }));
+    setDetails((d) => {
+      const current = d['type:nobody'];
+      if (current && NOBODY_OUTCOMES.includes(current.outcome)) return d;
+      return { ...d, 'type:nobody': { outcome: NOBODY_DEFAULT_OUTCOME, they_requested: false } };
+    });
   }, [metTypes]);
 
   // Editing/completing always refetches the trip, because the lists that open
@@ -667,7 +696,7 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
             {metTypes.includes('named_person') && (
               <div>
                 {pickerPeople.length === 0 ? (
-                  <div className="tiny muted">Nobody on file at this place yet - add someone below.</div>
+                  <div className="tiny muted">Nobody on file at this place yet. Add someone below</div>
                 ) : (
                   <>
                     <label className="field">
@@ -715,7 +744,20 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                     <div key={e.key} className="encounter-row">
                       <div className="encounter-name">{e.label}</div>
                       {e.met_with_type === 'nobody' ? (
-                        <div className="tiny muted">{OUTCOME_LABELS.materials_only}</div>
+                        // Two options rather than the full list - see
+                        // NOBODY_OUTCOME_LABELS. No empty "Select what
+                        // happened…" entry either: this one is always seeded,
+                        // so an empty option would only ever be a way to make
+                        // the form unsaveable. The `||` covers the single
+                        // render before the seeding effect has run.
+                        <select
+                          value={detailFor(e.key).outcome || NOBODY_DEFAULT_OUTCOME}
+                          onChange={(ev) => setDetail(e.key, { outcome: ev.target.value })}
+                        >
+                          {Object.entries(NOBODY_OUTCOME_LABELS).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                          ))}
+                        </select>
                       ) : (
                         <select
                           value={detailFor(e.key).outcome}

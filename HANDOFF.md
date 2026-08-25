@@ -80,6 +80,33 @@ legacy `capacity_monthly_referrals`/`capacity_status` columns) that used to be d
 **removed 2026-08-07** once step 7 landed and was verified - nothing ranking-related reads those
 two columns anymore, so there was nothing left for it to bridge to. See §18's "Step 7" subsection.
 
+### 2026-08-25 - "Nobody" no longer claims a drop-off
+
+Meeting no one used to be recorded as `materials_only` ("Left materials only"), locked in by
+`VisitLogModal.jsx` the moment 'nobody' was picked - so every locked-door, empty-desk trip went on
+file asserting a drop-off that often hadn't happened. Bede raised it 2026-08-25: not meeting anyone
+shouldn't force a claim that materials were left.
+
+`MET_WITH_LABELS.nobody` is now plain `'Nobody'` (was `'Nobody - drop-off'`), and the forced
+outcome became a two-option picker in `VisitLogModal.jsx` (`NOBODY_OUTCOME_LABELS`): **No one was
+available** (`unavailable`, weight 0.15) or **Left materials only** (`materials_only`, 0.25). The
+first is the seeded default - not meeting anyone is the claim being made, and the drop-off is now
+the deliberate pick rather than the automatic one.
+
+Both are ordinary `OUTCOMES` values, so nothing else had to learn a new one; only the wording is
+local to the form, since `OUTCOME_LABELS.unavailable` ("They were unavailable") presupposes a "they"
+the rep never named. Changing what gets STORED was the point, not just the copy: the visit detail
+modal, the outcome chips and the Visits tab's outcome filter all render off that one value, so
+relabelling the form alone would have left "Left materials only" showing on those visits everywhere
+else. A no-contact encounter now weighs 0.05 x 0.15 rather than 0.05 x 0.25 - the settings page's
+"about 0.01" illustration is still about right. No backfill: there were zero `nobody` encounters on
+file when this changed.
+
+The full outcome list stays OFF for nobody - "I met no one" can't produce a substantive
+conversation - and the seeding effect deliberately does not clobber an outcome that's already valid
+for the encounter, so a rep's pick (or an existing row's value, in edit mode) survives an unrelated
+change to who was met.
+
 ### 2026-08-25 - A referral no longer requires the referrer to be at a place
 
 `POST /api/referrals` used to 400 when the person had no `place_id`. It doesn't any more - only

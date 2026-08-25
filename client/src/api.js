@@ -312,7 +312,10 @@ export const MET_WITH_LABELS = {
   named_person: 'A specific person',
   staff: 'A staff member (name unknown)',
   receptionist: 'Receptionist or front desk',
-  nobody: 'Nobody - drop-off',
+  // Just 'Nobody', not 'Nobody - drop-off': meeting no one doesn't mean
+  // materials got left. Whether it did is its own question - see
+  // VisitLogModal.jsx's NOBODY_OUTCOME_LABELS picker.
+  nobody: 'Nobody',
 };
 
 // Display labels for a visit's status (server/src/routes/visits.js's
