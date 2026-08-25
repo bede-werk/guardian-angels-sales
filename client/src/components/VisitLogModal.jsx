@@ -811,19 +811,41 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
                 created. */}
             <div>
               <label className="field" htmlFor={`${uid}-promise-date`}>Promise a next visit (optional)</label>
-              <div className="tag-list" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                <input id={`${uid}-promise-date`} type="date" value={promiseDate} onChange={(e) => setPromiseDate(e.target.value)} />
-                <select aria-label="Promised to" value={promisePersonId} onChange={(e) => setPromisePersonId(e.target.value)} style={{ width: 160 }}>
-                  <option value="">No specific person</option>
-                  {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+              {/* Two lines, not three controls fighting over one: the date and
+                  who it was promised to are the promise itself, so they share
+                  the first line, and the note gets the whole second one. All
+                  three on one line left the note with room for about three
+                  words (Bede, 2026-08-25). Both lines end flush right - the
+                  select and the note each take whatever's left of their own. */}
+              <div className="stack" style={{ gap: 8 }}>
+                <div className="tag-list">
+                  {/* Narrower than the browser's intrinsic width for a date
+                      input, which is sized for its longest possible content
+                      and leaves a dead gap after M/D/YYYY. */}
+                  <input
+                    id={`${uid}-promise-date`}
+                    type="date"
+                    value={promiseDate}
+                    onChange={(e) => setPromiseDate(e.target.value)}
+                    style={{ width: 150 }}
+                  />
+                  <select
+                    aria-label="Promised to"
+                    value={promisePersonId}
+                    onChange={(e) => setPromisePersonId(e.target.value)}
+                    style={{ flex: 1, minWidth: 160 }}
+                  >
+                    <option value="">No specific person</option>
+                    {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
                 <input
                   type="text"
                   aria-label="Note"
                   placeholder="Note (optional)"
                   value={promiseNote}
                   onChange={(e) => setPromiseNote(e.target.value)}
-                  style={{ flex: 1, minWidth: 120 }}
+                  style={{ width: '100%' }}
                 />
               </div>
             </div>
