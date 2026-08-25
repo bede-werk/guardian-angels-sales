@@ -16,30 +16,20 @@ import { PlaceRelationship } from './RelationshipDetail';
 import { PlaceCapacity } from './CapacityDetail';
 import { PlaceCommitments } from './PlaceCommitments';
 import AddCommitmentModal from './AddCommitmentModal';
+import DoNotVisitModal from './DoNotVisitModal';
 import CommitmentDetailModal from './CommitmentDetailModal';
 import useClosingTransition from '../hooks/useClosingTransition';
 
-// Presets for the "Do not visit until…" panel - longer-scale than
-// UpcomingVisitDetailModal's own SNOOZE_PRESETS (1/2 weeks, 1 month) on
-// purpose: do-not-visit is a deliberate "stop proposing this place" call,
-// not a short rotation nudge, so the defaults skew toward the kind of
-// horizon that decision actually needs. Same "+N days, not a calendar month"
-// math as that panel, for the same reason (a plain date-string add, no
-// month-length edge cases).
-const DO_NOT_VISIT_PRESETS = [
-  { label: '1 month', days: 30 },
-  { label: '3 months', days: 90 },
-  { label: '6 months', days: 180 },
-];
-
-function addDaysISO(days) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+// The Upcoming Visits card's section break: same margin-top/padding-top/
+// border-top rule .day-overview-plan uses in styles.css. Two sections in that
+// card need it - Visits always, Commitments only when a snooze or
+// do-not-visit line is sitting above it - so it's one object rather than the
+// same three properties typed out twice and free to drift apart.
+const DIVIDER_ABOVE = {
+  marginTop: 'var(--space-3)',
+  paddingTop: 'var(--space-3)',
+  borderTop: '1px solid var(--border)',
+};
 
 // Slide-in modal: place details + people here + full visit history + "log a
 // visit" action. Opened from Places.jsx (clicking a row) or Dashboard.jsx
@@ -75,7 +65,6 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   // lives in this component, not the card itself" shape as the snooze flag
   // above, since both act on `data.id` directly with no per-row target.
   const [markingDoNotVisit, setMarkingDoNotVisit] = useState(false);
-  const [dnvCustomDate, setDnvCustomDate] = useState('');
   const [savingDoNotVisit, setSavingDoNotVisit] = useState(false);
   const [liftingDoNotVisit, setLiftingDoNotVisit] = useState(false);
   // Manual relationship override (see RelationshipDetail.jsx). The editor's
@@ -353,17 +342,21 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   // Also the dismissible zero-capacity suggestion's action button (see
   // CapacityDetail.jsx) - do_not_visit only ever SKIPS this place in future
   // route proposals, it never deletes or hides anything already on file, so
-  // no confirm is needed here.
+  // no confirm is needed beyond the modal itself.
+  //
+  // Reports true/false rather than closing DoNotVisitModal itself, same
+  // contract addCommitment above has with AddCommitmentModal: a failed save
+  // leaves the modal open on the choice the rep made.
   async function setDoNotVisit(until) {
     setSavingDoNotVisit(true);
     try {
       await api.updatePlace(data.id, { do_not_visit: true, do_not_visit_until: until || null });
-      setMarkingDoNotVisit(false);
-      setDnvCustomDate('');
       load();
       onChanged?.();
+      return true;
     } catch (e) {
       window.alert(e.message);
+      return false;
     } finally {
       setSavingDoNotVisit(false);
     }
@@ -737,7 +730,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             <div className="card-head">
               <h2>Upcoming Visits</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                {!isDoNotVisitActive(data) && !markingDoNotVisit && (
+                {!isDoNotVisitActive(data) && (
                   <Button
                     variant="danger"
                     size="small"
@@ -753,9 +746,16 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               {/* The only visible answer to "why hasn't this place come up in
                   routing?" - both flags act on the whole place, not any one
                   visit, so they live here rather than inside a specific
-                  upcoming visit's own popup. Plain text + a small secondary
-                  action, not a warning - both are deliberate rep choices,
-                  not problems. */}
+                  upcoming visit's own popup. Both are deliberate rep choices
+                  rather than problems, so neither gets a warning BANNER - just
+                  a line of text and a small secondary action.
+                  Snooze stays plain and do-not-visit is mauve, though: a
+                  snooze always names the date it lifts itself on, where
+                  do-not-visit defaults to indefinite and only ever lapses if
+                  someone gave it an until-date. It's the stronger veto, and
+                  mauve is this palette's "pay attention" colour (styles.css:
+                  --danger is literally var(--mauve)), so it's the one worth
+                  catching an eye on the way past. */}
               {isSnoozeActive(data) && (
                 <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <div className="tiny">Snoozed - out of routing until {formatDate(data.snooze_until)}.</div>
@@ -766,7 +766,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
               )}
               {isDoNotVisitActive(data) && (
                 <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="tiny">
+                  <div className="tiny" style={{ color: 'var(--mauve)' }}>
                     Do not visit - {data.do_not_visit_until ? `until ${formatDate(data.do_not_visit_until)}` : 'indefinitely'}.
                   </div>
                   <span className="tag-list" style={{ flex: 'unset' }}>
@@ -779,46 +779,43 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   </span>
                 </div>
               )}
-              {markingDoNotVisit && (
-                <div className="tag-list" style={{ flexWrap: 'wrap' }}>
-                  <div className="tiny muted" style={{ width: '100%' }}>Stop proposing this place in the route planner until…</div>
-                  {DO_NOT_VISIT_PRESETS.map((p) => (
-                    <Button key={p.days} variant="secondary" size="small" disabled={savingDoNotVisit} onClick={() => setDoNotVisit(addDaysISO(p.days))}>
-                      {p.label}
-                    </Button>
-                  ))}
-                  <Button variant="secondary" size="small" disabled={savingDoNotVisit} onClick={() => setDoNotVisit(null)}>
-                    Indefinitely
-                  </Button>
-                  <input type="date" value={dnvCustomDate} onChange={(e) => setDnvCustomDate(e.target.value)} disabled={savingDoNotVisit} />
-                  <Button size="small" disabled={savingDoNotVisit || !dnvCustomDate} onClick={() => setDoNotVisit(dnvCustomDate)}>Set date</Button>
-                  <Button variant="secondary" size="small" onClick={() => { setMarkingDoNotVisit(false); setDnvCustomDate(''); }} disabled={savingDoNotVisit}>Cancel</Button>
-                </div>
-              )}
-
               {/* Dated promises to return - replaces the old bare
                   visits.next_visit_date line below the Visit History card
                   (see PlaceCommitments.jsx / services/placeCommitments.js).
                   Lives here, not down in Visit History, because a
                   commitment constrains the PLANNER going forward - the same
-                  reason snooze/do-not-visit live in this card. */}
-              <PlaceCommitments
-                commitments={data.commitments}
-                onAddClick={() => setAddingCommitment(true)}
-                onSelect={setViewingCommitment}
-                onDelete={deleteCommitment}
-                deletingId={deletingCommitmentId}
-              />
+                  reason snooze/do-not-visit live in this card.
+
+                  The divider above it only appears when a suppression line
+                  actually is above it - with neither flag set, Commitments is
+                  the card's first section and there is nothing to divide it
+                  from. Keyed to EITHER flag, not to do-not-visit alone (Bede,
+                  2026-08-25): the two lines are visually identical siblings,
+                  so a divider that appeared under one and not the other read
+                  as a bug rather than as a distinction. What separates them is
+                  the mauve, not the rule below them. It hangs off a wrapper
+                  here rather than off a border-BOTTOM on the last line above,
+                  since there can be one line up there or two - one place to
+                  put the rule, not the same conditional on two rows. */}
+              <div style={isSnoozeActive(data) || isDoNotVisitActive(data) ? DIVIDER_ABOVE : undefined}>
+                <PlaceCommitments
+                  commitments={data.commitments}
+                  onAddClick={() => setAddingCommitment(true)}
+                  onSelect={setViewingCommitment}
+                  onDelete={deleteCommitment}
+                  deletingId={deletingCommitmentId}
+                />
+              </div>
 
               {/* Labeled to match Commitments' own caption above, plus a full
                   divider (not just the list rows' own thin top-borders) -
                   the two lists used to run together with no boundary between
                   them (both are bold-date rows separated by the same thin
                   top-border), so a plain glance couldn't tell a commitment
-                  row from a visit row. Same margin-top/padding-top/border-top
-                  section-break pattern as .day-overview-plan in
-                  styles.css. */}
-              <div className="stack" style={{ gap: 6, marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border)' }}>
+                  row from a visit row. DIVIDER_ABOVE is that rule, shared
+                  with the one Commitments takes when it follows a
+                  do-not-visit line. */}
+              <div className="stack" style={{ gap: 6, ...DIVIDER_ABOVE }}>
                 <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
                     Visits{data.upcoming_visits.length > 0 ? ` (${data.upcoming_visits.length})` : ''}
@@ -1122,6 +1119,17 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
           users={users}
           onClose={() => setPlanningVisit(false)}
           onSaved={() => { load(); onChanged?.(); }}
+        />
+      )}
+
+      {markingDoNotVisit && (
+        <DoNotVisitModal
+          placeName={data.name}
+          active={isDoNotVisitActive(data)}
+          until={data.do_not_visit_until}
+          onSet={setDoNotVisit}
+          saving={savingDoNotVisit}
+          onClose={() => setMarkingDoNotVisit(false)}
         />
       )}
 

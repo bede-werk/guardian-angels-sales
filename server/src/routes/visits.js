@@ -9,6 +9,7 @@ const { VISIT_TYPES } = require('../config/visitTypes');
 const { attachEncounters } = require('../services/visitEncounters');
 const { crossRepVisitsByPlace, findCrossRepFloorWarning, attachCrossRepFloorWarnings } = require('../services/crossRepFloorWarning');
 const { detectConflicts } = require('../services/conflictDetection');
+const { doNotVisitFinding } = require('../services/doNotVisit');
 const { computeCapacityForPlace, attachCapacityLevel, stampExplorationEligibility } = require('../services/capacity');
 const {
   createCommitment,
@@ -600,6 +601,21 @@ router.post('/', async (req, res, next) => {
     // before re-sending with `force: true` to actually create it.
     if (payload.place_id && payload.scheduled_date && !req.body.force) {
       const conflicts = await detectConflicts(knex, payload.place_id, payload.scheduled_date, { userId: payload.user_id });
+      // do_not_visit rides the same array rather than a second parallel one
+      // (see services/doNotVisit.js) - this route used to be one of the three
+      // write paths that honoured the flag not at all, so a rep could log a
+      // visit to a place they'd deliberately marked "stop going here" with no
+      // signal whatsoever. It WARNS, never blocks: same tier the manual-plan
+      // path already puts it in, and a trip that already happened can't be
+      // un-taken by refusing to record it.
+      //
+      // Compared against org-today, NOT payload.scheduled_date, unlike every
+      // other entry in this array: the mark is a live property of the place,
+      // and only its END is stored, so "was this place marked on the date of
+      // that backdated visit" is a question the data can't answer. "This
+      // place is marked do-not-visit" is the claim, and it's true as of now.
+      const dnv = doNotVisitFinding(place, orgToday());
+      if (dnv) conflicts.push(dnv);
       const sameDateConflict = conflicts.find((c) => c.type === 'SAME_DATE_VISIT');
       if (sameDateConflict) {
         const isSameUser = payload.user_id && sameDateConflict.otherUserId === payload.user_id;
@@ -653,9 +669,14 @@ router.post('/', async (req, res, next) => {
 // without asking the route planner to agree (Manual Visit Planning spec,
 // 2026-08-12 v2, §3-§5). Distinct from POST / above: that route creates an
 // ad-hoc COMPLETED (or occasionally already-known-outcome) trip; this one
-// creates a still-open status:'planned' row nobody has visited yet, with its
-// own, stricter conflict policy (services/manualVisits.js's classifyConflicts
-// hard-blocks DRAFT_ELSEWHERE, where the route above only warns on it).
+// creates a still-open status:'planned' row nobody has visited yet. The two
+// share a conflict policy now: SAME_DATE_VISIT blocks, everything else warns
+// and yields to force:true. They used to differ - classifyConflicts hard-
+// blocked DRAFT_ELSEWHERE here where the route above only warned on it - until
+// that divergence was retired 2026-08-25 (see services/manualVisits.js's
+// header). What still differs is the SHAPE of the confirm step: `warnings`
+// (pre-worded sentences) here, `conflicts` (structured findings the client
+// words itself) above.
 //
 // Body: { place_id, scheduled_date, user_id?, notes?, visit_type?, force? }. user_id is
 // the ASSIGNEE - defaults to the caller (planning for yourself is the common

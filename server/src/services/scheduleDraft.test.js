@@ -605,6 +605,40 @@ describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 req
     const after1 = await loadDraftView(db, draftId);
     const stopAfter = after1.days[0].stops.find((s) => s.place_id === 1);
     assert.equal(stopAfter, undefined, 'a same-date real visit must remove the stop from the proposal, not just flag it');
+
+    // Removing it is only half the job: dropping it SILENTLY is what made
+    // the stop appear to evaporate on whatever unrelated draft edit happened
+    // to trigger the next read. The day has to say what it took out and who
+    // took the slot (partitionSameDateDrops in scheduleDraft.js).
+    const dropped = after1.days[0].droppedCollisions;
+    assert.equal(dropped.length, 1, 'the drop must be reported on the day, not just performed');
+    assert.equal(dropped[0].place_id, 1);
+    assert.equal(dropped[0].place_name, 'Same Day Place');
+    assert.equal(dropped[0].conflict.type, 'SAME_DATE_VISIT');
+    assert.equal(dropped[0].conflict.otherUserId, 2, 'the other rep is named, not left as a bare "booked elsewhere"');
+    assert.equal(dropped[0].conflict.status, 'planned');
+  });
+
+  // The draft row itself must SURVIVE the drop - this is a view-level filter,
+  // not a delete. That's what leaves commitDay still able to see the stop and
+  // report it in skippedCollisions, and it's why the notice above has to keep
+  // reappearing on every read rather than firing once.
+  test('loadDraftView: a dropped stop keeps its schedule_draft_stops row', async () => {
+    // Its own place+date pair, not DATE_A/place 1: this describe seeds once
+    // in before() (not beforeEach), so the earlier tests' visits are still
+    // on the table and reusing theirs trips visits_place_date_planned_unique.
+    const DATE_C = '2026-08-20';
+    const params = { days: [{ date: DATE_C, hoursPerDay: 4 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 2, date: DATE_C, sort_order: 0 });
+    await db('visits').insert({ place_id: 2, user_id: 2, status: 'planned', scheduled_date: DATE_C, place_name: 'Nearby Day Place' });
+
+    const view = await loadDraftView(db, draftId);
+    assert.equal(view.days[0].stops.length, 0, 'dropped from the view');
+    assert.equal(view.days[0].droppedCollisions.length, 1, 'and reported');
+    const rows = await db('schedule_draft_stops').where({ draft_id: draftId, place_id: 2 });
+    assert.equal(rows.length, 1, 'but the underlying draft row is untouched');
   });
 
   test('loadDraftDayView: a nearby-day PLANNED visit committed after the fact produces FLOOR_PLANNED on reload', async () => {
@@ -647,6 +681,13 @@ describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 req
 
     const after1 = await loadDraftDayView(db, draftId, DATE_B);
     assert.equal(after1.stops.find((s) => s.place_id === 1), undefined, 'a same-date completed visit must remove the stop, not just flag it');
+
+    // Reported here too - this is the shape every draft MUTATION returns
+    // (reorder/add/remove/visit-type), which is exactly when a rep used to
+    // watch a stop vanish for no stated reason.
+    assert.equal(after1.droppedCollisions.length, 1, 'the one-day view reports the drop as well');
+    assert.equal(after1.droppedCollisions[0].place_name, 'Same Day Place');
+    assert.equal(after1.droppedCollisions[0].conflict.status, 'completed');
   });
 });
 
@@ -724,6 +765,95 @@ describe('loadDraftView / loadDraftDayView - Place Commitments badge', () => {
     const stop = view.days[0].stops.find((s) => s.place_id === 1);
     assert.ok(stop.commitment);
     assert.equal(stop.commitment.moreCount, 1);
+  });
+});
+
+// do_not_visit rides the stop's `conflicts` array (services/doNotVisit.js's
+// doNotVisitFinding, attached by stopFindings) rather than a field of its
+// own, so RoutePlanner.jsx renders it through the one conflict badge it
+// already has. This is the whole of addStop's do-not-visit handling: the flag
+// warns, it never refuses - same policy addStop already applies to a floor
+// conflict and to another rep's draft.
+//
+// Attached on every READ, which is the case a one-shot check at add time
+// could never cover: a place marked do-not-visit AFTER it was already sitting
+// in the draft. The fixture leans on that - the mark is applied between two
+// loads of the same unchanged draft.
+//
+// Both the live and the lapsed mark use dates that don't depend on when this
+// suite runs (indefinite / years past), since loadDraft*View call the real
+// orgToday() internally.
+describe('loadDraftView / loadDraftDayView - do_not_visit finding on a stop', () => {
+  let db;
+  const originalFetch = global.fetch;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+
+  before(async () => {
+    global.fetch = async () => ({ ok: false, json: async () => ({}) });
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
+    // do_not_visit is spelled out on EVERY row: places.do_not_visit is NOT
+    // NULL, and a batched insert fills a column absent from one row's object
+    // with an explicit NULL for that row rather than the column default.
+    await db('places').insert([
+      { id: 1, name: 'Marked Place', category: 'Hospice', lat: 41.9, lng: -87.6, do_not_visit: false },
+      { id: 2, name: 'Clean Place', category: 'Hospice', lat: 41.8, lng: -87.7, do_not_visit: false },
+      { id: 3, name: 'Lapsed Mark Place', category: 'Hospice', lat: 41.7, lng: -87.8, do_not_visit: true, do_not_visit_until: '2020-01-01' },
+    ]);
+
+    const params = { days: [{ date: DATE_A, hoursPerDay: 8 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    db.draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert([
+      { draft_id: db.draftId, place_id: 1, date: DATE_A, sort_order: 0 },
+      { draft_id: db.draftId, place_id: 2, date: DATE_A, sort_order: 1 },
+      { draft_id: db.draftId, place_id: 3, date: DATE_A, sort_order: 2 },
+    ]);
+  });
+
+  after(async () => {
+    global.fetch = originalFetch;
+    await db.destroy();
+  });
+
+  function findingsFor(stop) {
+    return (stop.conflicts || []).filter((c) => c.type === 'DO_NOT_VISIT');
+  }
+
+  test('an unmarked place carries no do-not-visit finding', async () => {
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    assert.equal(findingsFor(view.stops.find((s) => s.place_id === 1)).length, 0);
+    assert.equal(findingsFor(view.stops.find((s) => s.place_id === 2)).length, 0);
+  });
+
+  test('a mark whose until-date has already passed carries no finding either', async () => {
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    assert.equal(findingsFor(view.stops.find((s) => s.place_id === 3)).length, 0);
+  });
+
+  test('marking the place do-not-visit AFTER it is already in the draft flags it on the next read', async () => {
+    await db('places').where({ id: 1 }).update({ do_not_visit: true, do_not_visit_until: null });
+    const view = await loadDraftDayView(db, db.draftId, DATE_A);
+    const stop = view.stops.find((s) => s.place_id === 1);
+    assert.deepEqual(findingsFor(stop), [{ type: 'DO_NOT_VISIT', severity: 'soft', placeId: 1 }]);
+    // The stop is still there: this warns, it does not drop the row the way
+    // a SAME_DATE_VISIT collision does (partitionSameDateDrops).
+    assert.ok(view.stops.some((s) => s.place_id === 1), 'a marked place stays in the proposal');
+    assert.equal(findingsFor(view.stops.find((s) => s.place_id === 2)).length, 0, 'the neighbouring clean stop is untouched');
+  });
+
+  test('loadDraftView: same finding on the whole-draft read', async () => {
+    const view = await loadDraftView(db, db.draftId);
+    const stop = view.days[0].stops.find((s) => s.place_id === 1);
+    assert.deepEqual(findingsFor(stop), [{ type: 'DO_NOT_VISIT', severity: 'soft', placeId: 1 }]);
+    assert.equal(findingsFor(view.days[0].stops.find((s) => s.place_id === 3)).length, 0);
   });
 });
 

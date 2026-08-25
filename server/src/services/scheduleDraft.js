@@ -29,6 +29,7 @@ const { orgToday, orgDateOf } = require('./orgDate');
 const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
 const { computeCapacityForPlaces, computeCapacityForPlace, attachCapacityLevel } = require('./capacity');
 const { getBindingCommitmentsForPlaces, getOutstandingCommitmentsForPlaces } = require('./placeCommitments');
+const { doNotVisitFinding } = require('./doNotVisit');
 
 // Recognizes a unique-constraint violation across both engines this app runs
 // on (SQLite in dev, Postgres in prod) - see commitDay's per-row insert loop,
@@ -865,6 +866,59 @@ function hasSameDateVisitConflict(conflicts) {
   return (conflicts || []).some((c) => c.type === 'SAME_DATE_VISIT');
 }
 
+// Splits a day's already-shaped stops into the ones the proposal still
+// holds and the ones a real same-date visit has claimed since they were
+// added. Both view functions below used to apply hasSameDateVisitConflict as
+// a bare .filter(), which dropped the stop correctly but told nobody: the
+// row vanished from the day on the next read - and that read is triggered by
+// ANY draft mutation (a reorder, a visit-type change), so the disappearance
+// was decoupled in time from the collision that caused it. The stop's own
+// `schedule_draft_stops` row survives regardless (this is a view-level
+// filter, not a delete), so commitDay still finds it and still reports it in
+// `skippedCollisions` - but only for a rep who never reloaded in between.
+// Reporting the drop here closes that gap: same fact, named at the moment
+// the view acts on it, in the same { place_id, place_name } shape
+// skippedCollisions already uses, plus the Conflict itself so the client can
+// name who took it rather than falling back to "booked elsewhere".
+function partitionSameDateDrops(shapedStops) {
+  const stops = [];
+  const droppedCollisions = [];
+  for (const stop of shapedStops) {
+    if (hasSameDateVisitConflict(stop.conflicts)) {
+      droppedCollisions.push({
+        place_id: stop.place_id,
+        place_name: stop.place_name,
+        conflict: stop.conflicts.find((c) => c.type === 'SAME_DATE_VISIT'),
+      });
+    } else {
+      stops.push(stop);
+    }
+  }
+  return { stops, droppedCollisions };
+}
+
+// A stop's full finding list: the detector's Conflict[] for this place+date,
+// plus the place's own do_not_visit mark if it's still live (see
+// services/doNotVisit.js - not a conflictDetection.js finding, but it rides
+// the same array so the client renders it through the one badge it already
+// has). `row` is the raw joined `p.*` row, which is where the two flag
+// columns live - toDraftStopShape deliberately doesn't carry them onto the
+// shaped stop.
+//
+// This is the whole of addStop's do-not-visit handling, on purpose and for
+// exactly the reason its own header gives for DRAFT_ELSEWHERE: a human
+// deliberately adding a stop is trusted to have a reason a screen can't
+// see, so the flag is worth SAYING, not worth refusing on. Attaching it on
+// the read (rather than one-shot at add time) also catches the case a
+// one-shot check never could - a place marked do-not-visit AFTER it was
+// already sitting in the draft, which is the version a rep is most likely
+// to have forgotten about by commit time.
+function stopFindings(row, date, conflictsByStop, today) {
+  const conflicts = conflictsByStop.get(`${row.id}|${date}`) || [];
+  const dnv = doNotVisitFinding(row, today);
+  return dnv ? [...conflicts, dnv] : conflicts;
+}
+
 // Shapes one place's outstanding commitments (already earliest-first - see
 // getOutstandingCommitmentsForPlaces) into the route planner's badge (Place
 // Commitments spec §6.1): who it was promised to, the date, and how overdue
@@ -957,22 +1011,30 @@ async function loadDraftView(db, draftId) {
   const days = [];
   for (const date of dates) {
     const rows = byDate[date] || [];
-    const stops = rows.map(toDraftStopShape).map((s) => ({
-      ...s,
-      capacity_level: stopCapacity.get(s.place_id)?.level ?? null,
-      alreadyVisitedToday: todaySet.has(s.place_id),
-      crossRepFloorWarning: findCrossRepFloorWarning(
-        { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
-        crossRepByPlace.get(s.place_id) || [],
-        defaultSchedulingConfig
-      ),
-      conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
-      commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
-    })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
+    // One pass over the RAW rows (not `.map(toDraftStopShape).map(...)` as
+    // this used to be) - stopFindings needs the place columns toDraftStopShape
+    // drops.
+    const { stops, droppedCollisions } = partitionSameDateDrops(rows.map((row) => {
+      const s = toDraftStopShape(row);
+      return {
+        ...s,
+        capacity_level: stopCapacity.get(s.place_id)?.level ?? null,
+        alreadyVisitedToday: todaySet.has(s.place_id),
+        crossRepFloorWarning: findCrossRepFloorWarning(
+          { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
+          crossRepByPlace.get(s.place_id) || [],
+          defaultSchedulingConfig
+        ),
+        conflicts: stopFindings(row, date, conflictsByStop, today),
+        commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
+      };
+    }));
     const committedForDay = committedByDate[date] || [];
     const budgetMinutes = hoursPerDayByDate[date] * 60;
+    // evaluateDay sees only the kept stops, exactly as before - a dropped
+    // stop must not go on counting against the day's time budget.
     const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed: committedForDay });
-    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedForDay, ...evaluated });
+    days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedForDay, droppedCollisions, ...evaluated });
   }
 
   return { id: draft.id, userId: draft.user_id, params, days };
@@ -1006,40 +1068,64 @@ async function loadDraftDayView(db, draftId, date) {
   const commitmentRowsByPlace = await getOutstandingCommitmentsForPlaces(db, rows.map((r) => r.id));
   const stopCapacity = await computeCapacityForPlaces(db, rows.map((r) => r.id));
   const today = orgToday();
-  const stops = rows.map(toDraftStopShape).map((s) => ({
-    ...s,
-    capacity_level: stopCapacity.get(s.place_id)?.level ?? null,
-    alreadyVisitedToday: todaySet.has(s.place_id),
-    crossRepFloorWarning: findCrossRepFloorWarning(
-      { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
-      crossRepByPlace.get(s.place_id) || [],
-      defaultSchedulingConfig
-    ),
-    conflicts: conflictsByStop.get(`${s.place_id}|${date}`) || [],
-    commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
-  })).filter((s) => !hasSameDateVisitConflict(s.conflicts));
+  // Same single pass, same partition (and same reasoning) as loadDraftView
+  // above - this is its one-day sibling, so the drop has to be reported here
+  // too or every MUTATION response (reorder/add/remove/visit-type, which all
+  // return this shape) would go back to silently losing the stop.
+  const { stops, droppedCollisions } = partitionSameDateDrops(rows.map((row) => {
+    const s = toDraftStopShape(row);
+    return {
+      ...s,
+      capacity_level: stopCapacity.get(s.place_id)?.level ?? null,
+      alreadyVisitedToday: todaySet.has(s.place_id),
+      crossRepFloorWarning: findCrossRepFloorWarning(
+        { id: null, user_id: draft.user_id, place_id: s.place_id, scheduled_date: date, status: 'planned' },
+        crossRepByPlace.get(s.place_id) || [],
+        defaultSchedulingConfig
+      ),
+      conflicts: stopFindings(row, date, conflictsByStop, today),
+      commitment: commitmentBadge(commitmentRowsByPlace.get(s.place_id), today),
+    };
+  }));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
   const committed = await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date));
   const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed });
 
-  return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, ...evaluated };
+  return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, droppedCollisions, ...evaluated };
 }
 
 // Adds a stop (from a suggestion, or ad hoc) to one day of a draft.
 // Rejects (409) a place already used anywhere else in this user's own draft,
-// or locked elsewhere (committed by anyone, or on another user's active
-// draft) for this specific date - both checked fresh, not against whatever
-// was true when the draft was generated. A place visited OR already planned
-// within the hard floor (FLOOR_COMPLETED/FLOOR_PLANNED) is allowed through,
-// not rejected - a human deliberately adding a stop is trusted to have a
-// reason a screen can't see; the floor blocks GENERATION from proposing it,
-// not this. loadDraftDayView's own fresh read below (every stop's `conflicts`
+// or one that already has a real visit (anyone's, planned or completed) on
+// this specific date - both checked fresh, not against whatever was true
+// when the draft was generated. A place visited OR already planned within
+// the hard floor (FLOOR_COMPLETED/FLOOR_PLANNED) is allowed through, not
+// rejected - a human deliberately adding a stop is trusted to have a reason
+// a screen can't see; the floor blocks GENERATION from proposing it, not
+// this.
+//
+// DRAFT_ELSEWHERE (another rep has this place in their own uncommitted draft
+// for this date) is allowed through for the same reason as of 2026-08-25 -
+// it used to be a hard reject here. See manualVisits.js's header for the
+// full reasoning; the short version is that commitDay has never treated
+// another rep's draft as a lock, so neither surface a human drives should
+// either. Nothing extra is needed to WARN about it: the stop picks up a
+// DRAFT_ELSEWHERE entry in its `conflicts` on the very next read and renders
+// as the same informational badge every other non-blocking conflict does.
+// Generation is deliberately untouched and still steers around those places
+// (lockedElsewherePlaceIdsByDate, getSuggestions) - declining to PROPOSE a
+// contested place costs nobody anything, which is not the same as refusing a
+// rep who asked for it by name. loadDraftDayView's own fresh read below (every stop's `conflicts`
 // field, recomputed on every load - see its header) is what surfaces the
 // flag, so there's no separate one-shot signal to carry out of this
 // function. The reject and the flag both run through the one shared
 // detector, not several separately-maintained checks (see the 2026-08
 // remediation ticket).
+//
+// A do_not_visit place is allowed through on exactly the same terms, and
+// surfaced exactly the same way (stopFindings, attached on every read) -
+// see that function's own header.
 async function addStop({ draftId, userId, date, placeId, visitType }) {
   await knex.transaction(async (trx) => {
     const draft = await assertOwnsDraft(trx, draftId, userId);
@@ -1058,9 +1144,15 @@ async function addStop({ draftId, userId, date, placeId, visitType }) {
       throw err;
     }
 
-    const blocking = conflicts.filter((c) => c.type === 'SAME_DATE_VISIT' || c.type === 'DRAFT_ELSEWHERE');
+    const blocking = conflicts.filter((c) => c.type === 'SAME_DATE_VISIT');
     if (blocking.length > 0) {
-      const err = new Error('That place is already booked elsewhere for this date');
+      // "already booked" rather than the old "already booked elsewhere":
+      // with DRAFT_ELSEWHERE no longer in this filter, the only way to get
+      // here is a real visit on this exact date, which may well be the
+      // caller's own. The client replaces this string with a named one
+      // anyway (RoutePlanner.jsx's addStopErrorMessage); this is what other
+      // consumers of the endpoint see.
+      const err = new Error('That place already has a visit booked for this date');
       err.status = 409;
       err.conflicts = blocking; // named/dated - see conflictDetection.js's Conflict shape
       throw err;
@@ -1746,6 +1838,7 @@ module.exports = {
   validateDays,
   mergeLockedElsewhereIds,
   partitionCommittableStops,
+  partitionSameDateDrops,
   buildCandidatePool,
   lockedElsewherePlaceIds,
   lockedElsewherePlaceIdsByDate,

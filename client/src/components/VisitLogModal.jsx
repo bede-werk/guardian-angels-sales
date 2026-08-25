@@ -32,6 +32,12 @@ function conflictMessage(conflict, sameDateFallback) {
   switch (conflict.type) {
     case 'SAME_DATE_VISIT':
       return sameDateFallback;
+    // Not a detector finding - the place's own do_not_visit flag, pushed onto
+    // the same array by the route (services/doNotVisit.js). Word-for-word the
+    // sentence PlanVisitModal.jsx already shows for it, minus its "Plan
+    // anyway?" - the button below this notice already reads "Save anyway".
+    case 'DO_NOT_VISIT':
+      return 'This place is marked do-not-visit.';
     case 'FLOOR_COMPLETED': {
       // daysApart is measured against THIS visit's own date, not real-world
       // today (see conflictDetection.js's detectConflicts: `today` is
@@ -58,7 +64,11 @@ function conflictMessage(conflict, sameDateFallback) {
 // multiple qualifying visits down to one). Showing every applicable conflict
 // used to read as pile-on for what's really one "this place is spoken for"
 // signal - one line, the most certain one, is enough to act on.
-const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+// DO_NOT_VISIT sits below SAME_DATE_VISIT and above the rest, same relative
+// order PlanVisitModal.jsx/UpcomingVisitDetailModal.jsx's WARNING_PRIORITY and
+// RoutePlanner.jsx's CONFLICT_PRIORITY use: a flag a rep set by hand outranks
+// another rep's draft entry, which outranks a floor recency guess.
+const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DO_NOT_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
 function primaryConflict(conflicts) {
   for (const type of CONFLICT_PRIORITY) {
     const found = conflicts.find((c) => c.type === type);
@@ -888,17 +898,28 @@ export default function VisitLogModal({ visit, placeId, placeName, initialPerson
           </div>
         )}
         {/* Notice sits IN the footer, not stacked above it behind the
-            divider - left of the buttons (marginRight: auto against
-            modal-foot's own justify-content: flex-end, same trick
-            UpcomingVisitDetailModal's Delete button uses to sit apart from
-            its own row), so it reads as "here's why" right next to "here's
-            what you can do about it" rather than as a separate notice a rep
-            has to connect to the buttons below it themselves. flexWrap
-            handles a message too long to fit alongside both buttons on one
-            line. The ref (see the scrollIntoView effect above) still finds
-            it here as the sticky footer never moves off-screen. */}
+            divider - left of the button, so it reads as "here's why" right
+            next to "here's what you can do about it" rather than as a
+            separate notice a rep has to connect to the buttons below it
+            themselves. The ref (see the scrollIntoView effect above) still
+            finds it here as the sticky footer never moves off-screen.
+
+            flex: 1 + minWidth: 0, NOT marginRight: auto (what this used to
+            be, and what UpcomingVisitDetailModal's Delete button still
+            legitimately uses - a short button label never grows enough to
+            matter). This comment used to say flexWrap "handles a message
+            too long to fit alongside both buttons on one line," which
+            undersold what actually happened: flex-wrap picks its line
+            breaks from each item's UNFLEXED content width, so a notice
+            sized to its own text claimed the entire line the moment the
+            text got long, dropping Save onto a line by itself - the very
+            adjacency the rest of this comment is about. A flex-basis of 0
+            (via flex: 1) makes that hypothetical width zero, so the notice
+            never forces the break and instead grows into whatever the
+            button leaves. minWidth: 0 lets it shrink past min-content, so a
+            long word wraps inside the notice rather than overflowing it. */}
         <div className="modal-foot" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          <div ref={noticeRef} style={{ marginRight: 'auto' }}>
+          <div ref={noticeRef} style={{ flex: 1, minWidth: 0 }}>
             {error && <div className="error-banner">{error}</div>}
             {conflicts.length > 0 && (
               <div className="tiny" style={{ color: 'var(--mauve)' }}>

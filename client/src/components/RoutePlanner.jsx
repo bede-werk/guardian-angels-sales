@@ -87,7 +87,13 @@ function addStopErrorMessage(err, viewerId) {
 // can genuinely carry more than one true conflict at once (e.g. both
 // FLOOR_COMPLETED and DRAFT_ELSEWHERE), but stacking every applicable one
 // reads as pile-on for what's really one "this place is spoken for" signal.
-const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+// DO_NOT_VISIT is not a conflictDetection.js type - it's the place's own
+// flag, attached to the same array by scheduleDraft.js's stopFindings. Ranked
+// below SAME_DATE_VISIT (a recorded fact about this exact date) and above the
+// rest, matching the WARNING_PRIORITY PlanVisitModal.jsx/
+// UpcomingVisitDetailModal.jsx already use: a flag a rep set by hand outranks
+// another rep's draft entry, which outranks a floor recency guess.
+const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DO_NOT_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
 function primaryConflict(conflicts) {
   for (const type of CONFLICT_PRIORITY) {
     const found = conflicts.find((c) => c.type === type);
@@ -98,12 +104,24 @@ function primaryConflict(conflicts) {
 
 function stopConflictMessage(c, viewerId) {
   switch (c.type) {
+    // Reachable ONLY via addStopErrorMessage's 409, never from the stop badge
+    // below: a stop carrying this conflict is partitioned out of the day
+    // entirely on the way in (services/scheduleDraft.js's
+    // partitionSameDateDrops) and reported as a droppedCollision instead, so
+    // primaryConflict never sees one. Kept, not deleted - the add-time 409 is
+    // a real caller, and it's the same sentence for the same fact.
     case 'SAME_DATE_VISIT': {
       const isViewer = viewerId != null && c.otherUserId === viewerId;
       const who = isViewer ? 'You' : c.otherUserName || 'Someone else';
       const verb = isViewer ? 'have' : 'has';
       return `${who} already ${verb} a ${c.status || 'planned'} visit here on ${formatDate(c.otherDate)}.`;
     }
+    // Terse, like every other badge here ("In Sarah's draft for 8/28.") -
+    // this row already names the place, so the sentence doesn't repeat it.
+    // The until-date isn't shown: it's on the place's own page, and the only
+    // thing this row has to answer is whether to keep the stop.
+    case 'DO_NOT_VISIT':
+      return 'Marked do-not-visit.';
     case 'FLOOR_COMPLETED': {
       // daysApart is measured against THIS STOP's own target date, not
       // real-world today (see conflictDetection.js's detectConflicts:
@@ -122,6 +140,22 @@ function stopConflictMessage(c, viewerId) {
       return null;
   }
 }
+// One line for a stop services/scheduleDraft.js's partitionSameDateDrops
+// took out of this day (`day.droppedCollisions`). Deliberately NOT
+// stopConflictMessage above, even though the underlying Conflict is the same
+// SAME_DATE_VISIT: that one ends in "on <date>", which is the day this card
+// is already headed by, so it reads as noise here - and it says "here",
+// which only works next to a stop row that names the place itself. Same
+// "You" vs a name handling though, for the same reason: a rep's own visit
+// taking the slot is exactly as worth naming as another rep's.
+function droppedStopMessage(d, viewerId) {
+  const c = d.conflict || {};
+  const isViewer = viewerId != null && c.otherUserId === viewerId;
+  const who = isViewer ? 'You' : c.otherUserName || 'Someone else';
+  const verb = isViewer ? 'have' : 'has';
+  return `${d.place_name} was dropped - ${who} already ${verb} a ${c.status || 'planned'} visit there.`;
+}
+
 // Place Commitments badge text (spec §6.1) - `stop.commitment`/`s.commitment`,
 // attached server-side by services/scheduleDraft.js's commitmentBadge. The
 // promise itself, not just a flag: who it was for (when known), the date,
@@ -334,6 +368,12 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
 
   const budgetMinutes = day.totalMinutes + day.remainingMinutes;
   const usedPct = budgetMinutes > 0 ? Math.min(100, Math.round((day.totalMinutes / budgetMinutes) * 100)) : 0;
+
+  // Defaulted rather than read straight off `day`: persistReorder below hands
+  // onDayUpdated a locally-spread `{ ...day, stops }` for its optimistic
+  // redraw, and the whole-draft load() path predates this field, so a day
+  // object can legitimately reach here without it.
+  const droppedCollisions = day.droppedCollisions || [];
 
   // Optimistically shows the new order right away (stale running totals until
   // the server responds, since those depend on real drive time between
@@ -596,7 +636,7 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
             size="small"
             variant="danger"
             onClick={discardThisDay}
-            disabled={busy || day.stops.length === 0}
+            disabled={busy || (day.stops.length === 0 && droppedCollisions.length === 0)}
             title="Remove this day's still-open proposal (anything already accepted for this day is untouched)"
             style={{ flex: 'none', minWidth: 0 }}
           >
@@ -621,6 +661,29 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
             {!day.overBudget && day.remainingMinutes > 0 ? ` · ${formatMinutes(day.remainingMinutes)} free` : ''}
           </div>
         </div>
+
+        {/* Stops this day's read just removed, because a real visit has since
+            landed on the same place+date (services/scheduleDraft.js's
+            partitionSameDateDrops). Sits directly under the stop count and
+            time budget on purpose: those are the numbers the drop just
+            changed, and without this a day quietly reads as shorter - or
+            empty - with nothing saying why. Recomputed on every read rather
+            than fired once, same as the per-stop conflict badges below: the
+            underlying draft row is still there, so this stays true until the
+            day is committed or discarded. */}
+        {droppedCollisions.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 14 }}>
+            {droppedCollisions.map((d) => (
+              <div
+                key={d.place_id}
+                className="tiny"
+                style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', alignSelf: 'flex-start', fontWeight: 600 }}
+              >
+                {droppedStopMessage(d, userId)}
+              </div>
+            ))}
+          </div>
+        )}
 
         {day.committed.length > 0 && (
           /* Hairline between the two lists when both are present. They read
@@ -822,11 +885,16 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         was added. Another rep can commit a colliding visit at
                         any point after that, and this is what catches it: a
                         stop sitting in a Thursday draft that someone else's
-                        Tuesday commit has since invalidated. Informational -
-                        addStop allows a floor conflict through; only a same-
-                        date/other-draft collision is rejected outright, at
-                        add time, before it can ever reach here. A stop can
-                        genuinely carry more than one true conflict at once -
+                        Tuesday commit has since invalidated. Everything that
+                        reaches here is informational: addStop rejects only a
+                        SAME_DATE_VISIT, and a stop that acquires one LATER is
+                        pulled out of the day by partitionSameDateDrops and
+                        reported as a droppedCollision above instead - so that
+                        one type never renders through this badge at all (see
+                        stopConflictMessage's own note on its arm). A floor
+                        conflict, another rep's draft entry and a do-not-visit
+                        mark are all allowed through by design. A stop can
+                        genuinely carry more than one true finding at once -
                         primaryConflict picks the single most-certain one to
                         show, same "one line, not a pile-on" rule as
                         VisitLogModal.jsx/PlanVisitModal.jsx's own notices. */}

@@ -31,7 +31,14 @@ import PlacePicker from './ui/PlacePicker';
 // (conflictDetection.js already collapses multiple qualifying visits to
 // one), so there's never more than DO_NOT_VISIT plus one floor type to
 // choose between.
-const WARNING_PRIORITY = ['DO_NOT_VISIT', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+// DRAFT_ELSEWHERE joined this list on 2026-08-25, when it stopped being a
+// hard block (services/manualVisits.js's classifyConflicts). Ranked above
+// the two floor types and below DO_NOT_VISIT, matching the relative order
+// RoutePlanner.jsx's CONFLICT_PRIORITY already uses: another rep's actual
+// draft entry is a definite fact about someone's intent, where a floor
+// warning is a recency heuristic - but a do-not-visit flag someone set by
+// hand still outranks both.
+const WARNING_PRIORITY = ['DO_NOT_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
 function primaryWarning(warnings) {
   for (const type of WARNING_PRIORITY) {
     const found = warnings.find((w) => w.type === type);
@@ -59,6 +66,20 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
 
   const resolvedPlaceId = placeId ?? pickedPlace?.id;
   const resolvedPlaceName = placeName ?? pickedPlace?.name;
+
+  // A §4.1 hard block has no override - unlike a §4.2 warning, there is no
+  // "Plan anyway" to press, so the notice has to say what a rep can actually
+  // DO or it reads as an unexplained dead end (the block and the warning are
+  // styled identically below, deliberately, so the button text is otherwise
+  // the only difference between "push past this" and "you are stuck").
+  // Points at whichever of place/date this entry point left editable: from
+  // PlaceDetail the place is fixed, from DayOverflowModal the date is, and
+  // from the Visits tab neither is.
+  const blockedAdvice = fixedDate
+    ? 'Pick a different place.'
+    : placeId
+      ? 'Pick a different date.'
+      : 'Pick a different date or place.';
 
   // The message lives at the bottom of the form (right above Save), but on
   // a tall form (DayOverflowModal's place-picker variant, say) that can
@@ -214,18 +235,26 @@ export default function PlanVisitModal({ placeId, placeName, date: fixedDate, us
           </div>
 
         </div>
-        {/* Notice sits IN the footer, left of the buttons (marginRight:
-            auto against modal-foot's own justify-content: flex-end) rather
-            than stacked above it behind the divider - same move as
+        {/* Notice sits IN the footer, left of the button, rather than
+            stacked above it behind the divider - same move as
             VisitLogModal's own footer. Also means it's now inside the
             sticky footer itself, so it's on-screen at all times without
             needing the scrollIntoView effect above to do anything; that
-            effect stays as a harmless no-op/safety net. */}
+            effect stays as a harmless no-op/safety net.
+
+            flex: 1 + minWidth: 0, NOT marginRight: auto (what this used to
+            be) - see UpcomingVisitDetailModal's identical notice for the
+            full reasoning. Short version: flex-wrap breaks lines on each
+            item's UNFLEXED content width, so a notice sized to its own text
+            claimed the whole line once the text got long and pushed Save
+            onto a line by itself; a flex-basis of 0 makes that hypothetical
+            width zero, so it never forces the break and still fills the
+            space left of the button. */}
         <div className="modal-foot" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          <div ref={noticeRef} style={{ marginRight: 'auto' }}>
+          <div ref={noticeRef} style={{ flex: 1, minWidth: 0 }}>
             {error && (
               error.conflict
-                ? <div className="tiny" style={{ color: 'var(--mauve)' }}>{error.message}</div>
+                ? <div className="tiny" style={{ color: 'var(--mauve)' }}>{error.message} {blockedAdvice}</div>
                 : <div className="error-banner">{error.message}</div>
             )}
             {warnings?.length > 0 && (
