@@ -15,6 +15,7 @@ const { computeCapacityForPlace, computeCapacityForPlaces, stampExplorationEligi
 const { orgToday } = require('../services/orgDate');
 const { skipSweepMiddleware } = require('../services/visitLifecycle');
 const { createCommitment, rescheduleCommitment, waiveCommitment, deleteCommitment, attachCommitmentsMade } = require('../services/placeCommitments');
+const { onPlaceGeocoded } = require('../services/backfillQueue');
 const schedulingConfig = require('../config/scheduling');
 
 // The three real capacity buckets - same list capacity.js's own
@@ -232,8 +233,9 @@ router.post('/', async (req, res, next) => {
       // explicitly here rather than left to a schema-level default.
       exploration_eligible_since: orgToday(),
     };
+    let coords = null;
     if (address || city || zip) {
-      const coords = await geocodeAddress({ address, city, state: payload.state, zip });
+      coords = await geocodeAddress({ address, city, state: payload.state, zip });
       if (!coords && !confirm_address) {
         return res.status(422).json({
           error: "Address not recognized - double-check it, or save anyway if you're sure.",
@@ -246,6 +248,10 @@ router.post('/', async (req, res, next) => {
     }
     const [row] = await knex('places').insert(payload).returning('id');
     const id = knex.extractId(row);
+    // A brand-new place has nothing cached yet, so there's nothing to
+    // invalidate - only queue a backfill, and only when there's a real
+    // coordinate to compute from.
+    if (coords) await onPlaceGeocoded(knex, id, coords);
     const place = await knex('places').where({ id }).first();
     res.status(201).json(place);
   } catch (err) {
@@ -789,6 +795,26 @@ router.patch('/:id', async (req, res, next) => {
       update.lat = coords ? coords.lat : null;
       update.lng = coords ? coords.lng : null;
       update.geocoded_at = knex.fn.now();
+      // Distinct from geocoded_at above (stamped on every pass through this
+      // block, including a re-save of an unchanged address): this only fires
+      // when the submitted fields actually differ from what was stored, so a
+      // bulk re-geocode or a form re-save can't flag a place that didn't
+      // move. Compared as normalized strings, not the returned lat/lng - two
+      // geocodes of the same address can return coordinates that differ in
+      // the last decimal place, which would false-flag every re-save. See
+      // services/staleAddress.js, the only reader of this column.
+      const addressFieldsChanged =
+        (update.address !== undefined && update.address !== existing.address) ||
+        (update.city !== undefined && update.city !== existing.city) ||
+        (update.state !== undefined && update.state !== existing.state) ||
+        (update.zip !== undefined && update.zip !== existing.zip);
+      if (addressFieldsChanged) update.address_changed_at = knex.fn.now();
+      // An existing place's address changing invalidates any distances
+      // already cached for it, coords or not - a failed re-geocode (saved
+      // anyway via confirm_address) is still a location change, just to an
+      // unknown one. Only queue a fresh backfill when there's a real
+      // coordinate to compute from.
+      await onPlaceGeocoded(knex, id, coords);
     }
 
     await knex('places').where({ id }).update(update);

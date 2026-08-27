@@ -41,7 +41,26 @@ function addDays(dateStr, n) {
 // A DB timestamp (string or Date, depending on driver - better-sqlite3 vs
 // pg) reduced to a plain 'YYYY-MM-DD' date string, matching every other date
 // field in this service.
+//
+// better-sqlite3 hands back a knex.fn.now()-defaulted timestamp column
+// (places.created_at, the only caller today - see measuredFloorByPlace) as a
+// raw 'YYYY-MM-DD HH:MM:SS' string with no timezone marker - it's UTC, but
+// nothing says so, and a bare `new Date(thatString)` parses it as LOCAL
+// time. That's not a theoretical risk on whatever machine actually runs
+// this: a place created at 21:12 Central becomes 02:12 the next UTC day,
+// and .toISOString().slice(0,10) hands back tomorrow's date - which is
+// exactly the anchorDate the exposure-days gate below compares against
+// asOf. Detecting that shape and treating it as the UTC instant it already
+// is fixes it; anything else (an ISO string with its own timezone marker, a
+// real Date from a driver that returns one) is safe to hand to `new Date`
+// as-is. Same bug class as staleAddress.js's toEpoch (checkpoint 3's
+// backfillQueue.js before that) - kept local here rather than sharing that
+// helper: whether to consolidate these is an open architectural question,
+// not something to settle as a side effect of this one fix.
 function toDateOnly(value) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(value)) {
+    return new Date(`${value.replace(' ', 'T')}Z`).toISOString().slice(0, 10);
+  }
   return new Date(value).toISOString().slice(0, 10);
 }
 

@@ -24,12 +24,23 @@ const { detectConflicts, detectConflictsPure, detectConflictsForStops, daysSince
 const { crossRepVisitsByPlace, findCrossRepFloorWarning } = require('./crossRepFloorWarning');
 const { generateDraft, fillDayFromZone, orderedZones, outOfZoneCommitments, defaultVisitTypeForCapacity } = require('./scheduleGenerator');
 const { optimizeRoute, getRouteLegMinutes } = require('./routeOptimizer');
-const { evaluateTimeBlock, evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
+const { evaluateOptimizedTimeBlock, resolveVisitType, isGeocoded } = require('./driveTime');
+
+// scheduleGenerator.js's fillDayFromZone/topUpDay/generateDraft stay pure
+// (no knex) by receiving optimizeRoute as an injected callback rather than
+// requiring routeOptimizer.js directly - see routeOptimizer.js's own header.
+// It now needs a db to read the cached matrix, so it's bound to the shared
+// knex here rather than changing that callback's (args, config, driveConfig)
+// contract; `config` (routeOptimizerConfig) is scheduleGenerator.js's own
+// stop-count-cap settings, unrelated to optimizeRoute's internals, so it's
+// intentionally not forwarded.
+const boundOptimizeRoute = (args, config, driveConfig) => optimizeRoute(knex, args, driveConfig);
 const { orgToday, orgDateOf } = require('./orgDate');
 const { computeRelationshipForPlaces, relationshipFor } = require('./relationship');
 const { computeCapacityForPlaces, computeCapacityForPlace, attachCapacityLevel } = require('./capacity');
 const { getBindingCommitmentsForPlaces, getOutstandingCommitmentsForPlaces } = require('./placeCommitments');
 const { doNotVisitFinding } = require('./doNotVisit');
+const { staleAddressFinding } = require('./staleAddress');
 
 // Recognizes a unique-constraint violation across both engines this app runs
 // on (SQLite in dev, Postgres in prod) - see commitDay's per-row insert loop,
@@ -574,9 +585,9 @@ async function assertOwnsDraft(db, draftId, userId) {
 
 // Builds (or, with `regenerate: true`, rebuilds) a user's active draft.
 // The candidate pool + engine call (generateDraft, which may make several
-// real OSRM network calls - see routeOptimizer.js/scheduleGenerator.js) run
-// OUTSIDE any DB transaction: holding a SQLite transaction open across
-// several seconds of network I/O would lock the whole database file for
+// matrix reads + local solves - see routeOptimizer.js/scheduleGenerator.js)
+// run OUTSIDE any DB transaction: holding a SQLite transaction open across
+// several days' worth of that work would lock the whole database file for
 // writes for the duration, blocking every other request. Only the final
 // persistence step (delete-old + insert-new draft rows) is wrapped in one.
 //
@@ -612,8 +623,8 @@ async function generateAndPersistDraft({ userId, params, regenerate = false }) {
   // runs on it now (most commonly a manual visit planned first - see
   // committedDatesForUser's own comment on why that no longer blocks the
   // date outright). Reuses evaluateDay's exact committed-segment math (real
-  // OSRM drive time between committed stops when available, same as the
-  // view-time budget accounting already does) purely to learn how many
+  // cached drive time between committed stops, same as the view-time budget
+  // accounting already does) purely to learn how many
   // minutes are already spoken for - the `[]` proposed-stops argument means
   // this only ever reads back `totalMinutes`, never a start point or zone,
   // so generateDraft's per-day budget shrinks but which zone gets picked and
@@ -624,7 +635,7 @@ async function generateAndPersistDraft({ userId, params, regenerate = false }) {
   for (const row of committedRows) (committedByDate[row.scheduled_date] ||= []).push(row);
   const committedMinutesByDate = {};
   for (const date of Object.keys(committedByDate)) {
-    const evaluated = await evaluateDay([], { homeBase: fullParams.homeBase, budgetMinutes: Infinity, committed: committedByDate[date] });
+    const evaluated = await evaluateDay(knex, [], { homeBase: fullParams.homeBase, budgetMinutes: Infinity, committed: committedByDate[date] });
     committedMinutesByDate[date] = evaluated.totalMinutes;
   }
 
@@ -635,7 +646,7 @@ async function generateAndPersistDraft({ userId, params, regenerate = false }) {
     zoneOverrides: fullParams.zoneOverrides,
     lockedByDate,
     committedMinutesByDate,
-    optimizeRoute, // real OSRM-backed optimizer, finally wired in (phase 5 left it opt-in)
+    optimizeRoute: boundOptimizeRoute,
   });
 
   return knex.transaction(async (trx) => {
@@ -752,6 +763,10 @@ function committedVisitsQuery(db, { userId }) {
       // leave it comparing against undefined. committedDayVisits already
       // selects it, for the same marker.
       'v.user_id',
+      // checkpoint 6's staleAddress finding: when this visit was committed,
+      // compared against the place's own address_changed_at below - see
+      // attachStaleAddressFinding.
+      'v.created_at as visit_created_at',
       'p.category',
       'p.address',
       'p.city',
@@ -760,13 +775,14 @@ function committedVisitsQuery(db, { userId }) {
       // real (see its header) - not previously selected because nothing
       // read them before that fix.
       'p.lat',
-      'p.lng'
+      'p.lng',
+      'p.address_changed_at'
     );
 }
 
-// Real-first, haversine-fallback time evaluation for a day's PROPOSED stops
-// IN THEIR CURRENT ORDER - never resequences (see routeOptimizer.js's
-// getRouteLegMinutes header for why that matters for live-edit recalc).
+// Cached-matrix time evaluation for a day's PROPOSED stops IN THEIR CURRENT
+// ORDER - never resequences (see routeOptimizer.js's getRouteLegMinutes
+// header for why that matters for live-edit recalc).
 //
 // `committed` (this day's already-planned real visits, from
 // committedVisitsQuery) is packed FIRST, in its existing order, to work out
@@ -789,36 +805,50 @@ function committedVisitsQuery(db, { userId }) {
 // support. A committed stop missing coordinates (isGeocoded) is skipped for
 // routing purposes, same as everywhere else in this file - its time still
 // counts, it just can't contribute a drive leg.
-async function evaluateDay(stops, { homeBase, budgetMinutes, committed = [] }) {
+async function evaluateDay(db, stops, { homeBase, budgetMinutes, committed = [] }) {
   const committedStops = committed.filter(isGeocoded).map((c) => ({ place_id: c.place_id, lat: c.lat, lng: c.lng, visitType: c.visit_type }));
 
   let committedMinutes = 0;
   let start = homeBase;
+  // usedFallback (checkpoint 5): true once ANY leg of the day - committed or
+  // proposed - fell back to the geometric estimate for want of a cached real
+  // distance, so the caller can show the day's numbers as provisional rather
+  // than presenting a fallback-derived total as if it were real. See
+  // routeOptimizer.js's identical field on getRouteLegMinutes for the
+  // "never flag the home leg" policy this inherits.
+  let usedFallback = false;
   if (committedStops.length > 0) {
     // Unbounded budget here on purpose - this pass exists to learn the
     // committed segment's true total time and end point, not to flag it as
     // over/under anything itself (it's already real, not a proposal to
     // trim). The day's actual overBudget verdict comes from the combined
     // total against the real budgetMinutes, below.
-    const committedLegs = await getRouteLegMinutes({ start: homeBase, stops: committedStops });
-    const committedResult = committedLegs
-      ? evaluateOptimizedTimeBlock(committedStops, committedLegs.legMinutes, { start: homeBase, budgetMinutes: Infinity })
-      : evaluateTimeBlock(committedStops, { start: homeBase, budgetMinutes: Infinity });
+    const committedLegs = await getRouteLegMinutes(db, { start: homeBase, stops: committedStops });
+    if (committedLegs.usedFallback) usedFallback = true;
+    const committedResult = evaluateOptimizedTimeBlock(committedStops, committedLegs.legMinutes, { start: homeBase, budgetMinutes: Infinity });
     committedMinutes = committedResult.totalMinutes;
     const last = committedResult.stops[committedResult.stops.length - 1];
-    start = { lat: last.lat, lng: last.lng };
+    // place_id carried forward (not just lat/lng) so the proposed segment's
+    // OWN first leg - last committed stop -> first proposed stop, a real
+    // place-to-place pair - can still be matrix-matched and correctly
+    // tracked by getRouteLegMinutes' usedFallback below, rather than reading
+    // as id-less and silently treated like the home leg.
+    start = { place_id: last.place_id, lat: last.lat, lng: last.lng };
   }
 
   const proposedBudget = budgetMinutes - committedMinutes;
 
-  if (stops.length === 0) {
-    return { stops: [], totalMinutes: committedMinutes, remainingMinutes: proposedBudget, overBudget: proposedBudget < 0 };
+  // Ungeocoded proposed stops have no honest drive-time estimate (same rule
+  // driveTime.js's isGeocoded()-filtered paths follow elsewhere) - dropped
+  // before the matrix lookup rather than let a null lat/lng reach it.
+  const geocodedStops = stops.filter(isGeocoded);
+  if (geocodedStops.length === 0) {
+    return { stops: [], totalMinutes: committedMinutes, remainingMinutes: proposedBudget, overBudget: proposedBudget < 0, usedFallback };
   }
 
-  const legs = await getRouteLegMinutes({ start, stops });
-  const result = legs
-    ? evaluateOptimizedTimeBlock(stops, legs.legMinutes, { start, budgetMinutes: proposedBudget })
-    : evaluateTimeBlock(stops, { start, budgetMinutes: proposedBudget });
+  const legs = await getRouteLegMinutes(db, { start, stops: geocodedStops });
+  if (legs.usedFallback) usedFallback = true;
+  const result = evaluateOptimizedTimeBlock(geocodedStops, legs.legMinutes, { start, budgetMinutes: proposedBudget });
 
   // result.remainingMinutes already came out of packStops as
   // `proposedBudget - result.totalMinutes`, which - since proposedBudget is
@@ -828,7 +858,7 @@ async function evaluateDay(stops, { homeBase, budgetMinutes, committed = [] }) {
   // so the UI's "~Xm of Yh" reads as the WHOLE day's usage (committed +
   // proposed), not just the still-open proposal.
   const totalMinutes = committedMinutes + result.totalMinutes;
-  return { ...result, totalMinutes, overBudget: result.remainingMinutes < 0 };
+  return { ...result, totalMinutes, overBudget: result.remainingMinutes < 0, usedFallback };
 }
 
 // Full recalculated draft (every day) - the "live workspace" read. Nothing
@@ -920,10 +950,38 @@ function partitionSameDateDrops(shapedStops) {
 // one-shot check never could - a place marked do-not-visit AFTER it was
 // already sitting in the draft, which is the version a rep is most likely
 // to have forgotten about by commit time.
+// staleAddress (checkpoint 6) - same "rides the existing array" reasoning as
+// do-not-visit above, checked against `row.stop_created_at`
+// (schedule_draft_stops.created_at, selected alongside `p.*` by both
+// loadDraftView and loadDraftDayView below) rather than `today`: this finding
+// never expires on its own (see staleAddress.js's own header for why), so it
+// has nothing to compare against the current date at all.
 function stopFindings(row, date, conflictsByStop, today) {
   const conflicts = conflictsByStop.get(`${row.id}|${date}`) || [];
+  const findings = [...conflicts];
   const dnv = doNotVisitFinding(row, today);
-  return dnv ? [...conflicts, dnv] : conflicts;
+  if (dnv) findings.push(dnv);
+  const stale = staleAddressFinding(row, row.stop_created_at);
+  if (stale) findings.push(stale);
+  return findings;
+}
+
+// The committed-visit sibling of stopFindings above: a real `visits` row
+// carries no conflictDetection.js Conflict[] at all today (nothing has ever
+// needed one), so this only ever produces the one finding that matters for
+// an already-committed stop - and matters MORE here than on a proposed one,
+// per the checkpoint 6 decision: a committed visit means a rep is actually
+// driving there. `rows` come from committedVisitsQuery, which selects
+// `visit_created_at`/`p.address_changed_at` for exactly this.
+function attachStaleAddressFinding(rows) {
+  return rows.map((row) => {
+    // committedVisitsQuery's rows carry `place_id`, not `id` (the same
+    // caller-shape everywhere else in this file - see routeOptimizer.js's
+    // withMatrixId header for why that distinction matters) - shimmed here
+    // so the finding's own placeId comes out right.
+    const stale = staleAddressFinding({ id: row.place_id, address_changed_at: row.address_changed_at }, row.visit_created_at);
+    return { ...row, conflicts: stale ? [stale] : [] };
+  });
 }
 
 // Shapes one place's outstanding commitments (already earliest-first - see
@@ -957,7 +1015,9 @@ async function loadDraftView(db, draftId) {
     .where('s.draft_id', draftId)
     .orderBy('s.date')
     .orderBy('s.sort_order')
-    .select('s.id as stop_id', 's.date', 's.visit_type', 'p.*');
+    // stop_created_at feeds stopFindings' staleAddress check (checkpoint 6) -
+    // aliased since `p.*` already carries places' own created_at.
+    .select('s.id as stop_id', 's.date', 's.visit_type', 's.created_at as stop_created_at', 'p.*');
 
   const byDate = {};
   for (const row of stopRows) {
@@ -973,7 +1033,9 @@ async function loadDraftView(db, draftId) {
   // buildCandidatePool/dashboard.js), instead of a query per day.
   // capacity_level for each planned stop's chip - one bulk resolution for the
   // whole window, matching what the Places directory and the Visits tab show.
-  const committedRows = await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).whereIn('v.scheduled_date', dates));
+  const committedRows = attachStaleAddressFinding(
+    await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).whereIn('v.scheduled_date', dates))
+  );
   const committedByDate = {};
   for (const row of committedRows) (committedByDate[row.scheduled_date] ||= []).push(row);
 
@@ -1040,7 +1102,7 @@ async function loadDraftView(db, draftId) {
     const budgetMinutes = hoursPerDayByDate[date] * 60;
     // evaluateDay sees only the kept stops, exactly as before - a dropped
     // stop must not go on counting against the day's time budget.
-    const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed: committedForDay });
+    const evaluated = await evaluateDay(db, stops, { homeBase: params.homeBase, budgetMinutes, committed: committedForDay });
     days.push({ date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed: committedForDay, droppedCollisions, ...evaluated });
   }
 
@@ -1059,7 +1121,9 @@ async function loadDraftDayView(db, draftId, date) {
     .join('places as p', 'p.id', 's.place_id')
     .where({ 's.draft_id': draftId, 's.date': date })
     .orderBy('s.sort_order')
-    .select('s.id as stop_id', 's.visit_type', 'p.*');
+    // stop_created_at feeds stopFindings' staleAddress check (checkpoint 6) -
+    // see loadDraftView's identical select for why it's aliased.
+    .select('s.id as stop_id', 's.visit_type', 's.created_at as stop_created_at', 'p.*');
 
   const todaySet = await alreadyVisitedTodayPlaceIds(db, rows.map((r) => r.id), orgToday());
   const crossRepByPlace = await crossRepVisitsByPlace(db, rows.map((r) => r.id));
@@ -1096,8 +1160,10 @@ async function loadDraftDayView(db, draftId, date) {
   }));
   const hoursPerDay = params.days.find((d) => d.date === date)?.hoursPerDay ?? 0;
   const budgetMinutes = hoursPerDay * 60;
-  const committed = await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date));
-  const evaluated = await evaluateDay(stops, { homeBase: params.homeBase, budgetMinutes, committed });
+  const committed = attachStaleAddressFinding(
+    await attachCapacityLevel(db, await committedVisitsQuery(db, { userId: draft.user_id }).where('v.scheduled_date', date))
+  );
+  const evaluated = await evaluateDay(db, stops, { homeBase: params.homeBase, budgetMinutes, committed });
 
   return { date, zone: params.zoneOverrides?.[date] ?? rows[0]?.region ?? null, committed, droppedCollisions, ...evaluated };
 }
@@ -1321,22 +1387,16 @@ async function setVisitType({ draftId, userId, date, placeId, visitType }) {
   return loadDraftDayView(knex, draftId, date);
 }
 
-// Re-sequences a day's stops via a real OSRM /trip call - the ONE mutation
-// that's allowed to resequence, since a user clicking "Re-optimize" is
-// explicitly asking for that. Every other mutation above deliberately
+// Re-sequences a day's stops via the cached matrix + local solver - the ONE
+// mutation that's allowed to resequence, since a user clicking "Re-optimize"
+// is explicitly asking for that. Every other mutation above deliberately
 // preserves whatever order the stops are already in (see
 // routeOptimizer.js's getRouteLegMinutes header for why that matters for
 // the rest of the live-edit loop). Only reorders stops with coordinates -
 // an ungeocoded stop (rare; see driveTime.js's isGeocoded) has no honest
 // route to compute, so it's left at the end in its current relative order
-// rather than dropped. Falls back to leaving the whole day's order
-// untouched if OSRM is unreachable/times out (optimizeRoute returns null) -
-// this never drops a stop, only fails to reorder it.
+// rather than dropped.
 async function reoptimizeDay({ draftId, userId, date }) {
-  // Ownership-checked up front, outside any transaction - a plain read, same
-  // as generateAndPersistDraft's pre-transaction section. This is what lets
-  // the OSRM /trip call below (optimizeRoute) happen without holding a DB
-  // transaction open across it.
   await assertOwnsDraft(knex, draftId, userId);
 
   const draft = await knex('schedule_drafts').where({ id: draftId }).first();
@@ -1354,14 +1414,12 @@ async function reoptimizeDay({ draftId, userId, date }) {
 
   if (routable.length < 2) return loadDraftDayView(knex, draftId, date); // nothing worth reordering
 
-  const result = await optimizeRoute({ start: params.homeBase, stops: routable });
-  if (!result) return loadDraftDayView(knex, draftId, date); // OSRM unreachable - order stays as-is
-
+  const result = await optimizeRoute(knex, { start: params.homeBase, stops: routable });
   const newOrder = [...result.orderedStops, ...unroutable];
 
   // Re-check ownership inside the write transaction: time has passed since
-  // the check above (an OSRM round-trip), and the write's correctness
-  // depends on being atomic with an ownership check made right before it -
+  // the check above, and the write's correctness depends on being atomic
+  // with an ownership check made right before it -
   // same reasoning as every other mutation in this file.
   await knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
@@ -1405,7 +1463,7 @@ async function rankedCandidatesForDay(db, { draftId, date, userId }) {
 // The zones (regions) a day's dropdown can offer - every region this day's
 // own ranked-and-eligible candidates span (scheduleGenerator.orderedZones),
 // always including whatever zone the day is currently in (see
-// rankedCandidatesForDay). Read-only: no fill, no OSRM call, no write.
+// rankedCandidatesForDay). Read-only: no fill, no routing call, no write.
 // Never cached/stored - recomputed fresh on every call, same "no manual
 // fields that need upkeep" convention as loadDraftView/loadDraftDayView
 // elsewhere in this file, so it can never go stale relative to the current
@@ -1431,9 +1489,9 @@ async function getDayZones({ draftId, userId, date }) {
 // covers from the dropdown (see getDayZones for the options list) instead
 // of always taking the top-ranked one, then this re-fills the day from
 // scratch in that zone. Ownership-checked and the candidate pool built
-// PRE-transaction, same reasoning as reoptimizeDay: fillDayFromZone can make
-// a real OSRM call, and a SQLite transaction held open across that would
-// lock writes for everyone else for the duration.
+// PRE-transaction, same reasoning as generateAndPersistDraft: fillDayFromZone
+// does several matrix reads + local solves, and a SQLite transaction held
+// open across that would lock writes for everyone else for the duration.
 async function selectDayZone({ draftId, userId, date, zone }) {
   await assertOwnsDraft(knex, draftId, userId);
 
@@ -1471,7 +1529,7 @@ async function selectDayZone({ draftId, userId, date, zone }) {
     budgetMinutes,
     driveConfig: defaultDriveConfig,
     visitTypesConfig: defaultVisitTypesConfig,
-    optimizeRoute,
+    optimizeRoute: boundOptimizeRoute,
     routeOptimizerConfig: defaultRouteOptimizerConfig,
   });
 
@@ -1482,7 +1540,7 @@ async function selectDayZone({ draftId, userId, date, zone }) {
   const droppedCommitments = [...outOfZoneCommitments(ranked, zone), ...fillResult.droppedCommitments];
 
   // Re-check ownership inside the write transaction: time has passed since
-  // the checks above (candidate pool build + an OSRM round-trip), same
+  // the checks above (candidate pool build + the fill itself), same
   // discipline as every other mutation in this file.
   await knex.transaction(async (trx) => {
     await assertOwnsDraft(trx, draftId, userId);
@@ -1765,10 +1823,9 @@ async function deleteCommittedDay(db, { userId, date }) {
 // day exactly as if it had never been committed - "Accept proposal" simply
 // re-commits it through the normal commitDay path.
 //
-// DB work stays inside a short transaction; loadDraftView (which can trigger
-// a real OSRM call via evaluateDay) runs after it resolves - same
-// no-network-call-inside-a-transaction convention as every other mutation in
-// this file.
+// DB work stays inside a short transaction; loadDraftView (which triggers a
+// matrix read + solve via evaluateDay) runs after it resolves - same
+// convention as every other mutation in this file.
 async function reopenCommittedDay({ userId, date, homeBase }) {
   const draftId = await knex.transaction(async (trx) => {
     const rows = await trx('visits')

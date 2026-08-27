@@ -8,6 +8,8 @@
     "rollback": "knex migrate:rollback",
     "import": "node src/scripts/import-excel.js",
     "geocode": "node src/scripts/geocode-places.js",
+    "backfill-distances": "node src/scripts/backfill-distances.js",
+    "compare-osrm-baseline": "node src/scripts/compare-osrm-baseline.js",
     "relationship:distribution": "node src/scripts/relationship-distribution.js",
     "capacity:distribution": "node src/scripts/capacity-distribution.js",
     "seed": "npm run migrate && npm run import",

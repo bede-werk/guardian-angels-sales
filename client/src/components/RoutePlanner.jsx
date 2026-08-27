@@ -93,7 +93,13 @@ function addStopErrorMessage(err, viewerId) {
 // rest, matching the WARNING_PRIORITY PlanVisitModal.jsx/
 // UpcomingVisitDetailModal.jsx already use: a flag a rep set by hand outranks
 // another rep's draft entry, which outranks a floor recency guess.
-const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DO_NOT_VISIT', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
+// ADDRESS_CHANGED (checkpoint 6, services/staleAddress.js) is neither a
+// conflictDetection.js type nor a place-set flag - it's a fact about THIS
+// stop (its place moved after it was planned/committed), which makes it as
+// certain as SAME_DATE_VISIT/DO_NOT_VISIT rather than a recency guess, so it
+// ranks alongside them, just under DO_NOT_VISIT (a rep's own deliberate mark
+// still outranks a data-freshness fact).
+const CONFLICT_PRIORITY = ['SAME_DATE_VISIT', 'DO_NOT_VISIT', 'ADDRESS_CHANGED', 'DRAFT_ELSEWHERE', 'FLOOR_COMPLETED', 'FLOOR_PLANNED'];
 function primaryConflict(conflicts) {
   for (const type of CONFLICT_PRIORITY) {
     const found = conflicts.find((c) => c.type === type);
@@ -136,6 +142,14 @@ function stopConflictMessage(c, viewerId) {
       return `Visit already planned by ${c.otherUserName || 'someone'} for ${formatDate(c.otherDate)}.`;
     case 'DRAFT_ELSEWHERE':
       return `In ${c.otherUserName || 'another rep'}'s draft for ${formatDate(c.otherDate)}.`;
+    // Distinct on purpose from the "estimated" wording a day carries when
+    // usedFallback is true (services/routeOptimizer.js) - that means "no
+    // cached distance yet"; this means "this specific stop's place moved
+    // since it was planned, so its drive time may no longer be accurate."
+    // Different facts, different words - collapsing them into one badge
+    // would make both into wallpaper (checkpoint 6).
+    case 'ADDRESS_CHANGED':
+      return "This place's address has changed since this stop was planned — drive times may be off.";
     default:
       return null;
   }
@@ -660,6 +674,19 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
             {day.stops.length} stop{day.stops.length === 1 ? '' : 's'}
             {!day.overBudget && day.remainingMinutes > 0 ? ` · ${formatMinutes(day.remainingMinutes)} free` : ''}
           </div>
+          {/* usedFallback (checkpoint 5): at least one real place-to-place leg
+              in this day has no cached real-road distance yet, so its drive
+              time is a straight-line estimate instead - never silently
+              presented as if it were a measured one. The never-cacheable
+              home -> first-stop leg alone does NOT trip this (see
+              routeOptimizer.js's realMissingPairs), so this only appears when
+              the backfill queue genuinely still has work to do for this day's
+              places. */}
+          {day.usedFallback && (
+            <div className="tiny muted" title="At least one leg of this day doesn't have a real cached road distance yet, so its drive time is estimated from straight-line distance instead. It'll switch to the real distance automatically once the background backfill catches up.">
+              Estimated route - some drive times use a straight-line distance, not a real one yet
+            </div>
+          )}
         </div>
 
         {/* Stops this day's read just removed, because a real visit has since
@@ -749,6 +776,23 @@ function DraftDay({ day, draftId, onDayUpdated, onError, reload, onDayCommitted,
                         </>
                       )}
                     </div>
+                    {/* checkpoint 6: a committed visit carries no
+                        conflictDetection.js Conflict[] (nothing has ever
+                        needed one here), only the one finding
+                        attachStaleAddressFinding attaches server-side - but
+                        this matters MORE on a committed row than a proposed
+                        one: the rep is actually driving there. Same badge
+                        style/message function as the proposed list below, on
+                        purpose - one visual vocabulary for "here's a fact
+                        about this stop," not a second one. */}
+                    {v.conflicts && v.conflicts.length > 0 && primaryConflict(v.conflicts) && (
+                      <div
+                        className="tiny"
+                        style={{ color: 'var(--mauve)', background: 'var(--mauve-tint-1)', padding: '2px 8px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginTop: 4, fontWeight: 600 }}
+                      >
+                        {stopConflictMessage(primaryConflict(v.conflicts), userId)}
+                      </div>
+                    )}
                   </div>
                   <div className="actions" style={{ alignItems: 'center', gap: 12, flexWrap: 'nowrap', marginRight: 12 }}>
                     {/* stopPropagation: the row's own click opens the VISIT,

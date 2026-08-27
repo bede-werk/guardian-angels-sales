@@ -7,6 +7,9 @@ const cors = require('cors');
 const path = require('path');
 const knex = require('./db/knex');
 const { importPlaces } = require('./scripts/import-excel');
+const { drainQueue } = require('./services/backfillQueue');
+const { LocalOsrmProvider } = require('./services/localOsrmProvider');
+const backfillQueueConfig = require('./config/backfillQueue');
 
 // Each of these files is an Express Router handling one resource/area of the API.
 const places = require('./routes/places');
@@ -93,6 +96,29 @@ async function seedIfEmpty() {
   }
 }
 
+// In-process worker for the incremental distance backfill (see
+// services/backfillQueue.js and services/localOsrmProvider.js's headers for
+// why this is an interval check rather than a standing OSRM process): wakes
+// up periodically, and only touches OSRM at all if the queue actually has
+// due work. Never throws - a bad OSRM_DATA_PATH or a transient failure must
+// log and wait for the next tick, not take the server down (drainQueue
+// itself already swallows per-attempt failures into the queue's retry
+// bookkeeping; this catch is for anything even drainQueue didn't expect).
+const osrmProvider = new LocalOsrmProvider();
+function startBackfillWorker() {
+  const intervalMs = backfillQueueConfig.DRAIN_INTERVAL_MINUTES * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const result = await drainQueue({ db: knex, provider: osrmProvider });
+      if (result.processed > 0) {
+        console.log(`Backfill queue: ${result.succeeded} succeeded, ${result.failed} failed of ${result.processed} processed.`);
+      }
+    } catch (err) {
+      console.error('Backfill queue drain failed (worker still running):', err.message);
+    }
+  }, intervalMs).unref(); // unref so a pending timer never keeps the process alive on its own
+}
+
 // Boots the server: runs migrations (production only), starts listening, then
 // kicks off the background auto-seed (production only, and only if empty).
 async function start() {
@@ -113,6 +139,7 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`GA Sales API listening on http://localhost:${PORT}`);
     if (isProd) seedIfEmpty();
+    startBackfillWorker();
   });
 }
 

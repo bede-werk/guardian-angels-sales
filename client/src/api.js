@@ -259,6 +259,11 @@ export const api = {
     save: (values) => request('/settings', { method: 'PUT', body: { values } }),
     // No keys (or an empty array) resets every tunable.
     reset: (keys = []) => request('/settings/reset', { method: 'POST', body: { keys } }),
+    // Read-only diagnostic (checkpoint 5): how complete the real-road
+    // distance cache is, and the incremental backfill queue's own health.
+    // Not part of the tunable catalogue above - nothing here has a value to
+    // save.
+    distanceCache: () => request('/settings/distance-cache'),
   },
 
   // Team members - server/src/routes/users.js

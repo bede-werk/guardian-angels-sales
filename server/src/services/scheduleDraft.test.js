@@ -1,9 +1,21 @@
-const { test, describe, before, after } = require('node:test');
+const { test, describe, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const knexLib = require('knex');
 const { mergeLockedElsewhereIds, partitionCommittableStops, validateDays, deleteCommittedDay, discardStaleDrafts, buildCandidatePool, loadDraftView, loadDraftDayView, committedDateSummaries, committedDatesForUser, commitDay, MAX_PLAN_DATES, MAX_DAYS_AHEAD } = require('./scheduleDraft');
-const { estimateDriveMinutes } = require('./driveTime');
+const { loadMatrix } = require('./matrixCache');
+const defaultDriveConfig = require('../config/driveTime');
+
+// Independently reproduces what getRouteLegMinutes/optimizeRoute would
+// compute for a single a->b leg via the real matrixCache.loadMatrix, same
+// convention as the old estimateDriveMinutes-based expectations this
+// replaced: an expected value derived from the real underlying function, not
+// re-typed by hand, but still independent of whatever loadDraftView's own
+// response reports.
+async function fallbackDriveMinutes(db, a, b) {
+  const { matrix } = await loadMatrix(db, [a, b], 'seconds');
+  return Math.max(defaultDriveConfig.MIN_DRIVE_MINUTES, Math.round(matrix[0][1] / 60));
+}
 const { editVisit } = require('./manualVisits');
 
 describe('mergeLockedElsewhereIds', () => {
@@ -557,20 +569,19 @@ describe('committedDateSummaries lists every open date unscoped by source; commi
 // colliding visit, THEN reload the SAME draft and confirm the collision
 // shows up without the draft itself ever being touched.
 //
-// global.fetch is mocked to fail fast (falls back to the haversine
-// evaluateTimeBlock - see driveTime.js) so this runs offline and fast, same
-// convention as routeOptimizer.test.js. Test places carry lat/lng because
-// evaluateTimeBlock silently drops ungeocoded stops from its packed output
-// (see driveTime.js's isGeocoded/packStops) - without it, the very stop this
-// test needs to inspect would never appear in `day.stops` at all.
+// The place_distance cache is empty in this in-memory test DB, so every
+// leg falls back to matrixCache's geometric estimate - deterministic and
+// offline by construction, no mocking needed (see routeOptimizer.test.js).
+// Test places carry lat/lng because evaluateDay drops ungeocoded stops
+// before evaluating them (see driveTime.js's isGeocoded) - without it, the
+// very stop this test needs to inspect would never appear in `day.stops`
+// at all.
 describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 required knock-on)', () => {
   let db;
-  const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
   const HOME_BASE = { lat: 41.85, lng: -87.65 };
 
   before(async () => {
-    global.fetch = async () => ({ ok: false, json: async () => ({}) });
     db = knexLib({
       client: 'better-sqlite3',
       connection: { filename: ':memory:' },
@@ -589,7 +600,6 @@ describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 req
   });
 
   after(async () => {
-    global.fetch = originalFetch;
     await db.destroy();
   });
 
@@ -714,12 +724,10 @@ describe('loadDraftView / loadDraftDayView - full detector recompute (Step 3 req
 // computation).
 describe('loadDraftView / loadDraftDayView - Place Commitments badge', () => {
   let db;
-  const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
   const HOME_BASE = { lat: 41.85, lng: -87.65 };
 
   before(async () => {
-    global.fetch = async () => ({ ok: false, json: async () => ({}) });
     db = knexLib({
       client: 'better-sqlite3',
       connection: { filename: ':memory:' },
@@ -751,7 +759,6 @@ describe('loadDraftView / loadDraftDayView - Place Commitments badge', () => {
   });
 
   after(async () => {
-    global.fetch = originalFetch;
     await db.destroy();
   });
 
@@ -797,12 +804,10 @@ describe('loadDraftView / loadDraftDayView - Place Commitments badge', () => {
 // orgToday() internally.
 describe('loadDraftView / loadDraftDayView - do_not_visit finding on a stop', () => {
   let db;
-  const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
   const HOME_BASE = { lat: 41.85, lng: -87.65 };
 
   before(async () => {
-    global.fetch = async () => ({ ok: false, json: async () => ({}) });
     db = knexLib({
       client: 'better-sqlite3',
       connection: { filename: ':memory:' },
@@ -831,7 +836,6 @@ describe('loadDraftView / loadDraftDayView - do_not_visit finding on a stop', ()
   });
 
   after(async () => {
-    global.fetch = originalFetch;
     await db.destroy();
   });
 
@@ -869,6 +873,99 @@ describe('loadDraftView / loadDraftDayView - do_not_visit finding on a stop', ()
   });
 });
 
+// Checkpoint 6: a stop (proposed OR committed) whose place's address changed
+// AFTER the stop was set carries an ADDRESS_CHANGED finding - permanent, not
+// time-boxed, per the checkpoint 6 decision (see staleAddress.js's header).
+// Covers both loadDraftView/loadDraftDayView (proposed, via stopFindings)
+// and committedRows (via attachStaleAddressFinding), since a rep already
+// driving to a committed visit matters at least as much as a still-tentative
+// proposal.
+describe('loadDraftView / loadDraftDayView - ADDRESS_CHANGED finding (checkpoint 6)', () => {
+  let db;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+
+  before(async () => {
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
+    await db('places').insert([
+      { id: 1, name: 'Moved Place', category: 'Hospice', lat: 41.9, lng: -87.6 },
+      { id: 2, name: 'Untouched Place', category: 'Hospice', lat: 41.8, lng: -87.7 },
+      { id: 3, name: 'Recently Added Place', category: 'Hospice', lat: 41.7, lng: -87.8 },
+    ]);
+  });
+
+  after(async () => {
+    await db.destroy();
+  });
+
+  function findingsFor(row) {
+    return (row.conflicts || []).filter((c) => c.type === 'ADDRESS_CHANGED');
+  }
+
+  test('a proposed stop set BEFORE its place moves is flagged on the next read; one set AFTER is not', async () => {
+    const params = { days: [{ date: DATE_A, hoursPerDay: 8 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+
+    // Both stops set now, place 2 stays clean throughout.
+    await db('schedule_draft_stops').insert([
+      { draft_id: draftId, place_id: 1, date: DATE_A, sort_order: 0 },
+      { draft_id: draftId, place_id: 2, date: DATE_A, sort_order: 1 },
+    ]);
+
+    // Place 1's address changes AFTER the stop was already set - a real
+    // future timestamp, not just "now", so this can't be flaky on a slow
+    // machine where the update lands in the same clock tick as the insert.
+    const later = new Date(Date.now() + 60_000);
+    await db('places').where({ id: 1 }).update({ address_changed_at: later });
+
+    const dayView = await loadDraftDayView(db, draftId, DATE_A);
+    assert.deepEqual(findingsFor(dayView.stops.find((s) => s.place_id === 1)), [{ type: 'ADDRESS_CHANGED', severity: 'soft', placeId: 1 }]);
+    assert.equal(findingsFor(dayView.stops.find((s) => s.place_id === 2)).length, 0, 'a place that never moved carries no finding');
+    // The stop stays in the proposal - this warns, it does not drop the row
+    // (same "warn, don't act" contract as do_not_visit above).
+    assert.ok(dayView.stops.some((s) => s.place_id === 1));
+
+    // Whole-draft read carries the same finding.
+    const fullView = await loadDraftView(db, draftId);
+    assert.deepEqual(findingsFor(fullView.days[0].stops.find((s) => s.place_id === 1)), [{ type: 'ADDRESS_CHANGED', severity: 'soft', placeId: 1 }]);
+
+    // A stop added AFTER the address change is never stale by construction -
+    // it was planned against the CURRENT address.
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 3, date: DATE_A, sort_order: 2 });
+    const afterAdd = await loadDraftDayView(db, draftId, DATE_A);
+    assert.equal(findingsFor(afterAdd.stops.find((s) => s.place_id === 3)).length, 0);
+  });
+
+  test('a committed visit set BEFORE its place moves is flagged; the neighbouring untouched place is not', async () => {
+    const params = { days: [{ date: DATE_A, hoursPerDay: 8 }], homeBase: HOME_BASE, zoneOverrides: {} };
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+
+    await db('visits').insert([
+      { place_id: 1, user_id: 1, status: 'planned', scheduled_date: DATE_A, place_name: 'Moved Place', visit_type: 'drop_in' },
+      { place_id: 2, user_id: 1, status: 'planned', scheduled_date: DATE_A, place_name: 'Untouched Place', visit_type: 'drop_in' },
+    ]);
+
+    const later = new Date(Date.now() + 60_000);
+    await db('places').where({ id: 1 }).update({ address_changed_at: later });
+
+    const dayView = await loadDraftDayView(db, draftId, DATE_A);
+    assert.deepEqual(findingsFor(dayView.committed.find((v) => v.place_id === 1)), [{ type: 'ADDRESS_CHANGED', severity: 'soft', placeId: 1 }]);
+    assert.equal(findingsFor(dayView.committed.find((v) => v.place_id === 2)).length, 0);
+
+    const fullView = await loadDraftView(db, draftId);
+    assert.deepEqual(findingsFor(fullView.days[0].committed.find((v) => v.place_id === 1)), [{ type: 'ADDRESS_CHANGED', severity: 'soft', placeId: 1 }]);
+  });
+});
+
 // day.committed feeds RoutePlanner.jsx's "Already Planned"/"Planned" list,
 // which renders every row under a hardcoded "✓ Planned" badge - so
 // committedVisitsQuery must only ever return status:'planned' rows, the same
@@ -878,12 +975,10 @@ describe('loadDraftView / loadDraftDayView - do_not_visit finding on a stop', ()
 // Planned" entry for a trip that already happened.
 describe('loadDraftView / loadDraftDayView - day.committed is planned-only', () => {
   let db;
-  const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
   const HOME_BASE = { lat: 41.85, lng: -87.65 };
 
   before(async () => {
-    global.fetch = async () => ({ ok: false, json: async () => ({}) });
     db = knexLib({
       client: 'better-sqlite3',
       connection: { filename: ':memory:' },
@@ -896,7 +991,6 @@ describe('loadDraftView / loadDraftDayView - day.committed is planned-only', () 
   });
 
   after(async () => {
-    global.fetch = originalFetch;
     await db.destroy();
   });
 
@@ -952,19 +1046,18 @@ describe('loadDraftView / loadDraftDayView - day.committed is planned-only', () 
 // evaluateDay's committed-segment fix: a day's already-planned real visits
 // must count against the budget AND shift where the first proposed stop's
 // drive time is measured from - see evaluateDay's own header for the full
-// rationale. global.fetch is mocked to fail (forces the haversine fallback)
-// so this is deterministic and offline, same convention as the describe
-// blocks above.
+// rationale. The place_distance cache is empty in this in-memory test DB,
+// so every leg falls back to matrixCache's geometric estimate -
+// deterministic and offline by construction, same as the describe blocks
+// above.
 describe('evaluateDay via loadDraftView - committed visits count against the budget and shift the drive-time start point', () => {
   let db;
-  const originalFetch = global.fetch;
   const DATE_A = '2026-08-10';
   const HOME_BASE = { lat: 41.85, lng: -87.65 };
   const PLACE_A = { lat: 41.9, lng: -87.6 }; // committed visit's place
   const PLACE_B = { lat: 42.0, lng: -87.9 }; // proposed stop's place - far enough from PLACE_A, in a different direction from homeBase, that "drive from home" and "drive from PLACE_A" can't coincidentally match
 
   before(async () => {
-    global.fetch = async () => ({ ok: false, json: async () => ({}) });
     db = knexLib({
       client: 'better-sqlite3',
       connection: { filename: ':memory:' },
@@ -980,7 +1073,6 @@ describe('evaluateDay via loadDraftView - committed visits count against the bud
   });
 
   after(async () => {
-    global.fetch = originalFetch;
     await db.destroy();
   });
 
@@ -995,14 +1087,14 @@ describe('evaluateDay via loadDraftView - committed visits count against the bud
     const day = view.days[0];
 
     // Committed segment: home -> Place A, presentation (60) + prep(3) + dataEntry(5).
-    const committedDrive = estimateDriveMinutes(HOME_BASE, PLACE_A);
+    const committedDrive = await fallbackDriveMinutes(db, HOME_BASE, PLACE_A);
     const committedBlock = committedDrive + 60 + 3 + 5;
 
     // The whole point of this fix: the proposed stop's drive time must
     // originate from Place A (where the committed visit leaves the rep),
     // not homeBase.
-    const driveFromCommitted = estimateDriveMinutes(PLACE_A, PLACE_B);
-    const driveFromHome = estimateDriveMinutes(HOME_BASE, PLACE_B);
+    const driveFromCommitted = await fallbackDriveMinutes(db, PLACE_A, PLACE_B);
+    const driveFromHome = await fallbackDriveMinutes(db, HOME_BASE, PLACE_B);
     assert.notEqual(driveFromCommitted, driveFromHome, 'test coordinates must actually produce different drive times, or this assertion proves nothing');
 
     const proposedStop = day.stops.find((s) => s.place_id === 2);
@@ -1025,6 +1117,78 @@ describe('evaluateDay via loadDraftView - committed visits count against the bud
     assert.equal(day.stops.length, 0, 'nothing proposed for this day');
     assert.ok(day.totalMinutes > 60, 'the committed presentation alone already exceeds a 1-hour budget');
     assert.equal(day.overBudget, true);
+  });
+});
+
+// Regression test for a real bug caught while building checkpoint 5:
+// evaluateDay's committed/proposed stop objects (place_id, no `.id` - see
+// their construction above) never matched a place_distance row before
+// routeOptimizer.js's withMatrixId fix, so this whole path silently used
+// ONLY the geometric fallback, no matter how complete the backfill was. The
+// describe block above never caught this because its cache is always empty
+// by construction - both the buggy and fixed code produce the same fallback
+// number against an empty cache. This uses a real cached row instead, with a
+// value nowhere near the geometric estimate, so a regression is unmistakable.
+describe('evaluateDay via loadDraftView - real cached distances actually reach the day (checkpoint 5 regression)', () => {
+  let db;
+  const DATE_A = '2026-08-10';
+  const HOME_BASE = { lat: 41.85, lng: -87.65 };
+  const PLACE_A = { lat: 41.9, lng: -87.6 }; // committed visit's place
+  const PLACE_B = { lat: 42.0, lng: -87.9 }; // proposed stop's place
+
+  before(async () => {
+    db = knexLib({
+      client: 'better-sqlite3',
+      connection: { filename: ':memory:' },
+      useNullAsDefault: true,
+      migrations: { directory: path.join(__dirname, '..', 'migrations') },
+    });
+    await db.migrate.latest();
+    await db('users').insert({ id: 1, name: 'Bede', email: 'bede@test.local' });
+    await db('places').insert([
+      { id: 1, name: 'Committed Place', category: 'Hospice', lat: PLACE_A.lat, lng: PLACE_A.lng },
+      { id: 2, name: 'Proposed Place', category: 'Hospice', lat: PLACE_B.lat, lng: PLACE_B.lng },
+    ]);
+  });
+
+  after(async () => {
+    await db.destroy();
+  });
+
+  beforeEach(async () => {
+    await db('schedule_draft_stops').del();
+    await db('schedule_drafts').del();
+    await db('visits').del();
+    await db('place_distance').del();
+  });
+
+  test('a cached committed-place -> proposed-place distance is used instead of the geometric fallback, and usedFallback stays false (the only uncached leg is the never-cacheable home leg)', async () => {
+    // Deliberately absurd - unmistakable if the real row is read at all.
+    await db('place_distance').insert([{ from_place_id: 1, to_place_id: 2, meters: 999999, seconds: 99999 }]);
+
+    const params = { days: [{ date: DATE_A, hoursPerDay: 100 }], homeBase: HOME_BASE, zoneOverrides: {} }; // huge budget, nothing gets dropped for time
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify(params) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 2, date: DATE_A, sort_order: 0, visit_type: 'drop_in' });
+    await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', scheduled_date: DATE_A, place_name: 'Committed Place', visit_type: 'presentation' });
+
+    const view = await loadDraftView(db, draftId);
+    const day = view.days[0];
+    const proposedStop = day.stops.find((s) => s.place_id === 2);
+
+    assert.equal(proposedStop.driveMinutes, Math.round(99999 / 60), 'the real cached value must be used, not the geometric fallback');
+    assert.equal(day.usedFallback, false, 'the home leg is the only uncached one, and must not trip the flag on its own');
+  });
+
+  test('with no cached row at all, usedFallback is true (both a real committed-segment gap and a real proposed-segment gap)', async () => {
+    await db('place_distance').del();
+    const [draftRow] = await db('schedule_drafts').insert({ user_id: 1, params_json: JSON.stringify({ days: [{ date: DATE_A, hoursPerDay: 100 }], homeBase: HOME_BASE, zoneOverrides: {} }) }).returning('id');
+    const draftId = draftRow && draftRow.id ? draftRow.id : draftRow;
+    await db('schedule_draft_stops').insert({ draft_id: draftId, place_id: 2, date: DATE_A, sort_order: 0, visit_type: 'drop_in' });
+    await db('visits').insert({ place_id: 1, user_id: 1, status: 'planned', scheduled_date: DATE_A, place_name: 'Committed Place', visit_type: 'presentation' });
+
+    const view = await loadDraftView(db, draftId);
+    assert.equal(view.days[0].usedFallback, true);
   });
 });
 
