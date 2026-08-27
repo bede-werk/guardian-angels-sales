@@ -1,0 +1,4196 @@
+{
+  "capturedAt": "2026-08-25T20:45:02.134Z",
+  "osrmBaseUrl": "https://router.project-osrm.org",
+  "homeBase": {
+    "label": "stand-in home base (downtown Lincoln)",
+    "lat": 40.8136,
+    "lng": -96.7026
+  },
+  "routes": [
+    {
+      "label": "small-4-south",
+      "input": {
+        "homeBase": {
+          "label": "stand-in home base (downtown Lincoln)",
+          "lat": 40.8136,
+          "lng": -96.7026
+        },
+        "stops": [
+          {
+            "id": 4,
+            "name": "Bryan Medical Center West Campus",
+            "lat": 40.792788692946,
+            "lng": -96.698343570233,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 6,
+            "name": "Cheney Ridge Family Medical Clinic",
+            "lat": 40.754340925023,
+            "lng": -96.670221634471,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 8,
+            "name": "Emerald Nursing & Rehab Brookside",
+            "lat": 40.765609136311,
+            "lng": -96.646845762685,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 14,
+            "name": "Emerald Nursing & Rehab Lancaster",
+            "lat": 40.791742575301,
+            "lng": -96.707062645932,
+            "region": "South Lincoln"
+          }
+        ]
+      },
+      "trip": {
+        "code": "Ok",
+        "trips": [
+          {
+            "legs": [
+              {
+                "steps": [],
+                "weight": 270.4,
+                "summary": "",
+                "duration": 269.1,
+                "distance": 2683.5
+              },
+              {
+                "steps": [],
+                "weight": 119.4,
+                "summary": "",
+                "duration": 118.1,
+                "distance": 1132.9
+              },
+              {
+                "steps": [],
+                "weight": 560.1,
+                "summary": "",
+                "duration": 558.6,
+                "distance": 6935.5
+              },
+              {
+                "steps": [],
+                "weight": 350.4,
+                "summary": "",
+                "duration": 348.9,
+                "distance": 3920.4
+              }
+            ],
+            "weight_name": "routability",
+            "weight": 1300.3,
+            "duration": 1294.7,
+            "distance": 14672.3
+          }
+        ],
+        "waypoints": [
+          {
+            "waypoint_index": 0,
+            "distance": 1.012287867,
+            "name": "South 13th Street",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 1,
+            "distance": 3.442536402,
+            "name": "",
+            "location": [
+              -96.698344,
+              40.79282
+            ],
+            "hint": "QBbGhDgXxoQYAAAAEQAAAAAAAABYAQAAbxaiQBCFXUAAAAAAXTmPQgsAAAAJAAAAAAAAAKwAAAASfgAAGIA8-vRybgIYgDz61XJuAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 3,
+            "distance": 3.461246441,
+            "name": "",
+            "location": [
+              -96.670181,
+              40.754341
+            ],
+            "hint": "0cgUifyb_IweAAAATwAAAAAAAAAAAAAALSDOQJWYgkEAAAAAAAAAAA8AAAAoAAAAAAAAAAAAAAASfgAAG-48-qXcbQLy7Tz6pdxtAgAADwAAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 4,
+            "distance": 6.584810304,
+            "name": "South 54th Street",
+            "location": [
+              -96.646768,
+              40.765609
+            ],
+            "hint": "i5OGgRo3iYZLAAAACQAAAAAAAAADAAAAgFRQQjUAx0AAAAAAt40OQEsAAAAJAAAAAAAAAAMAAAASfgAAkEk9-qkIbgJCST36qQhuAgAAfxYAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 2,
+            "distance": 5.997270517,
+            "name": "South Street",
+            "location": [
+              -96.707062,
+              40.791797
+            ],
+            "hint": "WLCGgf___38FAAAACwAAAAAAAAAnAAAA06blQKKJwkAAAAAAQsRDQgUAAAALAAAAAAAAACcAAAASfgAACl48-vVubgIJXjz6v25uAgAArwUAAAAA",
+            "trips_index": 0
+          }
+        ]
+      },
+      "table": {
+        "code": "Ok",
+        "distances": [
+          [
+            0,
+            2683.5,
+            8999.8,
+            8719.9,
+            3051.3
+          ],
+          [
+            3138.4,
+            0,
+            6578.3,
+            6566.9,
+            1132.9
+          ],
+          [
+            9482,
+            6688.9,
+            0,
+            3920.4,
+            6693.8
+          ],
+          [
+            8895.3,
+            6655.9,
+            3870.9,
+            0,
+            7624.7
+          ],
+          [
+            2901.3,
+            1254.6,
+            6935.5,
+            7167.1,
+            0
+          ]
+        ],
+        "destinations": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "QBbGhDgXxoQYAAAAEQAAAAAAAABYAQAAbxaiQBCFXUAAAAAAXTmPQgsAAAAJAAAAAAAAAKwAAAASfgAAGIA8-vRybgIYgDz61XJuAgAArwUAAAAA",
+            "location": [
+              -96.698344,
+              40.79282
+            ],
+            "name": "",
+            "distance": 3.442536402
+          },
+          {
+            "hint": "0cgUifyb_IweAAAATwAAAAAAAAAAAAAALSDOQJWYgkEAAAAAAAAAAA8AAAAoAAAAAAAAAAAAAAASfgAAG-48-qXcbQLy7Tz6pdxtAgAADwAAAAAA",
+            "location": [
+              -96.670181,
+              40.754341
+            ],
+            "name": "",
+            "distance": 3.461246441
+          },
+          {
+            "hint": "i5OGgRo3iYZLAAAACQAAAAAAAAADAAAAgFRQQjUAx0AAAAAAt40OQEsAAAAJAAAAAAAAAAMAAAASfgAAkEk9-qkIbgJCST36qQhuAgAAfxYAAAAA",
+            "location": [
+              -96.646768,
+              40.765609
+            ],
+            "name": "South 54th Street",
+            "distance": 6.584810304
+          },
+          {
+            "hint": "WLCGgf___38FAAAACwAAAAAAAAAnAAAA06blQKKJwkAAAAAAQsRDQgUAAAALAAAAAAAAACcAAAASfgAACl48-vVubgIJXjz6v25uAgAArwUAAAAA",
+            "location": [
+              -96.707062,
+              40.791797
+            ],
+            "name": "South Street",
+            "distance": 5.997270517
+          }
+        ],
+        "durations": [
+          [
+            0,
+            269.1,
+            778.9,
+            766.1,
+            305.1
+          ],
+          [
+            343.9,
+            0,
+            560.1,
+            587.7,
+            118.1
+          ],
+          [
+            777,
+            566.2,
+            0,
+            348.9,
+            502.5
+          ],
+          [
+            786.3,
+            611.9,
+            344,
+            0,
+            596
+          ],
+          [
+            317,
+            129.7,
+            558.6,
+            625.5,
+            0
+          ]
+        ],
+        "sources": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "QBbGhDgXxoQYAAAAEQAAAAAAAABYAQAAbxaiQBCFXUAAAAAAXTmPQgsAAAAJAAAAAAAAAKwAAAASfgAAGIA8-vRybgIYgDz61XJuAgAArwUAAAAA",
+            "location": [
+              -96.698344,
+              40.79282
+            ],
+            "name": "",
+            "distance": 3.442536402
+          },
+          {
+            "hint": "0cgUifyb_IweAAAATwAAAAAAAAAAAAAALSDOQJWYgkEAAAAAAAAAAA8AAAAoAAAAAAAAAAAAAAASfgAAG-48-qXcbQLy7Tz6pdxtAgAADwAAAAAA",
+            "location": [
+              -96.670181,
+              40.754341
+            ],
+            "name": "",
+            "distance": 3.461246441
+          },
+          {
+            "hint": "i5OGgRo3iYZLAAAACQAAAAAAAAADAAAAgFRQQjUAx0AAAAAAt40OQEsAAAAJAAAAAAAAAAMAAAASfgAAkEk9-qkIbgJCST36qQhuAgAAfxYAAAAA",
+            "location": [
+              -96.646768,
+              40.765609
+            ],
+            "name": "South 54th Street",
+            "distance": 6.584810304
+          },
+          {
+            "hint": "WLCGgf___38FAAAACwAAAAAAAAAnAAAA06blQKKJwkAAAAAAQsRDQgUAAAALAAAAAAAAACcAAAASfgAACl48-vVubgIJXjz6v25uAgAArwUAAAAA",
+            "location": [
+              -96.707062,
+              40.791797
+            ],
+            "name": "South Street",
+            "distance": 5.997270517
+          }
+        ]
+      }
+    },
+    {
+      "label": "medium-6-southeast",
+      "input": {
+        "homeBase": {
+          "label": "stand-in home base (downtown Lincoln)",
+          "lat": 40.8136,
+          "lng": -96.7026
+        },
+        "stops": [
+          {
+            "id": 2,
+            "name": "Ambassador Health of Lincoln",
+            "lat": 40.789257725036,
+            "lng": -96.658153188455,
+            "region": "Southeast Lincoln"
+          },
+          {
+            "id": 3,
+            "name": "Bryan Medical Center East Campus",
+            "lat": 40.796579433981,
+            "lng": -96.653609512821,
+            "region": "Southeast Lincoln"
+          },
+          {
+            "id": 10,
+            "name": "Hillcrest Firethorn Rehabilitation",
+            "lat": 40.776717126874,
+            "lng": -96.595845365758,
+            "region": "Southeast Lincoln"
+          },
+          {
+            "id": 11,
+            "name": "Holmes Lake Family Medicine & Internal Medicine",
+            "lat": 40.785355976229,
+            "lng": -96.625244826223,
+            "region": "Southeast Lincoln"
+          },
+          {
+            "id": 12,
+            "name": "Holmes Lake Rehabilitation and Care Center",
+            "lat": 40.787899571403,
+            "lng": -96.636939169263,
+            "region": "Southeast Lincoln"
+          },
+          {
+            "id": 15,
+            "name": "Lincoln Surgical Hospital",
+            "lat": 40.795000956583,
+            "lng": -96.62490019893,
+            "region": "Southeast Lincoln"
+          }
+        ]
+      },
+      "trip": {
+        "code": "Ok",
+        "trips": [
+          {
+            "legs": [
+              {
+                "steps": [],
+                "weight": 511.6,
+                "summary": "",
+                "duration": 509.9,
+                "distance": 5441.9
+              },
+              {
+                "steps": [],
+                "weight": 169.3,
+                "summary": "",
+                "duration": 151.5,
+                "distance": 1158.9
+              },
+              {
+                "steps": [],
+                "weight": 158.5,
+                "summary": "",
+                "duration": 156.9,
+                "distance": 1846.7
+              },
+              {
+                "steps": [],
+                "weight": 182.4,
+                "summary": "",
+                "duration": 180.8,
+                "distance": 2379.2
+              },
+              {
+                "steps": [],
+                "weight": 109.5,
+                "summary": "",
+                "duration": 106.5,
+                "distance": 1248.2
+              },
+              {
+                "steps": [],
+                "weight": 336.5,
+                "summary": "",
+                "duration": 333.5,
+                "distance": 3575.8
+              }
+            ],
+            "weight_name": "routability",
+            "weight": 1467.8,
+            "duration": 1439.1,
+            "distance": 15650.7
+          }
+        ],
+        "waypoints": [
+          {
+            "waypoint_index": 0,
+            "distance": 1.012287867,
+            "name": "South 13th Street",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 2,
+            "distance": 12.16632883,
+            "name": "",
+            "location": [
+              -96.65829,
+              40.789292
+            ],
+            "hint": "6EmGgZpTuIcdAAAAAQAAAAAAAAAwAAAAUB9KQQAAAAAAAAAAjk-fQR0AAAABAAAAAAAAADAAAAASfgAAjhw9-ixlbgIXHT36CmVuAgAAbwwAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 1,
+            "distance": 5.77457719,
+            "name": "",
+            "location": [
+              -96.65361,
+              40.796527
+            ],
+            "hint": "2EKHhv___38hAAAAMwAAAAAAAABvAAAAozjgQDbsYkAAAAAAeGC4QRAAAAAZAAAAAAAAADcAAAASfgAA1i49-m-BbgLWLj36o4FuAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 6,
+            "distance": 2.758853313,
+            "name": "Firethorn Lane",
+            "location": [
+              -96.59582,
+              40.776733
+            ],
+            "hint": "JlyGgbLChoEIAAAABgAAAAAAAAAPAAAAWJK3QG_QbkAAAAAAsA4lQQgAAAAGAAAAAAAAAA8AAAASfgAAlBA--h00bgJ7ED76DTRuAgAAzwgAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 5,
+            "distance": 11.10527702,
+            "name": "",
+            "location": [
+              -96.625244,
+              40.785456
+            ],
+            "hint": "Rj88iEk_PIg8AAAABAAAAAAAAABHAAAAfupHQVOBQj8AAAAApwhrQR4AAAACAAAAAAAAACMAAAASfgAApJ09-jBWbgKjnT36zFVuAgAA7xAAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 3,
+            "distance": 1.350730319,
+            "name": "",
+            "location": [
+              -96.636923,
+              40.7879
+            ],
+            "hint": "NiKIhrgjiIYeAAAAIAAAAF0CAAAAAAAA7Y3KQBU31UDLKP1CAAAAAA8AAAAQAAAAMQEAAAAAAAASfgAABXA9-rxfbgL1bz36vF9uAiIADwAAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 4,
+            "distance": 8.526485137,
+            "name": "South 70th Street",
+            "location": [
+              -96.625001,
+              40.795001
+            ],
+            "hint": "szCGgf___38bAAAAVAAAAAAAAAAAAAAAQngbQlYFo0IAAAAAAAAAABsAAABUAAAAAAAAAAAAAAASfgAAl549-nl7bgL8nj36eXtuAgAADwAAAAAA",
+            "trips_index": 0
+          }
+        ]
+      },
+      "table": {
+        "code": "Ok",
+        "distances": [
+          [
+            0,
+            5175.5,
+            5441.9,
+            11605.7,
+            8314.6,
+            6996.9,
+            8294.4
+          ],
+          [
+            5341.6,
+            0,
+            1356.1,
+            6455.5,
+            3164.4,
+            1846.7,
+            3331.9
+          ],
+          [
+            5653,
+            1158.9,
+            0,
+            7064.7,
+            3773.5,
+            2455.9,
+            3156
+          ],
+          [
+            11812,
+            6495.7,
+            7001.8,
+            0,
+            3618.4,
+            4664.8,
+            4666.7
+          ],
+          [
+            8478.3,
+            3161.9,
+            3668,
+            3575.8,
+            0,
+            1331,
+            1073.3
+          ],
+          [
+            7160.6,
+            1844.3,
+            2350.4,
+            4622.1,
+            1331,
+            0,
+            2379.2
+          ],
+          [
+            8185.7,
+            3495.4,
+            2656.1,
+            4799,
+            1248.2,
+            2554.2,
+            0
+          ]
+        ],
+        "destinations": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "6EmGgZpTuIcdAAAAAQAAAAAAAAAwAAAAUB9KQQAAAAAAAAAAjk-fQR0AAAABAAAAAAAAADAAAAASfgAAjhw9-ixlbgIXHT36CmVuAgAAbwwAAAAA",
+            "location": [
+              -96.65829,
+              40.789292
+            ],
+            "name": "",
+            "distance": 12.16632883
+          },
+          {
+            "hint": "2EKHhv___38hAAAAMwAAAAAAAABvAAAAozjgQDbsYkAAAAAAeGC4QRAAAAAZAAAAAAAAADcAAAASfgAA1i49-m-BbgLWLj36o4FuAgAArwUAAAAA",
+            "location": [
+              -96.65361,
+              40.796527
+            ],
+            "name": "",
+            "distance": 5.77457719
+          },
+          {
+            "hint": "JlyGgbLChoEIAAAABgAAAAAAAAAPAAAAWJK3QG_QbkAAAAAAsA4lQQgAAAAGAAAAAAAAAA8AAAASfgAAlBA--h00bgJ7ED76DTRuAgAAzwgAAAAA",
+            "location": [
+              -96.59582,
+              40.776733
+            ],
+            "name": "Firethorn Lane",
+            "distance": 2.758853313
+          },
+          {
+            "hint": "Rj88iEk_PIg8AAAABAAAAAAAAABHAAAAfupHQVOBQj8AAAAApwhrQR4AAAACAAAAAAAAACMAAAASfgAApJ09-jBWbgKjnT36zFVuAgAA7xAAAAAA",
+            "location": [
+              -96.625244,
+              40.785456
+            ],
+            "name": "",
+            "distance": 11.10527702
+          },
+          {
+            "hint": "NiKIhrgjiIYeAAAAIAAAAF0CAAAAAAAA7Y3KQBU31UDLKP1CAAAAAA8AAAAQAAAAMQEAAAAAAAASfgAABXA9-rxfbgL1bz36vF9uAiIADwAAAAAA",
+            "location": [
+              -96.636923,
+              40.7879
+            ],
+            "name": "",
+            "distance": 1.350730319
+          },
+          {
+            "hint": "szCGgf___38bAAAAVAAAAAAAAAAAAAAAQngbQlYFo0IAAAAAAAAAABsAAABUAAAAAAAAAAAAAAASfgAAl549-nl7bgL8nj36eXtuAgAADwAAAAAA",
+            "location": [
+              -96.625001,
+              40.795001
+            ],
+            "name": "South 70th Street",
+            "distance": 8.526485137
+          }
+        ],
+        "durations": [
+          [
+            0,
+            454.8,
+            509.9,
+            992.4,
+            705.2,
+            601.8,
+            722.8
+          ],
+          [
+            479.3,
+            0,
+            124,
+            547.5,
+            260.3,
+            156.9,
+            304
+          ],
+          [
+            554.2,
+            151.5,
+            0,
+            630.9,
+            343.7,
+            240.3,
+            296.6
+          ],
+          [
+            1012.1,
+            549.3,
+            595.2,
+            0,
+            332.9,
+            399.9,
+            402.9
+          ],
+          [
+            718.9,
+            256.1,
+            302,
+            333.5,
+            0,
+            106.7,
+            86.7
+          ],
+          [
+            626.1,
+            163.3,
+            209.2,
+            398,
+            110.8,
+            0,
+            180.8
+          ],
+          [
+            739.1,
+            325.3,
+            259.4,
+            429.8,
+            106.5,
+            203,
+            0
+          ]
+        ],
+        "sources": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "6EmGgZpTuIcdAAAAAQAAAAAAAAAwAAAAUB9KQQAAAAAAAAAAjk-fQR0AAAABAAAAAAAAADAAAAASfgAAjhw9-ixlbgIXHT36CmVuAgAAbwwAAAAA",
+            "location": [
+              -96.65829,
+              40.789292
+            ],
+            "name": "",
+            "distance": 12.16632883
+          },
+          {
+            "hint": "2EKHhv___38hAAAAMwAAAAAAAABvAAAAozjgQDbsYkAAAAAAeGC4QRAAAAAZAAAAAAAAADcAAAASfgAA1i49-m-BbgLWLj36o4FuAgAArwUAAAAA",
+            "location": [
+              -96.65361,
+              40.796527
+            ],
+            "name": "",
+            "distance": 5.77457719
+          },
+          {
+            "hint": "JlyGgbLChoEIAAAABgAAAAAAAAAPAAAAWJK3QG_QbkAAAAAAsA4lQQgAAAAGAAAAAAAAAA8AAAASfgAAlBA--h00bgJ7ED76DTRuAgAAzwgAAAAA",
+            "location": [
+              -96.59582,
+              40.776733
+            ],
+            "name": "Firethorn Lane",
+            "distance": 2.758853313
+          },
+          {
+            "hint": "Rj88iEk_PIg8AAAABAAAAAAAAABHAAAAfupHQVOBQj8AAAAApwhrQR4AAAACAAAAAAAAACMAAAASfgAApJ09-jBWbgKjnT36zFVuAgAA7xAAAAAA",
+            "location": [
+              -96.625244,
+              40.785456
+            ],
+            "name": "",
+            "distance": 11.10527702
+          },
+          {
+            "hint": "NiKIhrgjiIYeAAAAIAAAAF0CAAAAAAAA7Y3KQBU31UDLKP1CAAAAAA8AAAAQAAAAMQEAAAAAAAASfgAABXA9-rxfbgL1bz36vF9uAiIADwAAAAAA",
+            "location": [
+              -96.636923,
+              40.7879
+            ],
+            "name": "",
+            "distance": 1.350730319
+          },
+          {
+            "hint": "szCGgf___38bAAAAVAAAAAAAAAAAAAAAQngbQlYFo0IAAAAAAAAAABsAAABUAAAAAAAAAAAAAAASfgAAl549-nl7bgL8nj36eXtuAgAADwAAAAAA",
+            "location": [
+              -96.625001,
+              40.795001
+            ],
+            "name": "South 70th Street",
+            "distance": 8.526485137
+          }
+        ]
+      }
+    },
+    {
+      "label": "medium-8-east",
+      "input": {
+        "homeBase": {
+          "label": "stand-in home base (downtown Lincoln)",
+          "lat": 40.8136,
+          "lng": -96.7026
+        },
+        "stops": [
+          {
+            "id": 5,
+            "name": "CHI Health St. Elizabeth",
+            "lat": 40.808011842232,
+            "lng": -96.625271330016,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 7,
+            "name": "Eastmont",
+            "lat": 40.813242099177,
+            "lng": -96.630109535964,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 13,
+            "name": "Horisun Hospice",
+            "lat": 40.813356668776,
+            "lng": -96.603023761679,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 20,
+            "name": "St. Croix Hospice",
+            "lat": 40.80068314843,
+            "lng": -96.625240245987,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 22,
+            "name": "Eventide Lincoln",
+            "lat": 40.806248161061,
+            "lng": -96.654604252139,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 30,
+            "name": "CenterWell Home Health",
+            "lat": 40.813356668776,
+            "lng": -96.603023761679,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 39,
+            "name": "Keating O'Gara",
+            "lat": 40.812442191886,
+            "lng": -96.690566128631,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 41,
+            "name": "Lincoln Family Medical Group, PC",
+            "lat": 40.813255066564,
+            "lng": -96.618815615179,
+            "region": "East Lincoln"
+          }
+        ]
+      },
+      "trip": {
+        "code": "Ok",
+        "trips": [
+          {
+            "legs": [
+              {
+                "steps": [],
+                "weight": 188.2,
+                "summary": "",
+                "duration": 188.2,
+                "distance": 1388
+              },
+              {
+                "steps": [],
+                "weight": 326.4,
+                "summary": "",
+                "duration": 326.4,
+                "distance": 4108.8
+              },
+              {
+                "steps": [],
+                "weight": 220.7,
+                "summary": "",
+                "duration": 220.7,
+                "distance": 2698
+              },
+              {
+                "steps": [],
+                "weight": 69.9,
+                "summary": "",
+                "duration": 69.9,
+                "distance": 952.8
+              },
+              {
+                "steps": [],
+                "weight": 89,
+                "summary": "",
+                "duration": 89,
+                "distance": 1332.5
+              },
+              {
+                "steps": [],
+                "weight": 0,
+                "summary": "",
+                "duration": 0,
+                "distance": 0
+              },
+              {
+                "steps": [],
+                "weight": 175,
+                "summary": "",
+                "duration": 175,
+                "distance": 2467.9
+              },
+              {
+                "steps": [],
+                "weight": 61,
+                "summary": "",
+                "duration": 61,
+                "distance": 813.8
+              }
+            ],
+            "weight_name": "routability",
+            "weight": 1130.2,
+            "duration": 1130.2,
+            "distance": 13761.8
+          }
+        ],
+        "waypoints": [
+          {
+            "waypoint_index": 0,
+            "distance": 1.012287867,
+            "name": "South 13th Street",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 7,
+            "distance": 6.158084528,
+            "name": "South 70th Street",
+            "location": [
+              -96.625198,
+              40.808012
+            ],
+            "hint": "wqyGgf___39TAAAAdQAAAEsAAAAAAAAAczXvQkeRPkJe49VCAAAAAFMAAAB1AAAASwAAAAAAAAASfgAA0p09-kyubgKJnT36TK5uAgQATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 3,
+            "distance": 2.77626317,
+            "name": "O Street",
+            "location": [
+              -96.63011,
+              40.813267
+            ],
+            "hint": "yQ2Hgf___38PAAAAKAAAAAoAAAAgAAAAOja2QQ1fDEIyh2lB7t40Qg8AAAAoAAAACgAAACAAAAASfgAAooo9-tPCbgKiij36usJuAgIArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 5,
+            "distance": 5.997321753,
+            "name": "O Street",
+            "location": [
+              -96.603023,
+              40.813411
+            ],
+            "hint": "dkbDhE3qg4YAAAAAJAAAAAAAAAB7AAAAavTXPvjOZkIAAAAAMDJGQwAAAAAkAAAAAAAAAHsAAAASfgAAcfQ9-mPDbgJw9D36LcNuAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 8,
+            "distance": 7.0868852,
+            "name": "South 70th Street",
+            "location": [
+              -96.625156,
+              40.800684
+            ],
+            "hint": "iSOGhv___388AAAAPQAAAAAAAAAuAAAA-c2sQtiSqj8AAAAAWiqCQjwAAAA9AAAAAAAAAC4AAAASfgAA_J09-qyRbgKonT36q5FuAgAAPwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 2,
+            "distance": 7.107233714,
+            "name": "Randolph Street",
+            "location": [
+              -96.654604,
+              40.806184
+            ],
+            "hint": "FLUUibNkLosPAAAAHAAAAAAAAAAAAAAAfpeeQUlSCEIAAAAAAAAAAA8AAAAcAAAAAAAAAAAAAAASfgAA9Co9-iinbgL0Kj36aKduAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 6,
+            "distance": 5.997321753,
+            "name": "O Street",
+            "location": [
+              -96.603023,
+              40.813411
+            ],
+            "hint": "dkbDhE3qg4YAAAAAJAAAAAAAAAB7AAAAavTXPvjOZkIAAAAAMDJGQwAAAAAkAAAAAAAAAHsAAAASfgAAcfQ9-mPDbgJw9D36LcNuAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 1,
+            "distance": 6.415002453,
+            "name": "South 21st Street",
+            "location": [
+              -96.690642,
+              40.812444
+            ],
+            "hint": "6iyGgQRbhoEEAAAACgAAAIwAAAAAAAAACp6KQI3i-ED23_lCAAAAAAQAAAAKAAAAjAAAAAAAAAASfgAALp48-py_bgJ6njz6mr9uAgoAHwAAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 4,
+            "distance": 5.88567792,
+            "name": "O Street",
+            "location": [
+              -96.618816,
+              40.813308
+            ],
+            "hint": "xwaHgf___39iAAAAkwAAAHsAAAAAAAAAWFceQ0YQnELsqkZDAAAAAGIAAACTAAAAewAAAAAAAAASfgAAwLY9-vzCbgLAtj36x8JuAggAnwUAAAAA",
+            "trips_index": 0
+          }
+        ]
+      },
+      "table": {
+        "code": "Ok",
+        "distances": [
+          [
+            0,
+            7601.4,
+            6602.7,
+            8888,
+            8415.2,
+            4813.8,
+            8888,
+            1388,
+            7555.6
+          ],
+          [
+            7753.5,
+            0,
+            1263.4,
+            2548.2,
+            813.8,
+            4037.4,
+            2548.2,
+            6397.5,
+            1215.7
+          ],
+          [
+            7014.3,
+            998.7,
+            0,
+            2285.3,
+            1812.5,
+            3298.3,
+            2285.3,
+            5658.3,
+            952.8
+          ],
+          [
+            8892.8,
+            2467.9,
+            2402.7,
+            0,
+            3281.7,
+            5176.7,
+            0,
+            7536.7,
+            2060.2
+          ],
+          [
+            7942.3,
+            1714.7,
+            2398.7,
+            3683.5,
+            0,
+            3491.8,
+            3683.5,
+            6574.6,
+            2351
+          ],
+          [
+            4972.7,
+            3696.6,
+            2698,
+            4983.3,
+            4510.4,
+            0,
+            4983.3,
+            3605,
+            3650.8
+          ],
+          [
+            8892.8,
+            2467.9,
+            2402.7,
+            0,
+            3281.7,
+            5176.7,
+            0,
+            7536.7,
+            2060.2
+          ],
+          [
+            1384.6,
+            6233,
+            5234.4,
+            7519.7,
+            7046.8,
+            4108.8,
+            7519.7,
+            0,
+            6187.2
+          ],
+          [
+            8039,
+            1614.1,
+            1548.9,
+            1332.5,
+            2427.9,
+            4323,
+            1332.5,
+            6683,
+            0
+          ]
+        ],
+        "destinations": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "wqyGgf___39TAAAAdQAAAEsAAAAAAAAAczXvQkeRPkJe49VCAAAAAFMAAAB1AAAASwAAAAAAAAASfgAA0p09-kyubgKJnT36TK5uAgQATwsAAAAA",
+            "location": [
+              -96.625198,
+              40.808012
+            ],
+            "name": "South 70th Street",
+            "distance": 6.158084528
+          },
+          {
+            "hint": "yQ2Hgf___38PAAAAKAAAAAoAAAAgAAAAOja2QQ1fDEIyh2lB7t40Qg8AAAAoAAAACgAAACAAAAASfgAAooo9-tPCbgKiij36usJuAgIArwUAAAAA",
+            "location": [
+              -96.63011,
+              40.813267
+            ],
+            "name": "O Street",
+            "distance": 2.77626317
+          },
+          {
+            "hint": "dkbDhE3qg4YAAAAAJAAAAAAAAAB7AAAAavTXPvjOZkIAAAAAMDJGQwAAAAAkAAAAAAAAAHsAAAASfgAAcfQ9-mPDbgJw9D36LcNuAgAArwUAAAAA",
+            "location": [
+              -96.603023,
+              40.813411
+            ],
+            "name": "O Street",
+            "distance": 5.997321753
+          },
+          {
+            "hint": "iSOGhv___388AAAAPQAAAAAAAAAuAAAA-c2sQtiSqj8AAAAAWiqCQjwAAAA9AAAAAAAAAC4AAAASfgAA_J09-qyRbgKonT36q5FuAgAAPwsAAAAA",
+            "location": [
+              -96.625156,
+              40.800684
+            ],
+            "name": "South 70th Street",
+            "distance": 7.0868852
+          },
+          {
+            "hint": "FLUUibNkLosPAAAAHAAAAAAAAAAAAAAAfpeeQUlSCEIAAAAAAAAAAA8AAAAcAAAAAAAAAAAAAAASfgAA9Co9-iinbgL0Kj36aKduAgAArwUAAAAA",
+            "location": [
+              -96.654604,
+              40.806184
+            ],
+            "name": "Randolph Street",
+            "distance": 7.107233714
+          },
+          {
+            "hint": "dkbDhE3qg4YAAAAAJAAAAAAAAAB7AAAAavTXPvjOZkIAAAAAMDJGQwAAAAAkAAAAAAAAAHsAAAASfgAAcfQ9-mPDbgJw9D36LcNuAgAArwUAAAAA",
+            "location": [
+              -96.603023,
+              40.813411
+            ],
+            "name": "O Street",
+            "distance": 5.997321753
+          },
+          {
+            "hint": "6iyGgQRbhoEEAAAACgAAAIwAAAAAAAAACp6KQI3i-ED23_lCAAAAAAQAAAAKAAAAjAAAAAAAAAASfgAALp48-py_bgJ6njz6mr9uAgoAHwAAAAAA",
+            "location": [
+              -96.690642,
+              40.812444
+            ],
+            "name": "South 21st Street",
+            "distance": 6.415002453
+          },
+          {
+            "hint": "xwaHgf___39iAAAAkwAAAHsAAAAAAAAAWFceQ0YQnELsqkZDAAAAAGIAAACTAAAAewAAAAAAAAASfgAAwLY9-vzCbgLAtj36x8JuAggAnwUAAAAA",
+            "location": [
+              -96.618816,
+              40.813308
+            ],
+            "name": "O Street",
+            "distance": 5.88567792
+          }
+        ],
+        "durations": [
+          [
+            0,
+            650.9,
+            573,
+            731.9,
+            711.9,
+            456.7,
+            731.9,
+            188.2,
+            642.9
+          ],
+          [
+            669.4,
+            0,
+            120.6,
+            187.2,
+            61,
+            335.8,
+            187.2,
+            511.7,
+            98.2
+          ],
+          [
+            613.8,
+            77.9,
+            0,
+            158.9,
+            138.9,
+            280.2,
+            158.9,
+            456.1,
+            69.9
+          ],
+          [
+            726.4,
+            175,
+            177.6,
+            0,
+            236,
+            392.8,
+            0,
+            568.7,
+            147.4
+          ],
+          [
+            719,
+            149.6,
+            206.8,
+            273.4,
+            0,
+            304.7,
+            273.4,
+            563.8,
+            184.4
+          ],
+          [
+            471.7,
+            298.6,
+            220.7,
+            379.6,
+            359.6,
+            0,
+            379.6,
+            316.5,
+            290.6
+          ],
+          [
+            726.4,
+            175,
+            177.6,
+            0,
+            236,
+            392.8,
+            0,
+            568.7,
+            147.4
+          ],
+          [
+            187.1,
+            482,
+            404.1,
+            563,
+            543,
+            326.4,
+            563,
+            0,
+            474
+          ],
+          [
+            684.6,
+            133.2,
+            135.8,
+            89,
+            194.2,
+            351,
+            89,
+            526.9,
+            0
+          ]
+        ],
+        "sources": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "wqyGgf___39TAAAAdQAAAEsAAAAAAAAAczXvQkeRPkJe49VCAAAAAFMAAAB1AAAASwAAAAAAAAASfgAA0p09-kyubgKJnT36TK5uAgQATwsAAAAA",
+            "location": [
+              -96.625198,
+              40.808012
+            ],
+            "name": "South 70th Street",
+            "distance": 6.158084528
+          },
+          {
+            "hint": "yQ2Hgf___38PAAAAKAAAAAoAAAAgAAAAOja2QQ1fDEIyh2lB7t40Qg8AAAAoAAAACgAAACAAAAASfgAAooo9-tPCbgKiij36usJuAgIArwUAAAAA",
+            "location": [
+              -96.63011,
+              40.813267
+            ],
+            "name": "O Street",
+            "distance": 2.77626317
+          },
+          {
+            "hint": "dkbDhE3qg4YAAAAAJAAAAAAAAAB7AAAAavTXPvjOZkIAAAAAMDJGQwAAAAAkAAAAAAAAAHsAAAASfgAAcfQ9-mPDbgJw9D36LcNuAgAArwUAAAAA",
+            "location": [
+              -96.603023,
+              40.813411
+            ],
+            "name": "O Street",
+            "distance": 5.997321753
+          },
+          {
+            "hint": "iSOGhv___388AAAAPQAAAAAAAAAuAAAA-c2sQtiSqj8AAAAAWiqCQjwAAAA9AAAAAAAAAC4AAAASfgAA_J09-qyRbgKonT36q5FuAgAAPwsAAAAA",
+            "location": [
+              -96.625156,
+              40.800684
+            ],
+            "name": "South 70th Street",
+            "distance": 7.0868852
+          },
+          {
+            "hint": "FLUUibNkLosPAAAAHAAAAAAAAAAAAAAAfpeeQUlSCEIAAAAAAAAAAA8AAAAcAAAAAAAAAAAAAAASfgAA9Co9-iinbgL0Kj36aKduAgAArwUAAAAA",
+            "location": [
+              -96.654604,
+              40.806184
+            ],
+            "name": "Randolph Street",
+            "distance": 7.107233714
+          },
+          {
+            "hint": "dkbDhE3qg4YAAAAAJAAAAAAAAAB7AAAAavTXPvjOZkIAAAAAMDJGQwAAAAAkAAAAAAAAAHsAAAASfgAAcfQ9-mPDbgJw9D36LcNuAgAArwUAAAAA",
+            "location": [
+              -96.603023,
+              40.813411
+            ],
+            "name": "O Street",
+            "distance": 5.997321753
+          },
+          {
+            "hint": "6iyGgQRbhoEEAAAACgAAAIwAAAAAAAAACp6KQI3i-ED23_lCAAAAAAQAAAAKAAAAjAAAAAAAAAASfgAALp48-py_bgJ6njz6mr9uAgoAHwAAAAAA",
+            "location": [
+              -96.690642,
+              40.812444
+            ],
+            "name": "South 21st Street",
+            "distance": 6.415002453
+          },
+          {
+            "hint": "xwaHgf___39iAAAAkwAAAHsAAAAAAAAAWFceQ0YQnELsqkZDAAAAAGIAAACTAAAAewAAAAAAAAASfgAAwLY9-vzCbgLAtj36x8JuAggAnwUAAAAA",
+            "location": [
+              -96.618816,
+              40.813308
+            ],
+            "name": "O Street",
+            "distance": 5.88567792
+          }
+        ]
+      }
+    },
+    {
+      "label": "river-crossing-8-south-to-northeast",
+      "input": {
+        "homeBase": {
+          "label": "stand-in home base (downtown Lincoln)",
+          "lat": 40.8136,
+          "lng": -96.7026
+        },
+        "stops": [
+          {
+            "id": 17,
+            "name": "Old Cheney Rehabilitation",
+            "lat": 40.757807874177,
+            "lng": -96.699284030412,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 21,
+            "name": "Sumner Place Skilled Nursing and Rehab",
+            "lat": 40.7946305896,
+            "lng": -96.691865485425,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 25,
+            "name": "LIMADocs",
+            "lat": 40.740766495605,
+            "lng": -96.664996852004,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 26,
+            "name": "Dr. Eric Johnson CHI",
+            "lat": 40.726259817796,
+            "lng": -96.662496222507,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 9,
+            "name": "Gateway Vista",
+            "lat": 40.814409483191,
+            "lng": -96.644218542748,
+            "region": "Northeast Lincoln"
+          },
+          {
+            "id": 23,
+            "name": "Oasis",
+            "lat": 40.818817078131,
+            "lng": -96.653584628174,
+            "region": "Northeast Lincoln"
+          },
+          {
+            "id": 76,
+            "name": "Havelock Manor",
+            "lat": 40.858193201738,
+            "lng": -96.633950153843,
+            "region": "Northeast Lincoln"
+          },
+          {
+            "id": 87,
+            "name": "Legacy Arbors",
+            "lat": 40.850446294291,
+            "lng": -96.641590579567,
+            "region": "Northeast Lincoln"
+          }
+        ]
+      },
+      "trip": {
+        "code": "Ok",
+        "trips": [
+          {
+            "legs": [
+              {
+                "steps": [],
+                "weight": 302.1,
+                "summary": "",
+                "duration": 302.1,
+                "distance": 2992.8
+              },
+              {
+                "steps": [],
+                "weight": 455.6,
+                "summary": "",
+                "duration": 455.6,
+                "distance": 5367.1
+              },
+              {
+                "steps": [],
+                "weight": 376.6,
+                "summary": "",
+                "duration": 376.6,
+                "distance": 4974.9
+              },
+              {
+                "steps": [],
+                "weight": 126.5,
+                "summary": "",
+                "duration": 126.5,
+                "distance": 1823.9
+              },
+              {
+                "steps": [],
+                "weight": 1002.3,
+                "summary": "",
+                "duration": 952.5,
+                "distance": 12210.4
+              },
+              {
+                "steps": [],
+                "weight": 128.4,
+                "summary": "",
+                "duration": 127.1,
+                "distance": 1495
+              },
+              {
+                "steps": [],
+                "weight": 404,
+                "summary": "",
+                "duration": 404,
+                "distance": 4533.4
+              },
+              {
+                "steps": [],
+                "weight": 165.1,
+                "summary": "",
+                "duration": 165.1,
+                "distance": 1491
+              }
+            ],
+            "weight_name": "routability",
+            "weight": 2960.6,
+            "duration": 2909.5,
+            "distance": 34888.5
+          }
+        ],
+        "waypoints": [
+          {
+            "waypoint_index": 0,
+            "distance": 1.012287867,
+            "name": "South 13th Street",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 2,
+            "distance": 6.366510578,
+            "name": "South 16th Street",
+            "location": [
+              -96.699209,
+              40.757802
+            ],
+            "hint": "O4SGgYqe_4gUAAAAAQAAAAAAAAAbAAAA4nOSQRuA5z4AAAAAmQq7QRQAAAABAAAAAAAAABsAAAASfgAAt3w8-irqbQJsfDz6MOptAgAAnwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 1,
+            "distance": 6.838973895,
+            "name": "South 20th Street",
+            "location": [
+              -96.691946,
+              40.794632
+            ],
+            "hint": "JRfGhMsptIsSAAAACgAAAAAAAAAAAAAAsfSnQeKDI0EAAAAAAAAAABIAAAAKAAAAAAAAAAAAAAASfgAAFpk8-gh6bgJnmTz6B3puAgAAHwAAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 3,
+            "distance": 0.555242981,
+            "name": "Pine Lake Road",
+            "location": [
+              -96.664997,
+              40.740761
+            ],
+            "hint": "nX4eiP___38cAAAAPgAAAAAAAABAAAAALCk2Qh9WW0IAAAAAbpuNQhwAAAA-AAAAAAAAAEAAAAASfgAAWwI9-pmnbQJbAj36nqdtAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 4,
+            "distance": 1.776777539,
+            "name": "Yankee Hill Road",
+            "location": [
+              -96.662496,
+              40.726244
+            ],
+            "hint": "vXfGhP___38QAAAAPwAAABwAAAALAAAAJIXRQW_jlkJcWDZCWy2HQRAAAAA_AAAAHAAAAAsAAAASfgAAIAw9-uRubQIgDD369G5tAgQAnwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 5,
+            "distance": 2.40706105,
+            "name": "",
+            "location": [
+              -96.644208,
+              40.814429
+            ],
+            "hint": "Ucj-iP___38OAAAAKAAAANQDAAAAAAAAINdEQC0hqUDgD0xDAAAAAAcAAAAUAAAA6QEAAAAAAAASfgAAkFM9-l3HbgKFUz36ScduAhIA_wYAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 6,
+            "distance": 12.147962,
+            "name": "North 48th Street",
+            "location": [
+              -96.653729,
+              40.818818
+            ],
+            "hint": "wxXEhBNcLosTAAAAAwAAAAAAAAAAAAAAjK3JQb_JOEAAAAAAAAAAABMAAAADAAAAAAAAAAAAAAASfgAAXy49-oLYbgLvLj36gdhuAgAADwAAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 8,
+            "distance": 6.774141042,
+            "name": "Platte Avenue",
+            "location": [
+              -96.63395,
+              40.858132
+            ],
+            "hint": "v0-GgcNPhoEsAAAATQAAAAAAAAAIAAAA_swdQjm9iUIAAAAA8i_dQCwAAABNAAAAAAAAAAgAAAASfgAAons9-hRybwKiez36UXJvAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 7,
+            "distance": 6.40633907,
+            "name": "North 58th Street",
+            "location": [
+              -96.641515,
+              40.850446
+            ],
+            "hint": "AA-HgQHlFIkhAAAAEgAAAAAAAAAAAAAAJKbxQcRsc0EAAAAAAAAAACEAAAASAAAAAAAAAAAAAAASfgAAFV49-g5UbwLJXT36DlRvAgAATwsAAAAA",
+            "trips_index": 0
+          }
+        ]
+      },
+      "table": {
+        "code": "Ok",
+        "distances": [
+          [
+            0,
+            6553.3,
+            2992.8,
+            10665.4,
+            11969.7,
+            6234.6,
+            5149.8,
+            9502,
+            9054
+          ],
+          [
+            7384,
+            0,
+            5709,
+            4974.9,
+            6614.6,
+            11747.2,
+            11055.8,
+            15897,
+            15449.1
+          ],
+          [
+            3248.2,
+            5367.1,
+            0,
+            7779.5,
+            9083.8,
+            6925.2,
+            5840.4,
+            10841.7,
+            10393.7
+          ],
+          [
+            11253.3,
+            5059.2,
+            7570.6,
+            0,
+            1823.9,
+            10183.7,
+            9492.3,
+            15773.6,
+            13809.2
+          ],
+          [
+            13516,
+            7321.9,
+            9833.3,
+            2842,
+            0,
+            12210.4,
+            11755,
+            17329.1,
+            15835.9
+          ],
+          [
+            5531.7,
+            10903.9,
+            6239.7,
+            10194.2,
+            11506.8,
+            0,
+            1495,
+            5866.8,
+            4373.6
+          ],
+          [
+            5122.7,
+            11024.3,
+            5830.7,
+            9757.4,
+            11061.7,
+            1489.5,
+            0,
+            5681.3,
+            4533.4
+          ],
+          [
+            9078.1,
+            15656.9,
+            10864.8,
+            15913.6,
+            17226.3,
+            5903.1,
+            5694,
+            0,
+            1498.7
+          ],
+          [
+            8710.8,
+            15122.8,
+            10497.4,
+            14413.1,
+            15725.7,
+            4402.6,
+            4558,
+            1491,
+            0
+          ]
+        ],
+        "destinations": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "O4SGgYqe_4gUAAAAAQAAAAAAAAAbAAAA4nOSQRuA5z4AAAAAmQq7QRQAAAABAAAAAAAAABsAAAASfgAAt3w8-irqbQJsfDz6MOptAgAAnwsAAAAA",
+            "location": [
+              -96.699209,
+              40.757802
+            ],
+            "name": "South 16th Street",
+            "distance": 6.366510578
+          },
+          {
+            "hint": "JRfGhMsptIsSAAAACgAAAAAAAAAAAAAAsfSnQeKDI0EAAAAAAAAAABIAAAAKAAAAAAAAAAAAAAASfgAAFpk8-gh6bgJnmTz6B3puAgAAHwAAAAAA",
+            "location": [
+              -96.691946,
+              40.794632
+            ],
+            "name": "South 20th Street",
+            "distance": 6.838973895
+          },
+          {
+            "hint": "nX4eiP___38cAAAAPgAAAAAAAABAAAAALCk2Qh9WW0IAAAAAbpuNQhwAAAA-AAAAAAAAAEAAAAASfgAAWwI9-pmnbQJbAj36nqdtAgAArwUAAAAA",
+            "location": [
+              -96.664997,
+              40.740761
+            ],
+            "name": "Pine Lake Road",
+            "distance": 0.555242981
+          },
+          {
+            "hint": "vXfGhP___38QAAAAPwAAABwAAAALAAAAJIXRQW_jlkJcWDZCWy2HQRAAAAA_AAAAHAAAAAsAAAASfgAAIAw9-uRubQIgDD369G5tAgQAnwUAAAAA",
+            "location": [
+              -96.662496,
+              40.726244
+            ],
+            "name": "Yankee Hill Road",
+            "distance": 1.776777539
+          },
+          {
+            "hint": "Ucj-iP___38OAAAAKAAAANQDAAAAAAAAINdEQC0hqUDgD0xDAAAAAAcAAAAUAAAA6QEAAAAAAAASfgAAkFM9-l3HbgKFUz36ScduAhIA_wYAAAAA",
+            "location": [
+              -96.644208,
+              40.814429
+            ],
+            "name": "",
+            "distance": 2.40706105
+          },
+          {
+            "hint": "wxXEhBNcLosTAAAAAwAAAAAAAAAAAAAAjK3JQb_JOEAAAAAAAAAAABMAAAADAAAAAAAAAAAAAAASfgAAXy49-oLYbgLvLj36gdhuAgAADwAAAAAA",
+            "location": [
+              -96.653729,
+              40.818818
+            ],
+            "name": "North 48th Street",
+            "distance": 12.147962
+          },
+          {
+            "hint": "v0-GgcNPhoEsAAAATQAAAAAAAAAIAAAA_swdQjm9iUIAAAAA8i_dQCwAAABNAAAAAAAAAAgAAAASfgAAons9-hRybwKiez36UXJvAgAArwUAAAAA",
+            "location": [
+              -96.63395,
+              40.858132
+            ],
+            "name": "Platte Avenue",
+            "distance": 6.774141042
+          },
+          {
+            "hint": "AA-HgQHlFIkhAAAAEgAAAAAAAAAAAAAAJKbxQcRsc0EAAAAAAAAAACEAAAASAAAAAAAAAAAAAAASfgAAFV49-g5UbwLJXT36DlRvAgAATwsAAAAA",
+            "location": [
+              -96.641515,
+              40.850446
+            ],
+            "name": "North 58th Street",
+            "distance": 6.40633907
+          }
+        ],
+        "durations": [
+          [
+            0,
+            613.7,
+            302.1,
+            879.9,
+            956.3,
+            609,
+            481.4,
+            774.3,
+            753.6
+          ],
+          [
+            613.8,
+            0,
+            450.1,
+            376.6,
+            457.3,
+            992.9,
+            879.3,
+            1251.4,
+            1230.7
+          ],
+          [
+            337.3,
+            455.6,
+            0,
+            609.8,
+            686.2,
+            624.6,
+            497,
+            875.2,
+            854.5
+          ],
+          [
+            861.4,
+            357.4,
+            595.7,
+            0,
+            126.5,
+            870.3,
+            756.7,
+            1243.2,
+            1132.5
+          ],
+          [
+            1002.8,
+            498.8,
+            737.1,
+            201.7,
+            0,
+            952.5,
+            898.1,
+            1358.7,
+            1214.7
+          ],
+          [
+            493.4,
+            858.1,
+            512,
+            762,
+            839.4,
+            0,
+            127.1,
+            560.2,
+            416.2
+          ],
+          [
+            465.6,
+            872.7,
+            484.2,
+            783.4,
+            859.8,
+            172.7,
+            0,
+            508.9,
+            404
+          ],
+          [
+            759.9,
+            1256.5,
+            875.1,
+            1275.5,
+            1352.9,
+            562.8,
+            513.1,
+            0,
+            166.4
+          ],
+          [
+            744.5,
+            1225.9,
+            859.7,
+            1129.8,
+            1207.2,
+            417.1,
+            405.7,
+            165.1,
+            0
+          ]
+        ],
+        "sources": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "O4SGgYqe_4gUAAAAAQAAAAAAAAAbAAAA4nOSQRuA5z4AAAAAmQq7QRQAAAABAAAAAAAAABsAAAASfgAAt3w8-irqbQJsfDz6MOptAgAAnwsAAAAA",
+            "location": [
+              -96.699209,
+              40.757802
+            ],
+            "name": "South 16th Street",
+            "distance": 6.366510578
+          },
+          {
+            "hint": "JRfGhMsptIsSAAAACgAAAAAAAAAAAAAAsfSnQeKDI0EAAAAAAAAAABIAAAAKAAAAAAAAAAAAAAASfgAAFpk8-gh6bgJnmTz6B3puAgAAHwAAAAAA",
+            "location": [
+              -96.691946,
+              40.794632
+            ],
+            "name": "South 20th Street",
+            "distance": 6.838973895
+          },
+          {
+            "hint": "nX4eiP___38cAAAAPgAAAAAAAABAAAAALCk2Qh9WW0IAAAAAbpuNQhwAAAA-AAAAAAAAAEAAAAASfgAAWwI9-pmnbQJbAj36nqdtAgAArwUAAAAA",
+            "location": [
+              -96.664997,
+              40.740761
+            ],
+            "name": "Pine Lake Road",
+            "distance": 0.555242981
+          },
+          {
+            "hint": "vXfGhP___38QAAAAPwAAABwAAAALAAAAJIXRQW_jlkJcWDZCWy2HQRAAAAA_AAAAHAAAAAsAAAASfgAAIAw9-uRubQIgDD369G5tAgQAnwUAAAAA",
+            "location": [
+              -96.662496,
+              40.726244
+            ],
+            "name": "Yankee Hill Road",
+            "distance": 1.776777539
+          },
+          {
+            "hint": "Ucj-iP___38OAAAAKAAAANQDAAAAAAAAINdEQC0hqUDgD0xDAAAAAAcAAAAUAAAA6QEAAAAAAAASfgAAkFM9-l3HbgKFUz36ScduAhIA_wYAAAAA",
+            "location": [
+              -96.644208,
+              40.814429
+            ],
+            "name": "",
+            "distance": 2.40706105
+          },
+          {
+            "hint": "wxXEhBNcLosTAAAAAwAAAAAAAAAAAAAAjK3JQb_JOEAAAAAAAAAAABMAAAADAAAAAAAAAAAAAAASfgAAXy49-oLYbgLvLj36gdhuAgAADwAAAAAA",
+            "location": [
+              -96.653729,
+              40.818818
+            ],
+            "name": "North 48th Street",
+            "distance": 12.147962
+          },
+          {
+            "hint": "v0-GgcNPhoEsAAAATQAAAAAAAAAIAAAA_swdQjm9iUIAAAAA8i_dQCwAAABNAAAAAAAAAAgAAAASfgAAons9-hRybwKiez36UXJvAgAArwUAAAAA",
+            "location": [
+              -96.63395,
+              40.858132
+            ],
+            "name": "Platte Avenue",
+            "distance": 6.774141042
+          },
+          {
+            "hint": "AA-HgQHlFIkhAAAAEgAAAAAAAAAAAAAAJKbxQcRsc0EAAAAAAAAAACEAAAASAAAAAAAAAAAAAAASfgAAFV49-g5UbwLJXT36DlRvAgAATwsAAAAA",
+            "location": [
+              -96.641515,
+              40.850446
+            ],
+            "name": "North 58th Street",
+            "distance": 6.40633907
+          }
+        ]
+      }
+    },
+    {
+      "label": "large-10-mixed",
+      "input": {
+        "homeBase": {
+          "label": "stand-in home base (downtown Lincoln)",
+          "lat": 40.8136,
+          "lng": -96.7026
+        },
+        "stops": [
+          {
+            "id": 34,
+            "name": "First Nebraska Trust Co",
+            "lat": 40.808145876526,
+            "lng": -96.706818854,
+            "region": "Downtown Lincoln"
+          },
+          {
+            "id": 43,
+            "name": "McHenry Haszard Law",
+            "lat": 40.808138163921,
+            "lng": -96.703746166241,
+            "region": "Downtown Lincoln"
+          },
+          {
+            "id": 144,
+            "name": "League of Human Dignity",
+            "lat": 40.814665101326,
+            "lng": -96.696663745772,
+            "region": "Downtown Lincoln"
+          },
+          {
+            "id": 24,
+            "name": "Autumn Ridge Family Medicine",
+            "lat": 40.861282073602,
+            "lng": -96.683519027159,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 32,
+            "name": "Fallbrook Family Health Center",
+            "lat": 40.877412927719,
+            "lng": -96.730129063299,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 46,
+            "name": "NorthPointe Family Medicine",
+            "lat": 40.861282073602,
+            "lng": -96.683519027159,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 71,
+            "name": "Fallbrook assisted living",
+            "lat": 40.878865927184,
+            "lng": -96.73759779756,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 42,
+            "name": "Lincoln Family Wellness",
+            "lat": 40.799802543138,
+            "lng": -96.625227917613,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 45,
+            "name": "Nebraska Internal Medicine",
+            "lat": 40.820027242689,
+            "lng": -96.636134501736,
+            "region": "East Lincoln"
+          },
+          {
+            "id": 50,
+            "name": "Alzheimer's Association",
+            "lat": 40.811272453166,
+            "lng": -96.606056892165,
+            "region": "East Lincoln"
+          }
+        ]
+      },
+      "trip": {
+        "code": "Ok",
+        "trips": [
+          {
+            "legs": [
+              {
+                "steps": [],
+                "weight": 90.4,
+                "summary": "",
+                "duration": 90.4,
+                "distance": 702.3
+              },
+              {
+                "steps": [],
+                "weight": 29,
+                "summary": "",
+                "duration": 29,
+                "distance": 259.2
+              },
+              {
+                "steps": [],
+                "weight": 199.1,
+                "summary": "",
+                "duration": 199.1,
+                "distance": 1625.5
+              },
+              {
+                "steps": [],
+                "weight": 601.3,
+                "summary": "",
+                "duration": 601.3,
+                "distance": 7659.2
+              },
+              {
+                "steps": [],
+                "weight": 263.3,
+                "summary": "",
+                "duration": 263.3,
+                "distance": 3217.5
+              },
+              {
+                "steps": [],
+                "weight": 359.3,
+                "summary": "",
+                "duration": 359.3,
+                "distance": 4584.8
+              },
+              {
+                "steps": [],
+                "weight": 702.3,
+                "summary": "",
+                "duration": 700.6,
+                "distance": 8582.5
+              },
+              {
+                "steps": [],
+                "weight": 0,
+                "summary": "",
+                "duration": 0,
+                "distance": 0
+              },
+              {
+                "steps": [],
+                "weight": 451.3,
+                "summary": "",
+                "duration": 449.6,
+                "distance": 6531.9
+              },
+              {
+                "steps": [],
+                "weight": 101.3,
+                "summary": "",
+                "duration": 101.3,
+                "distance": 870.2
+              }
+            ],
+            "weight_name": "routability",
+            "weight": 2797.3,
+            "duration": 2793.9,
+            "distance": 34033.1
+          }
+        ],
+        "waypoints": [
+          {
+            "waypoint_index": 0,
+            "distance": 1.012287867,
+            "name": "South 13th Street",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 2,
+            "distance": 2.77626317,
+            "name": "Lincoln Mall",
+            "location": [
+              -96.706819,
+              40.808121
+            ],
+            "hint": "geXFhP___39kAAAAaQAAABAAAAAlAAAAi1izQrRFhEDN2WpBD6h1QWQAAABpAAAAEAAAACUAAAASfgAA_V48-rmubgL9Xjz60q5uAgIA7xAAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 1,
+            "distance": 3.10941475,
+            "name": "Lincoln Mall",
+            "location": [
+              -96.703746,
+              40.80811
+            ],
+            "hint": "hOXFhP___39ZAAAAaAAAAA0AAAAPAAAAXhygQjIoTUEA-DxB9PZXQVkAAABoAAAADQAAAA8AAAASfgAA_mo8-q6ubgL-ajz6yq5uAgIA7xAAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 3,
+            "distance": 3.886768438,
+            "name": "P Street",
+            "location": [
+              -96.696664,
+              40.8147
+            ],
+            "hint": "mAKHgf___38EAAAACwAAAAAAAAAbAAAACXiUQIZa3UAAAAAAXsfkQQQAAAALAAAAAAAAABsAAAASfgAAqIY8-mzIbgKohjz6SchuAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 8,
+            "distance": 2.22102985,
+            "name": "",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 9,
+            "distance": 6.667886588,
+            "name": "Fallbrook Boulevard",
+            "location": [
+              -96.730126,
+              40.877473
+            ],
+            "hint": "JWuGgUk7ao0JAAAAAwAAAGwAAAAMAAAA1g8PQXCR-D_8AsBCocUvQQkAAAADAAAAbAAAAAwAAAASfgAA8gM8-qG9bwLvAzz6Zb1vAgwADxEAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 7,
+            "distance": 2.22102985,
+            "name": "",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 10,
+            "distance": 6.306852728,
+            "name": "Aster Road",
+            "location": [
+              -96.73764,
+              40.878913
+            ],
+            "hint": "MHWvhwl-HYwHAAAAGQAAAAAAAAB-AAAAi3nMQMqws0EAAAAA5D3gQgcAAAAZAAAAAAAAAH4AAAASfgAAmOY7-kHDbwLC5jv6EsNvAgAAjwMAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 4,
+            "distance": 7.091334173,
+            "name": "South 70th Street",
+            "location": [
+              -96.625144,
+              40.799803
+            ],
+            "hint": "Id8Sif___38WAAAAUwAAAAAAAAAfAAAAemv7Qf6urUIAAAAAJPx2QRYAAABTAAAAAAAAAB8AAAASfgAACJ49-juObgK0nT36O45uAgAAPwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 6,
+            "distance": 2.476478228,
+            "name": "North Cotner Boulevard",
+            "location": [
+              -96.636154,
+              40.820044
+            ],
+            "hint": "2quFhv___38TAAAAKQAAADAAAAAAAAAA1kDCQfQg3UEg6HJCAAAAABMAAAApAAAAMAAAAAAAAAASfgAABnM9-kzdbgIZcz36O91uAgQAHwMAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 5,
+            "distance": 2.362005024,
+            "name": "South 84th Street",
+            "location": [
+              -96.606029,
+              40.811272
+            ],
+            "hint": "v8pIjP___38CAAAAFQAAAAAAAAASAAAAAlNcQFgf1kEAAAAAOpfSQQIAAAAVAAAAAAAAABIAAAASfgAAs-g9-gi7bgKX6D36CLtuAgAAPwsAAAAA",
+            "trips_index": 0
+          }
+        ]
+      },
+      "table": {
+        "code": "Ok",
+        "distances": [
+          [
+            0,
+            961.5,
+            702.3,
+            1112.4,
+            8561.4,
+            8886.9,
+            8561.4,
+            9199.2,
+            8513,
+            6555.2,
+            8862.5
+          ],
+          [
+            1002,
+            0,
+            724.7,
+            1625.5,
+            8574.5,
+            8900,
+            8574.5,
+            9212.3,
+            9024.3,
+            7066.4,
+            9373.8
+          ],
+          [
+            759.6,
+            259.2,
+            0,
+            1381.5,
+            8833.8,
+            9159.3,
+            8833.8,
+            9471.5,
+            8780.3,
+            6822.5,
+            9129.8
+          ],
+          [
+            1101.6,
+            2017.4,
+            1759,
+            0,
+            6593.6,
+            9248.2,
+            6593.6,
+            9560.5,
+            7659.2,
+            5701.3,
+            8008.6
+          ],
+          [
+            6736.6,
+            8833.3,
+            7811.2,
+            6736.3,
+            0,
+            6531.9,
+            0,
+            6844.2,
+            11754.1,
+            8899.1,
+            12160.2
+          ],
+          [
+            8829.8,
+            9296.1,
+            9529.7,
+            9207.7,
+            7073.2,
+            0,
+            7073.2,
+            870.2,
+            16866.9,
+            14128.5,
+            17216.3
+          ],
+          [
+            6736.6,
+            8833.3,
+            7811.2,
+            6736.3,
+            0,
+            6531.9,
+            0,
+            6844.2,
+            11754.1,
+            8899.1,
+            12160.2
+          ],
+          [
+            9055.6,
+            9521.9,
+            9755.5,
+            9433.5,
+            7299,
+            818.8,
+            7299,
+            0,
+            17092.7,
+            14354.3,
+            17442.1
+          ],
+          [
+            7844.4,
+            7823.9,
+            7565.5,
+            7936.6,
+            12018.3,
+            16242.3,
+            12018.3,
+            16554.6,
+            0,
+            4092.3,
+            3217.5
+          ],
+          [
+            6774,
+            7253,
+            6994.6,
+            5919.7,
+            8582.5,
+            13338.1,
+            8582.5,
+            13650.4,
+            3283.4,
+            0,
+            3628.3
+          ],
+          [
+            9283.4,
+            9762.4,
+            9504,
+            8429.1,
+            12556.9,
+            17430.1,
+            12556.9,
+            17742.3,
+            3770.2,
+            4584.8,
+            0
+          ]
+        ],
+        "destinations": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "geXFhP___39kAAAAaQAAABAAAAAlAAAAi1izQrRFhEDN2WpBD6h1QWQAAABpAAAAEAAAACUAAAASfgAA_V48-rmubgL9Xjz60q5uAgIA7xAAAAAA",
+            "location": [
+              -96.706819,
+              40.808121
+            ],
+            "name": "Lincoln Mall",
+            "distance": 2.77626317
+          },
+          {
+            "hint": "hOXFhP___39ZAAAAaAAAAA0AAAAPAAAAXhygQjIoTUEA-DxB9PZXQVkAAABoAAAADQAAAA8AAAASfgAA_mo8-q6ubgL-ajz6yq5uAgIA7xAAAAAA",
+            "location": [
+              -96.703746,
+              40.80811
+            ],
+            "name": "Lincoln Mall",
+            "distance": 3.10941475
+          },
+          {
+            "hint": "mAKHgf___38EAAAACwAAAAAAAAAbAAAACXiUQIZa3UAAAAAAXsfkQQQAAAALAAAAAAAAABsAAAASfgAAqIY8-mzIbgKohjz6SchuAgAArwUAAAAA",
+            "location": [
+              -96.696664,
+              40.8147
+            ],
+            "name": "P Street",
+            "distance": 3.886768438
+          },
+          {
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "name": "",
+            "distance": 2.22102985
+          },
+          {
+            "hint": "JWuGgUk7ao0JAAAAAwAAAGwAAAAMAAAA1g8PQXCR-D_8AsBCocUvQQkAAAADAAAAbAAAAAwAAAASfgAA8gM8-qG9bwLvAzz6Zb1vAgwADxEAAAAA",
+            "location": [
+              -96.730126,
+              40.877473
+            ],
+            "name": "Fallbrook Boulevard",
+            "distance": 6.667886588
+          },
+          {
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "name": "",
+            "distance": 2.22102985
+          },
+          {
+            "hint": "MHWvhwl-HYwHAAAAGQAAAAAAAAB-AAAAi3nMQMqws0EAAAAA5D3gQgcAAAAZAAAAAAAAAH4AAAASfgAAmOY7-kHDbwLC5jv6EsNvAgAAjwMAAAAA",
+            "location": [
+              -96.73764,
+              40.878913
+            ],
+            "name": "Aster Road",
+            "distance": 6.306852728
+          },
+          {
+            "hint": "Id8Sif___38WAAAAUwAAAAAAAAAfAAAAemv7Qf6urUIAAAAAJPx2QRYAAABTAAAAAAAAAB8AAAASfgAACJ49-juObgK0nT36O45uAgAAPwsAAAAA",
+            "location": [
+              -96.625144,
+              40.799803
+            ],
+            "name": "South 70th Street",
+            "distance": 7.091334173
+          },
+          {
+            "hint": "2quFhv___38TAAAAKQAAADAAAAAAAAAA1kDCQfQg3UEg6HJCAAAAABMAAAApAAAAMAAAAAAAAAASfgAABnM9-kzdbgIZcz36O91uAgQAHwMAAAAA",
+            "location": [
+              -96.636154,
+              40.820044
+            ],
+            "name": "North Cotner Boulevard",
+            "distance": 2.476478228
+          },
+          {
+            "hint": "v8pIjP___38CAAAAFQAAAAAAAAASAAAAAlNcQFgf1kEAAAAAOpfSQQIAAAAVAAAAAAAAABIAAAASfgAAs-g9-gi7bgKX6D36CLtuAgAAPwsAAAAA",
+            "location": [
+              -96.606029,
+              40.811272
+            ],
+            "name": "South 84th Street",
+            "distance": 2.362005024
+          }
+        ],
+        "durations": [
+          [
+            0,
+            119.4,
+            90.4,
+            148.9,
+            605.3,
+            521.5,
+            605.3,
+            564.8,
+            718.8,
+            605.6,
+            733.9
+          ],
+          [
+            130.2,
+            0,
+            89,
+            199.1,
+            598.8,
+            515,
+            598.8,
+            558.3,
+            745.2,
+            632,
+            760.3
+          ],
+          [
+            105.2,
+            29,
+            0,
+            174.9,
+            627.8,
+            544,
+            627.8,
+            587.3,
+            721,
+            607.8,
+            736.1
+          ],
+          [
+            149.1,
+            221.2,
+            192.9,
+            0,
+            517.9,
+            565.9,
+            517.9,
+            609.2,
+            601.3,
+            488.1,
+            616.4
+          ],
+          [
+            602.5,
+            648.8,
+            661.7,
+            546.7,
+            0,
+            449.6,
+            0,
+            492.9,
+            922.1,
+            729.6,
+            893.9
+          ],
+          [
+            528.1,
+            573.7,
+            600,
+            574.7,
+            498.8,
+            0,
+            498.8,
+            101.3,
+            1176,
+            1028.2,
+            1191.1
+          ],
+          [
+            602.5,
+            648.8,
+            661.7,
+            546.7,
+            0,
+            449.6,
+            0,
+            492.9,
+            922.1,
+            729.6,
+            893.9
+          ],
+          [
+            558.7,
+            604.3,
+            630.6,
+            605.3,
+            529.4,
+            91.4,
+            529.4,
+            0,
+            1206.6,
+            1058.8,
+            1221.7
+          ],
+          [
+            712.1,
+            702.7,
+            674.4,
+            634.3,
+            949.7,
+            1155.8,
+            949.7,
+            1199.1,
+            0,
+            331.8,
+            263.3
+          ],
+          [
+            610.4,
+            646.6,
+            618.3,
+            496,
+            700.6,
+            969.3,
+            700.6,
+            1012.6,
+            265.9,
+            0,
+            286.6
+          ],
+          [
+            776.2,
+            812.4,
+            784.1,
+            661.8,
+            930.2,
+            1193,
+            930.2,
+            1236.3,
+            292.7,
+            359.3,
+            0
+          ]
+        ],
+        "sources": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "geXFhP___39kAAAAaQAAABAAAAAlAAAAi1izQrRFhEDN2WpBD6h1QWQAAABpAAAAEAAAACUAAAASfgAA_V48-rmubgL9Xjz60q5uAgIA7xAAAAAA",
+            "location": [
+              -96.706819,
+              40.808121
+            ],
+            "name": "Lincoln Mall",
+            "distance": 2.77626317
+          },
+          {
+            "hint": "hOXFhP___39ZAAAAaAAAAA0AAAAPAAAAXhygQjIoTUEA-DxB9PZXQVkAAABoAAAADQAAAA8AAAASfgAA_mo8-q6ubgL-ajz6yq5uAgIA7xAAAAAA",
+            "location": [
+              -96.703746,
+              40.80811
+            ],
+            "name": "Lincoln Mall",
+            "distance": 3.10941475
+          },
+          {
+            "hint": "mAKHgf___38EAAAACwAAAAAAAAAbAAAACXiUQIZa3UAAAAAAXsfkQQQAAAALAAAAAAAAABsAAAASfgAAqIY8-mzIbgKohjz6SchuAgAArwUAAAAA",
+            "location": [
+              -96.696664,
+              40.8147
+            ],
+            "name": "P Street",
+            "distance": 3.886768438
+          },
+          {
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "name": "",
+            "distance": 2.22102985
+          },
+          {
+            "hint": "JWuGgUk7ao0JAAAAAwAAAGwAAAAMAAAA1g8PQXCR-D_8AsBCocUvQQkAAAADAAAAbAAAAAwAAAASfgAA8gM8-qG9bwLvAzz6Zb1vAgwADxEAAAAA",
+            "location": [
+              -96.730126,
+              40.877473
+            ],
+            "name": "Fallbrook Boulevard",
+            "distance": 6.667886588
+          },
+          {
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "name": "",
+            "distance": 2.22102985
+          },
+          {
+            "hint": "MHWvhwl-HYwHAAAAGQAAAAAAAAB-AAAAi3nMQMqws0EAAAAA5D3gQgcAAAAZAAAAAAAAAH4AAAASfgAAmOY7-kHDbwLC5jv6EsNvAgAAjwMAAAAA",
+            "location": [
+              -96.73764,
+              40.878913
+            ],
+            "name": "Aster Road",
+            "distance": 6.306852728
+          },
+          {
+            "hint": "Id8Sif___38WAAAAUwAAAAAAAAAfAAAAemv7Qf6urUIAAAAAJPx2QRYAAABTAAAAAAAAAB8AAAASfgAACJ49-juObgK0nT36O45uAgAAPwsAAAAA",
+            "location": [
+              -96.625144,
+              40.799803
+            ],
+            "name": "South 70th Street",
+            "distance": 7.091334173
+          },
+          {
+            "hint": "2quFhv___38TAAAAKQAAADAAAAAAAAAA1kDCQfQg3UEg6HJCAAAAABMAAAApAAAAMAAAAAAAAAASfgAABnM9-kzdbgIZcz36O91uAgQAHwMAAAAA",
+            "location": [
+              -96.636154,
+              40.820044
+            ],
+            "name": "North Cotner Boulevard",
+            "distance": 2.476478228
+          },
+          {
+            "hint": "v8pIjP___38CAAAAFQAAAAAAAAASAAAAAlNcQFgf1kEAAAAAOpfSQQIAAAAVAAAAAAAAABIAAAASfgAAs-g9-gi7bgKX6D36CLtuAgAAPwsAAAAA",
+            "location": [
+              -96.606029,
+              40.811272
+            ],
+            "name": "South 84th Street",
+            "distance": 2.362005024
+          }
+        ]
+      }
+    },
+    {
+      "label": "large-12-south-to-north",
+      "input": {
+        "homeBase": {
+          "label": "stand-in home base (downtown Lincoln)",
+          "lat": 40.8136,
+          "lng": -96.7026
+        },
+        "stops": [
+          {
+            "id": 27,
+            "name": "Mary Spivey, CHI Health (Referred by Dr. Johnson)",
+            "lat": 40.767947830753,
+            "lng": -96.62538312507,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 31,
+            "name": "CHI Health Clinic Internal Medicine",
+            "lat": 40.767947830753,
+            "lng": -96.62538312507,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 36,
+            "name": "Holy Family Medical",
+            "lat": 40.740314066536,
+            "lng": -96.646571967592,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 37,
+            "name": "Interim HealthCare of Lincoln",
+            "lat": 40.751941934943,
+            "lng": -96.641538656183,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 38,
+            "name": "Endacott",
+            "lat": 40.769818576619,
+            "lng": -96.674111990091,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 40,
+            "name": "Knudsen Law Firm",
+            "lat": 40.77530123116,
+            "lng": -96.703965574637,
+            "region": "South Lincoln"
+          },
+          {
+            "id": 73,
+            "name": "Gastroenterology Specialties",
+            "lat": 40.817059568085,
+            "lng": -96.656377272947,
+            "region": "North Lincoln"
+          },
+          {
+            "id": 120,
+            "name": "Bluestem Health - Main Clinic",
+            "lat": 40.823723073458,
+            "lng": -96.682408588917,
+            "region": "North Lincoln"
+          },
+          {
+            "id": 157,
+            "name": "Fire Station 2",
+            "lat": 40.828486996028,
+            "lng": -96.672934327055,
+            "region": "North Lincoln"
+          },
+          {
+            "id": 184,
+            "name": "J.Brasch Co.",
+            "lat": 40.828596799846,
+            "lng": -96.692291233543,
+            "region": "North Lincoln"
+          },
+          {
+            "id": 229,
+            "name": "Sacred Heart Parish",
+            "lat": 40.818173160541,
+            "lng": -96.675575026445,
+            "region": "North Lincoln"
+          },
+          {
+            "id": 89,
+            "name": "Legacy Terrace",
+            "lat": 40.848692153672,
+            "lng": -96.642958579401,
+            "region": "Northeast Lincoln"
+          }
+        ]
+      },
+      "trip": {
+        "code": "Ok",
+        "trips": [
+          {
+            "legs": [
+              {
+                "steps": [],
+                "weight": 371.2,
+                "summary": "",
+                "duration": 371.2,
+                "distance": 2958
+              },
+              {
+                "steps": [],
+                "weight": 149.4,
+                "summary": "",
+                "duration": 149.4,
+                "distance": 1371.8
+              },
+              {
+                "steps": [],
+                "weight": 148.2,
+                "summary": "",
+                "duration": 148.2,
+                "distance": 1526
+              },
+              {
+                "steps": [],
+                "weight": 123.9,
+                "summary": "",
+                "duration": 123.9,
+                "distance": 1383.3
+              },
+              {
+                "steps": [],
+                "weight": 215.9,
+                "summary": "",
+                "duration": 215.9,
+                "distance": 2482.2
+              },
+              {
+                "steps": [],
+                "weight": 417,
+                "summary": "",
+                "duration": 415.6,
+                "distance": 4642.8
+              },
+              {
+                "steps": [],
+                "weight": 873.5,
+                "summary": "",
+                "duration": 872.1,
+                "distance": 10394.2
+              },
+              {
+                "steps": [],
+                "weight": 0,
+                "summary": "",
+                "duration": 0,
+                "distance": 0
+              },
+              {
+                "steps": [],
+                "weight": 228.5,
+                "summary": "",
+                "duration": 228.5,
+                "distance": 3098.7
+              },
+              {
+                "steps": [],
+                "weight": 221.4,
+                "summary": "",
+                "duration": 221.4,
+                "distance": 2586.9
+              },
+              {
+                "steps": [],
+                "weight": 352,
+                "summary": "",
+                "duration": 352,
+                "distance": 5017.8
+              },
+              {
+                "steps": [],
+                "weight": 229.5,
+                "summary": "",
+                "duration": 229.5,
+                "distance": 2857.1
+              }
+            ],
+            "weight_name": "routability",
+            "weight": 3330.5,
+            "duration": 3327.7,
+            "distance": 38318.8
+          }
+        ],
+        "waypoints": [
+          {
+            "waypoint_index": 0,
+            "distance": 1.012287867,
+            "name": "South 13th Street",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 8,
+            "distance": 1.110495614,
+            "name": "Stacy Lane",
+            "location": [
+              -96.625383,
+              40.767958
+            ],
+            "hint": "6h2Hgf___38GAAAAFQAAALIAAAAAAAAAB7M3QMDNv0BtiINCAAAAAAYAAAAVAAAAsgAAAAAAAAASfgAAGZ09-tYRbgIZnT36zBFuAgQArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 7,
+            "distance": 1.110495614,
+            "name": "Stacy Lane",
+            "location": [
+              -96.625383,
+              40.767958
+            ],
+            "hint": "6h2Hgf___38GAAAAFQAAALIAAAAAAAAAB7M3QMDNv0BtiINCAAAAAAYAAAAVAAAAsgAAAAAAAAASfgAAGZ09-tYRbgIZnT36zBFuAgQArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 10,
+            "distance": 5.829389305,
+            "name": "Stephanie Lane",
+            "location": [
+              -96.646503,
+              40.740314
+            ],
+            "hint": "U5KGgUWl_ogpAAAAEgAAAB4AAAAAAAAALlPkQRk6RUEwPqVBAAAAACkAAAASAAAAHgAAAAAAAAASfgAAmUo9-tqlbQJUSj362qVtAgQAPwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 9,
+            "distance": 10.04663818,
+            "name": "South 58th Street",
+            "location": [
+              -96.641647,
+              40.751904
+            ],
+            "hint": "3DuGgUylhoEIAAAACgAAAFgAAAAAAAAAfh7nQHbhCkHinZ1CAAAAAAgAAAAKAAAAWAAAAAAAAAASfgAAkV09-iDTbQL9XT36RtNtAggAvwkAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 11,
+            "distance": 5.885626751,
+            "name": "Pioneers Boulevard",
+            "location": [
+              -96.674112,
+              40.769872
+            ],
+            "hint": "G1TGhGVnhoYFAAAABQAAAAAAAAAAAAAANIcQQQucykAAAAAAAAAAAAUAAAAFAAAAAAAAAAAAAAASfgAAwN48-lAZbgLA3jz6GxluAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 12,
+            "distance": 6.559129093,
+            "name": "Vermaas Place",
+            "location": [
+              -96.70404,
+              40.775283
+            ],
+            "hint": "cRSHgcnhxIQZAAAAFAAAAAAAAAAQAAAAf1UrQeZlAkEAAAAAc4HWQBkAAAAUAAAAAAAAABAAAAASfgAA2Gk8-nMubgIiajz6hS5uAgAALwoAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 5,
+            "distance": 0.1110505273,
+            "name": "R Street",
+            "location": [
+              -96.656377,
+              40.817061
+            ],
+            "hint": "1BXEhP___38XAAAAHgAAAGcAAAAeAAAApcTiQcCuCUHM5QBDgxZFQRcAAAAeAAAAZwAAAB4AAAASfgAAByQ9-qXRbgIHJD36pNFuAhgArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 2,
+            "distance": 8.098302941,
+            "name": "North 27th Street",
+            "location": [
+              -96.682313,
+              40.823723
+            ],
+            "hint": "hG6Ggf___38zAAAAPAAAAAYAAAAAAAAAcieAQukhLkE9UvxAAAAAADMAAAA8AAAABgAAAAAAAAASfgAAt748-qvrbgJXvjz6q-tuAgIATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 3,
+            "distance": 6.664228461,
+            "name": "North 33rd Street",
+            "location": [
+              -96.672855,
+              40.828487
+            ],
+            "hint": "346Ggd7sO4khAAAACwAAAAgAAAAAAAAA7HYnQmv-VkHLcxxBAAAAACEAAAALAAAACAAAAAAAAAASfgAAqeM8-kf-bgJa4zz6R_5uAgIAfxYAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 1,
+            "distance": 7.930365866,
+            "name": "North 20th Circle",
+            "location": [
+              -96.692385,
+              40.828596
+            ],
+            "hint": "caaGgcFCp4sqAAAACAAAAAAAAAAXAAAAE88YQqEgzkAAAAAAxrOhQSoAAAAIAAAAAAAAABcAAAASfgAAX5c8-rT-bgK9lzz6tf5uAgAAPwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 4,
+            "distance": 7.218284241,
+            "name": "S Street",
+            "location": [
+              -96.675575,
+              40.818108
+            ],
+            "hint": "jayGgZi08o0nAAAAVQAAAAkAAAAAAAAAG7ILQoSBl0It7AJBAAAAACcAAABVAAAACQAAAAAAAAASfgAACdk8-rzVbgIJ2Tz6_dVuAgIAnwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 6,
+            "distance": 2.024575736,
+            "name": "",
+            "location": [
+              -96.642935,
+              40.848692
+            ],
+            "hint": "EgWlhs3iY44cAAAAFgAAAAAAAABkAAAAbVy8QMOykUAAAAAAEG6oQQ4AAAALAAAAAAAAADIAAAASfgAAiVg9-jRNbwJxWD36NE1vAgAADwAAAAAA",
+            "trips_index": 0
+          }
+        ]
+      },
+      "table": {
+        "code": "Ok",
+        "distances": [
+          [
+            0,
+            9936.3,
+            9936.3,
+            11757.2,
+            10208.8,
+            7047.5,
+            5004.9,
+            4724.5,
+            3500.2,
+            4676.5,
+            2958,
+            3285.3,
+            8738.2
+          ],
+          [
+            9989.3,
+            0,
+            0,
+            5246,
+            3098.7,
+            4360.8,
+            7329.5,
+            8400.6,
+            9725.8,
+            9662.8,
+            10965.1,
+            8740,
+            10513.1
+          ],
+          [
+            9989.3,
+            0,
+            0,
+            5246,
+            3098.7,
+            4360.8,
+            7329.5,
+            8400.6,
+            9725.8,
+            9662.8,
+            10965.1,
+            8740,
+            10513.1
+          ],
+          [
+            12393.2,
+            5107.8,
+            5107.8,
+            0,
+            2173.8,
+            5017.8,
+            7751.6,
+            9776.1,
+            11462.8,
+            11399.8,
+            12702.1,
+            10476.9,
+            12552.7
+          ],
+          [
+            11044.6,
+            3276.4,
+            3276.4,
+            2586.9,
+            0,
+            3669.2,
+            6402.9,
+            8427.5,
+            10114.2,
+            10051.1,
+            11353.4,
+            9128.3,
+            11204.1
+          ],
+          [
+            7498.7,
+            4452.7,
+            4452.7,
+            5213.9,
+            3665.5,
+            0,
+            2857.1,
+            6680.7,
+            6952.4,
+            7797.5,
+            8191.7,
+            6874.7,
+            11157.5
+          ],
+          [
+            4804,
+            7355,
+            7355,
+            7967.7,
+            6419.4,
+            2902.3,
+            0,
+            9026,
+            7801.7,
+            8978,
+            7651.1,
+            7586.8,
+            12553.3
+          ],
+          [
+            4772.3,
+            7813.4,
+            7813.4,
+            9821.8,
+            8128.1,
+            7168.1,
+            9262.4,
+            0,
+            3058.2,
+            2632.8,
+            4280.7,
+            2503.8,
+            4642.8
+          ],
+          [
+            2835.9,
+            9710.1,
+            9710.1,
+            11531,
+            9982.7,
+            6778.2,
+            7812.2,
+            3676.8,
+            0,
+            1526,
+            1613,
+            1202.9,
+            6261
+          ],
+          [
+            4145.2,
+            9797.1,
+            9797.1,
+            11618,
+            10069.7,
+            7809.4,
+            9150.1,
+            2961.6,
+            1330.3,
+            0,
+            1751.2,
+            1383.3,
+            4750.1
+          ],
+          [
+            2466.3,
+            11081.9,
+            11081.9,
+            12902.8,
+            11354.5,
+            8150,
+            7720.5,
+            5048.6,
+            1371.8,
+            1751.6,
+            0,
+            2574.7,
+            6486.5
+          ],
+          [
+            3012.9,
+            8874.2,
+            8874.2,
+            10695.1,
+            9146.7,
+            6886.5,
+            7764.1,
+            2482.2,
+            1340.4,
+            1383.3,
+            2570,
+            0,
+            6133.3
+          ],
+          [
+            8395.1,
+            10394.2,
+            10394.2,
+            12682,
+            10988.3,
+            10930.2,
+            12778.5,
+            4978.6,
+            6151.7,
+            4841.9,
+            6572.7,
+            6225.2,
+            0
+          ]
+        ],
+        "destinations": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "6h2Hgf___38GAAAAFQAAALIAAAAAAAAAB7M3QMDNv0BtiINCAAAAAAYAAAAVAAAAsgAAAAAAAAASfgAAGZ09-tYRbgIZnT36zBFuAgQArwUAAAAA",
+            "location": [
+              -96.625383,
+              40.767958
+            ],
+            "name": "Stacy Lane",
+            "distance": 1.110495614
+          },
+          {
+            "hint": "6h2Hgf___38GAAAAFQAAALIAAAAAAAAAB7M3QMDNv0BtiINCAAAAAAYAAAAVAAAAsgAAAAAAAAASfgAAGZ09-tYRbgIZnT36zBFuAgQArwUAAAAA",
+            "location": [
+              -96.625383,
+              40.767958
+            ],
+            "name": "Stacy Lane",
+            "distance": 1.110495614
+          },
+          {
+            "hint": "U5KGgUWl_ogpAAAAEgAAAB4AAAAAAAAALlPkQRk6RUEwPqVBAAAAACkAAAASAAAAHgAAAAAAAAASfgAAmUo9-tqlbQJUSj362qVtAgQAPwsAAAAA",
+            "location": [
+              -96.646503,
+              40.740314
+            ],
+            "name": "Stephanie Lane",
+            "distance": 5.829389305
+          },
+          {
+            "hint": "3DuGgUylhoEIAAAACgAAAFgAAAAAAAAAfh7nQHbhCkHinZ1CAAAAAAgAAAAKAAAAWAAAAAAAAAASfgAAkV09-iDTbQL9XT36RtNtAggAvwkAAAAA",
+            "location": [
+              -96.641647,
+              40.751904
+            ],
+            "name": "South 58th Street",
+            "distance": 10.04663818
+          },
+          {
+            "hint": "G1TGhGVnhoYFAAAABQAAAAAAAAAAAAAANIcQQQucykAAAAAAAAAAAAUAAAAFAAAAAAAAAAAAAAASfgAAwN48-lAZbgLA3jz6GxluAgAArwUAAAAA",
+            "location": [
+              -96.674112,
+              40.769872
+            ],
+            "name": "Pioneers Boulevard",
+            "distance": 5.885626751
+          },
+          {
+            "hint": "cRSHgcnhxIQZAAAAFAAAAAAAAAAQAAAAf1UrQeZlAkEAAAAAc4HWQBkAAAAUAAAAAAAAABAAAAASfgAA2Gk8-nMubgIiajz6hS5uAgAALwoAAAAA",
+            "location": [
+              -96.70404,
+              40.775283
+            ],
+            "name": "Vermaas Place",
+            "distance": 6.559129093
+          },
+          {
+            "hint": "1BXEhP___38XAAAAHgAAAGcAAAAeAAAApcTiQcCuCUHM5QBDgxZFQRcAAAAeAAAAZwAAAB4AAAASfgAAByQ9-qXRbgIHJD36pNFuAhgArwUAAAAA",
+            "location": [
+              -96.656377,
+              40.817061
+            ],
+            "name": "R Street",
+            "distance": 0.1110505273
+          },
+          {
+            "hint": "hG6Ggf___38zAAAAPAAAAAYAAAAAAAAAcieAQukhLkE9UvxAAAAAADMAAAA8AAAABgAAAAAAAAASfgAAt748-qvrbgJXvjz6q-tuAgIATwsAAAAA",
+            "location": [
+              -96.682313,
+              40.823723
+            ],
+            "name": "North 27th Street",
+            "distance": 8.098302941
+          },
+          {
+            "hint": "346Ggd7sO4khAAAACwAAAAgAAAAAAAAA7HYnQmv-VkHLcxxBAAAAACEAAAALAAAACAAAAAAAAAASfgAAqeM8-kf-bgJa4zz6R_5uAgIAfxYAAAAA",
+            "location": [
+              -96.672855,
+              40.828487
+            ],
+            "name": "North 33rd Street",
+            "distance": 6.664228461
+          },
+          {
+            "hint": "caaGgcFCp4sqAAAACAAAAAAAAAAXAAAAE88YQqEgzkAAAAAAxrOhQSoAAAAIAAAAAAAAABcAAAASfgAAX5c8-rT-bgK9lzz6tf5uAgAAPwsAAAAA",
+            "location": [
+              -96.692385,
+              40.828596
+            ],
+            "name": "North 20th Circle",
+            "distance": 7.930365866
+          },
+          {
+            "hint": "jayGgZi08o0nAAAAVQAAAAkAAAAAAAAAG7ILQoSBl0It7AJBAAAAACcAAABVAAAACQAAAAAAAAASfgAACdk8-rzVbgIJ2Tz6_dVuAgIAnwUAAAAA",
+            "location": [
+              -96.675575,
+              40.818108
+            ],
+            "name": "S Street",
+            "distance": 7.218284241
+          },
+          {
+            "hint": "EgWlhs3iY44cAAAAFgAAAAAAAABkAAAAbVy8QMOykUAAAAAAEG6oQQ4AAAALAAAAAAAAADIAAAASfgAAiVg9-jRNbwJxWD36NE1vAgAADwAAAAAA",
+            "location": [
+              -96.642935,
+              40.848692
+            ],
+            "name": "",
+            "distance": 2.024575736
+          }
+        ],
+        "durations": [
+          [
+            0,
+            837.1,
+            837.1,
+            947.4,
+            849.4,
+            619.3,
+            468.9,
+            438.2,
+            370,
+            448.7,
+            371.2,
+            357.8,
+            722.5
+          ],
+          [
+            818.2,
+            0,
+            0,
+            374.5,
+            228.5,
+            336.5,
+            565.5,
+            631.5,
+            760.5,
+            753,
+            890.2,
+            688,
+            834.3
+          ],
+          [
+            818.2,
+            0,
+            0,
+            374.5,
+            228.5,
+            336.5,
+            565.5,
+            631.5,
+            760.5,
+            753,
+            890.2,
+            688,
+            834.3
+          ],
+          [
+            934.1,
+            382.8,
+            382.8,
+            0,
+            172.3,
+            352,
+            539.4,
+            772.9,
+            893,
+            885.5,
+            1022.7,
+            820.5,
+            1010.2
+          ],
+          [
+            860.1,
+            286.7,
+            286.7,
+            221.4,
+            0,
+            278,
+            465.4,
+            698.9,
+            819,
+            811.5,
+            948.7,
+            746.5,
+            936.2
+          ],
+          [
+            624.2,
+            373.2,
+            373.2,
+            366.7,
+            267.8,
+            0,
+            229.5,
+            591.6,
+            615.6,
+            636.1,
+            745.3,
+            571.1,
+            924.2
+          ],
+          [
+            449,
+            599.9,
+            599.9,
+            557.8,
+            458.9,
+            226.7,
+            0,
+            742.9,
+            667.2,
+            753.4,
+            683.9,
+            655,
+            1034.8
+          ],
+          [
+            444.6,
+            654.5,
+            654.5,
+            788.3,
+            672.5,
+            578.8,
+            777.9,
+            0,
+            302.3,
+            251.1,
+            424.6,
+            218,
+            415.6
+          ],
+          [
+            292.4,
+            779.1,
+            779.1,
+            889.4,
+            791.4,
+            580.6,
+            663.5,
+            298,
+            0,
+            148.2,
+            183.6,
+            125.6,
+            499.2
+          ],
+          [
+            406.7,
+            800.4,
+            800.4,
+            910.7,
+            812.7,
+            639.8,
+            771.9,
+            279.8,
+            125.7,
+            0,
+            180.4,
+            123.9,
+            379.4
+          ],
+          [
+            312.9,
+            928.5,
+            928.5,
+            1038.8,
+            940.8,
+            730,
+            731.6,
+            447.4,
+            149.4,
+            186.9,
+            0,
+            275,
+            545.2
+          ],
+          [
+            335.3,
+            732.1,
+            732.1,
+            842.4,
+            744.4,
+            571.5,
+            693.6,
+            215.9,
+            142.1,
+            127.1,
+            271.5,
+            0,
+            506.5
+          ],
+          [
+            713.5,
+            872.1,
+            872.1,
+            1019.5,
+            903.7,
+            896.8,
+            1052.9,
+            451.2,
+            479.9,
+            390.5,
+            542.1,
+            514.4,
+            0
+          ]
+        ],
+        "sources": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "6h2Hgf___38GAAAAFQAAALIAAAAAAAAAB7M3QMDNv0BtiINCAAAAAAYAAAAVAAAAsgAAAAAAAAASfgAAGZ09-tYRbgIZnT36zBFuAgQArwUAAAAA",
+            "location": [
+              -96.625383,
+              40.767958
+            ],
+            "name": "Stacy Lane",
+            "distance": 1.110495614
+          },
+          {
+            "hint": "6h2Hgf___38GAAAAFQAAALIAAAAAAAAAB7M3QMDNv0BtiINCAAAAAAYAAAAVAAAAsgAAAAAAAAASfgAAGZ09-tYRbgIZnT36zBFuAgQArwUAAAAA",
+            "location": [
+              -96.625383,
+              40.767958
+            ],
+            "name": "Stacy Lane",
+            "distance": 1.110495614
+          },
+          {
+            "hint": "U5KGgUWl_ogpAAAAEgAAAB4AAAAAAAAALlPkQRk6RUEwPqVBAAAAACkAAAASAAAAHgAAAAAAAAASfgAAmUo9-tqlbQJUSj362qVtAgQAPwsAAAAA",
+            "location": [
+              -96.646503,
+              40.740314
+            ],
+            "name": "Stephanie Lane",
+            "distance": 5.829389305
+          },
+          {
+            "hint": "3DuGgUylhoEIAAAACgAAAFgAAAAAAAAAfh7nQHbhCkHinZ1CAAAAAAgAAAAKAAAAWAAAAAAAAAASfgAAkV09-iDTbQL9XT36RtNtAggAvwkAAAAA",
+            "location": [
+              -96.641647,
+              40.751904
+            ],
+            "name": "South 58th Street",
+            "distance": 10.04663818
+          },
+          {
+            "hint": "G1TGhGVnhoYFAAAABQAAAAAAAAAAAAAANIcQQQucykAAAAAAAAAAAAUAAAAFAAAAAAAAAAAAAAASfgAAwN48-lAZbgLA3jz6GxluAgAArwUAAAAA",
+            "location": [
+              -96.674112,
+              40.769872
+            ],
+            "name": "Pioneers Boulevard",
+            "distance": 5.885626751
+          },
+          {
+            "hint": "cRSHgcnhxIQZAAAAFAAAAAAAAAAQAAAAf1UrQeZlAkEAAAAAc4HWQBkAAAAUAAAAAAAAABAAAAASfgAA2Gk8-nMubgIiajz6hS5uAgAALwoAAAAA",
+            "location": [
+              -96.70404,
+              40.775283
+            ],
+            "name": "Vermaas Place",
+            "distance": 6.559129093
+          },
+          {
+            "hint": "1BXEhP___38XAAAAHgAAAGcAAAAeAAAApcTiQcCuCUHM5QBDgxZFQRcAAAAeAAAAZwAAAB4AAAASfgAAByQ9-qXRbgIHJD36pNFuAhgArwUAAAAA",
+            "location": [
+              -96.656377,
+              40.817061
+            ],
+            "name": "R Street",
+            "distance": 0.1110505273
+          },
+          {
+            "hint": "hG6Ggf___38zAAAAPAAAAAYAAAAAAAAAcieAQukhLkE9UvxAAAAAADMAAAA8AAAABgAAAAAAAAASfgAAt748-qvrbgJXvjz6q-tuAgIATwsAAAAA",
+            "location": [
+              -96.682313,
+              40.823723
+            ],
+            "name": "North 27th Street",
+            "distance": 8.098302941
+          },
+          {
+            "hint": "346Ggd7sO4khAAAACwAAAAgAAAAAAAAA7HYnQmv-VkHLcxxBAAAAACEAAAALAAAACAAAAAAAAAASfgAAqeM8-kf-bgJa4zz6R_5uAgIAfxYAAAAA",
+            "location": [
+              -96.672855,
+              40.828487
+            ],
+            "name": "North 33rd Street",
+            "distance": 6.664228461
+          },
+          {
+            "hint": "caaGgcFCp4sqAAAACAAAAAAAAAAXAAAAE88YQqEgzkAAAAAAxrOhQSoAAAAIAAAAAAAAABcAAAASfgAAX5c8-rT-bgK9lzz6tf5uAgAAPwsAAAAA",
+            "location": [
+              -96.692385,
+              40.828596
+            ],
+            "name": "North 20th Circle",
+            "distance": 7.930365866
+          },
+          {
+            "hint": "jayGgZi08o0nAAAAVQAAAAkAAAAAAAAAG7ILQoSBl0It7AJBAAAAACcAAABVAAAACQAAAAAAAAASfgAACdk8-rzVbgIJ2Tz6_dVuAgIAnwUAAAAA",
+            "location": [
+              -96.675575,
+              40.818108
+            ],
+            "name": "S Street",
+            "distance": 7.218284241
+          },
+          {
+            "hint": "EgWlhs3iY44cAAAAFgAAAAAAAABkAAAAbVy8QMOykUAAAAAAEG6oQQ4AAAALAAAAAAAAADIAAAASfgAAiVg9-jRNbwJxWD36NE1vAgAADwAAAAAA",
+            "location": [
+              -96.642935,
+              40.848692
+            ],
+            "name": "",
+            "distance": 2.024575736
+          }
+        ]
+      }
+    },
+    {
+      "label": "medium-6-northwest",
+      "input": {
+        "homeBase": {
+          "label": "stand-in home base (downtown Lincoln)",
+          "lat": 40.8136,
+          "lng": -96.7026
+        },
+        "stops": [
+          {
+            "id": 24,
+            "name": "Autumn Ridge Family Medicine",
+            "lat": 40.861282073602,
+            "lng": -96.683519027159,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 32,
+            "name": "Fallbrook Family Health Center",
+            "lat": 40.877412927719,
+            "lng": -96.730129063299,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 46,
+            "name": "NorthPointe Family Medicine",
+            "lat": 40.861282073602,
+            "lng": -96.683519027159,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 71,
+            "name": "Fallbrook assisted living",
+            "lat": 40.878865927184,
+            "lng": -96.73759779756,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 80,
+            "name": "The Independence House Northview",
+            "lat": 40.857041586613,
+            "lng": -96.686563064508,
+            "region": "Northwest Lincoln"
+          },
+          {
+            "id": 96,
+            "name": "North Gate Garden Estates",
+            "lat": 40.865561318817,
+            "lng": -96.686885769843,
+            "region": "Northwest Lincoln"
+          }
+        ]
+      },
+      "trip": {
+        "code": "Ok",
+        "trips": [
+          {
+            "legs": [
+              {
+                "steps": [],
+                "weight": 500.6,
+                "summary": "",
+                "duration": 500.6,
+                "distance": 7558.9
+              },
+              {
+                "steps": [],
+                "weight": 106.4,
+                "summary": "",
+                "duration": 104.7,
+                "distance": 1002.5
+              },
+              {
+                "steps": [],
+                "weight": 0,
+                "summary": "",
+                "duration": 0,
+                "distance": 0
+              },
+              {
+                "steps": [],
+                "weight": 103.1,
+                "summary": "",
+                "duration": 101.4,
+                "distance": 742.8
+              },
+              {
+                "steps": [],
+                "weight": 413.7,
+                "summary": "",
+                "duration": 413.7,
+                "distance": 4623.5
+              },
+              {
+                "steps": [],
+                "weight": 101.3,
+                "summary": "",
+                "duration": 101.3,
+                "distance": 870.2
+              }
+            ],
+            "weight_name": "routability",
+            "weight": 1225.1,
+            "duration": 1221.7,
+            "distance": 14797.9
+          }
+        ],
+        "waypoints": [
+          {
+            "waypoint_index": 0,
+            "distance": 1.012287867,
+            "name": "South 13th Street",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 2,
+            "distance": 2.22102985,
+            "name": "",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 5,
+            "distance": 6.667886588,
+            "name": "Fallbrook Boulevard",
+            "location": [
+              -96.730126,
+              40.877473
+            ],
+            "hint": "JWuGgUk7ao0JAAAAAwAAAGwAAAAMAAAA1g8PQXCR-D_8AsBCocUvQQkAAAADAAAAbAAAAAwAAAASfgAA8gM8-qG9bwLvAzz6Zb1vAgwADxEAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 3,
+            "distance": 2.22102985,
+            "name": "",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 6,
+            "distance": 6.306852728,
+            "name": "Aster Road",
+            "location": [
+              -96.73764,
+              40.878913
+            ],
+            "hint": "MHWvhwl-HYwHAAAAGQAAAAAAAAB-AAAAi3nMQMqws0EAAAAA5D3gQgcAAAAZAAAAAAAAAH4AAAASfgAAmOY7-kHDbwLC5jv6EsNvAgAAjwMAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 1,
+            "distance": 6.554206631,
+            "name": "Superior Street",
+            "location": [
+              -96.686561,
+              40.857101
+            ],
+            "hint": "iSbLhP___39cAAAAXwAAAAAAAAAAAAAAaLYEQ2V6bUAAAAAAAAAAAFwAAABfAAAAAAAAAAAAAAASfgAAH648-g1ubwIdrjz60m1vAgAAvwUAAAAA",
+            "trips_index": 0
+          },
+          {
+            "waypoint_index": 4,
+            "distance": 9.456167302,
+            "name": "Folkways Boulevard",
+            "location": [
+              -96.686841,
+              40.865639
+            ],
+            "hint": "TcSGgVDEhoFCAAAAHgAAAAAAAAAJAAAA6DpuQvST0EEAAAAA-on1QEIAAAAeAAAAAAAAAAkAAAASfgAAB608-mePbwLarDz6GY9vAgAAHwcAAAAA",
+            "trips_index": 0
+          }
+        ]
+      },
+      "table": {
+        "code": "Ok",
+        "distances": [
+          [
+            0,
+            8561.4,
+            8886.9,
+            8561.4,
+            9199.2,
+            7558.9,
+            8891.3
+          ],
+          [
+            6736.6,
+            0,
+            6531.9,
+            0,
+            6844.2,
+            1516.8,
+            742.8
+          ],
+          [
+            8829.8,
+            7073.2,
+            0,
+            7073.2,
+            870.2,
+            6070.7,
+            5205.4
+          ],
+          [
+            6736.6,
+            0,
+            6531.9,
+            0,
+            6844.2,
+            1516.8,
+            742.8
+          ],
+          [
+            9055.6,
+            7299,
+            818.8,
+            7299,
+            0,
+            6296.5,
+            5431.2
+          ],
+          [
+            7714.4,
+            1002.5,
+            5879.3,
+            1002.5,
+            6191.6,
+            0,
+            1786.2
+          ],
+          [
+            7522,
+            742.8,
+            4623.5,
+            742.8,
+            5726.4,
+            2506.3,
+            0
+          ]
+        ],
+        "destinations": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "name": "",
+            "distance": 2.22102985
+          },
+          {
+            "hint": "JWuGgUk7ao0JAAAAAwAAAGwAAAAMAAAA1g8PQXCR-D_8AsBCocUvQQkAAAADAAAAbAAAAAwAAAASfgAA8gM8-qG9bwLvAzz6Zb1vAgwADxEAAAAA",
+            "location": [
+              -96.730126,
+              40.877473
+            ],
+            "name": "Fallbrook Boulevard",
+            "distance": 6.667886588
+          },
+          {
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "name": "",
+            "distance": 2.22102985
+          },
+          {
+            "hint": "MHWvhwl-HYwHAAAAGQAAAAAAAAB-AAAAi3nMQMqws0EAAAAA5D3gQgcAAAAZAAAAAAAAAH4AAAASfgAAmOY7-kHDbwLC5jv6EsNvAgAAjwMAAAAA",
+            "location": [
+              -96.73764,
+              40.878913
+            ],
+            "name": "Aster Road",
+            "distance": 6.306852728
+          },
+          {
+            "hint": "iSbLhP___39cAAAAXwAAAAAAAAAAAAAAaLYEQ2V6bUAAAAAAAAAAAFwAAABfAAAAAAAAAAAAAAASfgAAH648-g1ubwIdrjz60m1vAgAAvwUAAAAA",
+            "location": [
+              -96.686561,
+              40.857101
+            ],
+            "name": "Superior Street",
+            "distance": 6.554206631
+          },
+          {
+            "hint": "TcSGgVDEhoFCAAAAHgAAAAAAAAAJAAAA6DpuQvST0EEAAAAA-on1QEIAAAAeAAAAAAAAAAkAAAASfgAAB608-mePbwLarDz6GY9vAgAAHwcAAAAA",
+            "location": [
+              -96.686841,
+              40.865639
+            ],
+            "name": "Folkways Boulevard",
+            "distance": 9.456167302
+          }
+        ],
+        "durations": [
+          [
+            0,
+            605.3,
+            521.5,
+            605.3,
+            564.8,
+            500.6,
+            641.3
+          ],
+          [
+            602.5,
+            0,
+            449.6,
+            0,
+            492.9,
+            147.4,
+            101.4
+          ],
+          [
+            528.1,
+            498.8,
+            0,
+            498.8,
+            101.3,
+            394.1,
+            417.6
+          ],
+          [
+            602.5,
+            0,
+            449.6,
+            0,
+            492.9,
+            147.4,
+            101.4
+          ],
+          [
+            558.7,
+            529.4,
+            91.4,
+            529.4,
+            0,
+            424.7,
+            448.2
+          ],
+          [
+            533.6,
+            104.7,
+            380,
+            104.7,
+            423.3,
+            0,
+            155.1
+          ],
+          [
+            648.4,
+            101.7,
+            413.7,
+            101.7,
+            475.4,
+            211.1,
+            0
+          ]
+        ],
+        "sources": [
+          {
+            "hint": "58GGgf___38AAAAAEAAAAAAAAAA2AAAAdW7jPnVuY0EAAAAAFB5CQgAAAAAQAAAAAAAAADYAAAASfgAAbG88-iDEbgJ4bzz6IMRuAgAATwsAAAAA",
+            "location": [
+              -96.702612,
+              40.8136
+            ],
+            "name": "South 13th Street",
+            "distance": 1.012287867
+          },
+          {
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "name": "",
+            "distance": 2.22102985
+          },
+          {
+            "hint": "JWuGgUk7ao0JAAAAAwAAAGwAAAAMAAAA1g8PQXCR-D_8AsBCocUvQQkAAAADAAAAbAAAAAwAAAASfgAA8gM8-qG9bwLvAzz6Zb1vAgwADxEAAAAA",
+            "location": [
+              -96.730126,
+              40.877473
+            ],
+            "name": "Fallbrook Boulevard",
+            "distance": 6.667886588
+          },
+          {
+            "hint": "hsUth82o_4ghAAAABQAAAAAAAABPAAAABJXiQODKVz8AAAAAUS-EQRAAAAADAAAAAAAAACgAAAASfgAAAbo8-nZ-bwIBujz6Yn5vAgAArwUAAAAA",
+            "location": [
+              -96.683519,
+              40.861302
+            ],
+            "name": "",
+            "distance": 2.22102985
+          },
+          {
+            "hint": "MHWvhwl-HYwHAAAAGQAAAAAAAAB-AAAAi3nMQMqws0EAAAAA5D3gQgcAAAAZAAAAAAAAAH4AAAASfgAAmOY7-kHDbwLC5jv6EsNvAgAAjwMAAAAA",
+            "location": [
+              -96.73764,
+              40.878913
+            ],
+            "name": "Aster Road",
+            "distance": 6.306852728
+          },
+          {
+            "hint": "iSbLhP___39cAAAAXwAAAAAAAAAAAAAAaLYEQ2V6bUAAAAAAAAAAAFwAAABfAAAAAAAAAAAAAAASfgAAH648-g1ubwIdrjz60m1vAgAAvwUAAAAA",
+            "location": [
+              -96.686561,
+              40.857101
+            ],
+            "name": "Superior Street",
+            "distance": 6.554206631
+          },
+          {
+            "hint": "TcSGgVDEhoFCAAAAHgAAAAAAAAAJAAAA6DpuQvST0EEAAAAA-on1QEIAAAAeAAAAAAAAAAkAAAASfgAAB608-mePbwLarDz6GY9vAgAAHwcAAAAA",
+            "location": [
+              -96.686841,
+              40.865639
+            ],
+            "name": "Folkways Boulevard",
+            "distance": 9.456167302
+          }
+        ]
+      }
+    }
+  ]
+}

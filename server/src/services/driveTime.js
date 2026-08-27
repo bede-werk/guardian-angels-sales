@@ -47,7 +47,24 @@ function speedForRoadMiles(roadMiles, cfg) {
 // converted to minutes at the speed band that distance falls into (see
 // speedForRoadMiles), then OVERHEAD_MINUTES is added for parking/walking in.
 // Floored at MIN_DRIVE_MINUTES so two colocated places (same building/
-// complex) never estimate to ~0.
+// complex) never estimate to ~0. Unlike routeOptimizer.js's cached-matrix
+// path (see its floorLegSeconds, checkpoint A), this estimator has no real
+// duration to fall back to - every call here IS the estimate - so the floor
+// always applies; there's no "trust the real number instead" case possible.
+// OVERHEAD_MINUTES (5, checkpoint C follow-up) already exceeds
+// MIN_DRIVE_MINUTES (3) for any two points this close, so it's OVERHEAD_MINUTES,
+// not the floor, that would need addressing if a same-building estimate here
+// ever needed to shrink. Checked (checkpoint C) whether this path is actually
+// live: fillDayFromZone (scheduleGenerator.js) only reaches packTimeBlock
+// when its optimizeRoute callback is omitted or returns nothing - in
+// production, scheduleDraft.js always passes one, unconditionally, and
+// routeOptimizer.js's optimizeRoute always returns a real (possibly
+// per-leg-fallback) result, never null. So this estimator is not "what
+// production runs if the routing provider is unavailable" - matrixCache.js's
+// loadMatrix has its own, separate, overhead-free geometric fallback
+// (gridMeters) for that. This function's real callers today are the
+// zero-geocoded-candidates edge case and the test suite. Revisit this note
+// if fillDayFromZone's wiring ever changes.
 function estimateDriveMinutes(a, b, config = {}) {
   const cfg = { ...defaultConfig, ...config };
 

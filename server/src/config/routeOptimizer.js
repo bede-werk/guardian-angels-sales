@@ -1,22 +1,18 @@
-// Tunables for services/routeOptimizer.js - the one I/O-having module in the
-// route-planner stack (see routeOptimizer.js's own header for why). Plain
-// module, same convention as config/driveTime.js and config/scheduling.js.
+// Tunables for scheduleGenerator.js's stop-count caps feeding
+// services/routeOptimizer.js's solve. Plain module, same convention as
+// config/driveTime.js and config/scheduling.js.
+//
+// OSRM_BASE_URL/TIMEOUT_MS used to live here (routeOptimizer.js called OSRM's
+// /trip and /route live, request-path). That call is gone - routeOptimizer.js
+// now reads a local cache (services/matrixCache.js) and solves locally
+// (services/tsp.js), so there's no per-request service URL or timeout left
+// to tune. See config/matrixCache.js for the fallback-estimate tunables that
+// replaced them, and config/backfillQueue.js's OSRM_DATA_PATH/OSRM_ROUTED_BIN
+// for the occasional local maintenance job (scripts/backfill-distances.js)
+// that fills the cache - a local osrm-routed process, not a remote URL.
 
 module.exports = {
-  // OSRM's free public demo server - no API key, no signup. It carries no
-  // SLA, so a slow/unreachable response must never block scheduling; see
-  // routeOptimizer.js's fallback to driveTime.js's haversine estimate.
-  // Self-hosting OSRM or switching to a paid provider (Mapbox/Google) is the
-  // documented upgrade path if the demo server's reliability becomes a real
-  // problem - this is the only line that would need to change.
-  OSRM_BASE_URL: 'https://router.project-osrm.org',
-
-  // Time to wait for OSRM before giving up and falling back to the haversine
-  // estimate. The demo server can be slow under load; a schedule generation
-  // must still finish in a reasonable time even when it does.
-  TIMEOUT_MS: 5000,
-
-  // Caps how many stops go into a single /trip call. Real headroom over
+  // Caps how many stops go into a single solve. Real headroom over
   // what a working day can actually hold (a default working_visit day fits
   // roughly 5-6 stops) - this is a safety cap on the optimizer's input size,
   // not meant to be the thing that actually limits a day. Rank order (not
@@ -24,9 +20,12 @@ module.exports = {
   // sequences within it.
   MAX_OPTIMIZE_STOPS: 18,
 
-  // Absolute ceiling on total stops in ANY single /trip call, including
-  // during the top-up pass - a real technical limit (OSRM's practical
-  // waypoint capacity), distinct from MAX_OPTIMIZE_STOPS above.
+  // Absolute ceiling on total stops in any single solve, including during
+  // the top-up pass - distinct from MAX_OPTIMIZE_STOPS above. Past
+  // tsp.js's exactLimit (12 free stops) the solver switches from exact
+  // (Held-Karp) to a heuristic multi-start search, which stays fast well
+  // beyond this ceiling - it's a deliberate backstop on request size, not a
+  // hard technical limit the way OSRM's waypoint cap used to be.
   // scheduleGenerator.js's topUpDay is deliberately allowed to grow a day's
   // packed set past MAX_OPTIMIZE_STOPS one candidate at a time (that's the
   // whole point of top-up - reaching leftover candidates the initial

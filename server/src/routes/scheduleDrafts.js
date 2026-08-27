@@ -160,7 +160,8 @@ router.patch('/:id/days/:date/stops/:placeId', handle(async (req, res) => {
 }));
 
 // POST /api/schedule-drafts/:id/days/:date/reoptimize - re-sequence a day's
-// current stops via a real OSRM call (does not add/remove any stop).
+// current stops via the cached matrix + local solver (does not add/remove
+// any stop).
 router.post('/:id/days/:date/reoptimize', handle(async (req, res) => {
   const day = await scheduleDraft.reoptimizeDay({ draftId: Number(req.params.id), userId: req.user.id, date: req.params.date });
   res.json(day);

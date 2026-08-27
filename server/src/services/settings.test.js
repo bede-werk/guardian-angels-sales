@@ -83,8 +83,12 @@ describe('coerce - non-numeric types', () => {
   });
 
   test('text is trimmed and cannot be emptied', () => {
-    assert.equal(coerce(field('routeOptimizer.OSRM_BASE_URL'), '  https://example.org  '), 'https://example.org');
-    assert.throws(() => coerce(field('routeOptimizer.OSRM_BASE_URL'), '   '), /cannot be empty/);
+    // No 'text'-type tunable is live in the registry right now - a
+    // synthetic field exercises coerce()'s own 'text' branch directly,
+    // same pure-function-only scope the rest of this describe block uses.
+    const textField = { type: 'text', label: 'Test Field', maxLength: 300 };
+    assert.equal(coerce(textField, '  https://example.org  '), 'https://example.org');
+    assert.throws(() => coerce(textField, '   '), /cannot be empty/);
   });
 
   test('category lists drop blanks and duplicates', () => {

@@ -10,6 +10,7 @@ const {
   computeCapacityForPlaces,
   computeCapacityForPlace,
   nextExplorationEligibleSince,
+  toDateOnly,
 } = require('./capacity');
 const config = require('../config/scheduling');
 
@@ -243,6 +244,35 @@ describe('computeCapacityPure - override precedence', () => {
     assert.equal(withOverride.levelSource, 'override');
     assert.equal(withOverride.computedLevel, 'high', 'the computed value underneath is still exposed for the UI');
     assert.equal(withOverride.confidence, 'stale', 'an override must not reset the staleness clock');
+  });
+});
+
+// Checkpoint 6 follow-up: a real bug on the one machine this app currently
+// runs on, not a theoretical cross-environment one. Pins TZ explicitly
+// rather than relying on the test machine's own zone happening to
+// reproduce it (this app's dev machine is America/Chicago, which does
+// reproduce it - but a test that only fails there isn't a regression
+// guard). See toDateOnly's own header in capacity.js for the mechanism.
+describe('toDateOnly - a raw SQLite timestamp string is read as UTC, not local time', () => {
+  const originalTz = process.env.TZ;
+  after(() => {
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  test('21:12 Central on the 26th (02:12 UTC on the 27th) still reads as the 26th', () => {
+    process.env.TZ = 'America/Chicago';
+    assert.equal(toDateOnly('2026-08-26 21:12:19'), '2026-08-26');
+  });
+
+  test('same raw string, pinned to a machine on the other side of the date line', () => {
+    process.env.TZ = 'Pacific/Auckland';
+    assert.equal(toDateOnly('2026-08-26 21:12:19'), '2026-08-26');
+  });
+
+  test('a real Date (what a driver returning genuine Date objects hands back) still round-trips correctly', () => {
+    process.env.TZ = 'America/Chicago';
+    assert.equal(toDateOnly(new Date(Date.UTC(2026, 7, 26, 21, 12, 19))), '2026-08-26');
   });
 });
 

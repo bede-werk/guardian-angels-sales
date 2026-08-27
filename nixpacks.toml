@@ -1,0 +1,10 @@
+# Adds osrm-backend (osrm-routed, osrm-extract, osrm-partition, osrm-customize)
+# to the deployed container. '...' merges with whatever Nixpacks already
+# auto-detects for the Node app (node, npm) rather than replacing it.
+#
+# This is the ONLY thing osrm-backend needs at deploy time: it's started
+# on demand by services/localOsrmProvider.js (see that file's header), not
+# run as a standing service, so no separate start command or port is
+# configured here.
+[phases.setup]
+nixPkgs = ['...', 'osrm-backend']

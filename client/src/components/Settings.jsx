@@ -292,6 +292,67 @@ function CadenceMatrix({ group, values, defaults, onChange, fieldsByKey }) {
   );
 }
 
+// ------------------------------------------------- distance cache coverage
+
+// Read-only diagnostic (checkpoint 5), not a tunable - there's no value here
+// to edit or reset, just how complete the real-road-distance cache is and
+// whether the incremental backfill queue needs a human. Sits right next to
+// the "Distance Cache Fallback" group it explains: that group's numbers only
+// matter for the pairs THIS reports as not yet cached.
+function DistanceCacheHealth() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    api.settings.distanceCache()
+      .then((d) => alive && setData(d))
+      .catch((e) => alive && setError(e.message));
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="card settings-group">
+      <div className="card-head"><h2>Distance Cache Coverage</h2></div>
+      <div className="card-body">
+        {error ? (
+          <p className="tiny muted">Could not load: {error}</p>
+        ) : !data ? (
+          <p className="tiny muted">Loading...</p>
+        ) : (
+          <DistanceCacheHealthBody data={data} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DistanceCacheHealthBody({ data }) {
+  const { coverage, queue } = data;
+  const missingPairs = coverage.incomplete.reduce((sum, p) => sum + (p.expected - p.have), 0);
+  const cachedPairs = coverage.expectedRows - missingPairs;
+  const pct = coverage.expectedRows === 0 ? 100 : Math.round((cachedPairs / coverage.expectedRows) * 100);
+
+  return (
+    <>
+      <p className="settings-group-blurb">
+        {pct}% of real place-to-place distances are cached ({cachedPairs.toLocaleString()} of {coverage.expectedRows.toLocaleString()}).
+        {coverage.incomplete.length > 0
+          ? ` ${coverage.incomplete.length} place${coverage.incomplete.length === 1 ? '' : 's'} still missing at least one - these route legs use the fallback estimate above until the backfill queue catches up.`
+          : ' Every place has a real cached distance to every other place.'}
+      </p>
+      <p className="tiny muted">
+        Backfill queue: {queue.due} pending{queue.due > 0 ? ' (checked automatically in the background)' : ''}.
+      </p>
+      {queue.failed > 0 && (
+        <div className="warn-banner tiny">
+          {queue.failed} place{queue.failed === 1 ? '' : 's'} could not be backfilled after repeated attempts - usually an address that doesn't geocode onto the road network. Re-saving the place's address re-queues it.
+        </div>
+      )}
+    </>
+  );
+}
+
 // ------------------------------------------------------------- the screen
 
 export default function Settings() {
@@ -537,6 +598,8 @@ export default function Settings() {
               </div>
             </div>
           ))}
+
+          {section.id === 'planning' && <DistanceCacheHealth />}
         </div>
       </div>
     </div>

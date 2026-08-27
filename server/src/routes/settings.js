@@ -7,9 +7,30 @@
 // against what the settings would actually BE after the save rather than
 // one field at a time.
 const express = require('express');
+const knex = require('../db/knex');
 const { getSettingsView, saveSettings, resetSettings } = require('../services/settings');
+const { coverageReport } = require('../services/matrixCache');
+const { queueHealth } = require('../services/backfillQueue');
 
 const router = express.Router();
+
+// GET /api/settings/distance-cache - read-only diagnostic for the "Distance
+// Cache Fallback" group (checkpoint 5): how complete the real-road-distance
+// cache is, and the incremental backfill queue's own health. Not a tunable
+// (nothing here has a value to save), so it's its own endpoint rather than
+// folded into the values/catalogue shape GET / and PUT / share.
+router.get('/distance-cache', async (req, res, next) => {
+  try {
+    const places = await knex('places').whereNotNull('lat').whereNotNull('lng').select('id');
+    const [coverage, queue] = await Promise.all([
+      coverageReport(knex, places),
+      queueHealth(knex),
+    ]);
+    res.json({ coverage, queue });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /api/settings - the catalogue (sections, groups, help text, bounds),
 // the value in effect for every tunable, the shipped default for each, and
