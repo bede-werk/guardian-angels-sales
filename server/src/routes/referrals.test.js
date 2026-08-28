@@ -160,4 +160,71 @@ describe('POST /api/referrals - a referrer does not need a place', () => {
     assert.equal(floors.has(2), false, 'null-snapshot referrals credit no building, by design');
     assert.equal(floors.has(3), true, 'control: the same history with a real snapshot does measure');
   });
+  // --- class (payer source) ------------------------------------------------
+  // Free text by design (see migration 20260828010000): the vocabulary lives
+  // in eRSP and arrives with the one-time import, so the server suggests but
+  // never rejects.
+
+  function patch(id, body) {
+    return fetch(`${baseUrl}/api/referrals/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('stores the class it was logged with', async () => {
+    const res = await post({ person_id: 2, referral_date: '2026-08-01', notes: 'n', class: 'Private Pay' });
+    assert.equal(res.status, 201);
+    const row = await res.json();
+    assert.equal(row.class, 'Private Pay');
+  });
+
+  test('a referral logged without a class stores null, not an empty string', async () => {
+    // "Nobody recorded a payer source" is a real answer; '' would be a lie
+    // that also breaks the suggestion list below.
+    const res = await post({ person_id: 2, referral_date: '2026-08-02', notes: 'n' });
+    const row = await res.json();
+    assert.equal(row.class, null);
+  });
+
+  test('class can be set and cleared on an existing referral', async () => {
+    const created = await (await post({ person_id: 2, referral_date: '2026-08-03', notes: 'n' })).json();
+
+    const set = await patch(created.id, { class: 'Medicaid' });
+    assert.equal(set.status, 200);
+    assert.equal((await set.json()).class, 'Medicaid');
+
+    const cleared = await patch(created.id, { class: '' });
+    assert.equal((await cleared.json()).class, null, 'clearing stores null, not an empty string');
+  });
+
+  test('a PATCH that omits class leaves the existing one alone', async () => {
+    const created = await (await post({ person_id: 2, referral_date: '2026-08-04', notes: 'n', class: 'VA' })).json();
+    const res = await patch(created.id, { notes: 'edited note' });
+    const row = await res.json();
+    assert.equal(row.notes, 'edited note');
+    assert.equal(row.class, 'VA', 'an unrelated edit must not wipe the payer source');
+  });
+
+  test('GET /classes lists the distinct values on file, skipping blanks', async () => {
+    await post({ person_id: 2, referral_date: '2026-08-05', notes: 'n', class: 'Medicare' });
+    await post({ person_id: 2, referral_date: '2026-08-06', notes: 'n', class: 'Medicare' }); // duplicate
+    await post({ person_id: 2, referral_date: '2026-08-07', notes: 'n' });                    // null
+
+    const res = await fetch(`${baseUrl}/api/referrals/classes`);
+    assert.equal(res.status, 200);
+    const list = await res.json();
+    assert.ok(list.includes('Medicare'), 'a used class is offered');
+    assert.equal(list.filter((c) => c === 'Medicare').length, 1, 'offered once, not per referral');
+    assert.ok(!list.includes(null) && !list.includes(''), 'blanks are never suggested');
+    assert.deepEqual([...list].sort(), list, 'returned in sorted order');
+  });
+
+  test("'classes' is not swallowed as a referral id", async () => {
+    // GET /classes is declared before the /:id routes; this pins that ordering.
+    const res = await fetch(`${baseUrl}/api/referrals/classes`);
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(await res.json()));
+  });
 });

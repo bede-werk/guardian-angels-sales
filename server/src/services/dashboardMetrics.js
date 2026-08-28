@@ -34,16 +34,16 @@ function daysBetween(from, to) {
   return Math.round((parse(to) - parse(from)) / MS_PER_DAY);
 }
 
-// The seven ISO-week dates (Monday..Sunday) containing `dateStr`. Computed
-// here rather than with dayjs/isoWeek so this module stays dependency-free
-// and testable in isolation; routes/dashboard.js gets its week bounds from
-// this, so there is exactly one definition of "this week" in play.
-function isoWeekDates(dateStr) {
+// The seven calendar-week dates (Sunday..Saturday) containing `dateStr` -
+// the US wall-calendar week, not the ISO (Monday-start) one. Computed here
+// rather than with dayjs so this module stays dependency-free and testable
+// in isolation; routes/dashboard.js gets its week bounds from this, so
+// there is exactly one definition of "this week" in play.
+function calendarWeekDates(dateStr) {
   const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday
-  const mondayOffset = dow === 0 ? -6 : 1 - dow; // Sunday belongs to the week that started 6 days ago
-  const monday = addDays(dateStr, mondayOffset);
-  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday .. 6 = Saturday
+  const sunday = addDays(dateStr, -dow);
+  return Array.from({ length: 7 }, (_, i) => addDays(sunday, i));
 }
 
 // Total estimated drive minutes for a day's stops IN THE ORDER GIVEN.
@@ -79,7 +79,7 @@ function routeDriveEstimate(stops, driveConfig = {}) {
   };
 }
 
-// A week's visits bucketed into one entry per day, Monday..Sunday, with
+// A week's visits bucketed into one entry per day, Sunday..Saturday, with
 // empty days present rather than missing - the card renders a fixed seven
 // columns, and a sparse map would silently shift the days along.
 function weekDayBuckets(visits, weekDates) {
@@ -110,7 +110,7 @@ function formatMinutes(minutes) {
 module.exports = {
   addDays,
   daysBetween,
-  isoWeekDates,
+  calendarWeekDates,
   routeDriveEstimate,
   weekDayBuckets,
   formatMinutes,

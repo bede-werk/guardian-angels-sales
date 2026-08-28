@@ -16,6 +16,26 @@ const knex = require('../db/knex');
 
 const router = express.Router();
 
+// GET /api/referrals/classes - the payer sources already in use, for the log
+// form's suggestion list. Declared before the /:id routes so 'classes' can't
+// be swallowed as an id.
+//
+// This is a suggestion list, not a whitelist: the column is free text (see
+// migration 20260828010000) and the server never rejects a new value. It
+// exists so two people typing the same payer spell it the same way.
+router.get('/classes', async (req, res, next) => {
+  try {
+    const rows = await knex('referrals')
+      .whereNotNull('class')
+      .whereNot('class', '')
+      .distinct('class')
+      .orderBy('class');
+    res.json(rows.map((r) => r.class));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/referrals - log a referral for a person. The referral's place_id
 // is a snapshot of that person's place *at the time it's logged* (not
 // independently settable from the client) - mostly a historical breadcrumb,
@@ -37,7 +57,11 @@ const router = express.Router();
 //     thing the snapshot exists to prevent.
 router.post('/', async (req, res, next) => {
   try {
+    // `class` is deliberately read off req.body rather than destructured with
+    // the rest: `class` is a reserved word in JS, so `const { class } = ...`
+    // is a syntax error. It's fine as an object KEY further down.
     const { person_id, referral_date, notes } = req.body;
+    const referralClass = req.body.class;
     if (!person_id) return res.status(400).json({ error: 'person_id is required' });
     const numericPersonId = Number(person_id);
     if (Number.isNaN(numericPersonId)) return res.status(404).json({ error: 'Person not found' });
@@ -51,6 +75,7 @@ router.post('/', async (req, res, next) => {
         person_id: numericPersonId,
         referral_date: referral_date || null,
         notes: notes || null,
+        class: referralClass || null,
       })
       .returning('id');
     const id = knex.extractId(inserted);
@@ -74,6 +99,7 @@ router.patch('/:id', async (req, res, next) => {
     const update = {};
     if (req.body.referral_date !== undefined) update.referral_date = req.body.referral_date || null;
     if (req.body.notes !== undefined) update.notes = req.body.notes || null;
+    if (req.body.class !== undefined) update.class = req.body.class || null;
 
     await knex('referrals').where({ id }).update(update);
     res.json(await knex('referrals').where({ id }).first());

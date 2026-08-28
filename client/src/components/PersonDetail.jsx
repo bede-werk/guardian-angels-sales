@@ -3,6 +3,7 @@ import { api, formatDate, MONTH_NAMES, daysInMonth, suppressionNote } from '../a
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
 import PersonModal from './PersonModal';
+import AssignPlaceModal from './AssignPlaceModal';
 import ReferralModal from './ReferralModal';
 import ReferralDetailModal from './ReferralDetailModal';
 import VisitDetailModal, { encounterLabel, joinNames, commitmentMadeText } from './VisitDetailModal';
@@ -32,10 +33,8 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   const [loadError, setLoadError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [places, setPlaces] = useState([]); // every place, for the "assign to a place" picker
   const [removingFromPlace, setRemovingFromPlace] = useState(false);
-  const [assigning, setAssigning] = useState(false); // whether the "assign to a place" picker is open
-  const [placeDraft, setPlaceDraft] = useState('');
+  const [assigningPlace, setAssigningPlace] = useState(false); // whether the "Assign to a place" modal is open
   const [savingAssign, setSavingAssign] = useState(false); // in-flight guard for assignToPlace, same shape as saveField's
   const [removingReferralId, setRemovingReferralId] = useState(null); // referral currently being deleted (disables its row)
   const [loggingReferral, setLoggingReferral] = useState(false); // whether the Log Referral modal is open
@@ -73,9 +72,6 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
   useEffect(() => {
     load();
   }, [personId]);
-  useEffect(() => {
-    api.places({}).then(setPlaces).catch(() => {});
-  }, []);
 
   async function deletePerson() {
     const referralCount = data.referral_metrics.lifetime_referrals;
@@ -184,21 +180,18 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
 
   // The Notes card packs three independently-editable fields into one place;
   // opening one should back out of whichever of the other two is mid-edit
-  // (and the place picker, if that's open) rather than leaving multiple
-  // drafts open at once.
+  // rather than leaving multiple drafts open at once.
   function beginEditNotes(value) {
     setNotesDraft(value);
     setEditingNotes(true);
     setEditingPreferences(false);
     setEditingBirthday(false);
-    setAssigning(false);
   }
   function beginEditPreferences(value) {
     setPreferencesDraft(value);
     setEditingPreferences(true);
     setEditingNotes(false);
     setEditingBirthday(false);
-    setAssigning(false);
   }
   function beginEditBirthday(month, day) {
     setBirthdayMonthDraft(month || '');
@@ -206,10 +199,9 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     setEditingBirthday(true);
     setEditingNotes(false);
     setEditingPreferences(false);
-    setAssigning(false);
   }
 
-  // Any other action taken on this card - assigning a place, logging or
+  // Any other action taken on this card - opening the place picker, logging or
   // viewing a referral/visit, editing the person - should back out of
   // whichever notes/preferences/birthday field is mid-edit, same as a
   // backdrop click does (see handleBackdropClick below).
@@ -217,21 +209,20 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     setEditingNotes(false);
     setEditingPreferences(false);
     setEditingBirthday(false);
-    setAssigning(false);
-    setPlaceDraft('');
   }
 
-  async function assignToPlace() {
-    if (!placeDraft) return;
+  // Links this person to the place picked in AssignPlaceModal. Returns
+  // true/false so the modal only closes on a successful save.
+  async function assignToPlace(placeId) {
     setSavingAssign(true);
     try {
-      await api.people.update(data.id, { place_id: placeDraft });
-      setAssigning(false);
-      setPlaceDraft('');
+      await api.people.update(data.id, { place_id: placeId });
       load();
       onChanged?.();
+      return true;
     } catch (e) {
       window.alert(e.message);
+      return false;
     } finally {
       setSavingAssign(false);
     }
@@ -270,18 +261,15 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
     }
   }
 
-  // Clicking the backdrop backs out of whatever's actively being edited
-  // (the place picker, or an inline notes/preferences/birthday edit) instead
-  // of closing the whole card out from under an in-progress edit - a second
-  // backdrop click (with nothing left open) closes the card as normal.
-  // stopPropagation matters here too: this card can itself be nested inside
-  // PlaceDetail's own backdrop (opened by clicking a person row there), so
-  // without it, closing this card would bubble up and close PlaceDetail too.
+  // Clicking the backdrop backs out of an inline notes/preferences/birthday
+  // edit instead of closing the whole card out from under an in-progress edit
+  // - a second backdrop click (with nothing left open) closes the card as
+  // normal. stopPropagation matters here too: this card can itself be nested
+  // inside PlaceDetail's own backdrop (opened by clicking a person row there),
+  // so without it, closing this card would bubble up and close PlaceDetail too.
   function handleBackdropClick(e) {
     e.stopPropagation();
-    if (assigning || editingNotes || editingPreferences || editingBirthday) {
-      setAssigning(false);
-      setPlaceDraft('');
+    if (editingNotes || editingPreferences || editingBirthday) {
       setEditingNotes(false);
       setEditingPreferences(false);
       setEditingBirthday(false);
@@ -365,8 +353,8 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
             <div className="card" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="card-head">
                 <h2>Place</h2>
-                {!data.place && !assigning && (
-                  <Button variant="secondary" size="small" title="Link this person to a place" onClick={() => { exitFieldEdits(); setAssigning(true); }}>Assign to a place</Button>
+                {!data.place && (
+                  <Button variant="secondary" size="small" title="Link this person to a place" onClick={() => { exitFieldEdits(); setAssigningPlace(true); }}>Assign to a place</Button>
                 )}
               </div>
               <div className="card-body" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
@@ -390,19 +378,6 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
                     >
                       ✕
                     </Button>
-                  </div>
-                ) : assigning ? (
-                  <div className="row" style={{ alignItems: 'center' }}>
-                    <select value={placeDraft} onChange={(e) => setPlaceDraft(e.target.value)} autoFocus disabled={savingAssign} style={{ flex: 1, minWidth: 0 }}>
-                      <option value="">Select a place…</option>
-                      {places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                    <div className="tag-list" style={{ flex: 'unset' }}>
-                      <Button variant="secondary" size="small" title="Close without assigning" onClick={() => { setAssigning(false); setPlaceDraft(''); }} disabled={savingAssign}>Cancel</Button>
-                      <Button size="small" title="Link this person to the selected place" onClick={assignToPlace} disabled={!placeDraft || savingAssign}>
-                        {savingAssign ? 'Saving…' : 'Save'}
-                      </Button>
-                    </div>
                   </div>
                 ) : (
                   <div className="tiny muted">Not currently assigned to a place.</div>
@@ -729,9 +704,20 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
         />
       )}
 
+      {assigningPlace && (
+        <AssignPlaceModal
+          personName={data.name}
+          currentPlaceId={data.place_id}
+          onAssign={assignToPlace}
+          saving={savingAssign}
+          onClose={() => setAssigningPlace(false)}
+        />
+      )}
+
       {loggingReferral && (
         <ReferralModal
           person={{ id: data.id, name: data.name }}
+          placeName={data.place?.name}
           onClose={() => setLoggingReferral(false)}
           onSaved={() => { load(); onChanged?.(); }}
         />
@@ -740,6 +726,7 @@ export default function PersonDetail({ personId, userId, onClose, onChanged, onD
       {viewingReferral && (
         <ReferralDetailModal
           referral={viewingReferral}
+          person={{ name: data.name, title: data.title }}
           onClose={() => setViewingReferral(null)}
           onEdit={(r) => { setViewingReferral(null); setEditingReferral(r); }}
           onDelete={(r) => { setViewingReferral(null); removeReferral(r); }}

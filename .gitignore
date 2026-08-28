@@ -10,3 +10,11 @@ client/dist/
 server/.env
 *.log
 .DS_Store
+
+# Spreadsheets dropped in for the one-time eRSP migration. These carry real
+# prospect names and payer classes - once committed they're in history for
+# good. Ignoring the pattern protects anything dropped in the repo root
+# without moving files around mid-import. (The two workbooks already tracked
+# before this line was added stay tracked; gitignore doesn't retroactively
+# untrack anything.)
+*.xlsx

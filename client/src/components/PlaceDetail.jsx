@@ -449,6 +449,13 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
     );
   }
 
+  // Hoisted once now that `data` is known non-null: this drives four separate
+  // bits of the Upcoming Visits card (the "Do not visit" button, the mauve
+  // status line, the divider above Commitments, and - since 2026-08-28 - the
+  // suppression of BOTH "add a commitment" and "plan a visit"), and they must
+  // never disagree about whether the flag is live.
+  const doNotVisitActive = isDoNotVisitActive(data);
+
   // Clicking the backdrop backs out of an in-progress inline notes edit
   // instead of closing the whole card out from under it - a second backdrop
   // click (with nothing left open) closes the card as normal. stopPropagation
@@ -730,7 +737,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
             <div className="card-head">
               <h2>Upcoming Visits</h2>
               <div className="tag-list" style={{ flex: 'unset' }}>
-                {!isDoNotVisitActive(data) && (
+                {!doNotVisitActive && (
                   <Button
                     variant="danger"
                     size="small"
@@ -764,7 +771,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   </Button>
                 </div>
               )}
-              {isDoNotVisitActive(data) && (
+              {doNotVisitActive && (
                 <div className="tag-list" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <div className="tiny" style={{ color: 'var(--mauve)' }}>
                     Do not visit - {data.do_not_visit_until ? `until ${formatDate(data.do_not_visit_until)}` : 'indefinitely'}.
@@ -797,9 +804,10 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   here rather than off a border-BOTTOM on the last line above,
                   since there can be one line up there or two - one place to
                   put the rule, not the same conditional on two rows. */}
-              <div style={isSnoozeActive(data) || isDoNotVisitActive(data) ? DIVIDER_ABOVE : undefined}>
+              <div style={isSnoozeActive(data) || doNotVisitActive ? DIVIDER_ABOVE : undefined}>
                 <PlaceCommitments
                   commitments={data.commitments}
+                  canAdd={!doNotVisitActive}
                   onAddClick={() => setAddingCommitment(true)}
                   onSelect={setViewingCommitment}
                   onDelete={deleteCommitment}
@@ -824,15 +832,27 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                       on Thursday," said directly, no route-planner draft
                       involved. Opens PlanVisitModal. Lives on this label row
                       rather than the card-head now, same "Add…" placement
-                      Commitments' own label row above uses. */}
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    title="Schedule a future visit directly, without the route planner"
-                    onClick={() => setPlanningVisit(true)}
-                  >
-                    + Plan a visit
-                  </Button>
+                      Commitments' own label row above uses.
+
+                      Gone entirely under an active do-not-visit, exactly as
+                      Commitments' own add button is (canAdd above). Note the
+                      server does NOT refuse this write - manualVisits.js's
+                      doNotVisitWarning only raises an overridable "Plan
+                      anyway?" warning - so this is a deliberate UI veto
+                      (Bede, 2026-08-28): while the flag is up, the answer is
+                      no here, and the place-level "Lift" is the way to change
+                      it. Both affordances come back the moment the flag is
+                      lifted or its until-date passes. */}
+                  {!doNotVisitActive && (
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      title="Schedule a future visit directly, without the route planner"
+                      onClick={() => setPlanningVisit(true)}
+                    >
+                      + Plan a visit
+                    </Button>
+                  )}
                 </div>
                 {data.upcoming_visits.length === 0 && <div className="tiny muted">No upcoming visits.</div>}
                 {data.upcoming_visits.length > 0 && (
@@ -1052,6 +1072,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       {loggingReferral && (
         <ReferralModal
           people={data.people}
+          placeName={data.name}
           onClose={() => setLoggingReferral(false)}
           onSaved={() => { load(); onChanged?.(); }}
         />
@@ -1125,7 +1146,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
       {markingDoNotVisit && (
         <DoNotVisitModal
           placeName={data.name}
-          active={isDoNotVisitActive(data)}
+          active={doNotVisitActive}
           until={data.do_not_visit_until}
           onSet={setDoNotVisit}
           saving={savingDoNotVisit}

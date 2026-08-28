@@ -7,6 +7,12 @@ import PersonDetail from './PersonDetail';
 import UpcomingVisitDetailModal from './UpcomingVisitDetailModal';
 import VisitLogModal from './VisitLogModal';
 import PlannedDayModal from './PlannedDayModal';
+import CompletedVisitsModal from './CompletedVisitsModal';
+import SkippedVisitsModal from './SkippedVisitsModal';
+import VisitDetailModal from './VisitDetailModal';
+import ResolvedVisitDetailModal from './ResolvedVisitDetailModal';
+import ReferralDetailModal from './ReferralDetailModal';
+import ReferralModal from './ReferralModal';
 import { getCurrentPosition } from '../geolocation';
 
 // The five things the dashboard answers, in the order it answers them
@@ -33,9 +39,11 @@ import { getCurrentPosition } from '../geolocation';
 // because building each one inline hasn't been worth it yet, not because
 // of some rule against it.
 
-// Mon..Sun initials for the week strip. Single letters, because the strip is
-// seven columns inside one card and even "Mon" wraps at narrow widths.
-const DOW_INITIALS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+// Sun..Sat initials for the week strip - matches the server's calendarWeekDates()
+// (dashboardMetrics.js), which returns the days in that order. Single letters,
+// because the strip is seven columns inside one card and even "Mon" wraps at
+// narrow widths.
+const DOW_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 // A commitment's due-ness as a short phrase, plus which chip class carries
 // it. days_out is signed and comes from the server (negative = overdue) so
@@ -123,10 +131,11 @@ function NavCaveat({ nav, onOpenPlace }) {
 function StopLine({ label, stop, onOpenVisit, loading }) {
   if (!stop) return null;
   // A manually-created ad hoc visit can carry no visit_type at all (blank,
-  // not just untyped) - falling back to "no type" text rather than
-  // dropping the line entirely, so the card is never silently missing its
-  // second line.
-  const visitType = VISIT_TYPE_LABELS[stop.visit_type] || 'No visit type set';
+  // not just untyped) - falling back to a generic "Visit" (the same word
+  // PlannedDayModal and the rest of the app use for an untyped stop) rather
+  // than dropping the line entirely, so the card is never silently missing
+  // its second line and the two surfaces don't disagree on the same stop.
+  const visitType = VISIT_TYPE_LABELS[stop.visit_type] || 'Visit';
   return (
     <div className="dash-next-visit">
       <div className="dash-fact-label">{label}</div>
@@ -144,12 +153,17 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
   const [selectedPlaceId, setSelectedPlaceId] = useState(null); // which place's detail modal is open, if any
   const [selectedPersonId, setSelectedPersonId] = useState(null); // which person's detail modal is open, if any
   const [viewingVisit, setViewingVisit] = useState(null); // the fetched visit open in UpcomingVisitDetailModal, or null
-  const [loggingVisit, setLoggingVisit] = useState(null); // viewingVisit handed off to VisitLogModal for completing, or null
-  const [viewingTodayRoute, setViewingTodayRoute] = useState(false); // true while today's full stop list is open in PlannedDayModal
+  const [loggingVisit, setLoggingVisit] = useState(null); // a visit handed off to VisitLogModal to complete/edit, or null
+  const [plannedDayDate, setPlannedDayDate] = useState(null); // which day's full planned stop list is open in PlannedDayModal ('YYYY-MM-DD'), or null
+  const [weekDrill, setWeekDrill] = useState(null); // { date, status: 'completed' | 'skipped' } - which This Week pip's day list is open, or null
+  const [viewingWeekVisit, setViewingWeekVisit] = useState(null); // a completed week row open in VisitDetailModal, or null
+  const [viewingResolvedVisit, setViewingResolvedVisit] = useState(null); // a skipped week row open in ResolvedVisitDetailModal, or null
+  const [viewingReferral, setViewingReferral] = useState(null); // a Recent Referrals row open in ReferralDetailModal, or null
+  const [editingReferral, setEditingReferral] = useState(null); // viewingReferral handed off to ReferralModal to edit, or null
   const [visitLoading, setVisitLoading] = useState(false); // true while openVisit's fetch is in flight - blocks a second click firing a second fetch
   const [visitLoadError, setVisitLoadError] = useState(null);
-  const [reopeningToday, setReopeningToday] = useState(false); // true while today's visits are being pulled back into an editable Route Planner draft
-  const [deletingToday, setDeletingToday] = useState(false); // true while today's planned visits are being discarded
+  const [reopeningDay, setReopeningDay] = useState(false); // true while a day's visits are being pulled back into an editable Route Planner draft
+  const [deletingDay, setDeletingDay] = useState(false); // true while a day's planned visits are being discarded
   const [todayActionError, setTodayActionError] = useState(null); // inline banner for the Edit/Discard actions below - same shape as VisitsCalendar's actionError
 
   // The Today card's "Next visit" only has a narrow stop shape (see
@@ -187,8 +201,37 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
     }
   }
 
+  // Deletes one completed or skipped visit outright, from the This Week
+  // drill-downs - same confirm/refresh shape as VisitsCalendar's removeVisit.
+  async function removeVisit(visit) {
+    if (!window.confirm("Delete this visit? This can't be undone.")) return;
+    try {
+      await api.deleteVisit(visit.id);
+      load();
+    } catch (e) {
+      window.alert(e.message);
+    }
+  }
+
+  // Deletes a mis-logged referral from the Recent Referrals card - same
+  // confirm/refresh shape as PersonDetail's own removeReferral.
+  async function removeReferral(referral) {
+    if (!window.confirm("Delete this referral? This can't be undone.")) return;
+    try {
+      await api.referrals.remove(referral.id);
+      load();
+    } catch (e) {
+      window.alert(e.message);
+    }
+  }
+
   const load = useCallback(async () => {
     setError(null);
+    // Any successful reload redraws the whole Today card from fresh data, so
+    // a leftover Edit/Discard error from before is no longer describing what
+    // is on screen - drop it rather than let it sit there until the next
+    // action happens to clear it.
+    setTodayActionError(null);
     try {
       setData(await api.dashboard(userId, date));
     } catch (e) {
@@ -223,44 +266,46 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
   // just doesn't render rather than linking to a broken or empty Maps URL.
   const routeNav = navigateRouteUrl(remainingStops);
 
-  // Pulls today's visits back out into an editable Route Planner draft -
-  // same endpoint/confirm copy/geolocation dance as VisitsCalendar's own
-  // reopenPlannedDay. This screen has no draft workspace of its own to show
-  // the result in either, so a successful reopen hands off to the Route
+  // Pulls a committed day's visits back out into an editable Route Planner
+  // draft - same endpoint/confirm copy/geolocation dance as VisitsCalendar's
+  // own reopenPlannedDay. This screen has no draft workspace of its own to
+  // show the result in either, so a successful reopen hands off to the Route
   // Planner tab (onNavigateToPlanner) instead of rendering anything here.
-  async function reopenTodayRoute() {
-    if (!window.confirm("Edit today's planned visits? They'll temporarily show as not-yet-scheduled while you make changes - accept the updated proposal again when you're done.")) return false;
+  // `drillDate` is today's date from the Today card, or the day behind a
+  // clicked This Week planned pip.
+  async function reopenPlannedDay(drillDate) {
+    if (!window.confirm(`Edit the planned visits for ${formatDate(drillDate)}? They'll temporarily show as not-yet-scheduled while you make changes - accept the updated proposal again when you're done.`)) return false;
     setTodayActionError(null);
-    setReopeningToday(true);
+    setReopeningDay(true);
     try {
       const loc = await getCurrentPosition();
-      await api.scheduleDrafts.reopenDay(today.date, { lat: loc.lat, lng: loc.lng });
+      await api.scheduleDrafts.reopenDay(drillDate, { lat: loc.lat, lng: loc.lng });
       return true;
     } catch (e) {
       setTodayActionError(e.message);
       return false;
     } finally {
-      setReopeningToday(false);
+      setReopeningDay(false);
     }
   }
 
   // Same endpoint/confirm copy as VisitsCalendar's deletePlannedDay. Reloads
   // the dashboard on success (unlike the reopen path above, which navigates
-  // away instead) so the count tile and Next visit card drop the discarded
-  // stops immediately.
-  async function deleteTodayRoute() {
-    if (!window.confirm("Remove today's planned visits? This can't be undone.")) return false;
+  // away instead) so the count tile, Next visit card and week strip drop the
+  // discarded stops immediately.
+  async function deletePlannedDay(drillDate) {
+    if (!window.confirm(`Remove the planned visits for ${formatDate(drillDate)}? This can't be undone.`)) return false;
     setTodayActionError(null);
-    setDeletingToday(true);
+    setDeletingDay(true);
     try {
-      await api.scheduleDrafts.deleteCommittedDay(today.date);
+      await api.scheduleDrafts.deleteCommittedDay(drillDate);
       await load();
       return true;
     } catch (e) {
       setTodayActionError(e.message);
       return false;
     } finally {
-      setDeletingToday(false);
+      setDeletingDay(false);
     }
   }
 
@@ -292,7 +337,7 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
               {remainingStops.length > 0 && (
                 <>
                   <span className="dash-summary-divider" aria-hidden="true" />
-                  <Button variant="secondary" size="small" className="dash-view-all-link" onClick={() => setViewingTodayRoute(true)}>
+                  <Button variant="secondary" size="small" className="dash-view-all-link" onClick={() => { setTodayActionError(null); setPlannedDayDate(today.date); }}>
                     {/* "View all 1 stop" reads wrong - "all" implies more than
                         one - so the singular case drops both "all" and the
                         redundant count instead of just fixing the noun's
@@ -363,17 +408,48 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
               <div><strong>{week.places_visited}</strong> <span className="muted tiny">places reached</span></div>
             </div>
 
-            {/* Seven fixed columns, Monday to Sunday, empty days included -
+            {/* Seven fixed columns, Sunday to Saturday, empty days included -
                 the shape of the week is the point, so a quiet Thursday has
-                to be visible as a gap rather than closed up. */}
+                to be visible as a gap rather than closed up. Each non-empty
+                pip is a button that opens that day's list for its status:
+                completed -> CompletedVisitsModal, skipped ->
+                SkippedVisitsModal, planned -> the same PlannedDayModal the
+                Today card's "View all stops" opens. */}
             <div className="week-strip">
               {week.days.map((day, i) => (
                 <div key={day.date} className={`week-day ${day.date === data.date ? 'is-today' : ''}`}>
                   <div className="week-day-dow">{DOW_INITIALS[i]}</div>
                   <div className="week-day-counts" title={`${formatDate(day.date)}: ${day.completed} completed, ${day.planned} planned${day.skipped ? `, ${day.skipped} skipped` : ''}`}>
-                    {day.completed > 0 && <span className="week-pip done">{day.completed}</span>}
-                    {day.planned > 0 && <span className="week-pip planned">{day.planned}</span>}
-                    {day.skipped > 0 && <span className="week-pip skipped">{day.skipped}</span>}
+                    {day.completed > 0 && (
+                      <button
+                        type="button"
+                        className="week-pip done"
+                        title={`View the ${day.completed} completed ${day.completed === 1 ? 'visit' : 'visits'} on ${formatDate(day.date)}`}
+                        onClick={() => setWeekDrill({ date: day.date, status: 'completed' })}
+                      >
+                        {day.completed}
+                      </button>
+                    )}
+                    {day.planned > 0 && (
+                      <button
+                        type="button"
+                        className="week-pip planned"
+                        title={`View the ${day.planned} planned ${day.planned === 1 ? 'visit' : 'visits'} on ${formatDate(day.date)}`}
+                        onClick={() => { setTodayActionError(null); setPlannedDayDate(day.date); }}
+                      >
+                        {day.planned}
+                      </button>
+                    )}
+                    {day.skipped > 0 && (
+                      <button
+                        type="button"
+                        className="week-pip skipped"
+                        title={`View the ${day.skipped} skipped ${day.skipped === 1 ? 'visit' : 'visits'} on ${formatDate(day.date)}`}
+                        onClick={() => setWeekDrill({ date: day.date, status: 'skipped' })}
+                      >
+                        {day.skipped}
+                      </button>
+                    )}
                     {day.completed + day.planned + day.skipped === 0 && <span className="week-pip empty">·</span>}
                   </div>
                 </div>
@@ -443,10 +519,17 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
       <div className="dash-row">
 
         {/* ------------------------------------------ 4. Recent referrals */}
+        {/* The referrals themselves, most recent first: date + who sent it on
+            the left, the note set off in its own column on the right (a
+            hairline rule + italic, so it reads as the note rather than more
+            of the same grey text). A row opens that referral
+            (ReferralDetailModal), the same popup a referral row on a person's
+            page opens; the leaderboard card beside this one is the way to a
+            partner's full page. */}
         <div className="card">
           <div className="card-head">
             <h2>Recent Referrals</h2>
-            <span className="muted tiny">{referrals.window_count} in the last {referrals.window_days} days</span>
+            <span className="muted tiny">most recent first</span>
           </div>
           <div className="card-body">
             {referrals.items.length === 0 ? (
@@ -454,20 +537,19 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
             ) : (
               <ul className="list">
                 {referrals.items.map((r) => (
-                  <li
-                    key={r.id}
-                    className={`stop ${r.person_id ? 'hover-row' : ''}`}
-                    onClick={r.person_id ? () => setSelectedPersonId(r.person_id) : undefined}
-                  >
-                    <div className="main">
-                      <div className="name tiny">{r.person_name || 'Contact removed'}</div>
-                      <div className="meta">
-                        {[r.person_title, r.place_name, r.city].filter(Boolean).join(' · ') || 'No place on file'}
+                  <li key={r.id} className="stop hover-row" onClick={() => setViewingReferral(r)}>
+                    <div className="main" style={{ flex: '1 1 40%' }}>
+                      <div className="name tiny">{r.referral_date ? formatDate(r.referral_date) : 'No date'}</div>
+                      <div className="meta">Referred by {r.person_name || 'a former contact'}</div>
+                    </div>
+                    {r.notes && (
+                      <div
+                        className="tiny muted"
+                        style={{ flex: '1 1 55%', minWidth: 0, alignSelf: 'stretch', paddingLeft: 14, borderLeft: '1px solid var(--border)', fontStyle: 'italic' }}
+                      >
+                        {r.notes}
                       </div>
-                    </div>
-                    <div className="actions">
-                      <span className="muted tiny">{r.referral_date ? formatDate(r.referral_date) : 'no date'}</span>
-                    </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -475,10 +557,10 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
           </div>
         </div>
 
-        {/* -------------------------------------- 5. Top referral partners */}
+        {/* -------------------------------------- 5. Top referrers */}
         <div className="card">
           <div className="card-head">
-            <h2>Top Referral Partners</h2>
+            <h2>Top Referrers</h2>
             <span className="muted tiny">by referrals sent, all time</span>
           </div>
           <div className="card-body">
@@ -547,31 +629,92 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
           onSaved={load}
         />
       )}
-      {/* Logging/snoozing/editing/deleting a visit, or editing/discarding
-          the whole day, all work exactly as they do from VisitsCalendar's
-          own drill-down - this is this rep's own day, so there's no reason
-          any of it should be locked down here. onChanged reloads the
-          dashboard so the count tile and Next visit card reflect whatever
-          changed; onEditDay pulls the day into a Route Planner draft and
-          hands off there instead (see reopenTodayRoute above), same as
-          VisitsCalendar's own Edit. */}
-      {viewingTodayRoute && (
+      {/* Opened by the Today card's "View all stops" (date = today) and by a
+          This Week planned pip (date = that day). Logging/snoozing/editing/
+          deleting a visit, or editing/discarding the whole day, all work
+          exactly as they do from VisitsCalendar's own drill-down - this is
+          this rep's own day, so there's no reason any of it should be locked
+          down here. onChanged reloads the dashboard so the count tile, Next
+          visit card and week strip reflect whatever changed; onEditDay pulls
+          the day into a Route Planner draft and hands off there instead (see
+          reopenPlannedDay above), same as VisitsCalendar's own Edit. */}
+      {plannedDayDate && (
         <PlannedDayModal
-          date={today.date}
+          date={plannedDayDate}
           userId={userId}
           onChanged={load}
-          onClose={() => setViewingTodayRoute(false)}
+          onClose={() => setPlannedDayDate(null)}
           onViewPlace={(placeId) => setSelectedPlaceId(placeId)}
           onEditDay={async () => {
-            const reopened = await reopenTodayRoute();
+            const reopened = await reopenPlannedDay(plannedDayDate);
             if (reopened) {
-              setViewingTodayRoute(false);
+              setPlannedDayDate(null);
               onNavigateToPlanner?.();
             }
           }}
-          editingDay={reopeningToday}
-          onDeleteDay={async () => { if (await deleteTodayRoute()) setViewingTodayRoute(false); }}
-          deletingDay={deletingToday}
+          editingDay={reopeningDay}
+          onDeleteDay={async () => { if (await deletePlannedDay(plannedDayDate)) setPlannedDayDate(null); }}
+          deletingDay={deletingDay}
+        />
+      )}
+
+      {/* This Week pip drill-downs - the same day-list modals the Calendar
+          tab opens, fed straight from this_week.visits (filtered to the pip's
+          day + status) rather than a separate fetch. Their row clicks open
+          the matching per-visit detail modal, exactly as in VisitsCalendar. */}
+      {weekDrill?.status === 'completed' && (
+        <CompletedVisitsModal
+          date={weekDrill.date}
+          visits={(week.visits || []).filter((v) => v.scheduled_date === weekDrill.date && v.status === 'completed')}
+          onClose={() => setWeekDrill(null)}
+          onViewVisit={(v) => setViewingWeekVisit(v)}
+          onViewPlace={(placeId) => setSelectedPlaceId(placeId)}
+        />
+      )}
+      {weekDrill?.status === 'skipped' && (
+        <SkippedVisitsModal
+          date={weekDrill.date}
+          visits={(week.visits || []).filter((v) => v.scheduled_date === weekDrill.date && v.status === 'skipped')}
+          onClose={() => setWeekDrill(null)}
+          onViewVisit={(v) => setViewingResolvedVisit(v)}
+          onViewPlace={(placeId) => setSelectedPlaceId(placeId)}
+        />
+      )}
+      {viewingWeekVisit && (
+        <VisitDetailModal
+          visit={viewingWeekVisit}
+          onClose={() => setViewingWeekVisit(null)}
+          onEdit={(v) => { setViewingWeekVisit(null); setLoggingVisit({ ...v, visit_id: v.id }); }}
+          onDelete={(v) => { setViewingWeekVisit(null); removeVisit(v); }}
+          onChanged={load}
+        />
+      )}
+      {viewingResolvedVisit && (
+        <ResolvedVisitDetailModal
+          visit={viewingResolvedVisit}
+          onClose={() => setViewingResolvedVisit(null)}
+          onComplete={(v) => { setViewingResolvedVisit(null); setLoggingVisit({ ...v, visit_id: v.id }); }}
+          onDelete={(v) => { setViewingResolvedVisit(null); removeVisit(v); }}
+        />
+      )}
+
+      {/* A Recent Referrals row - the same view/edit/delete popup a referral
+          row on a person's page opens (PersonDetail). */}
+      {viewingReferral && (
+        <ReferralDetailModal
+          referral={viewingReferral}
+          person={{ name: viewingReferral.person_name, title: viewingReferral.person_title }}
+          onClose={() => setViewingReferral(null)}
+          onEdit={(r) => { setViewingReferral(null); setEditingReferral(r); }}
+          onDelete={(r) => { setViewingReferral(null); removeReferral(r); }}
+        />
+      )}
+      {editingReferral && (
+        <ReferralModal
+          referral={editingReferral}
+          person={{ id: editingReferral.person_id, name: editingReferral.person_name }}
+          onClose={() => setEditingReferral(null)}
+          onSaved={() => { setEditingReferral(null); load(); }}
         />
       )}
     </div>

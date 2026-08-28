@@ -5,7 +5,7 @@
 //
 // Five sections, in the order the screen shows them (2026-08-18):
 //   1. today                  - the day's route: count, first/next stop, drive time
-//   2. this_week              - the ISO week's completed/planned/skipped, day by day
+//   2. this_week              - the calendar week's (Sun..Sat) completed/planned/skipped, day by day
 //   3. commitments_due        - outstanding place_commitments, overdue + next N days
 //   4. recent_referrals       - what just came in
 //   5. top_referral_partners  - who sends the most business
@@ -21,13 +21,12 @@ const knex = require('../db/knex');
 const dashboardConfig = require('../config/dashboard');
 const referralsConfig = require('../config/referrals');
 const { orgToday } = require('../services/orgDate');
-const { attachEncounters } = require('../services/visitEncounters');
 const { recentWindowCutoff } = require('../services/referralMetrics');
 const { skipSweepMiddleware } = require('../services/visitLifecycle');
 const {
   addDays,
   daysBetween,
-  isoWeekDates,
+  calendarWeekDates,
   routeDriveEstimate,
   weekDayBuckets,
   formatMinutes,
@@ -49,13 +48,13 @@ router.get('/', async (req, res, next) => {
     const userId = req.query.userId ? Number(req.query.userId) : undefined;
     const date = req.query.date || orgToday();
 
-    const weekDates = isoWeekDates(date);
+    const weekDates = calendarWeekDates(date);
     const weekStart = weekDates[0];
     const weekEnd = weekDates[6];
     const horizonEnd = addDays(date, dashboardConfig.COMMITMENT_HORIZON_DAYS);
     const referralCutoff = recentWindowCutoff();
 
-    const [todayVisits, weekVisits, commitments, recentReferrals, topPartners, referralRecentCount] =
+    const [todayVisits, weekVisits, commitments, recentReferrals, topPartners] =
       await Promise.all([
         // --- 1. today ----------------------------------------------------
         // Every visit dated today for this rep, in route order. lat/lng come
@@ -87,13 +86,29 @@ router.get('/', async (req, res, next) => {
           ),
 
         // --- 2. this week ------------------------------------------------
-        // Statuses only - the "Completed this week" list card is gone (the
-        // Calendar tab is where a visit gets read in full), so this needs
-        // nothing but a status and a date to bucket by.
+        // The status + date is all weekDayBuckets() needs, but the strip's
+        // pips are clickable (Dashboard.jsx) - each opens the day's
+        // completed / planned / skipped list - so the row also carries the
+        // little a CompletedVisitsModal / SkippedVisitsModal row shows
+        // (place name, category, visit type). Left join, not inner:
+        // detach-not-delete means v.place_name is the durable name for a
+        // visit whose place is gone (same as query 1).
         knex('visits as v')
+          .leftJoin('places as p', 'p.id', 'v.place_id')
           .whereBetween('v.scheduled_date', [weekStart, weekEnd])
           .modify((qb) => userId && qb.andWhere('v.user_id', userId))
-          .select('v.id', 'v.scheduled_date', 'v.status', 'v.place_id'),
+          .orderBy('v.sort_order', 'asc')
+          .orderBy('v.id', 'asc')
+          .select(
+            'v.id',
+            'v.scheduled_date',
+            'v.status',
+            'v.place_id',
+            'v.visit_type',
+            'v.user_id',
+            knex.raw('COALESCE(v.place_name, p.name) as place_name'),
+            'p.category'
+          ),
 
         // --- 3. commitments due ------------------------------------------
         // Outstanding = discharged_at IS NULL (services/placeCommitments.js).
@@ -128,6 +143,28 @@ router.get('/', async (req, res, next) => {
           ),
 
         // --- 4. recent referrals -----------------------------------------
+        // Just the N most recently dated referrals, newest first - a feed of
+        // "what just came in", not a windowed count (there is no "X in the
+        // last 90 days" figure on this card anymore, so nothing here has to
+        // agree with one).
+        //
+        // whereNotNull('r.person_id'): a referral belongs to the person who
+        // sent it, and person_id is SET NULL when that person is deleted
+        // (detach-not-delete). A person-less row has no name, no place and
+        // nothing to open - it would just be a dated blank taking a slot a
+        // real recent referral could use. Same reason the leaderboard below
+        // inner-joins people. The join to people stays a leftJoin only
+        // because a kept person can still lack a place.
+        //
+        // The card row itself only renders date / "Referred by {name}" /
+        // note; person_title and place_name ride along for the detail popup
+        // (ReferralDetailModal - "Referred by {name · title}", "Came from
+        // {place}"). place_name is the SNAPSHOT place (r.place_id, stamped
+        // from the referrer's place the day it was logged - see
+        // routes/referrals.js), not the person's place today - the
+        // leaderboard card beside this one is the one that follows a partner
+        // to their current place.
+        //
         // Ordered by COALESCE(referral_date, ''), not by referral_date
         // itself: referral_date is nullable, and a bare DESC sort puts NULLs
         // LAST on SQLite (dev) but FIRST on Postgres (prod) - which would
@@ -135,7 +172,8 @@ router.get('/', async (req, res, next) => {
         // only. '' sorts below every real 'YYYY-MM-DD' on both engines.
         knex('referrals as r')
           .leftJoin('people as pe', 'pe.id', 'r.person_id')
-          .leftJoin('places as p', 'p.id', 'pe.place_id')
+          .leftJoin('places as p', 'p.id', 'r.place_id')
+          .whereNotNull('r.person_id')
           .orderByRaw("COALESCE(r.referral_date, '') desc")
           .orderBy('r.id', 'desc')
           .limit(dashboardConfig.RECENT_REFERRALS_LIMIT)
@@ -143,12 +181,14 @@ router.get('/', async (req, res, next) => {
             'r.id',
             'r.referral_date',
             'r.notes',
+            // Needed because this card's rows open ReferralDetailModal, which
+            // shows the payer source - without it, class reads blank when the
+            // same referral is opened from here rather than a person's page.
+            'r.class',
             'r.person_id',
             'pe.name as person_name',
             'pe.title as person_title',
-            'pe.place_id',
-            'p.name as place_name',
-            'p.city'
+            'p.name as place_name'
           ),
 
         // --- 5. top referral partners ------------------------------------
@@ -182,8 +222,6 @@ router.get('/', async (req, res, next) => {
             knex.raw("MAX(COALESCE(r.referral_date, '')) as last_referral_date"),
             knex.raw('SUM(CASE WHEN r.referral_date >= ? THEN 1 ELSE 0 END) as recent_referrals', [referralCutoff])
           ),
-
-        knex('referrals').where('referral_date', '>=', referralCutoff).count({ c: '*' }).first(),
       ]);
 
     // ---- today, assembled ------------------------------------------------
@@ -205,8 +243,6 @@ router.get('/', async (req, res, next) => {
     // once the day is genuinely underway.
     const firstStop = route[0] || null;
     const nextStop = route.find((v) => v.status === 'planned') || null;
-
-    const routeWithEncounters = await attachEncounters(knex, route, { idKey: 'visit_id' });
 
     // ---- this week, assembled -------------------------------------------
     const weekCounts = { completed: 0, planned: 0, skipped: 0 };
@@ -230,13 +266,12 @@ router.get('/', async (req, res, next) => {
 
     res.json({
       date,
-      week: { start: weekStart, end: weekEnd },
 
       today: {
         date,
         counts,
         total: todayVisits.length,
-        route: routeWithEncounters,
+        route,
         first_stop: firstStop,
         next_stop: nextStop && firstStop && nextStop.visit_id === firstStop.visit_id ? null : nextStop,
         drive: { ...drive, label: formatMinutes(drive.minutes) },
@@ -249,6 +284,10 @@ router.get('/', async (req, res, next) => {
         total: weekVisits.length,
         places_visited: placesVisited.size,
         days: weekDayBuckets(weekVisits, weekDates),
+        // The rows behind the pips - Dashboard.jsx filters this by date +
+        // status to feed a CompletedVisitsModal / SkippedVisitsModal when a
+        // pip is clicked. One rep, one week: small enough to ship whole.
+        visits: weekVisits,
       },
 
       commitments_due: {
@@ -263,8 +302,7 @@ router.get('/', async (req, res, next) => {
       },
 
       recent_referrals: {
-        window_days: referralsConfig.RECENT_WINDOW_DAYS,
-        window_count: Number(referralRecentCount.c),
+        limit: dashboardConfig.RECENT_REFERRALS_LIMIT,
         items: recentReferrals,
       },
 

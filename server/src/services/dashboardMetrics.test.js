@@ -4,7 +4,7 @@ const { estimateDriveMinutes } = require('./driveTime');
 const {
   addDays,
   daysBetween,
-  isoWeekDates,
+  calendarWeekDates,
   routeDriveEstimate,
   weekDayBuckets,
   formatMinutes,
@@ -49,28 +49,27 @@ describe('daysBetween', () => {
   });
 });
 
-describe('isoWeekDates', () => {
-  test('returns Monday through Sunday for a midweek date', () => {
-    assert.deepEqual(isoWeekDates('2026-08-19'), [
-      '2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22', '2026-08-23',
+describe('calendarWeekDates', () => {
+  test('returns Sunday through Saturday for a midweek date', () => {
+    // 2026-08-19 is a Wednesday; 2026-08-16 is the Sunday that opens its week.
+    assert.deepEqual(calendarWeekDates('2026-08-19'), [
+      '2026-08-16', '2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22',
     ]);
   });
 
-  test('a Monday is the first day of its own week, not the last of the previous one', () => {
-    assert.equal(isoWeekDates('2026-08-17')[0], '2026-08-17');
+  test('a Sunday is the first day of its own week, not the last of the previous one', () => {
+    assert.equal(calendarWeekDates('2026-08-16')[0], '2026-08-16');
   });
 
-  // The one case a naive `date - dayOfWeek + 1` gets wrong: JS numbers Sunday
-  // as 0, so Sunday would land on the Monday of the NEXT week.
-  test('a Sunday belongs to the week that started six days earlier', () => {
-    const week = isoWeekDates('2026-08-16');
-    assert.equal(week[0], '2026-08-10');
-    assert.equal(week[6], '2026-08-16');
+  test('a Saturday is the last day of its own week', () => {
+    const week = calendarWeekDates('2026-08-22'); // a Saturday
+    assert.equal(week[0], '2026-08-16');
+    assert.equal(week[6], '2026-08-22');
   });
 
   test('always returns seven consecutive days', () => {
     for (const date of ['2026-01-01', '2026-02-28', '2026-12-31', '2028-02-29']) {
-      const week = isoWeekDates(date);
+      const week = calendarWeekDates(date);
       assert.equal(week.length, 7);
       week.forEach((d, i) => i > 0 && assert.equal(d, addDays(week[i - 1], 1)));
       assert.ok(week.includes(date), `${date} should appear in its own week`);
@@ -120,7 +119,7 @@ describe('routeDriveEstimate', () => {
 });
 
 describe('weekDayBuckets', () => {
-  const week = isoWeekDates('2026-08-18');
+  const week = calendarWeekDates('2026-08-18'); // Sun 2026-08-16 .. Sat 2026-08-22
 
   test('always returns one entry per week day, in order, even with no visits', () => {
     const buckets = weekDayBuckets([], week);
@@ -132,15 +131,15 @@ describe('weekDayBuckets', () => {
   test('counts each status onto its own day', () => {
     const buckets = weekDayBuckets(
       [
-        { scheduled_date: '2026-08-17', status: 'completed' },
+        { scheduled_date: '2026-08-17', status: 'completed' }, // Monday -> index 1
         { scheduled_date: '2026-08-17', status: 'completed' },
         { scheduled_date: '2026-08-17', status: 'skipped' },
-        { scheduled_date: '2026-08-20', status: 'planned' },
+        { scheduled_date: '2026-08-20', status: 'planned' }, // Thursday -> index 4
       ],
       week
     );
-    assert.deepEqual(buckets[0], { date: '2026-08-17', completed: 2, planned: 0, skipped: 1 });
-    assert.deepEqual(buckets[3], { date: '2026-08-20', completed: 0, planned: 1, skipped: 0 });
+    assert.deepEqual(buckets[1], { date: '2026-08-17', completed: 2, planned: 0, skipped: 1 });
+    assert.deepEqual(buckets[4], { date: '2026-08-20', completed: 0, planned: 1, skipped: 0 });
   });
 
   // A snoozed visit keeps its original scheduled_date (snoozing sets
@@ -148,7 +147,7 @@ describe('weekDayBuckets', () => {
   // it here would show a deliberate deferral as work sitting on that day.
   test('snoozed visits are not counted as any status', () => {
     const buckets = weekDayBuckets([{ scheduled_date: '2026-08-18', status: 'snoozed' }], week);
-    assert.deepEqual(buckets[1], { date: '2026-08-18', completed: 0, planned: 0, skipped: 0 });
+    assert.deepEqual(buckets[2], { date: '2026-08-18', completed: 0, planned: 0, skipped: 0 });
   });
 
   test('a visit outside the week is ignored rather than throwing', () => {

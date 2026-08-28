@@ -22,7 +22,7 @@ import Button from './ui/Button';
 
 const DISCHARGE_LABELS = { fulfilled: 'fulfilled', superseded: 'rescheduled', waived: 'waived' };
 
-export function PlaceCommitments({ commitments, onAddClick, onSelect, onDelete, deletingId }) {
+export function PlaceCommitments({ commitments, canAdd = true, onAddClick, onSelect, onDelete, deletingId }) {
   const [showHistory, setShowHistory] = useState(false);
   const outstanding = commitments?.outstanding || [];
   const discharged = commitments?.discharged || [];
@@ -33,9 +33,17 @@ export function PlaceCommitments({ commitments, onAddClick, onSelect, onDelete, 
         <div className="tiny muted" style={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em' }}>
           Commitments{outstanding.length > 0 ? ` (${outstanding.length})` : ''}
         </div>
-        <Button variant="secondary" size="small" title="Promise a specific date to return to this place" onClick={onAddClick}>
-          + Add a commitment
-        </Button>
+        {/* Hidden, not disabled, while the place is under an active
+            do-not-visit (PlaceDetail passes canAdd) - promising a date to
+            return is exactly what that flag says not to do, and the mauve
+            do-not-visit line sits a few pixels above this row already
+            saying so. A greyed-out button would only re-ask the question
+            the line above it has already answered. */}
+        {canAdd && (
+          <Button variant="secondary" size="small" title="Promise a specific date to return to this place" onClick={onAddClick}>
+            + Add a commitment
+          </Button>
+        )}
       </div>
 
       {outstanding.length === 0 && <div className="tiny muted">No outstanding commitments.</div>}

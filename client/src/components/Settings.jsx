@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { clearTunablesCache } from '../hooks/useTunables';
 import Button from './ui/Button';
@@ -302,14 +302,24 @@ function CadenceMatrix({ group, values, defaults, onChange, fieldsByKey }) {
 function DistanceCacheHealth() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');   // 'backfill' | 'requeue' while one is in flight
+  const [result, setResult] = useState('');
 
-  useEffect(() => {
-    let alive = true;
-    api.settings.distanceCache()
-      .then((d) => alive && setData(d))
-      .catch((e) => alive && setError(e.message));
-    return () => { alive = false; };
+  const load = useCallback(async () => {
+    try { setData(await api.settings.distanceCache()); }
+    catch (e) { setError(e.message); }
   }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function run(kind, fn, describe) {
+    setBusy(kind); setResult(''); setError('');
+    try {
+      setResult(describe(await fn()));
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(''); }
+  }
 
   return (
     <div className="card settings-group">
@@ -320,7 +330,36 @@ function DistanceCacheHealth() {
         ) : !data ? (
           <p className="tiny muted">Loading...</p>
         ) : (
-          <DistanceCacheHealthBody data={data} />
+          <>
+            <DistanceCacheHealthBody data={data} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
+              <Button
+                variant="secondary"
+                size="small"
+                title="Run the backfill now instead of waiting for the background worker"
+                disabled={!!busy}
+                onClick={() => run('backfill', api.settings.runBackfill, (r) =>
+                  r.processed === 0
+                    ? 'Nothing was due - the queue is empty.'
+                    : `Processed ${r.processed}: ${r.succeeded} succeeded, ${r.failed} failed.`)}
+              >
+                {busy === 'backfill' ? 'Running…' : 'Run backfill now'}
+              </Button>
+              {data.queue.failed > 0 && (
+                <Button
+                  variant="secondary"
+                  size="small"
+                  title="Put permanently-failed places back in the queue with a clean attempt count"
+                  disabled={!!busy}
+                  onClick={() => run('requeue', api.settings.requeueFailed, (r) =>
+                    `${r.requeued} place${r.requeued === 1 ? '' : 's'} put back in the queue.`)}
+                >
+                  {busy === 'requeue' ? 'Requeuing…' : 'Retry failed places'}
+                </Button>
+              )}
+              {result && <span className="tiny muted">{result}</span>}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -344,9 +383,17 @@ function DistanceCacheHealthBody({ data }) {
       <p className="tiny muted">
         Backfill queue: {queue.due} pending{queue.due > 0 ? ' (checked automatically in the background)' : ''}.
       </p>
+      {/* The blocking error, shown whenever anything is queued. Without it the
+          line above reads as "it's in hand" even when every attempt is failing
+          on the same cause - which retrying can never fix. */}
+      {data.lastError && (queue.due > 0 || queue.failed > 0) && (
+        <div className="warn-banner tiny">
+          <strong>Backfill is blocked:</strong> {data.lastError}
+        </div>
+      )}
       {queue.failed > 0 && (
         <div className="warn-banner tiny">
-          {queue.failed} place{queue.failed === 1 ? '' : 's'} could not be backfilled after repeated attempts - usually an address that doesn't geocode onto the road network. Re-saving the place's address re-queues it.
+          {queue.failed} place{queue.failed === 1 ? '' : 's'} gave up after repeated attempts. If the cause above was a configuration or outage problem rather than a bad address, fix it and use Retry failed places - otherwise re-saving the place's address re-queues it.
         </div>
       )}
     </>

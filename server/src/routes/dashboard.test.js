@@ -40,8 +40,8 @@ const dashboardConfig = require('../config/dashboard');
 // which compares against the REAL wall clock, not this date — can never lapse
 // a fixture's 'planned' row into 'skipped' mid-test.
 const TODAY = '2099-06-17'; // a Wednesday
-const WEEK_START = '2099-06-15'; // Monday
-const WEEK_END = '2099-06-21'; // Sunday
+const WEEK_START = '2099-06-14'; // Sunday (calendar week opens here)
+const WEEK_END = '2099-06-20'; // Saturday
 
 // Two Lincoln, NE points about four miles apart — far enough that the
 // haversine estimate is comfortably above MIN_DRIVE_MINUTES.
@@ -190,7 +190,7 @@ describe('GET /api/dashboard', () => {
   // -------------------------------------------------------- 2. this week
 
   describe('this_week', () => {
-    test('spans Monday to Sunday and buckets every day', async () => {
+    test('spans Sunday to Saturday and buckets every day', async () => {
       const body = await get();
       assert.equal(body.this_week.start, WEEK_START);
       assert.equal(body.this_week.end, WEEK_END);
@@ -199,8 +199,8 @@ describe('GET /api/dashboard', () => {
 
     test('counts statuses and distinct places visited', async () => {
       await testKnex('visits').insert([
-        visit({ place_id: 1, scheduled_date: WEEK_START, status: 'completed' }),
-        visit({ place_id: 1, scheduled_date: '2099-06-16', status: 'completed' }), // same place twice
+        visit({ place_id: 1, scheduled_date: WEEK_START, status: 'completed' }), // Sunday -> day 0
+        visit({ place_id: 1, scheduled_date: '2099-06-16', status: 'completed' }), // Tuesday -> day 2, same place twice
         visit({ place_id: 2, place_name: 'Beta Clinic', scheduled_date: '2099-06-16', status: 'completed' }),
         visit({ place_id: 3, place_name: 'Gamma Home', scheduled_date: WEEK_END, status: 'planned' }),
       ]);
@@ -209,16 +209,35 @@ describe('GET /api/dashboard', () => {
       assert.equal(body.this_week.planned, 1);
       assert.equal(body.this_week.places_visited, 2, 'the same place visited twice is one place');
       assert.equal(body.this_week.days[0].completed, 1);
-      assert.equal(body.this_week.days[1].completed, 2);
+      assert.equal(body.this_week.days[2].completed, 2);
     });
 
     test('excludes visits outside the week', async () => {
       await testKnex('visits').insert([
-        visit({ scheduled_date: '2099-06-14', status: 'completed' }), // the Sunday before
-        visit({ scheduled_date: '2099-06-22', status: 'planned' }), // the Monday after
+        visit({ scheduled_date: '2099-06-13', status: 'completed' }), // the Saturday before
+        visit({ scheduled_date: '2099-06-21', status: 'planned' }), // the Sunday after
       ]);
       const body = await get();
       assert.equal(body.this_week.total, 0);
+    });
+
+    // The strip's pips are clickable - each opens the day's list - so the
+    // week also hands back the rows behind them, carrying what those
+    // (Completed/Skipped)VisitsModal rows render.
+    test('returns the week visit rows with place name, category and type', async () => {
+      await testKnex('visits').insert([
+        visit({ place_id: 1, scheduled_date: WEEK_START, status: 'completed', visit_type: 'check_in' }),
+        visit({ place_id: 3, place_name: null, scheduled_date: WEEK_END, status: 'skipped' }),
+      ]);
+      const body = await get();
+      assert.equal(body.this_week.visits.length, 2);
+      const completed = body.this_week.visits.find((v) => v.status === 'completed');
+      assert.equal(completed.place_name, 'Alpha Hospice');
+      assert.equal(completed.category, 'Hospice');
+      assert.equal(completed.visit_type, 'check_in');
+      // place_name falls back to the place's current name when the snapshot is null
+      const skipped = body.this_week.visits.find((v) => v.status === 'skipped');
+      assert.equal(skipped.place_name, 'Gamma Home');
     });
   });
 
@@ -300,7 +319,20 @@ describe('GET /api/dashboard', () => {
       const dates = body.recent_referrals.items.map((r) => r.referral_date);
       assert.deepEqual(dates, [daysAgo(1), daysAgo(10), daysAgo(30)]);
       assert.equal(body.recent_referrals.items[0].person_name, 'Chris Webb');
+      assert.equal(body.recent_referrals.items[0].person_title, 'Social Worker');
       assert.equal(body.recent_referrals.items[0].place_name, 'Beta Clinic');
+      assert.equal(body.recent_referrals.items[0].notes ?? null, null);
+    });
+
+    // place_name is the referral's own snapshot (referrals.place_id), not
+    // the referrer's place today - Dana Ortiz sits at Alpha Hospice, but a
+    // referral she logged while stamped to Beta Clinic reads "Beta Clinic".
+    test('place_name is the snapshot place, not the referrer current place', async () => {
+      await testKnex('referrals').insert({ person_id: 1, place_id: 2, referral_date: daysAgo(2), notes: 'sent a client' });
+      const body = await get();
+      assert.equal(body.recent_referrals.items[0].person_name, 'Dana Ortiz');
+      assert.equal(body.recent_referrals.items[0].place_name, 'Beta Clinic');
+      assert.equal(body.recent_referrals.items[0].notes, 'sent a client');
     });
 
     // referral_date is nullable, and a bare DESC sort disagrees across
@@ -316,13 +348,19 @@ describe('GET /api/dashboard', () => {
       assert.equal(body.recent_referrals.items[1].referral_date, null);
     });
 
-    test('the window count only counts referrals inside the recent window', async () => {
+    // person_id is SET NULL when a person is deleted (detach-not-delete); a
+    // person-less referral has no name, no place and nothing to open, so it
+    // is skipped rather than shown as a dated blank - same treatment the
+    // leaderboard gives it (see below), just via a whereNotNull instead of
+    // an inner join.
+    test('a referral whose person was removed is left out of the list', async () => {
       await testKnex('referrals').insert([
-        { person_id: 1, place_id: 1, referral_date: daysAgo(5) },
-        { person_id: 1, place_id: 1, referral_date: daysAgo(400) },
+        { person_id: null, place_id: 1, referral_date: daysAgo(1) },
+        { person_id: 1, place_id: 1, referral_date: daysAgo(3) },
       ]);
       const body = await get();
-      assert.equal(body.recent_referrals.window_count, 1);
+      assert.equal(body.recent_referrals.items.length, 1);
+      assert.equal(body.recent_referrals.items[0].person_name, 'Dana Ortiz');
     });
 
     test('the list is capped at the configured limit', async () => {

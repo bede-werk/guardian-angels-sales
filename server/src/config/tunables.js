@@ -539,10 +539,10 @@ const SECTIONS = [
         id: 'dash-referrals',
         title: 'Referral Cards',
         blurb:
-          'The two referral cards. The "how many lately" figure on the first one follows the Referrals section\'s own recent-activity window, not these.',
+          'The two referral cards - "Recent Referrals" (the newest N, most recent first) and the "Top Referral Partners" leaderboard.',
         fields: [
           { key: 'dashboard.RECENT_REFERRALS_LIMIT', label: 'Recent referrals to list', unit: 'rows', type: 'integer', min: 1, max: 50,
-            help: 'How many of the most recently dated referrals the "Recent Referrals" card lists.' },
+            help: 'How many of the most recently dated referrals the "Recent Referrals" card lists. Referrals whose person has been removed are skipped.' },
           { key: 'dashboard.TOP_PARTNERS_LIMIT', label: 'Top partners to list', unit: 'people', type: 'integer', min: 1, max: 50,
             help: 'How many people the "Top Referral Partners" leaderboard shows, ranked by lifetime referrals sent.' },
         ],

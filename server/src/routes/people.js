@@ -277,10 +277,17 @@ router.get('/people/:id', async (req, res, next) => {
     // same attach this person's place-mate view (routes/places.js) uses.
     const visits = await attachCommitmentsMade(knex, visitsWithEncounters);
 
-    const referrals = await knex('referrals')
-      .where({ person_id: person.id })
-      .orderBy('referral_date', 'desc')
-      .orderBy('id', 'desc');
+    // place_name is the SNAPSHOT place (referrals.place_id, stamped from the
+    // referrer's place the day the referral was logged - routes/referrals.js),
+    // not the person's place today - "where the referral came from at the
+    // time" is exactly what the referral detail view wants to show. Left
+    // join: a placeless referrer stamps a null snapshot, which is fine.
+    const referrals = await knex('referrals as r')
+      .leftJoin('places as p', 'p.id', 'r.place_id')
+      .where('r.person_id', person.id)
+      .orderBy('r.referral_date', 'desc')
+      .orderBy('r.id', 'desc')
+      .select('r.*', 'p.name as place_name');
 
     // Full relationship object - this screen is where "why does this person
     // read weak?" has to be answerable (last meaningful visit, how much of the

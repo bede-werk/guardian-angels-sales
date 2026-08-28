@@ -10,6 +10,7 @@ const { importPlaces } = require('./scripts/import-excel');
 const { drainQueue } = require('./services/backfillQueue');
 const { LocalOsrmProvider } = require('./services/localOsrmProvider');
 const backfillQueueConfig = require('./config/backfillQueue');
+const { startWatchdog } = require('./services/eventLoopWatchdog');
 
 // Each of these files is an Express Router handling one resource/area of the API.
 const places = require('./routes/places');
@@ -140,6 +141,10 @@ async function start() {
     console.log(`GA Sales API listening on http://localhost:${PORT}`);
     if (isProd) seedIfEmpty();
     startBackfillWorker();
+    // Last line of defence, not a fix: if anything ever blocks the event loop
+    // for good, kill the process so the supervisor restarts it instead of
+    // leaving a listening-but-dead server up. See eventLoopWatchdog.js.
+    if (startWatchdog()) console.log('Event-loop watchdog armed.');
   });
 }
 

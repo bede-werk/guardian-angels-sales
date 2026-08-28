@@ -10,6 +10,14 @@
 
 const EARTH_R = 6371000; // meters
 
+// Hard backstop on local-search passes. Both twoOpt and orOpt below terminate
+// on their own - every accepted move strictly lowers the real tour cost by
+// more than the epsilon, and cost can't decrease forever. This cap exists so
+// that if that invariant is ever broken again, the solver degrades into a
+// slightly worse route instead of wedging the event loop at 100% CPU, which
+// is what a symmetric 2-opt delta on an asymmetric matrix did on 2026-08-28.
+const MAX_LOCAL_SEARCH_PASSES = 200;
+
 // Great-circle distance. Underestimates real driving in a grid city - see
 // gridMeters below, which is what matrixCache.js's fallback actually uses.
 function haversineMeters(a, b) {
@@ -169,27 +177,39 @@ function greedyTour(d, k, pinEnd, forcedFirst) {
 }
 
 // 2-opt: reverse a segment when it shortens the tour. Uncrosses the route.
+//
+// Scores each candidate by its REAL tour cost rather than the textbook O(1)
+// two-edge delta. That delta (d[a][c] + d[b][e] - d[a][b] - d[c][e]) prices
+// only the two boundary edges, which is valid only when d[x][y] === d[y][x].
+// Reversing a segment also flips every edge INSIDE it, and matrixCache.js
+// hands us real driving distances - asymmetric for ~99% of cached pairs. The
+// delta therefore mispredicted the true cost change, the loop kept accepting
+// "improvements" that didn't improve anything, and with no monotonic decrease
+// to terminate on it cycled between tours forever at 100% CPU (2026-08-28).
+// Recomputing the real cost restores the strict-decrease invariant that makes
+// this loop finite.
+//
+// O(n) per candidate instead of O(1), so O(n^3) per pass - roughly 27k
+// operations at MAX_TOPUP_STOPS, which is free at the sizes a day can hold.
 function twoOpt(d, t, roundTrip, pinEnd) {
   const k = t.length;
   const lastMovable = pinEnd ? k - 2 : k - 1;
-  const succ = (p) => (p + 1 < k ? t[p + 1] : roundTrip ? t[0] : null);
 
   let improved = true;
-  while (improved) {
+  let passes = 0;
+  while (improved && passes < MAX_LOCAL_SEARCH_PASSES) {
     improved = false;
+    passes += 1;
+    let bestCost = tourCost(d, t, roundTrip);
     for (let i = 1; i <= lastMovable; i++) {
       for (let j = i + 1; j <= lastMovable; j++) {
-        const a = t[i - 1];
-        const b = t[i];
-        const c = t[j];
-        const e = succ(j);
-        const delta =
-          e === null
-            ? d[a][c] - d[a][b]
-            : d[a][c] + d[b][e] - d[a][b] - d[c][e];
-        if (delta < -1e-9) {
-          reverseInPlace(t, i, j);
+        reverseInPlace(t, i, j);
+        const cost = tourCost(d, t, roundTrip);
+        if (cost < bestCost - 1e-9) {
+          bestCost = cost;
           improved = true;
+        } else {
+          reverseInPlace(t, i, j); // no gain - put the segment back
         }
       }
     }
@@ -202,8 +222,10 @@ function twoOpt(d, t, roundTrip, pinEnd) {
 // 2-opt alone leaves behind.
 function orOpt(d, t, roundTrip, pinEnd, maxSeg = 3) {
   let improved = true;
-  while (improved) {
+  let passes = 0;
+  while (improved && passes < MAX_LOCAL_SEARCH_PASSES) {
     improved = false;
+    passes += 1;
     const k = t.length;
     const lastMovable = pinEnd ? k - 2 : k - 1;
 

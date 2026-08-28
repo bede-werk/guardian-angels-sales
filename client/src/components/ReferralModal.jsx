@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { api, today } from '../api';
 import Button from './ui/Button';
 import useClosingTransition from '../hooks/useClosingTransition';
@@ -16,7 +16,13 @@ import useClosingTransition from '../hooks/useClosingTransition';
 // NOT have to be assigned to a place, though - opened from a person, this
 // saves fine for someone with a null place_id (routes/referrals.js explains
 // what that costs).
-export default function ReferralModal({ people = [], person, referral, onClose, onSaved }) {
+//
+// "Where it came from" is shown but not editable: the server stamps
+// referrals.place_id from the referrer's place the day it's logged (a
+// snapshot, see routes/referrals.js). `placeName` is that place for a new
+// referral (the person's place, or the place page it was opened from); an
+// existing referral carries its own frozen `place_name`.
+export default function ReferralModal({ people = [], person, placeName, referral, onClose, onSaved }) {
   const { closing, requestClose } = useClosingTransition(onClose);
   // See PlaceModal's identical comment - pairs every label.field below with
   // its input via htmlFor/id.
@@ -25,18 +31,39 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
     person_id: referral?.person_id || person?.id || '',
     referral_date: referral?.referral_date || today(),
     notes: referral?.notes || '',
+    class: referral?.class || '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  // Payer sources already on file, offered as autocomplete. Free text is
+  // still allowed - this only exists so the same payer gets spelled the same
+  // way twice. A failure here costs nothing but the suggestions.
+  const [classes, setClasses] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.referrals.classes()
+      .then((rows) => { if (!cancelled) setClasses(rows); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const canSave = form.person_id && form.notes.trim();
+
+  // Where the referral came from - the frozen snapshot on an existing one,
+  // otherwise the place this new referral will be stamped with (see header).
+  const cameFrom = referral ? referral.place_name : placeName;
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
-      const payload = { referral_date: form.referral_date || null, notes: form.notes || null };
+      const payload = {
+        referral_date: form.referral_date || null,
+        notes: form.notes || null,
+        class: form.class.trim() || null,
+      };
       const saved = referral
         ? await api.referrals.update(referral.id, payload)
         : await api.referrals.create({ ...payload, person_id: form.person_id });
@@ -73,9 +100,29 @@ export default function ReferralModal({ people = [], person, referral, onClose, 
             )}
           </div>
 
+          <div>
+            <label className="field">Where it came from</label>
+            <div className="tiny">{cameFrom || 'No place on file for this person'}</div>
+          </div>
+
           <div style={{ maxWidth: 220 }}>
             <label className="field" htmlFor={`${uid}-date`}>Date</label>
             <input id={`${uid}-date`} type="date" value={form.referral_date} onChange={set('referral_date')} />
+          </div>
+
+          <div style={{ maxWidth: 260 }}>
+            <label className="field" htmlFor={`${uid}-class`}>Class</label>
+            <input
+              id={`${uid}-class`}
+              type="text"
+              list={`${uid}-class-options`}
+              placeholder="Payer source, e.g. Private Pay"
+              value={form.class}
+              onChange={set('class')}
+            />
+            <datalist id={`${uid}-class-options`}>
+              {classes.map((c) => <option key={c} value={c} />)}
+            </datalist>
           </div>
 
           <div>

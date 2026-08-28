@@ -1161,9 +1161,16 @@ td .tag-list { flex-wrap: nowrap; }
 .week-day-counts { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; min-height: 20px; }
 /* One pip per status per day, carrying its own count. Filled blue for work
    done, outlined for work still ahead, mauve for a lapse - the same
-   done/pending/attention language the rest of the app uses. */
+   done/pending/attention language the rest of the app uses. Every non-empty
+   pip is a <button> that opens that day's list (Dashboard.jsx) - hence the
+   button resets and the hover/focus affordance below; the empty pip stays a
+   plain <span>. */
 .week-pip { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
-  border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 1; }
+  border-radius: 999px; font-size: 11px; font-weight: 700; line-height: 1;
+  border: none; font-family: inherit; }
+button.week-pip { cursor: pointer; -webkit-appearance: none; appearance: none; transition: opacity 0.1s ease; }
+button.week-pip:hover { opacity: 0.78; }
+button.week-pip:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .week-pip.done { background: var(--blue); color: #fff; }
 .week-pip.planned { background: #fff; color: var(--blue-dark); border: 1px solid var(--blue-tint-5); }
 .week-pip.skipped { background: var(--mauve-tint-1); color: var(--mauve); }

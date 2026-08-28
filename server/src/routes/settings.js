@@ -10,7 +10,8 @@ const express = require('express');
 const knex = require('../db/knex');
 const { getSettingsView, saveSettings, resetSettings } = require('../services/settings');
 const { coverageReport } = require('../services/matrixCache');
-const { queueHealth } = require('../services/backfillQueue');
+const { queueHealth, drainQueue } = require('../services/backfillQueue');
+const { LocalOsrmProvider } = require('../services/localOsrmProvider');
 
 const router = express.Router();
 
@@ -22,11 +23,59 @@ const router = express.Router();
 router.get('/distance-cache', async (req, res, next) => {
   try {
     const places = await knex('places').whereNotNull('lat').whereNotNull('lng').select('id');
-    const [coverage, queue] = await Promise.all([
+    const [coverage, queue, blocker] = await Promise.all([
       coverageReport(knex, places),
       queueHealth(knex),
+      // The most recent error any queued place hit. Without this the panel
+      // reads "pending, checked automatically in the background", which is
+      // reassuring and wrong when every attempt is failing on the same
+      // unconfigured path - retrying can't fix a configuration problem, and
+      // the queue burns its attempt budget discovering that every 15 minutes.
+      knex('backfill_queue').whereNotNull('last_error').orderBy('created_at', 'desc').select('last_error').first(),
     ]);
-    res.json({ coverage, queue });
+    res.json({ coverage, queue, lastError: blocker ? blocker.last_error : null, running: backfillInFlight });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Guards against two drains at once: drainQueue spawns osrm-routed on a fixed
+// port, so a second concurrent run would fail to bind and mark every queued
+// place failed for a reason that isn't real.
+let backfillInFlight = false;
+
+// POST /api/settings/distance-cache/backfill - run the backfill now instead of
+// waiting up to DRAIN_INTERVAL_MINUTES for the background worker. The point is
+// immediate feedback: with OSRM unconfigured this returns the actual error in a
+// second rather than failing silently in the background a quarter-hour later.
+router.post('/distance-cache/backfill', async (req, res, next) => {
+  if (backfillInFlight) return res.status(409).json({ error: 'A backfill is already running.' });
+  backfillInFlight = true;
+  try {
+    const result = await drainQueue({ db: knex, provider: new LocalOsrmProvider() });
+    const blocker = await knex('backfill_queue').whereNotNull('last_error').orderBy('created_at', 'desc').select('last_error').first();
+    res.json({ ...result, lastError: blocker ? blocker.last_error : null });
+  } catch (err) {
+    next(err);
+  } finally {
+    backfillInFlight = false;
+  }
+});
+
+// POST /api/settings/distance-cache/requeue - put permanently-failed places
+// back in the queue with a clean attempt count.
+//
+// A place is retired after MAX_ATTEMPTS, which is right for a bad geocode that
+// genuinely can't be routed - but wrong for an outage or an unconfigured OSRM
+// path, where every attempt was spent on a problem that had nothing to do with
+// the place. Once the underlying cause is fixed there has to be a way back in,
+// or the only route is editing the address to re-trigger onPlaceGeocoded.
+router.post('/distance-cache/requeue', async (req, res, next) => {
+  try {
+    const requeued = await knex('backfill_queue')
+      .whereNotNull('failed_at')
+      .update({ failed_at: null, attempts: 0, last_error: null, next_attempt_at: Date.now() });
+    res.json({ requeued });
   } catch (err) {
     next(err);
   }

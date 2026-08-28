@@ -198,6 +198,9 @@ export const api = {
 
   // Referrals - server/src/routes/referrals.js
   referrals: {
+    // Payer sources already on file - the log form's suggestion list, not a
+    // whitelist (see server/src/routes/referrals.js).
+    classes: () => request('/referrals/classes'),
     create: (body) => request('/referrals', { method: 'POST', body }),
     update: (id, body) => request(`/referrals/${id}`, { method: 'PATCH', body }),
     remove: (id) => request(`/referrals/${id}`, { method: 'DELETE' }),
@@ -264,6 +267,11 @@ export const api = {
     // Not part of the tunable catalogue above - nothing here has a value to
     // save.
     distanceCache: () => request('/settings/distance-cache'),
+    // Run the backfill now rather than waiting for the background worker, and
+    // put permanently-failed places back in the queue once whatever blocked
+    // them is fixed. See server/src/routes/settings.js.
+    runBackfill: () => request('/settings/distance-cache/backfill', { method: 'POST' }),
+    requeueFailed: () => request('/settings/distance-cache/requeue', { method: 'POST' }),
   },
 
   // Team members - server/src/routes/users.js

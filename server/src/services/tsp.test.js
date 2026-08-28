@@ -159,6 +159,72 @@ describe('solveRoute - tour shape', () => {
   });
 });
 
+// Real driving distances are ASYMMETRIC - d[i][j] !== d[j][i] for ~99% of the
+// pairs matrixCache.js caches (one-way streets, divided roads, turn
+// restrictions). twoOpt used to score a candidate reversal with the textbook
+// symmetric two-edge delta, which ignores the internal edges a reversal also
+// flips. On an asymmetric matrix that delta mispredicts the true cost change,
+// so the loop kept accepting moves that made the tour worse and cycled between
+// tours forever - a wedged event loop at 100% CPU rather than a wrong answer.
+// These tests pin the fix. See twoOpt's header in tsp.js.
+describe('asymmetric cost matrices', () => {
+  // Every directed pair gets its own independent cost, so d[i][j] and d[j][i]
+  // essentially never agree - the property the symmetric delta assumed away.
+  function asymmetricMatrix(n, seed) {
+    const rand = mulberry32(seed);
+    const m = Array.from({ length: n }, () => new Float64Array(n));
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i !== j) m[i][j] = 500 + rand() * 9500;
+      }
+    }
+    return m;
+  }
+
+  // n above exactLimit so this exercises greedy + 2-opt + or-opt, not Held-Karp.
+  const N = 16;
+
+  // The regression itself. A failure here is a HANG, so the timeout is the
+  // real assertion - it turns an infinite loop into a reported failure
+  // instead of a test run that never finishes.
+  test('the heuristic path always terminates and returns a valid tour', { timeout: 20000 }, () => {
+    for (let seed = 1; seed <= 300; seed++) {
+      const points = randomPoints(N, seed);
+      const result = solveRoute(points, { matrix: asymmetricMatrix(N, seed) });
+      assert.equal(result.exact, false, `seed ${seed} should take the heuristic path`);
+      assert.equal(result.order.length, N, `seed ${seed} dropped stops`);
+      assert.equal(new Set(result.order).size, N, `seed ${seed} repeated a stop`);
+      assert.equal(result.order[0], 0, `seed ${seed} moved the start`);
+    }
+  });
+
+  test('the reported cost matches the tour actually returned', { timeout: 20000 }, () => {
+    for (let seed = 1; seed <= 100; seed++) {
+      const matrix = asymmetricMatrix(N, seed);
+      const result = solveRoute(randomPoints(N, seed), { matrix });
+      assert.ok(
+        Math.abs(result.cost - tourCost(matrix, result.order, false)) < 1e-6,
+        `seed ${seed}: reported ${result.cost}, actual ${tourCost(matrix, result.order, false)}`
+      );
+    }
+  });
+
+  // The heuristic can't beat the optimum, and shouldn't wander far from it.
+  // A solver accepting moves it mis-scores fails the upper bound.
+  test('the heuristic stays between the exact optimum and a sane bound', { timeout: 20000 }, () => {
+    const n = 11; // 10 free stops - inside exactLimit, so exact is available
+    for (let seed = 1; seed <= 100; seed++) {
+      const points = randomPoints(n, seed);
+      const matrix = asymmetricMatrix(n, seed);
+      const exact = solveRoute(points, { matrix });
+      const heuristic = solveRoute(points, { matrix, exactLimit: 0 });
+      assert.equal(exact.exact, true);
+      assert.ok(heuristic.cost >= exact.cost - 1e-6, `seed ${seed}: heuristic beat the optimum`);
+      assert.ok(heuristic.cost <= exact.cost * 1.5, `seed ${seed}: heuristic ${heuristic.cost} vs optimum ${exact.cost}`);
+    }
+  });
+});
+
 describe('gridMeters', () => {
   test('detour factor scales the raw grid distance linearly', () => {
     const a = { lat: 40.8, lng: -96.7 };
