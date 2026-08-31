@@ -1,10 +1,20 @@
-# Adds osrm-backend (osrm-routed, osrm-extract, osrm-partition, osrm-customize)
-# to the deployed container. '...' merges with whatever Nixpacks already
-# auto-detects for the Node app (node, npm) rather than replacing it.
+# osrm-backend is intentionally NOT installed here.
 #
-# This is the ONLY thing osrm-backend needs at deploy time: it's started
-# on demand by services/localOsrmProvider.js (see that file's header), not
-# run as a standing service, so no separate start command or port is
-# configured here.
-[phases.setup]
-nixPkgs = ['...', 'osrm-backend']
+# It provides osrm-routed/osrm-extract/etc., used ONLY by the on-demand
+# distance backfill (services/localOsrmProvider.js) when a brand-new place is
+# geocoded and needs road distances. It is not needed for normal operation:
+# routing runs entirely off the cached place_distance matrix + the local TSP
+# solver, and the backfill worker no-ops (never throws) while OSRM is absent.
+#
+# It was dropped from the Railway build because:
+#   1. the osrm-backend derivation fails to build from Nixpacks' pinned
+#      nixpkgs snapshot, breaking every deploy; and
+#   2. even built, osrm-routed needs the processed .osrm data files
+#      (region extract, ~GB, not in the repo) and OSRM_DATA_PATH set - so
+#      backfill on Railway needs a separate data-shipping story anyway.
+#
+# To re-enable once that story exists: restore
+#   [phases.setup]
+#   nixPkgs = ['...', 'osrm-backend']
+# and ship the .osrm dataset + set OSRM_DATA_PATH. '...' merges with the
+# Node packages Nixpacks auto-detects rather than replacing them.
