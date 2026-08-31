@@ -615,7 +615,7 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
           visit={viewingVisit}
           userId={userId}
           onClose={() => setViewingVisit(null)}
-          onComplete={(v) => { setViewingVisit(null); setLoggingVisit(v); }}
+          onComplete={(v) => { setViewingVisit(null); setLoggingVisit({ ...v, visit_id: v.id }); }}
           onSnoozed={() => { setViewingVisit(null); load(); }}
           onDelete={removeViewingVisit}
           onEdited={() => { setViewingVisit(null); load(); }}

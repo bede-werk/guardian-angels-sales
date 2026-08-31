@@ -41,13 +41,21 @@ async function withoutForeignKeys(knex, fn) {
 }
 
 exports.up = async function up(knex) {
+  // Each drop is guarded so up() is idempotent. transaction:false (above) means
+  // a failure between the two leaves the migration half-applied and unrecorded
+  // in knex_migrations; without these guards the retry would re-drop a column
+  // that's already gone and wedge every later migration.
   await withoutForeignKeys(knex, async () => {
-    await knex.schema.alterTable('people', (t) => {
-      t.dropColumn('import_source');
-    });
-    await knex.schema.alterTable('referrals', (t) => {
-      t.dropColumn('import_source');
-    });
+    if (await knex.schema.hasColumn('people', 'import_source')) {
+      await knex.schema.alterTable('people', (t) => {
+        t.dropColumn('import_source');
+      });
+    }
+    if (await knex.schema.hasColumn('referrals', 'import_source')) {
+      await knex.schema.alterTable('referrals', (t) => {
+        t.dropColumn('import_source');
+      });
+    }
   });
 };
 
@@ -55,11 +63,15 @@ exports.up = async function up(knex) {
 // a spreadsheet that is no longer the system of record.
 exports.down = async function down(knex) {
   await withoutForeignKeys(knex, async () => {
-    await knex.schema.alterTable('people', (t) => {
-      t.text('import_source');
-    });
-    await knex.schema.alterTable('referrals', (t) => {
-      t.text('import_source');
-    });
+    if (!(await knex.schema.hasColumn('people', 'import_source'))) {
+      await knex.schema.alterTable('people', (t) => {
+        t.text('import_source');
+      });
+    }
+    if (!(await knex.schema.hasColumn('referrals', 'import_source'))) {
+      await knex.schema.alterTable('referrals', (t) => {
+        t.text('import_source');
+      });
+    }
   });
 };

@@ -74,7 +74,7 @@ router.post('/distance-cache/requeue', async (req, res, next) => {
   try {
     const requeued = await knex('backfill_queue')
       .whereNotNull('failed_at')
-      .update({ failed_at: null, attempts: 0, last_error: null, next_attempt_at: Date.now() });
+      .update({ failed_at: null, attempts: 0, last_error: null, next_attempt_at: new Date() });
     res.json({ requeued });
   } catch (err) {
     next(err);
