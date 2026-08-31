@@ -9,6 +9,7 @@ const path = require('path');
 const XLSX = require('xlsx');
 const knex = require('../db/knex');
 const { regionForPlace } = require('../services/priority');
+const { orgToday } = require('../services/orgDate');
 const schedulingConfig = require('../config/scheduling');
 
 const DEFAULT_FILE = path.join(__dirname, '..', '..', '..', 'Guardian Angels Sales List.xlsx');
@@ -133,7 +134,14 @@ async function importPlaces(file) {
         await trx('places').where({ id: existing.id }).update(p);
         updated += 1;
       } else {
-        await trx('places').insert(p);
+        // A brand-new place is eligible for EXPLORATION immediately - same
+        // stamp POST /api/places writes (routes/places.js). Only on INSERT:
+        // an existing row may already carry a real eligible_since (e.g. a
+        // future date from a capacity observation) that a re-import must not
+        // clobber. Without this, every seeded place has it NULL and the route
+        // planner's daysSince(exploration_eligible_since) throws on first
+        // generate - see services/schedulingEngine.js.
+        await trx('places').insert({ ...p, exploration_eligible_since: orgToday() });
         inserted += 1;
       }
     }

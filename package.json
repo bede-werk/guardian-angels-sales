@@ -4,7 +4,7 @@
   "private": true,
   "description": "Sales visit scheduler for Guardian Angels Homecare (Lincoln, NE)",
   "engines": {
-    "node": ">=18"
+    "node": "24.x"
   },
   "scripts": {
     "build": "npm --prefix server install && npm --prefix client install && npm --prefix client run build",
