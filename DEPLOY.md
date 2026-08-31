@@ -1,22 +1,18 @@
 # Railway deploy runbook
 
 Written 2026-08-30. First real redeploy since the original Railway project was
-torn down. All prerequisite code fixes are committed as **`57da014`** and pushed
-to **`origin/bede-working`**.
+torn down. All prerequisite code fixes plus a second round of pre-deploy audit
+fixes are on **`main`** as of **`8f714c6`** (2026-08-31).
 
 Everything here is a browser + one local command. Budget ~20 min.
 
 ---
 
-## Step 0 — pick the deploy branch
+## Step 0 — deploy branch
 
-- **Deploy from `bede-working`** — nothing to do, just select that branch in Step 3.
-- **Deploy from `main`** (the usual convention) — open a PR from `bede-working`
-  into `main` and merge it first. It's 3 commits ahead with no divergence, so it
-  fast-forwards cleanly. `gh pr create --base main --head bede-working` once
-  `gh auth login` is done, or do it in the GitHub UI.
-
-Whatever you pick is "the deploy branch" below. Every later push to it auto-deploys.
+`main` is the deploy branch. All the fixes are already merged there; point the
+Railway service at `main` in Step 3, and every later push to `main` auto-deploys.
+Do feature work on a branch and PR it into `main` when ready to ship.
 
 ---
 
@@ -78,6 +74,8 @@ If it fails partway, the whole load rolls back — fix and re-run, no cleanup ne
 
 `railway.json` already pins the builder (nixpacks), build command, start command,
 and healthcheck (`/api/health`), so there's nothing else to configure.
+`nixpacks.toml` is comments only — it used to add `osrm-backend` but that broke
+the build; see "Known gap" below.
 
 On boot the app runs migrations (a no-op — Step 2 already did them) and its
 first-run seed detects the non-empty `places` table and skips. Watch the deploy
@@ -107,6 +105,36 @@ logs for `GA Sales API listening` and `Event-loop watchdog armed`.
 
 ---
 
+## Known gap — distance backfill for brand-new places
+
+`nixpacks.toml` no longer installs `osrm-backend` (the derivation fails to build
+from Nixpacks' pinned nixpkgs snapshot and broke every deploy — commit
+`8f714c6`). Consequences:
+
+- **Normal operation is unaffected.** Routing runs entirely off the
+  `place_distance` matrix loaded in Step 2 (100% coverage) plus the local TSP
+  solver. The backfill worker starts on boot but no-ops — it never throws when
+  OSRM is missing.
+- **What breaks:** when someone geocodes a *brand-new* place, its road distances
+  can't be computed, so it's queued and then retired to "failed" after
+  `MAX_ATTEMPTS`. Until then that place has no cached distances and the route
+  planner can't sequence it. Settings → Distance Cache shows the failures;
+  "Retry failed places" won't help until OSRM works.
+
+To close it, OSRM needs both halves on Railway:
+
+1. Restore `nixpacks.toml` to `nixPkgs = ['...', 'osrm-backend']` — **and** first
+   confirm the derivation builds (try a newer `providers`/nixpkgs pin, or a
+   `[phases.setup] aptPkgs` / Docker-image route instead of Nix).
+2. Ship the processed `.osrm` dataset (region extract, ~GB — *not* in the repo;
+   built locally by `scripts/backfill-distances.js`) via a Railway volume or a
+   build step, and set `OSRM_DATA_PATH` to its base name.
+
+Low urgency: new places are added a few times a month, and a one-off distance
+computation can also be run from a laptop against the production `DATABASE_URL`.
+
+---
+
 ## Reference — what was broken and why (context, not steps)
 
 Five Postgres-only problems, all fixed in `57da014`, all invisible under local
@@ -120,6 +148,7 @@ real local Postgres 16.
 | migration `20260708120000` | pg keeps FK constraint names through column renames → `20260709000000` aborts the whole migrate on `visits_place_id_foreign does not exist` |
 | `import-excel.js` stamps `exploration_eligible_since` | fresh seed left it NULL → route planner `daysSince(null)` throws on first generate |
 | `.nvmrc` + `engines.node` = `24.x` | nixpacks could pick Node 18 off `">=18"`, no `better-sqlite3@12` prebuild → build fails |
+| `nixpacks.toml` drops `osrm-backend` (`8f714c6`) | the derivation fails to build from nixpacks' pinned nixpkgs → every deploy fails at the Nix setup phase; see "Known gap" |
 
 Required env vars are only `NODE_ENV` and `DATABASE_URL`. Auth uses DB-stored
 random tokens — no session secret to set. Timezone is hardcoded to
