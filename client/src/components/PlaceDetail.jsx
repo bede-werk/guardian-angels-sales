@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { api, navigateUrl, formatDate, crossRepFloorWarningText, VISIT_TYPE_LABELS, isSnoozeActive, isDoNotVisitActive, suppressionNote } from '../api';
 import Button from './ui/Button';
 import EmptyState from './ui/EmptyState';
@@ -47,6 +47,19 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   const [assigningPerson, setAssigningPerson] = useState(false); // "Assign person" (pick someone already on file) modal
   const [selectedPersonId, setSelectedPersonId] = useState(null); // whose full PersonDetail is open, if any
   const [removingPersonId, setRemovingPersonId] = useState(null); // person currently being detached (disables their row)
+  // The People card's "Show all N people" state. A handful of places carry a
+  // roster far bigger than the fixed-height card can show (one has 36, where
+  // the card fits about three), which turned the only place to see who works
+  // somewhere into a 12x-oversized scroll well. Expanded, the card drops that
+  // height, takes the full row width, and lists everyone in two columns.
+  const [peopleExpanded, setPeopleExpanded] = useState(false);
+  // Whether the collapsed list is actually taller than its window. MEASURED,
+  // not a headcount threshold: a row is one line or two depending on whether
+  // the person has a title, and below 760px the fixed height is dropped
+  // entirely (see .detail-card-240 in styles.css) so nothing overflows and
+  // the toggle would be offering to fix a problem that isn't there.
+  const peopleBodyRef = useRef(null);
+  const [peopleOverflows, setPeopleOverflows] = useState(false);
   const [loggingReferral, setLoggingReferral] = useState(false); // whether the Log Referral modal is open
   const [deleting, setDeleting] = useState(false);
   const [removingVisitId, setRemovingVisitId] = useState(null); // visit currently being deleted (disables its row)
@@ -132,6 +145,26 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
   useEffect(() => {
     api.users.list().then(setUsers).catch(() => {});
   }, []);
+
+  // Re-measures whether the collapsed People list overflows its window.
+  // useLayoutEffect, not useEffect - this decides whether a button renders,
+  // so doing it before paint keeps the toggle from flickering in on the
+  // frame after the roster loads. Only runs while collapsed: expanded, the
+  // card has no fixed height, so scrollHeight always equals clientHeight
+  // and a measurement there would answer "no overflow" and hide the very
+  // button needed to collapse again (hence the `peopleExpanded ||` below).
+  // The ResizeObserver catches the modal being resized under a roster that
+  // hasn't changed; it can't feed back into itself, since the toggle it
+  // controls sits outside the element being observed.
+  useLayoutEffect(() => {
+    const el = peopleBodyRef.current;
+    if (!el || peopleExpanded) return undefined;
+    const measure = () => setPeopleOverflows(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [data?.people?.length, peopleExpanded]);
 
   // Permanently removes only the place itself. People who were here are
   // detached (not deleted) and every visit logged here survives, still
@@ -634,7 +667,14 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                 their row (the per-person breakdown); the place-level roll-up
                 lives up top next to the category/capacity badges, and again below
                 as a one-line summary since it's important place-level info. */}
-            <div className="card detail-card-240" style={{ flex: '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {/* flex-basis 100% when expanded, so this card claims the whole
+                line and Capacity wraps below it rather than staying squeezed
+                alongside - the point of expanding is the extra WIDTH (two
+                columns of names) as much as the extra height. */}
+            <div
+              className={`card${peopleExpanded ? '' : ' detail-card-240'}`}
+              style={{ flex: peopleExpanded ? '1 1 100%' : '1 1 250px', minWidth: 0, display: 'flex', flexDirection: 'column' }}
+            >
               <div className="card-head">
                 <h2>People ({data.people.length})</h2>
                 <div className="tag-list" style={{ flex: 'unset' }}>
@@ -643,7 +683,11 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   <Button size="small" title="Record a referral from someone at this place" onClick={() => { setEditingNotes(false); setLoggingReferral(true); }}>Log a referral</Button>
                 </div>
               </div>
-              <div className="card-body stack" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+              <div
+                ref={peopleBodyRef}
+                className="card-body stack"
+                style={{ flex: 1, minHeight: 0, overflowY: peopleExpanded ? 'visible' : 'auto' }}
+              >
                 <div className="tiny muted">
                   Last referral: {data.referral_metrics.last_referral_date ? formatDate(data.referral_metrics.last_referral_date) : 'none yet'} · {data.referral_metrics.referrals_last_90_days} in the last 90 days
                 </div>
@@ -652,7 +696,7 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                     <EmptyState message="No one on file here yet." compact />
                   </div>
                 ) : (
-                  <ul className="list">
+                  <ul className={`list${peopleExpanded ? ' place-people-columns' : ''}`}>
                     {data.people.map((p) => (
                       <li
                         key={p.id}
@@ -684,6 +728,23 @@ export default function PlaceDetail({ placeId, userId, onClose, onChanged, onDel
                   </ul>
                 )}
               </div>
+              {/* Sits outside the scrolling body, so it stays pinned to the
+                  bottom of the card instead of scrolling away with the names -
+                  and so measuring the body above never sees it. Rendered when
+                  the list overflows OR when already expanded, since expanding
+                  removes the overflow that justified the button. */}
+              {(peopleExpanded || peopleOverflows) && (
+                <div className="place-people-toggle">
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    title={peopleExpanded ? 'Shrink this card back to its usual size' : 'Show everyone on file here at once, without scrolling'}
+                    onClick={() => setPeopleExpanded((v) => !v)}
+                  >
+                    {peopleExpanded ? 'Show fewer' : `Show all ${data.people.length} people`}
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Capacity (capacity-computation-spec.md) - the OTHER cadence

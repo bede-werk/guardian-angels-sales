@@ -2,7 +2,6 @@ import React, { useId, useState } from 'react';
 import { api, capacityRatingKey, capacitySeedChoices, CAPACITY_RATING_KEYS, CAPACITY_RATING_LABELS, CAPACITY_RATING_HINTS } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
-import ConfirmDialog from './ui/ConfirmDialog';
 import CategoriesModal from './CategoriesModal';
 import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
 import useClosingTransition from '../hooks/useClosingTransition';
@@ -14,6 +13,11 @@ import { useTunables } from '../hooks/useTunables';
 // Places.jsx). Picking it never touches form.category, so the select just
 // reverts to showing whatever was already selected once the modal closes.
 const MANAGE_CATEGORIES_OPTION = '__manage_categories__';
+
+// Every form field either pre-save check reads. Editing one makes a finding
+// stale, so the next Save has to re-run the checks rather than push past an
+// answer about a string that no longer exists.
+const CHECKED_FIELDS = ['name', 'address', 'city', 'state', 'zip'];
 
 // Create or edit a place (organization). `place` present = editing (form is
 // pre-filled from it); absent = creating a brand-new one from a blank form.
@@ -57,9 +61,19 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null - see ConfirmDialog
+  // Pre-save findings, as { title, detail } pairs - a possible duplicate
+  // and/or an unrecognized address, both raised together by save() below.
+  // Shown inline in the footer next to Save, which becomes "Add anyway";
+  // NOT a second modal stacked on top of this one. Same convention
+  // PlanVisitModal/VisitLogModal use for the cross-rep collision warnings:
+  // nothing failed and nothing is blocked, so the form stays exactly where
+  // it is and the rep decides.
+  const [warnings, setWarnings] = useState(null);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k) => (e) => {
+    if (CHECKED_FIELDS.includes(k)) setWarnings(null);
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+  };
 
   const handleCategoryChange = (e) => {
     if (e.target.value === MANAGE_CATEGORIES_OPTION) { setManagingCategories(true); return; }
@@ -83,6 +97,10 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
   async function attemptSave(body) {
     setSaving(true);
     setError(null);
+    // A confirmed resend that hits a FRESH problem must not leave the old
+    // warnings on screen next to the new error - same reasoning as
+    // PlanVisitModal's setWarnings(null) before its own retry.
+    setWarnings(null);
     try {
       const saved = place ? await api.updatePlace(place.id, body) : await api.createPlace(body);
       onSaved?.(saved);
@@ -100,14 +118,21 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
   // a dedicated endpoint, not the general list `search`) and address-validity
   // together *before* saving - both fetched fresh right here (never from a
   // debounced background hook, which could still be mid-flight and stale at
-  // the moment of clicking) - so if both are a problem the rep sees one
-  // combined pop-up instead of missing one. Only warn on duplicates when
-  // creating - editing an existing place will always "match" itself. Pops up
-  // only when "Add place"/"Save changes" is actually clicked, not while
-  // still typing.
+  // the moment of clicking) - so if both are a problem the rep sees them
+  // together instead of missing one. Only warn on duplicates when creating -
+  // editing an existing place will always "match" itself. Runs only when
+  // "Add place"/"Save changes" is actually clicked, not while still typing.
   async function save() {
     if (!isCompletePhone(form.phone)) {
       setError('Phone must be a complete number, e.g. (402) 555-1234');
+      return;
+    }
+    // A second click with the warnings already showing IS the confirmation -
+    // skip the re-checks and save, carrying the confirm_address the server
+    // wants for the unrecognized-address case. (Nothing either check reads
+    // can have changed since: editing any of them clears `warnings`.)
+    if (warnings) {
+      attemptSave(toPayload({ confirm_address: true }));
       return;
     }
 
@@ -132,10 +157,7 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
     }
 
     if (issues.length > 0) {
-      setConfirmPrompt({
-        issues,
-        onConfirm: () => { setConfirmPrompt(null); attemptSave(toPayload({ confirm_address: true })); },
-      });
+      setWarnings(issues);
       return;
     }
     attemptSave(toPayload());
@@ -223,22 +245,29 @@ export default function PlaceModal({ place, categories = [], onClose, onSaved, o
             <PhoneInput id={`${uid}-phone`} value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
           </div>
         </div>
-        <div className="modal-foot">
+        {/* The warnings share the sticky footer with Save (flex: 1 +
+            minWidth: 0 so long text wraps in place instead of shoving the
+            button onto its own line - see PlanVisitModal's identical
+            notice), which keeps them on screen no matter how far the form
+            is scrolled. Both findings render, one per line: a duplicate and
+            a bad address are two separate problems, not a pile-on of one
+            signal, so neither collapses into the other. */}
+        <div className="modal-foot" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {warnings?.map((w, i) => (
+              <div key={i} className="tiny" style={{ color: 'var(--mauve)' }}>
+                <strong>{w.title}:</strong> {w.detail}
+              </div>
+            ))}
+          </div>
           <Button
-            title={place ? "Save changes to this place's details" : 'Create this new place'}
+            title={warnings ? 'Save this place anyway' : place ? "Save changes to this place's details" : 'Create this new place'}
             onClick={save}
             disabled={saving || !form.name.trim() || !isCompletePhone(form.phone)}
           >
-            {saving ? 'Saving…' : place ? 'Save changes' : 'Add place'}
+            {saving ? 'Saving…' : warnings ? (place ? 'Save anyway' : 'Add anyway') : place ? 'Save changes' : 'Add place'}
           </Button>
         </div>
-        {confirmPrompt && (
-          <ConfirmDialog
-            issues={confirmPrompt.issues}
-            onConfirm={confirmPrompt.onConfirm}
-            onCancel={() => setConfirmPrompt(null)}
-          />
-        )}
       </div>
       {managingCategories && (
         <CategoriesModal onClose={() => setManagingCategories(false)} onChanged={onCategoriesChanged} />

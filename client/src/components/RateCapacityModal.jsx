@@ -96,7 +96,10 @@ export default function RateCapacityModal({ onClose, onSaved }) {
   const [editingIds, setEditingIds] = useState(() => new Set());
 
   useEffect(() => {
-    api.places({})
+    // A-Z within each category group below - the directory's default order
+    // (all-stars first, then capacity) would sort this screen by the very
+    // thing it exists to let you change.
+    api.places({ sort: 'name_asc' })
       .then(setPlaces)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));

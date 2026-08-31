@@ -521,7 +521,7 @@ td .tag-list { flex-wrap: nowrap; }
 .loading { padding: 40px; text-align: center; color: var(--muted); }
 
 /* Auth landing page - Login.jsx, the pick-a-name-then-password screen */
-.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: var(--blue); }
 .auth-card { width: 100%; max-width: 380px; }
 .auth-card .card-body { display: flex; flex-direction: column; gap: 4px; padding: 28px 26px; }
 .auth-brand { margin-bottom: 18px; }
@@ -807,6 +807,26 @@ td .tag-list { flex-wrap: nowrap; }
   .plan-columns { grid-template-columns: 1fr; }
   .plan-col-dates { border-left: none; padding-left: 0; }
 }
+
+/* PlaceDetail's People card, expanded via "Show all N people" (only a
+   handful of places carry a roster the fixed-height card can't show).
+   CSS columns rather than a grid: the roster reads A-Z, and columns keep
+   that running top-to-bottom down column one and on into column two, where
+   a grid's row-major flow would zigzag the alphabet left-to-right across
+   the card. break-inside stops a name and its title being split across the
+   column break. Every row keeps its divider here, first one included -
+   .stop's usual :first-child exception would leave column one flush at the
+   top while column two sat under a stray line. */
+.place-people-columns { columns: 2; column-gap: 28px; }
+.place-people-columns .stop { break-inside: avoid; border-top: 1px solid var(--border); }
+/* One column below the same breakpoint the fixed card heights use - two
+   columns of names in a phone-width modal is worse than a plain list. */
+@media (max-width: 760px) { .place-people-columns { columns: 1; } }
+
+/* The expand/collapse control's own strip, matching .modal-foot's separation
+   from .modal-body so the card reads as list-then-control rather than the
+   button floating as one more list row. */
+.place-people-toggle { padding: 8px 16px; border-top: 1px solid var(--border); display: flex; justify-content: center; }
 
 /* Fixed-height scrolling cards - PlaceDetail's People/Capacity/Upcoming
    Visits/Visit History row and PersonDetail's Details/Referrals row all

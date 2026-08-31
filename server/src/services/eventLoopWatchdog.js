@@ -33,6 +33,32 @@ function isStalled(lastBeatMs, nowMs, stallMs) {
   return nowMs - lastBeatMs > stallMs;
 }
 
+// The other pure decision, and the reason this file changed on 2026-08-28.
+//
+// A stale heartbeat has TWO possible causes, and killing is only right for one:
+//
+//   1. The main thread is wedged. The monitor thread is fine, so its own timer
+//      keeps firing on schedule while the stamp goes stale. This is the outage
+//      the watchdog exists for. Kill.
+//   2. The WHOLE PROCESS was frozen - laptop sleep, SIGSTOP, a suspended or
+//      hard-throttled container. Both threads stop; the main thread never got
+//      the chance to stamp, but Date.now() advanced the entire time. Nothing is
+//      wrong. Killing here takes down a perfectly healthy server.
+//
+// Wall-clock staleness alone cannot tell these apart. What separates them is
+// whether the MONITOR was also frozen: in (1) this tick arrives on schedule, in
+// (2) it arrives late by the full suspend duration. So a tick that is itself
+// wildly overdue is evidence of (2).
+//
+// Getting this wrong is safe in the direction that matters. If CPU starvation
+// ever delays a tick enough to look like a suspend during a real wedge, we skip
+// one evaluation and catch it on the next one - a genuinely blocked main thread
+// never re-stamps, so the staleness is still there a tick later. The false
+// positive costs a few seconds; it cannot save a wedged process from the kill.
+function wasSuspended(tickGapMs, expectedIntervalMs, slackMs) {
+  return tickGapMs > expectedIntervalMs + slackMs;
+}
+
 /**
  * Starts the heartbeat and its monitor thread.
  *
@@ -59,6 +85,14 @@ function startWatchdog(config = defaultConfig) {
       heartbeat,
       checkIntervalMs: config.CHECK_INTERVAL_MS,
       stallMs: config.STALL_MS,
+      suspendSlackMs: config.SUSPEND_SLACK_MS,
+      // After a suspend the main thread needs a moment to actually run its
+      // heartbeat interval again before its stamp means anything. Derived
+      // rather than configured: it is a property of how often we stamp, not a
+      // deployment choice, and deriving it keeps it in step when the fuses are
+      // shortened (as the tests do). A few heartbeats is plenty, and the floor
+      // keeps it from landing under a single monitor tick.
+      graceMs: Math.max(3 * config.HEARTBEAT_MS, config.CHECK_INTERVAL_MS),
     },
   });
   worker.unref(); // same reasoning as startBackfillWorker's unref in index.js
@@ -78,4 +112,4 @@ function startWatchdog(config = defaultConfig) {
   };
 }
 
-module.exports = { startWatchdog, isStalled };
+module.exports = { startWatchdog, isStalled, wasSuspended };

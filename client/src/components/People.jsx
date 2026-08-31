@@ -34,7 +34,11 @@ export default function People({ userId }) {
   // or the Add Person picker until the tab unmounts and remounts.
   const loadReferenceData = useCallback(() => {
     api.filters().then(setFilters).catch(() => {});
-    api.places({}).then(setPlaces).catch(() => {});
+    // Explicitly A-Z: this feeds the Place filter dropdown and the Add
+    // Person picker, where alphabetical is the only order anyone can scan.
+    // The bare {} would inherit the directory's default (all-stars first,
+    // then capacity), which is right for the Places TAB and wrong here.
+    api.places({ sort: 'name_asc' }).then(setPlaces).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -117,7 +121,12 @@ export default function People({ userId }) {
             <div>
               <label className="field">Sort by</label>
               <select value={q.sort} onChange={set('sort')}>
-                <option value="">Name (A-Z)</option>
+                {/* The empty value is the server's default order (place
+                    A-Z, surname A-Z inside each place) - named here rather
+                    than left blank so the list's resting order isn't a
+                    mystery. Name (A-Z) below is by LAST name. */}
+                <option value="">Default (place A-Z)</option>
+                <option value="name_asc">Name (A-Z)</option>
                 <option value="last_contacted_desc">Last contacted (newest first)</option>
                 <option value="last_contacted_asc">Last contacted (oldest/never first)</option>
                 <option value="my_last_contacted_desc">Last contacted by me (newest first)</option>

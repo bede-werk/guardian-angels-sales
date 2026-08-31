@@ -140,7 +140,12 @@ export default function Places({ userId }) {
             <div>
               <label className="field">Sort by</label>
               <select value={q.sort} onChange={set('sort')}>
-                <option value="">Name (A-Z)</option>
+                {/* The empty value is the server's default order
+                    (all-stars first, then capacity high -> low, A-Z within
+                    each) - named here rather than left blank so the list's
+                    resting order isn't a mystery. */}
+                <option value="">Default (★, then capacity)</option>
+                <option value="name_asc">Name (A-Z)</option>
                 <option value="last_visited_desc">Last visited (newest first)</option>
                 <option value="last_visited_asc">Last visited (oldest/never first)</option>
                 <option value="my_last_visited_desc">Last visited by me (newest first)</option>

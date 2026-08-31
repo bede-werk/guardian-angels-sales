@@ -2,7 +2,6 @@ import React, { useId, useState } from 'react';
 import { api, MONTH_NAMES, daysInMonth } from '../api';
 import Button from './ui/Button';
 import PhoneInput, { isCompletePhone } from './ui/PhoneInput';
-import ConfirmDialog from './ui/ConfirmDialog';
 import PlaceModal from './PlaceModal';
 import { runPreSaveCheck } from '../hooks/usePreSaveCheck';
 import useClosingTransition from '../hooks/useClosingTransition';
@@ -36,7 +35,13 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [confirmPrompt, setConfirmPrompt] = useState(null); // { message, onConfirm } | null - see ConfirmDialog
+  // Pre-save findings, as { title, detail } pairs - a possible duplicate is
+  // the only one this form can raise. Shown inline in the footer next to
+  // Save, which becomes "Add anyway"; NOT a second modal stacked on top of
+  // this one. Same convention PlanVisitModal/VisitLogModal use for the
+  // cross-rep collision warnings: nothing failed and nothing is blocked, so
+  // the form stays exactly where it is and the rep decides.
+  const [warnings, setWarnings] = useState(null);
   const [addingPlace, setAddingPlace] = useState(false); // nested "add a new place" modal open?
   // Places created via the nested modal this session - merged into the
   // dropdown's options since the `places` prop won't include it until the
@@ -52,7 +57,7 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
 
   // The duplicate-name warning is fetched fresh right here (never from a
   // debounced background hook, which could still be mid-flight and stale at
-  // the moment of clicking) and pops up when Save is actually clicked, not
+  // the moment of clicking) and appears when Save is actually clicked, not
   // while the rep is still typing. Only warn on create - editing an existing
   // person will always "match" itself. Name-only (routes/people.js's
   // check-duplicate, a dedicated endpoint - not the general list `search`,
@@ -62,16 +67,16 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
       setError('Phone must be a complete number, e.g. (402) 555-1234');
       return;
     }
-    if (!person && form.name.trim().length >= 3) {
+    // A second click with the warning already showing IS the confirmation -
+    // skip the re-check and save. (The name can't have changed since the
+    // check ran: editing it clears `warnings`.)
+    if (!person && !warnings && form.name.trim().length >= 3) {
       const result = await runPreSaveCheck(setSaving, setError, () => api.people.checkDuplicate(form.name.trim()));
       if (!result.ok) return;
       const matches = result.value;
       if (matches.length > 0) {
         const names = matches.slice(0, 5).map((m) => m.name).join(', ');
-        setConfirmPrompt({
-          issues: [{ title: 'Possible duplicate', detail: `A similar person may already be on file: ${names}.` }],
-          onConfirm: () => { setConfirmPrompt(null); finishSave(); },
-        });
+        setWarnings([{ title: 'Possible duplicate', detail: `A similar person may already be on file: ${names}.` }]);
         return;
       }
     }
@@ -83,6 +88,10 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
   async function finishSave() {
     setSaving(true);
     setError(null);
+    // A confirmed resend that hits a FRESH problem must not leave the old
+    // warning on screen next to the new error - same reasoning as
+    // PlanVisitModal's setWarnings(null) before its own retry.
+    setWarnings(null);
     try {
       const saved = person
         ? await api.people.update(person.id, form)
@@ -124,7 +133,15 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
           <div className="row">
             <div>
               <label className="field" htmlFor={`${uid}-name`}>Name</label>
-              <input id={`${uid}-name`} value={form.name} onChange={set('name')} autoFocus />
+              {/* Clears the duplicate warning: it was raised about this
+                  exact string, so editing it makes the answer stale and the
+                  next Save has to re-check rather than push past. */}
+              <input
+                id={`${uid}-name`}
+                value={form.name}
+                onChange={(e) => { set('name')(e); setWarnings(null); }}
+                autoFocus
+              />
             </div>
             <div>
               <label className="field" htmlFor={`${uid}-title`}>Title</label>
@@ -179,22 +196,27 @@ export default function PersonModal({ placeId, placeName, places, categories, pe
             </div>
           </div>
         </div>
-        <div className="modal-foot">
+        {/* The warning shares the sticky footer with Save (flex: 1 +
+            minWidth: 0 so long text wraps in place instead of shoving the
+            button onto its own line - see PlanVisitModal's identical
+            notice), which keeps it on screen no matter how far the form is
+            scrolled. */}
+        <div className="modal-foot" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {warnings?.map((w, i) => (
+              <div key={i} className="tiny" style={{ color: 'var(--mauve)' }}>
+                <strong>{w.title}:</strong> {w.detail}
+              </div>
+            ))}
+          </div>
           <Button
-            title={person ? "Save changes to this person's details" : 'Create this new person'}
+            title={warnings ? 'Add this person anyway' : person ? "Save changes to this person's details" : 'Create this new person'}
             onClick={save}
             disabled={saving || !form.name.trim() || !isCompletePhone(form.phone)}
           >
-            {saving ? 'Saving…' : person ? 'Save changes' : 'Add person'}
+            {saving ? 'Saving…' : warnings ? 'Add anyway' : person ? 'Save changes' : 'Add person'}
           </Button>
         </div>
-        {confirmPrompt && (
-          <ConfirmDialog
-            issues={confirmPrompt.issues}
-            onConfirm={confirmPrompt.onConfirm}
-            onCancel={() => setConfirmPrompt(null)}
-          />
-        )}
       </div>
       {addingPlace && (
         <PlaceModal

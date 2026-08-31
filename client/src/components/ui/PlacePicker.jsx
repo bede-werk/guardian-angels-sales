@@ -22,7 +22,7 @@ export default function PlacePicker({ onPick, placeholder = 'Assign to existing 
     const t = setTimeout(async () => {
       const requestId = ++requestIdRef.current;
       try {
-        const rows = await api.places({ search: q });
+        const rows = await api.places({ search: q, sort: 'name_asc' });
         if (requestIdRef.current !== requestId) return;
         const filtered = excludeIds ? rows.filter((p) => !excludeIds.has(p.id)) : rows;
         setResults(filtered.slice(0, 8)); // cap the dropdown to 8 results

@@ -74,38 +74,69 @@ function coerceBirthdayFields(payload) {
   }
 }
 
+// The surname a person sorts under. There's no first/last split in the
+// schema - `people.name` is one free-text field - so the surname is the last
+// whitespace-separated token, and a single-word name ("Nannen") is its own
+// surname. Lowercased so casing never splits two spellings of the same name.
+function lastNameKey(name) {
+  const parts = String(name || '').trim().split(/\s+/);
+  return (parts[parts.length - 1] || '').toLowerCase();
+}
+
+// A-Z by surname, then by the full name so two Smiths order by first name
+// instead of arbitrarily.
+function compareByLastName(a, b) {
+  const bySurname = lastNameKey(a.name).localeCompare(lastNameKey(b.name));
+  if (bySurname !== 0) return bySurname;
+  return String(a.name || '').toLowerCase().localeCompare(String(b.name || '').toLowerCase());
+}
+
+// A-Z by the place someone works at, the default directory order. Anyone
+// unassigned (place_id null, e.g. after their place was deleted) sorts last
+// rather than at the top under an empty name - "no place yet" is the tail of
+// this list, not its headline.
+function compareByPlaceName(a, b) {
+  const ap = a.place_name || '';
+  const bp = b.place_name || '';
+  if (!ap !== !bp) return ap ? -1 : 1;
+  return ap.toLowerCase().localeCompare(bp.toLowerCase());
+}
+
 // Re-sorts the already-decorated (referral_metrics attached) people list per
-// the `sort` query param. Pure (no knex) - takes/returns plain arrays. The
-// default case returns `rows` unchanged, preserving the SQL query's own
-// `p.name, pe.name` order, so "no sort picked" behaves exactly as it always
-// has. Array.prototype.sort is spec-guaranteed stable, so every case here
-// keeps that same name-order as its tiebreaker for free.
+// the `sort` query param. Pure (no knex) - takes/returns plain arrays. Every
+// case starts from surname order, so each one keeps A-Z-by-surname as its
+// tiebreaker for free (Array.prototype.sort is spec-guaranteed stable) - in
+// the default case that means the roster inside each place reads A-Z too.
 function sortPeople(rows, sort) {
+  const byName = [...rows].sort(compareByLastName);
   switch (sort) {
+    case 'name_asc':
+      return byName;
     case 'last_contacted_desc':
-      return [...rows].sort((a, b) => -compareDatesAsc(a.last_visit_date, b.last_visit_date));
+      return [...byName].sort((a, b) => -compareDatesAsc(a.last_visit_date, b.last_visit_date));
     case 'last_contacted_asc':
-      return [...rows].sort((a, b) => compareDatesAsc(a.last_visit_date, b.last_visit_date));
+      return [...byName].sort((a, b) => compareDatesAsc(a.last_visit_date, b.last_visit_date));
     case 'my_last_contacted_desc':
-      return [...rows].sort((a, b) => -compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
+      return [...byName].sort((a, b) => -compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
     case 'my_last_contacted_asc':
-      return [...rows].sort((a, b) => compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
+      return [...byName].sort((a, b) => compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
     case 'referrals_desc':
-      return [...rows].sort((a, b) => b.referral_metrics.lifetime_referrals - a.referral_metrics.lifetime_referrals);
+      return [...byName].sort((a, b) => b.referral_metrics.lifetime_referrals - a.referral_metrics.lifetime_referrals);
     case 'referrals_asc':
-      return [...rows].sort((a, b) => a.referral_metrics.lifetime_referrals - b.referral_metrics.lifetime_referrals);
+      return [...byName].sort((a, b) => a.referral_metrics.lifetime_referrals - b.referral_metrics.lifetime_referrals);
     case 'last_referral_desc':
-      return [...rows].sort((a, b) => -compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
+      return [...byName].sort((a, b) => -compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
     case 'last_referral_asc':
-      return [...rows].sort((a, b) => compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
+      return [...byName].sort((a, b) => compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
     default:
-      return rows;
+      return [...byName].sort(compareByPlaceName);
   }
 }
 
 // GET /api/people - cross-place directory (the People tab). Query params:
 // search (name/title), placeId, category (of their place),
-// sort (name [default] | last_contacted_desc | last_contacted_asc |
+// sort (place A-Z, surname A-Z within each [default] | name_asc |
+// last_contacted_desc | last_contacted_asc |
 // my_last_contacted_desc | my_last_contacted_asc | referrals_desc |
 // referrals_asc | last_referral_desc | last_referral_asc).
 router.get('/people', async (req, res, next) => {
@@ -164,7 +195,10 @@ router.get('/people', async (req, res, next) => {
     if (placeId) query.where('pe.place_id', placeId);
     if (category) query.where('p.category', category);
 
-    query.orderBy('p.name', 'asc').orderBy('pe.name', 'asc');
+    // Just a deterministic base - sortPeople() below decides the order the
+    // directory actually renders in (surname A-Z, or whatever `sort` asks
+    // for), and needs a stable starting point for its tiebreakers.
+    query.orderBy('pe.name', 'asc').orderBy('pe.id', 'asc');
 
     const people = await query;
     const metricsById = await referralMetricsByPersonId(knex, people.map((p) => p.id));

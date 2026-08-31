@@ -17,8 +17,7 @@ const escapeStack = [];
 
 // `onEscape` is the callback Escape should trigger - normally the same
 // `onClose` a consumer already passes to `startClosing` for its backdrop-
-// click/x button (ConfirmDialog passes `onCancel` instead: Escape reads as
-// "back out", not "confirm"). Omit it and this hook behaves exactly as
+// click/x button. Omit it and this hook behaves exactly as
 // before (no Escape handling, no focus management) - nothing here is
 // required of a caller that doesn't ask for it.
 export default function useClosingTransition(onEscape) {

@@ -22,6 +22,13 @@ module.exports = {
   // headroom, so a trip here means something is genuinely wedged.
   STALL_MS: Number(process.env.WATCHDOG_STALL_MS) || 30000,
 
+  // How much later than CHECK_INTERVAL_MS the monitor's own tick may arrive
+  // before we read it as "this whole process was frozen" rather than "the main
+  // thread is wedged" - see wasSuspended() in services/eventLoopWatchdog.js.
+  // Ordinary timer jitter is milliseconds; a suspend is seconds to hours. 5s
+  // sits far above the former and far below the latter.
+  SUSPEND_SLACK_MS: Number(process.env.WATCHDOG_SUSPEND_SLACK_MS) || 5000,
+
   // Escape hatch: WATCHDOG_DISABLED=1 turns the monitor off entirely.
   DISABLED: process.env.WATCHDOG_DISABLED === '1',
 };

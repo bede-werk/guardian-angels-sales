@@ -27,32 +27,65 @@ const CAPACITY_LEVELS = ['high', 'medium', 'low'];
 const router = express.Router();
 router.use(skipSweepMiddleware(knex));
 
+// Where each capacity level sits in the default directory order. The
+// COMPUTED level (the chip the row actually renders), not capacity_seed -
+// sorting by the raw rating would group the list by a number nothing on
+// screen shows, and would put an unrated place in a bucket of its own. A
+// missing level can only happen if computeCapacityForPlaces skipped the
+// row; it sorts last rather than silently landing among the "low"s.
+const CAPACITY_RANK = { high: 0, medium: 1, low: 2 };
+function capacityRank(level) {
+  return CAPACITY_RANK[level] ?? 3;
+}
+
+// A-Z by place name, the explicit `name_asc` sort and the tiebreaker inside
+// every group of the default order below.
+function compareByPlaceName(a, b) {
+  return String(a.name || '').toLowerCase().localeCompare(String(b.name || '').toLowerCase());
+}
+
+// The default directory order: all-stars first as one group above the whole
+// list, then capacity level high -> low, alphabetical within each group.
+// All-stars sit above every tier rather than at the top of their own tier
+// because the flag is orthogonal to the level (a low-capacity all-star is
+// the whole point of it, see the EDITABLE comment below) - burying one in
+// the Low group is exactly what pinning them is meant to prevent.
+function compareByDefault(a, b) {
+  if (!!a.is_all_star !== !!b.is_all_star) return a.is_all_star ? -1 : 1;
+  const byCapacity = capacityRank(a.capacity_level) - capacityRank(b.capacity_level);
+  if (byCapacity !== 0) return byCapacity;
+  return compareByPlaceName(a, b);
+}
+
 // Re-sorts the already-decorated (last_visit_date/my_last_visit_date/
-// referral_metrics attached) place list per the `sort` query param. Pure (no
-// knex) - takes/returns plain arrays, same shape/convention as
-// people.js's sortPeople. The default case returns `rows` unchanged,
-// preserving the SQL query's own `capacity_seed desc, name asc` order, so
-// "no sort picked" behaves exactly as it always has.
+// referral_metrics/capacity_level attached) place list per the `sort` query
+// param. Pure (no knex) - takes/returns plain arrays, same shape/convention
+// as people.js's sortPeople. Every case starts from name order, so the
+// others keep A-Z as their tiebreaker for free (Array.prototype.sort is
+// spec-guaranteed stable).
 function sortPlaces(rows, sort) {
+  const byName = [...rows].sort(compareByPlaceName);
   switch (sort) {
+    case 'name_asc':
+      return byName;
     case 'last_visited_desc':
-      return [...rows].sort((a, b) => -compareDatesAsc(a.last_visit_date, b.last_visit_date));
+      return [...byName].sort((a, b) => -compareDatesAsc(a.last_visit_date, b.last_visit_date));
     case 'last_visited_asc':
-      return [...rows].sort((a, b) => compareDatesAsc(a.last_visit_date, b.last_visit_date));
+      return [...byName].sort((a, b) => compareDatesAsc(a.last_visit_date, b.last_visit_date));
     case 'my_last_visited_desc':
-      return [...rows].sort((a, b) => -compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
+      return [...byName].sort((a, b) => -compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
     case 'my_last_visited_asc':
-      return [...rows].sort((a, b) => compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
+      return [...byName].sort((a, b) => compareDatesAsc(a.my_last_visit_date, b.my_last_visit_date));
     case 'referrals_desc':
-      return [...rows].sort((a, b) => b.referral_metrics.lifetime_referrals - a.referral_metrics.lifetime_referrals);
+      return [...byName].sort((a, b) => b.referral_metrics.lifetime_referrals - a.referral_metrics.lifetime_referrals);
     case 'referrals_asc':
-      return [...rows].sort((a, b) => a.referral_metrics.lifetime_referrals - b.referral_metrics.lifetime_referrals);
+      return [...byName].sort((a, b) => a.referral_metrics.lifetime_referrals - b.referral_metrics.lifetime_referrals);
     case 'last_referral_desc':
-      return [...rows].sort((a, b) => -compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
+      return [...byName].sort((a, b) => -compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
     case 'last_referral_asc':
-      return [...rows].sort((a, b) => compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
+      return [...byName].sort((a, b) => compareDatesAsc(a.referral_metrics.last_referral_date, b.referral_metrics.last_referral_date));
     default:
-      return rows;
+      return [...byName].sort(compareByDefault);
   }
 }
 
@@ -267,7 +300,8 @@ router.post('/', async (req, res, next) => {
 // and its four call sites spread the row directly.)
 
 // GET /api/places - searchable / filterable list with last-visit + contact info.
-// Query params: search, category, tier, region, sort (name [default] |
+// Query params: search, category, tier, region, sort (all-stars then
+// capacity level, A-Z within each [default] | name_asc |
 // last_visited_desc | last_visited_asc | my_last_visited_desc |
 // my_last_visited_asc | referrals_desc | referrals_asc | last_referral_desc |
 // last_referral_asc).
@@ -328,12 +362,13 @@ router.get('/', async (req, res, next) => {
     // dropdown for the user - see Places.jsx - but they stay separate here.
     if (allStar === '1') query.where('p.is_all_star', true);
 
-    // capacity_seed, not priority_score - see services/priority.js's header.
-    // Descending puts the biggest referral sources at the top of the
-    // directory, which is what the old priority_score sort was really for.
-    // NULLs (unrated) sort last under both SQLite and Postgres only if we say
-    // so explicitly, hence the COALESCE rather than a bare orderBy.
-    query.orderByRaw('COALESCE(p.capacity_seed, -1) desc').orderBy('p.name', 'asc');
+    // Just a deterministic base - sortPlaces() below decides the order the
+    // directory actually renders in, and needs a stable starting point for
+    // its tiebreakers. (This used to sort by COALESCE(p.capacity_seed, -1)
+    // desc, which sortPlaces' default case then inherited; the default now
+    // groups by the COMPUTED capacity level, which has no column to order
+    // by, so it can only be done in JS after the decoration below.)
+    query.orderBy('p.name', 'asc').orderBy('p.id', 'asc');
 
     // Pull each place's earliest-added person to show a name/phone preview in
     // the directory table without requiring a separate request per row.

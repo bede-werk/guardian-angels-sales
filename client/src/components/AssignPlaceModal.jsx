@@ -21,14 +21,15 @@ export default function AssignPlaceModal({ personName, currentPlaceId, onAssign,
   const [selected, setSelected] = useState(null); // id of the place picked
   const [error, setError] = useState(null);
 
-  // The full place list is small enough (a few hundred rows, name-sorted by
-  // the server) to load once and filter in the browser - keeps typing instant
+  // The full place list is small enough (a few hundred rows, asked for
+  // A-Z explicitly rather than in the directory's default all-stars/capacity
+  // order) to load once and filter in the browser - keeps typing instant
   // and matches what the old inline <select> already did.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const rows = await api.places({});
+        const rows = await api.places({ sort: 'name_asc' });
         if (!cancelled) setPlaces(rows);
       } catch (e) {
         if (!cancelled) setError(e.message);

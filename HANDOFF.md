@@ -1,6 +1,6 @@
 # Guardian Angels Sales Scheduler - Project Handoff
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-08-30_
 
 This document is a self-contained context dump so work can resume in a new session.
 It summarizes what was built, key decisions, how to run it, the Railway deploy saga,
@@ -79,6 +79,39 @@ The temporary dual-write bridge (`routes/visits.js`'s `maybeCapturePreQualificat
 legacy `capacity_monthly_referrals`/`capacity_status` columns) that used to be documented here was
 **removed 2026-08-07** once step 7 landed and was verified - nothing ranking-related reads those
 two columns anymore, so there was nothing left for it to bridge to. See §18's "Step 7" subsection.
+
+### 2026-08-30 - Directory default sort reworked, ConfirmDialog retired, watchdog survives a frozen process (new §26)
+
+Four changes, unrelated except that they were in the tree together. §26 has the detail; the
+gotchas:
+
+1. **The People and Places tabs no longer sort A-Z by default, and every place *picker* had
+   to opt out.** People: place A-Z, then by SURNAME (last whitespace token) within each
+   place. Places: all-stars first, then computed capacity level high -> low, A-Z within each
+   group. The old SQL defaults (`p.name, pe.name` / `COALESCE(capacity_seed,-1) desc`) are
+   gone; a new explicit `name_asc` sort option gives plain A-Z back (by last name for
+   people). Anything loading places for a dropdown - `PlacePicker`, `AssignPlaceModal`,
+   `RateCapacityModal`, People's own Place filter - now passes `sort: 'name_asc'`, because a
+   bare `api.places({})` inherits the star/capacity order, which is right for the directory
+   and wrong in a picker. Do the same in any new place dropdown.
+
+2. **`client/src/components/ui/ConfirmDialog.jsx` is deleted.** `PersonModal` and
+   `PlaceModal` were its only callers. Their pre-save findings (possible duplicate,
+   unrecognized address) no longer stack a second modal - they render inline in the sticky
+   footer and Save becomes "Add anyway", matching what `PlanVisitModal`/`VisitLogModal`
+   already do for cross-rep collisions. Editing any checked field clears the warning and
+   forces the next Save to re-check.
+
+3. **The watchdog no longer SIGKILLs a process that was frozen rather than wedged** - this
+   is the laptop-sleep fix that `project-tsp-hang-watchdog` notes described as done on
+   2026-08-28 but was never committed until now. The monitor worker times its own tick; a
+   tick itself overdue by more than `SUSPEND_SLACK_MS` (5s) past its interval means the
+   whole process was suspended (macOS sleep, SIGSTOP, a throttled container), so it grants a
+   grace period instead of killing. New pure `wasSuspended()`, 7 new tests (the integration
+   one runs 12 parallel freeze trials because the false-kill was a ~35% race).
+
+4. **`PlaceDetail`'s People card gained a "Show all N people" expand** - a few places carry
+   30+ people on a card sized for ~3. Also: the login page got a solid blue background.
 
 ### 2026-08-25 - One "manually planned by {Name}" marker, not two
 
@@ -427,8 +460,9 @@ year in a series of same-day feature sessions directly with Bede (the owner/prim
    Dropping/adding a plain non-FK column (no rebuild needed) is simpler - see
    `20260710000000_drop_relationship_temp.js` or `20260711000000_add_geocoded_at_to_places.js`
    for that pattern instead.
-5. **Smoke-test safely** (§10) - passwordless user Lisa Marks (id 5) for temp auth tokens,
-   `__SMOKETEST_`/`__E2E_` prefixes, clean up after, and never touch Bede's own real test
+5. **Smoke-test safely** (§10) - seeded test rep Lisa Marks (id 5) for temp auth tokens (set
+   `auth_token` in the DB directly, never a password), `__SMOKETEST_`/`__E2E_` prefixes,
+   clean up after, and never touch Bede's own real test
    data (place 264 "Guardian Angels (Test)"; people Lionel Messi / Mohamed Salah / Neymar
    Jr.). Never set a password on a real user's account to get a token - that happened once
    this project and it was a mistake (see §10, and again briefly on 2026-07-08 - don't repeat
@@ -894,8 +928,14 @@ keeping:
   password hash without asking first. It was disclosed immediately and fixed by clearing
   `password_hash` back to `null` (first-time-setup state) rather than keeping the temp
   password. **Don't repeat this.**
-- Instead, use a passwordless seeded user (**Lisa Marks, id 5**) - set a temporary
-  `auth_token` directly in the DB for the test, and always clear it back to `null` afterward.
+- Instead, use a seeded test rep - set a temporary `auth_token` directly in the DB for the
+  test (which bypasses the password entirely) and always clear it back to `null` afterward.
+  **Lisa Marks (id 5)** is the default; **Nikki Shasserre (id 4)** is the second when a test
+  needs two reps (cross-rep collisions, permission checks). Do NOT touch either one's
+  `password_hash`. As of 2026-08-30: Lisa's password is a real one set in an early session
+  and is not recoverable (bcrypt) - don't try to reset it, the temp-`auth_token` path never
+  needs it. Nikki's is the shared default `Angels#1` from the 2026-07-22 backfill, never
+  changed. **Basil Fulton (id 6) is NOT a safe test account** - treat it like Bede's own.
   (The referral-metrics session's smoke test deviated from this - it set a temp `auth_token`
   on Bede's real account, id 3, and restored the original token value afterward. No data was
   lost since only the rotating session token was touched, not the password hash, but it
@@ -2797,3 +2837,115 @@ dev DB with a temporary Lisa Marks token, reverted afterwards: places list/detai
 the capacity filter, dashboard and settings all 200, and a **real route-planner draft generated
 end to end** (zone "Southeast Lincoln", 9 stops, capacity levels resolved) - then that throwaway
 draft was deleted.
+
+---
+
+## 26. Directory default sort, ConfirmDialog removal, watchdog suspend-detection (2026-08-30)
+
+Four changes that shared a working tree. The first two are the ones that will bite a future
+session; 3 is a fix that was already written up as done; 4 is small.
+
+### 26.1 The People and Places directories don't default to A-Z any more
+
+`sortPeople()` / `sortPlaces()` in `routes/people.js` / `routes/places.js` already re-sorted
+the decorated list per a `sort` query param, but their `default` case returned the SQL order
+untouched (`p.name, pe.name` for people; `COALESCE(p.capacity_seed, -1) desc, p.name` for
+places). Both defaults changed:
+
+- **People, default:** place name A-Z, then by **surname** within each place. Surname is
+  `lastNameKey()` - the last whitespace-separated token, lowercased, with a one-word name as
+  its own surname (there is no first/last split in `people.name`). Full name breaks ties so
+  two Smiths order by first name. A person with no `place_id` (e.g. their place was deleted)
+  sorts to the tail, not the top under a blank name.
+- **Places, default:** `is_all_star` first as one group above the whole list, then computed
+  **capacity level** high -> medium -> low, A-Z within each group. It sorts by the COMPUTED
+  level (the chip the row renders), not `capacity_seed` - so there is no column to `ORDER BY`
+  and the grouping can only happen in JS after `computeCapacityForPlaces` decorates the rows.
+  All-stars sit above every level, not at the top of their own, because a low-capacity
+  all-star is the entire point of the flag (§24).
+- Both SQL queries now just `ORDER BY name, id` as a deterministic base for the stable JS
+  sort that follows.
+- **New `name_asc` option** in both `<select>`s ("Name (A-Z)") gives back plain alphabetical
+  - by **last name** for people. The empty-value option is relabelled from the (misleading)
+  "Name (A-Z)" to "Default (place A-Z)" / "Default (★, then capacity)".
+
+**Every place *picker* now passes `sort: 'name_asc'` explicitly.** `PlacePicker.jsx`,
+`AssignPlaceModal.jsx`, `RateCapacityModal.jsx`, and `People.jsx`'s reference-data load (its
+Place filter dropdown + Add Person picker) all call `api.places(...)`; a bare call inherits
+the new star/capacity default, which is right for the Places tab and wrong everywhere a human
+is scanning for a name. `RateCapacityModal` is the sharpest example - the default order would
+sort that screen by the very thing it exists to let you change. **If you add a new place
+dropdown, request `name_asc`.**
+
+No migration, no schema change, no test changes - `sortPeople`/`sortPlaces` are pure and
+weren't under test.
+
+### 26.2 `ui/ConfirmDialog.jsx` is gone
+
+It was a stacked modal that `PersonModal` and `PlaceModal` popped when a pre-save check found
+a possible duplicate name (both) or an unrecognized address (places). Nothing had failed and
+nothing was blocked - the rep just had to acknowledge - so a second modal on top of the form
+was heavier than the situation. Both modals now hold the findings in a `warnings` state and
+render them inline in the sticky footer next to Save, which relabels to "Add anyway" /
+"Save anyway". This is the pattern `PlanVisitModal` / `VisitLogModal` already use for
+cross-rep collision warnings.
+
+The re-check discipline: editing any field a check reads (`name` in PersonModal;
+`CHECKED_FIELDS = name/address/city/state/zip` in PlaceModal) clears `warnings`, so the next
+Save re-runs the checks against the current strings rather than pushing past a stale answer.
+A second click with the warning still showing IS the confirmation - it skips the re-check and
+saves (carrying `confirm_address: true` for the address case). `finishSave` / `attemptSave`
+clear `warnings` before a confirmed resend so a fresh server error doesn't render next to the
+old warning.
+
+`useClosingTransition.js` lost its ConfirmDialog-specific aside about passing `onCancel`
+instead of `onClose` for Escape. No other file referenced `ConfirmDialog`, and no doc did.
+
+### 26.3 Watchdog: a frozen process is not a wedged one
+
+This is the laptop-sleep false-kill that `project-tsp-hang-watchdog-2026-08-28` (memory) and
+§0's 2026-08-28 note already described as fixed - the code just hadn't been committed. macOS
+sleep / SIGSTOP / a hard-throttled container freezes BOTH the main thread and the monitor
+worker while wall-clock runs on, so on resume the heartbeat looks hours stale though nothing
+is wrong, and the old `Date.now() - heartbeat > STALL_MS` check SIGKILLed a healthy server
+(`node --watch` does not restart after a crash, so it stayed down).
+
+The monitor worker (`eventLoopWatchdog.worker.js`) now times its **own** tick interval. A
+wedged main thread cannot delay the worker, so a worker tick that is itself overdue by more
+than `SUSPEND_SLACK_MS` (5s, `WATCHDOG_SUSPEND_SLACK_MS`) past `CHECK_INTERVAL_MS` means the
+whole process was frozen - it sets a derived `graceMs` window (`max(3 * HEARTBEAT_MS,
+CHECK_INTERVAL_MS)`) for the main thread to re-stamp and evaluates nothing until it passes.
+New pure `wasSuspended(tickGapMs, expectedIntervalMs, slackMs)`, exported and unit-tested.
+
+Safe direction: a false "suspended" reading during a real wedge only delays the kill by one
+tick, because a genuinely blocked main thread never re-stamps. 7 new tests - 5 `wasSuspended`
+unit cases, plus an integration test that runs **12 parallel freeze trials** (the false-kill
+was a ~35%-per-freeze race; a single trial passed against the buggy code) and one that
+confirms a process wedging *after* a freeze still gets killed.
+
+### 26.4 Small
+
+- **`PlaceDetail` People card - "Show all N people".** A handful of places carry a roster far
+  bigger than the fixed-height card shows (~3 rows); one has 36. Expanded, the card drops its
+  fixed height, claims the full row width (Capacity wraps below), and lists everyone in two
+  CSS columns (`columns: 2`, so A-Z runs down column one then into column two; one column
+  below 760px). The toggle only appears when the collapsed list actually overflows its
+  window - **measured** via `useLayoutEffect` + a `ResizeObserver` on the list body, not a
+  headcount threshold, because a row is one or two lines depending on whether the person has
+  a title and the fixed height is dropped entirely below 760px anyway. New `.place-people-
+  columns` / `.place-people-toggle` in `styles.css`.
+- **Login page background.** `.auth-page` gained `background: var(--blue)` - it was rendering
+  on the default page background.
+
+### Verification
+
+685 backend tests pass (was 533 at §25 - the eRSP/visit-encounter work in between added the
+rest), client build clean. The sort changes are pure functions exercised by the running app;
+the watchdog changes carry their own new tests. Not smoke-tested through a browser this round.
+
+### One unrelated fact recorded while in here
+
+Login passwords, since §10 called Lisa Marks "passwordless" and she isn't: **Nikki Shasserre
+(id 4)** logs in with `Angels#1` (the 2026-07-22 default backfill, hash unchanged since).
+**Lisa Marks (id 5)** has a real password set in an early session; it's bcrypt and not
+recoverable. Neither matters for smoke tests, which set `auth_token` directly. §10 updated.
