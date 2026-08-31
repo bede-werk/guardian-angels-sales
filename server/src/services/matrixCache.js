@@ -114,6 +114,11 @@ async function backfillMatrix({ db, places, provider, chunk = 80, force = false,
   const n = places.length;
   if (n < 2) return { written: 0, skipped: 0 };
 
+  // Which routing engine these numbers came from, recorded on every row (see
+  // place_distance's migration). A provider may declare it; OSRM is the
+  // default for the local provider, which doesn't.
+  const source = provider.source || 'osrm';
+
   const cached = new Set();
   if (!force) {
     const rows = await db('place_distance').select('from_place_id as f', 'to_place_id as t');
@@ -159,7 +164,7 @@ async function backfillMatrix({ db, places, provider, chunk = 80, force = false,
           const meters = distances?.[a]?.[b];
           const seconds = durations?.[a]?.[b];
           if (meters == null || seconds == null) continue; // unroutable (off the road network)
-          rows.push({ from_place_id: from, to_place_id: to, meters, seconds, source: 'osrm', computed_at: new Date() });
+          rows.push({ from_place_id: from, to_place_id: to, meters, seconds, source, computed_at: new Date() });
         }
       }
       // SQLite compiles .insert().onConflict().merge() as one UNION-ALL'd

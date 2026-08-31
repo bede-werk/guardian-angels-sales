@@ -1,20 +1,22 @@
 # osrm-backend is intentionally NOT installed here.
 #
-# It provides osrm-routed/osrm-extract/etc., used ONLY by the on-demand
-# distance backfill (services/localOsrmProvider.js) when a brand-new place is
-# geocoded and needs road distances. It is not needed for normal operation:
-# routing runs entirely off the cached place_distance matrix + the local TSP
-# solver, and the backfill worker no-ops (never throws) while OSRM is absent.
-#
-# It was dropped from the Railway build because:
+# It provides osrm-routed/osrm-extract/etc., used only by the local-OSRM
+# distance backfill provider (services/localOsrmProvider.js). It was dropped
+# from the Railway build because:
 #   1. the osrm-backend derivation fails to build from Nixpacks' pinned
 #      nixpkgs snapshot, breaking every deploy; and
-#   2. even built, osrm-routed needs the processed .osrm data files
-#      (region extract, ~GB, not in the repo) and OSRM_DATA_PATH set - so
-#      backfill on Railway needs a separate data-shipping story anyway.
+#   2. even built, osrm-routed needs the processed .osrm dataset (region
+#      extract, ~GB, not in the repo) shipped alongside it.
 #
-# To re-enable once that story exists: restore
+# The deployed build doesn't need it: when there's no local OSRM dataset the
+# backfill worker uses the Mapbox Matrix API instead
+# (services/mapboxMatrixProvider.js, picked by services/routingProvider.js) -
+# just set MAPBOX_TOKEN / VITE_MAPBOX_TOKEN. Route generation itself never
+# needs a routing engine at all; it reads the cached place_distance matrix.
+#
+# To go back to bundling a local OSRM: restore
 #   [phases.setup]
 #   nixPkgs = ['...', 'osrm-backend']
-# and ship the .osrm dataset + set OSRM_DATA_PATH. '...' merges with the
-# Node packages Nixpacks auto-detects rather than replacing them.
+# (first confirm the derivation builds - try a newer nixpkgs pin or a
+# Dockerfile), ship the .osrm dataset via a volume, and set OSRM_DATA_PATH.
+# '...' merges with the Node packages Nixpacks auto-detects.

@@ -8,7 +8,7 @@ const path = require('path');
 const knex = require('./db/knex');
 const { importPlaces } = require('./scripts/import-excel');
 const { drainQueue } = require('./services/backfillQueue');
-const { LocalOsrmProvider } = require('./services/localOsrmProvider');
+const { createRoutingProvider } = require('./services/routingProvider');
 const backfillQueueConfig = require('./config/backfillQueue');
 const { startWatchdog } = require('./services/eventLoopWatchdog');
 
@@ -105,12 +105,12 @@ async function seedIfEmpty() {
 // log and wait for the next tick, not take the server down (drainQueue
 // itself already swallows per-attempt failures into the queue's retry
 // bookkeeping; this catch is for anything even drainQueue didn't expect).
-const osrmProvider = new LocalOsrmProvider();
+const routingProvider = createRoutingProvider();
 function startBackfillWorker() {
   const intervalMs = backfillQueueConfig.DRAIN_INTERVAL_MINUTES * 60 * 1000;
   setInterval(async () => {
     try {
-      const result = await drainQueue({ db: knex, provider: osrmProvider });
+      const result = await drainQueue({ db: knex, provider: routingProvider });
       if (result.processed > 0) {
         console.log(`Backfill queue: ${result.succeeded} succeeded, ${result.failed} failed of ${result.processed} processed.`);
       }

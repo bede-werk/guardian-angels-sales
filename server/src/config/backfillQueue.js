@@ -40,4 +40,24 @@ module.exports = {
 
   // How long to wait for osrm-routed to report ready before giving up.
   OSRM_STARTUP_TIMEOUT_MS: 20000,
+
+  // --- Hosted routing fallback (services/mapboxMatrixProvider.js) ---------
+  // When there's no local OSRM dataset (OSRM_DATA_PATH unset or missing), the
+  // backfill worker uses the Mapbox Matrix API instead, so a plain container
+  // deploy with nothing installed can still fill a new place's distances.
+  // MAPBOX_TOKEN is a Mapbox token with Matrix API access; it falls back to
+  // the client's public token (VITE_MAPBOX_TOKEN) when that's the only one
+  // set. With neither a dataset nor a token, backfill has no provider and
+  // queued places simply retry - nothing else breaks, the cached matrix
+  // keeps serving route generation. Same infra-config category as the
+  // OSRM_* vars above: env-driven, not on the settings page.
+  MAPBOX_TOKEN: process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN || null,
+
+  MAPBOX_MATRIX_URL: process.env.MAPBOX_MATRIX_URL || 'https://api.mapbox.com/directions-matrix/v1',
+
+  // Pause between consecutive Matrix API requests within one backfill, to
+  // stay under the API's 60-requests-per-minute ceiling.
+  MAPBOX_REQUEST_SPACING_MS: Number(process.env.MAPBOX_REQUEST_SPACING_MS) || 200,
+
+  MAPBOX_TIMEOUT_MS: Number(process.env.MAPBOX_TIMEOUT_MS) || 15000,
 };

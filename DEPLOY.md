@@ -66,7 +66,8 @@ If it fails partway, the whole load rolls back — fix and re-run, no cleanup ne
    |---|---|
    | `NODE_ENV` | `production` |
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (internal — type it literally, Railway resolves it) |
-   | `VITE_MAPBOX_TOKEN` | *(optional)* your Mapbox token — only powers the "enter address manually" search box; without it that box shows a small notice |
+   | `VITE_MAPBOX_TOKEN` | your Mapbox public token (`pk.…`). Powers the "enter address manually" search box **and** the distance backfill for newly added places (see "Distance backfill" below). Without it the address box shows a notice and new-place backfill can't run. Set it as a **build + runtime** var (Railway's default for a plain variable). |
+   | `MAPBOX_TOKEN` | *(optional)* a separate Mapbox token for the server only — e.g. a URL-unrestricted secret token if your `pk.` token is locked to a domain. Falls back to `VITE_MAPBOX_TOKEN` when unset. |
 
 4. The app service → **Settings → Networking → Generate Domain**. This is the URL
    you visit — generate it on the **app** service, never on Postgres (a database
@@ -105,33 +106,38 @@ logs for `GA Sales API listening` and `Event-loop watchdog armed`.
 
 ---
 
-## Known gap — distance backfill for brand-new places
+## Distance backfill for newly added places
 
-`nixpacks.toml` no longer installs `osrm-backend` (the derivation fails to build
-from Nixpacks' pinned nixpkgs snapshot and broke every deploy — commit
-`8f714c6`). Consequences:
+Route generation itself never needs a routing engine — it reads the
+`place_distance` matrix loaded in Step 2 (100% coverage) and runs the local TSP
+solver. A routing engine is only needed to fill in a **brand-new** place's road
+distances after it's geocoded.
 
-- **Normal operation is unaffected.** Routing runs entirely off the
-  `place_distance` matrix loaded in Step 2 (100% coverage) plus the local TSP
-  solver. The backfill worker starts on boot but no-ops — it never throws when
-  OSRM is missing.
-- **What breaks:** when someone geocodes a *brand-new* place, its road distances
-  can't be computed, so it's queued and then retired to "failed" after
-  `MAX_ATTEMPTS`. Until then that place has no cached distances and the route
-  planner can't sequence it. Settings → Distance Cache shows the failures;
-  "Retry failed places" won't help until OSRM works.
+`nixpacks.toml` does **not** install `osrm-backend` (the derivation fails to
+build from Nixpacks' pinned nixpkgs snapshot — commit `8f714c6`). Instead the
+backfill worker uses the **Mapbox Matrix API** when no local OSRM dataset is
+configured (`services/routingProvider.js` picks the provider; commit adds
+`services/mapboxMatrixProvider.js`). So:
 
-To close it, OSRM needs both halves on Railway:
+- **With `VITE_MAPBOX_TOKEN` (or `MAPBOX_TOKEN`) set** — new places backfill
+  automatically within `DRAIN_INTERVAL_MINUTES` (15). A handful of new places a
+  month is a few thousand Matrix "elements" — well inside Mapbox's free
+  100k/month allowance.
+- **With no token** — new places queue and retry, then retire to "failed" after
+  `MAX_ATTEMPTS`; until backfilled they have no cached distances and the route
+  planner falls back to the straight-line estimate for pairs involving them.
+  Nothing else breaks. Fix by setting the token and hitting Settings → Distance
+  Cache → "Retry failed places".
 
-1. Restore `nixpacks.toml` to `nixPkgs = ['...', 'osrm-backend']` — **and** first
-   confirm the derivation builds (try a newer `providers`/nixpkgs pin, or a
-   `[phases.setup] aptPkgs` / Docker-image route instead of Nix).
-2. Ship the processed `.osrm` dataset (region extract, ~GB — *not* in the repo;
-   built locally by `scripts/backfill-distances.js`) via a Railway volume or a
-   build step, and set `OSRM_DATA_PATH` to its base name.
+If you ever want to go back to a bundled local OSRM (no per-call dependency):
+restore `nixpacks.toml` to `nixPkgs = ['...', 'osrm-backend']` **after**
+confirming that derivation builds (newer nixpkgs pin, or a Dockerfile), ship the
+processed `.osrm` dataset (~GB, not in the repo — built by
+`scripts/backfill-distances.js`) on a Railway volume, and set `OSRM_DATA_PATH`.
+A local dataset always wins over the Mapbox fallback.
 
-Low urgency: new places are added a few times a month, and a one-off distance
-computation can also be run from a laptop against the production `DATABASE_URL`.
+You can also always run `npm run backfill-distances` from a laptop (which has
+the full local OSRM setup) pointed at the production `DATABASE_URL`.
 
 ---
 
@@ -148,8 +154,9 @@ real local Postgres 16.
 | migration `20260708120000` | pg keeps FK constraint names through column renames → `20260709000000` aborts the whole migrate on `visits_place_id_foreign does not exist` |
 | `import-excel.js` stamps `exploration_eligible_since` | fresh seed left it NULL → route planner `daysSince(null)` throws on first generate |
 | `.nvmrc` + `engines.node` = `24.x` | nixpacks could pick Node 18 off `">=18"`, no `better-sqlite3@12` prebuild → build fails |
-| `nixpacks.toml` drops `osrm-backend` (`8f714c6`) | the derivation fails to build from nixpacks' pinned nixpkgs → every deploy fails at the Nix setup phase; see "Known gap" |
+| `nixpacks.toml` drops `osrm-backend` (`8f714c6`); Mapbox Matrix API backfill provider added | the derivation fails to build from nixpacks' pinned nixpkgs → every deploy fails at the Nix setup phase; see "Distance backfill" |
 
-Required env vars are only `NODE_ENV` and `DATABASE_URL`. Auth uses DB-stored
-random tokens — no session secret to set. Timezone is hardcoded to
+Required env vars are only `NODE_ENV` and `DATABASE_URL`; `VITE_MAPBOX_TOKEN` is
+strongly recommended (address search + new-place distance backfill). Auth uses
+DB-stored random tokens — no session secret to set. Timezone is hardcoded to
 `America/Chicago` in `services/orgDate.js` — `TZ` doesn't matter.

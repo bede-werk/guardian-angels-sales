@@ -11,7 +11,7 @@ const knex = require('../db/knex');
 const { getSettingsView, saveSettings, resetSettings } = require('../services/settings');
 const { coverageReport } = require('../services/matrixCache');
 const { queueHealth, drainQueue } = require('../services/backfillQueue');
-const { LocalOsrmProvider } = require('../services/localOsrmProvider');
+const { createRoutingProvider } = require('../services/routingProvider');
 
 const router = express.Router();
 
@@ -52,7 +52,7 @@ router.post('/distance-cache/backfill', async (req, res, next) => {
   if (backfillInFlight) return res.status(409).json({ error: 'A backfill is already running.' });
   backfillInFlight = true;
   try {
-    const result = await drainQueue({ db: knex, provider: new LocalOsrmProvider() });
+    const result = await drainQueue({ db: knex, provider: createRoutingProvider() });
     const blocker = await knex('backfill_queue').whereNotNull('last_error').orderBy('created_at', 'desc').select('last_error').first();
     res.json({ ...result, lastError: blocker ? blocker.last_error : null });
   } catch (err) {
