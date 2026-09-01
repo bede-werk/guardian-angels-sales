@@ -11,9 +11,23 @@ const router = express.Router();
 const MIN_PASSWORD_LENGTH = 6;
 
 // Strips a user row down to the fields that are safe to send to the browser
-// (never the password_hash or auth_token).
+// (never the password_hash).
 function publicUser(user) {
   return { id: user.id, name: user.name };
+}
+
+// Issue a new session row for a user and return its token. One row per login,
+// so a user can be signed in on several devices at once - see
+// middleware/requireAuth.js and migration 20260901000000.
+async function issueSession(userId, req) {
+  const token = generateToken();
+  const ua = req.headers['user-agent'];
+  await knex('sessions').insert({
+    token,
+    user_id: userId,
+    user_agent: ua ? String(ua).slice(0, 255) : null,
+  });
+  return token;
 }
 
 // GET /api/auth/users - for the login picker. Never exposes the password hash;
@@ -45,9 +59,9 @@ router.post('/set-password', async (req, res, next) => {
     if (user.password_hash) return res.status(400).json({ error: 'Password already set - log in instead' });
 
     const password_hash = await hashPassword(newPassword);
-    const auth_token = generateToken();
-    await knex('users').where({ id: userId }).update({ password_hash, auth_token });
-    res.json({ token: auth_token, user: publicUser(user) });
+    await knex('users').where({ id: userId }).update({ password_hash });
+    const token = await issueSession(userId, req);
+    res.json({ token, user: publicUser(user) });
   } catch (err) {
     next(err);
   }
@@ -66,11 +80,10 @@ router.post('/login', async (req, res, next) => {
     const ok = await verifyPassword(password, user.password_hash);
     if (!ok) return res.status(401).json({ error: 'Incorrect password' });
 
-    // A brand-new token each login - this also invalidates any previous token,
-    // so signing in on a new device signs the old one out.
-    const auth_token = generateToken();
-    await knex('users').where({ id: userId }).update({ auth_token });
-    res.json({ token: auth_token, user: publicUser(user) });
+    // A fresh session for this device. Other devices' sessions are left alone,
+    // so the user stays logged in wherever else they already are.
+    const token = await issueSession(user.id, req);
+    res.json({ token, user: publicUser(user) });
   } catch (err) {
     next(err);
   }
@@ -82,9 +95,9 @@ router.get('/me', requireAuth, (req, res) => {
   res.json(publicUser(req.user));
 });
 
-// POST /api/auth/change-password - rotates the token, so other signed-in
-// devices are signed out; the caller gets the new token back in the response
-// so their own current session stays logged in.
+// POST /api/auth/change-password - drops every session for the user (so any
+// other signed-in device is signed out, its security point) and hands the
+// caller a fresh session in the response so their own device stays logged in.
 router.post('/change-password', requireAuth, async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -100,18 +113,20 @@ router.post('/change-password', requireAuth, async (req, res, next) => {
     if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
 
     const password_hash = await hashPassword(newPassword);
-    const auth_token = generateToken();
-    await knex('users').where({ id: req.user.id }).update({ password_hash, auth_token });
-    res.json({ token: auth_token, user: publicUser(req.user) });
+    await knex('users').where({ id: req.user.id }).update({ password_hash });
+    await knex('sessions').where({ user_id: req.user.id }).del();
+    const token = await issueSession(req.user.id, req);
+    res.json({ token, user: publicUser(req.user) });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/auth/logout - clears the stored token so it can no longer be used.
+// POST /api/auth/logout - deletes just this device's session; any other
+// devices the user is signed in on stay logged in.
 router.post('/logout', requireAuth, async (req, res, next) => {
   try {
-    await knex('users').where({ id: req.user.id }).update({ auth_token: null });
+    await knex('sessions').where({ id: req.session.id }).del();
     res.status(204).end();
   } catch (err) {
     next(err);

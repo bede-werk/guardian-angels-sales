@@ -158,5 +158,9 @@ real local Postgres 16.
 
 Required env vars are only `NODE_ENV` and `DATABASE_URL`; `VITE_MAPBOX_TOKEN` is
 strongly recommended (address search + new-place distance backfill). Auth uses
-DB-stored random tokens — no session secret to set. Timezone is hardcoded to
-`America/Chicago` in `services/orgDate.js` — `TZ` doesn't matter.
+DB-stored random tokens — no session secret to set. Since `20260901000000`
+those tokens live in a `sessions` table (one row per logged-in device, so one
+account can be signed in on several at once); that migration also drops
+`users.auth_token` and carries any currently-logged-in user across, so a deploy
+doesn't bounce anyone. Timezone is hardcoded to `America/Chicago` in
+`services/orgDate.js` — `TZ` doesn't matter.

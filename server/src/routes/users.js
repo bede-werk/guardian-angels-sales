@@ -6,7 +6,7 @@ const knex = require('../db/knex');
 
 const router = express.Router();
 
-// Columns safe to send to the browser - never password_hash or auth_token.
+// Columns safe to send to the browser - never password_hash.
 // Mirrors routes/auth.js's publicUser (kept separate since this list also
 // includes email, which the login picker doesn't need).
 const SAFE_COLUMNS = ['id', 'name', 'email'];
