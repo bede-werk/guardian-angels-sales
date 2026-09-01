@@ -184,6 +184,7 @@ export default function Places({ userId }) {
             <thead>
               <tr>
                 <th>Organization</th>
+                <th aria-label="All-star" />
                 <th>Category</th>
                 <th>Capacity</th>
                 <th>Region</th>
@@ -195,13 +196,9 @@ export default function Places({ userId }) {
               {rows.map((p) => (
                 <tr key={p.id} onClick={() => setSelected(p.id)}>
                   <td><strong>{p.name}</strong></td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}><AllStarChip isAllStar={p.is_all_star} /></td>
                   <td><CategoryChip category={p.category} /></td>
-                  <td>
-                    <span className="tag-list">
-                      <CapacityChip level={p.capacity_level} />
-                      <AllStarChip isAllStar={p.is_all_star} />
-                    </span>
-                  </td>
+                  <td><CapacityChip level={p.capacity_level} /></td>
                   <td className="muted tiny">{p.region}</td>
                   <td className="tiny">
                     {p.referral_metrics.lifetime_referrals > 0 ? (
@@ -222,7 +219,7 @@ export default function Places({ userId }) {
                 </tr>
               ))}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={6}><EmptyState message="No places match those filters." /></td></tr>
+                <tr><td colSpan={7}><EmptyState message="No places match those filters." /></td></tr>
               )}
             </tbody>
           </table>
