@@ -11,9 +11,9 @@ const hashPassword = (plain) => bcrypt.hash(plain, 10);
 // Check a plaintext password attempt against a stored hash. Returns true/false.
 const verifyPassword = (plain, hash) => bcrypt.compare(plain, hash);
 
-// A random, unguessable session token issued at login and stored on the user's
-// row (users.auth_token). Whoever presents this token in an Authorization
-// header is treated as that user (see middleware/requireAuth.js).
+// A random, unguessable session token issued at login and stored as a row in
+// `sessions` (one per device). Whoever presents this token in an Authorization
+// header is treated as that session's user (see middleware/requireAuth.js).
 const generateToken = () => crypto.randomBytes(32).toString('hex');
 
 module.exports = { hashPassword, verifyPassword, generateToken };
