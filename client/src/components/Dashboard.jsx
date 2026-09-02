@@ -592,10 +592,6 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
         </div>
       </div>
 
-      {/* Clicking any place row/name above opens this same detail modal. */}
-      {selectedPlaceId && (
-        <PlaceDetail placeId={selectedPlaceId} userId={userId} onClose={() => setSelectedPlaceId(null)} onChanged={load} onDeleted={load} />
-      )}
       {selectedPersonId && (
         <PersonDetail
           personId={selectedPersonId}
@@ -716,6 +712,16 @@ export default function Dashboard({ date, userId, onNavigateToPlanner }) {
           onClose={() => setEditingReferral(null)}
           onSaved={() => { setEditingReferral(null); load(); }}
         />
+      )}
+
+      {/* Opened by a place row/name in the cards above, and by "View place" /
+          "open place" inside several of the modals above (PersonDetail,
+          PlannedDayModal, CompletedVisitsModal, SkippedVisitsModal). Every
+          modal-backdrop shares one z-index, so this has to render LAST to
+          stack above whichever one launched it - same reason VisitsCalendar
+          keeps its own PlaceDetail last. */}
+      {selectedPlaceId && (
+        <PlaceDetail placeId={selectedPlaceId} userId={userId} onClose={() => setSelectedPlaceId(null)} onChanged={load} onDeleted={load} />
       )}
     </div>
   );
